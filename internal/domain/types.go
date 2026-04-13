@@ -91,6 +91,29 @@ const (
 	VetSexUnknown VetSex = "unknown"
 )
 
+// FormVersionStatus represents the lifecycle state of a form version.
+type FormVersionStatus string
+
+const (
+	// FormVersionStatusDraft is the single mutable version being edited.
+	// Only one draft per form is allowed (enforced by DB partial unique index).
+	FormVersionStatusDraft FormVersionStatus = "draft"
+	// FormVersionStatusPublished is a frozen, live version available for use.
+	FormVersionStatusPublished FormVersionStatus = "published"
+	// FormVersionStatusArchived marks the final version when a form is retired.
+	FormVersionStatusArchived FormVersionStatus = "archived"
+)
+
+// ChangeType classifies the severity of a form version change for semver bumping.
+type ChangeType string
+
+const (
+	// ChangeTypeMinor covers metadata-only changes: name, description, prompts, policies.
+	ChangeTypeMinor ChangeType = "minor"
+	// ChangeTypeMajor covers structural changes: fields added, removed, or retyped.
+	ChangeTypeMajor ChangeType = "major"
+)
+
 // RecordingStatus represents the lifecycle state of an audio recording.
 type RecordingStatus string
 
