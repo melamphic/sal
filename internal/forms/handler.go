@@ -67,9 +67,9 @@ type formListHTTPResponse struct {
 
 type listFormsInput struct {
 	paginationInput
-	GroupID         *string `query:"group_id"          doc:"Filter by group UUID."`
-	IncludeArchived bool    `query:"include_archived"  doc:"Include retired forms in results."`
-	Tag             *string `query:"tag"               doc:"Filter forms that have this tag."`
+	GroupID         string `query:"group_id"          doc:"Filter by group UUID."`
+	IncludeArchived bool   `query:"include_archived"  doc:"Include retired forms in results."`
+	Tag             string `query:"tag"               doc:"Filter forms that have this tag."`
 }
 
 // createForm handles POST /api/v1/forms.
@@ -124,10 +124,10 @@ func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formLi
 		Limit:           input.Limit,
 		Offset:          input.Offset,
 		IncludeArchived: input.IncludeArchived,
-		Tag:             input.Tag,
+		Tag:             &input.Tag,
 	}
-	if input.GroupID != nil {
-		id, err := uuid.Parse(*input.GroupID)
+	if input.GroupID != "" {
+		id, err := uuid.Parse(input.GroupID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid group_id")
 		}

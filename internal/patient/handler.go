@@ -120,9 +120,9 @@ type linkContactInput struct {
 
 type listSubjectsInput struct {
 	paginationInput
-	Status    *domain.SubjectStatus `query:"status"     enum:"active,deceased,transferred,archived" doc:"Filter by lifecycle status."`
-	Species   *domain.VetSpecies    `query:"species"    enum:"dog,cat,bird,rabbit,reptile,other"    doc:"Filter by species (vet vertical only)."`
-	ContactID *string               `query:"contact_id"                                             doc:"Filter subjects by contact UUID."`
+	Status    domain.SubjectStatus `query:"status"     enum:"active,deceased,transferred,archived" doc:"Filter by lifecycle status."`
+	Species   domain.VetSpecies    `query:"species"    enum:"dog,cat,bird,rabbit,reptile,other"    doc:"Filter by species (vet vertical only)."`
+	ContactID string               `query:"contact_id"                                             doc:"Filter subjects by contact UUID."`
 }
 
 type subjectResponse struct {
@@ -266,15 +266,15 @@ func (h *Handler) listSubjects(ctx context.Context, input *listSubjectsInput) (*
 	svcInput := ListSubjectsInput{
 		Limit:      input.Limit,
 		Offset:     input.Offset,
-		Status:     input.Status,
-		Species:    input.Species,
+		Status:     &input.Status,
+		Species:    &input.Species,
 		ViewAll:    perms.ViewAllPatients,
 		OwnerScope: !perms.ViewAllPatients && perms.ViewOwnPatients,
 		CallerID:   callerID,
 	}
 
-	if input.ContactID != nil {
-		cid, err := uuid.Parse(*input.ContactID)
+	if input.ContactID != "" {
+		cid, err := uuid.Parse(input.ContactID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid contact_id")
 		}

@@ -54,9 +54,9 @@ type recordingListResponse struct {
 
 type listRecordingsInput struct {
 	paginationInput
-	SubjectID *string `query:"subject_id" doc:"Filter recordings by patient UUID."`
-	StaffID   *string `query:"staff_id"   doc:"Filter recordings by staff UUID."`
-	Status    *string `query:"status"     enum:"pending_upload,uploaded,transcribing,transcribed,failed" doc:"Filter by processing status."`
+	SubjectID string `query:"subject_id" doc:"Filter recordings by patient UUID."`
+	StaffID   string `query:"staff_id"   doc:"Filter recordings by staff UUID."`
+	Status    string `query:"status"     enum:"pending_upload,uploaded,transcribing,transcribed,failed" doc:"Filter by processing status."`
 }
 
 type downloadURLHTTPResponse struct {
@@ -123,22 +123,22 @@ func (h *Handler) listRecordings(ctx context.Context, input *listRecordingsInput
 		Offset: input.Offset,
 	}
 
-	if input.SubjectID != nil {
-		id, err := uuid.Parse(*input.SubjectID)
+	if input.SubjectID != "" {
+		id, err := uuid.Parse(input.SubjectID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid subject_id")
 		}
 		svcInput.SubjectID = &id
 	}
-	if input.StaffID != nil {
-		id, err := uuid.Parse(*input.StaffID)
+	if input.StaffID != "" {
+		id, err := uuid.Parse(input.StaffID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid staff_id")
 		}
 		svcInput.StaffID = &id
 	}
-	if input.Status != nil {
-		s := domain.RecordingStatus(*input.Status)
+	if input.Status != "" {
+		s := domain.RecordingStatus(input.Status)
 		svcInput.Status = &s
 	}
 
