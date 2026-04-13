@@ -42,6 +42,12 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// Start the River job worker in the background.
+	if err := a.RiverClient.Start(ctx); err != nil {
+		a.Log.Error("failed to start river worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	go func() {
 		a.Log.Info("server starting", slog.String("addr", a.Server.Addr))
 		if err := a.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -55,6 +61,12 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Stop River before closing the DB pool — River needs the pool to complete
+	// in-flight jobs gracefully.
+	if err := a.RiverClient.Stop(shutdownCtx); err != nil {
+		a.Log.Error("river stop error", slog.String("error", err.Error()))
+	}
 
 	if err := a.Server.Shutdown(shutdownCtx); err != nil {
 		a.Log.Error("shutdown error", slog.String("error", err.Error()))

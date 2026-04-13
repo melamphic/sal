@@ -65,4 +65,5 @@ nav:
       - Testing: testing.md
   - Modules:
       - Authentication: auth.md
+      - Audio & Recordings: audio.md
   - Compliance: compliance.md

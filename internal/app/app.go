@@ -16,21 +16,28 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/clinic"
+	"github.com/melamphic/sal/internal/patient"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
 	"github.com/melamphic/sal/internal/platform/logger"
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
+	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/staff"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
 
 // App holds the running HTTP server and all wired dependencies.
 type App struct {
-	Server *http.Server
-	DB     *pgxpool.Pool
-	Log    *slog.Logger
+	Server      *http.Server
+	DB          *pgxpool.Pool
+	Log         *slog.Logger
+	RiverClient *river.Client[pgx.Tx]
 }
 
 // Build constructs the full application from config.
@@ -84,6 +91,36 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL)
 	staffHandler := staff.NewHandler(staffSvc)
 
+	patientRepo := patient.NewRepository(db)
+	patientSvc := patient.NewService(patientRepo, cipher)
+	patientHandler := patient.NewHandler(patientSvc)
+
+	// ── Storage (S3-compatible) ────────────────────────────────────────────────
+	store, err := storage.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: storage: %w", err)
+	}
+
+	// ── River (job queue) ─────────────────────────────────────────────────────
+	// Workers are registered here; the client is used by services to enqueue jobs.
+	workers := river.NewWorkers()
+	audioRepo := audio.NewRepository(db)
+	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, cfg.DeepgramAPIKey))
+
+	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
+		Queues: map[string]river.QueueConfig{
+			river.QueueDefault: {MaxWorkers: 10},
+		},
+		Workers: workers,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: river client: %w", err)
+	}
+
+	// ── Audio module ──────────────────────────────────────────────────────────
+	audioSvc := audio.NewService(audioRepo, store, riverClient)
+	audioHandler := audio.NewHandler(audioSvc)
+
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -116,6 +153,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	authHandler.Mount(r, api, jwtSecret)
 	clinicHandler.Mount(r, api, jwtSecret)
 	staffHandler.Mount(r, api, jwtSecret)
+	patientHandler.Mount(r, api, jwtSecret)
+	audioHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -129,8 +168,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 			Addr:    fmt.Sprintf(":%d", cfg.Port),
 			Handler: r,
 		},
-		DB:  db,
-		Log: log,
+		DB:          db,
+		Log:         log,
+		RiverClient: riverClient,
 	}, nil
 }
 

@@ -47,6 +47,10 @@ type Config struct {
 	StorageRegion       string `env:"STORAGE_REGION,default=ap-southeast-2"`
 	StorageUsePathStyle bool   `env:"STORAGE_USE_PATH_STYLE,default=true"`
 
+	// Deepgram transcription
+	// API key from https://console.deepgram.com — used by the TranscribeAudio River job.
+	DeepgramAPIKey string `env:"DEEPGRAM_API_KEY"`
+
 	// Frontend
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`
