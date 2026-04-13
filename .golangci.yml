@@ -49,6 +49,11 @@ issues:
     - path: sqlc/generated
       linters:
         - all
+    # These types are intentionally prefixed with their package name so
+    # huma's global OpenAPI schema registry can distinguish them across packages.
+    - text: "type name will be used as (clinic\\.ClinicResponse|staff\\.StaffResponse|staff\\.StaffListResponse|staff\\.StaffRecord)"
+      linters:
+        - revive
 
   max-issues-per-linter: 0
   max-same-issues: 0

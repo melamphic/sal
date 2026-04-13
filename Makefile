@@ -1,4 +1,4 @@
-.PHONY: dev build test test-integration lint migrate migrate-down generate docs tidy
+.PHONY: dev build test test-integration lint migrate migrate-down generate docs docs-api docs-install tidy
 
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -32,27 +32,30 @@ test-integration:
 
 # ── Code quality ───────────────────────────────────────────────────────────────
 
+GOLANGCI_LINT := $(shell command -v golangci-lint 2>/dev/null || go env GOPATH | xargs -I{} echo {}/bin/golangci-lint)
+
 lint:
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
 
 # Format all Go files.
 fmt:
 	gofmt -w .
-	goimports -w .
+	go run golang.org/x/tools/cmd/goimports@latest -w .
 
 # ── Database ───────────────────────────────────────────────────────────────────
 
-# Run all pending migrations.
+# Load DATABASE_URL from .env if present, then run goose.
+# Usage: make migrate / migrate-down / migrate-status
+_GOOSE = go run github.com/pressly/goose/v3/cmd/goose@v3.24.2 -dir migrations postgres
+
 migrate:
-	go run ./cmd/api migrate up
+	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; $(_GOOSE) "$$DATABASE_URL" up
 
-# Roll back the most recent migration.
 migrate-down:
-	go run ./cmd/api migrate down
+	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; $(_GOOSE) "$$DATABASE_URL" down
 
-# Print migration status.
 migrate-status:
-	go run ./cmd/api migrate status
+	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; $(_GOOSE) "$$DATABASE_URL" status
 
 # ── Code generation ────────────────────────────────────────────────────────────
 
@@ -67,9 +70,18 @@ tidy:
 
 # ── Docs ───────────────────────────────────────────────────────────────────────
 
-# Open Swagger UI in the browser (API server must be running).
+# Serve the MkDocs engineering documentation site at http://localhost:8001
+# Install deps first: make docs-install
 docs:
+	mkdocs serve --dev-addr 0.0.0.0:8001
+
+# Open the Swagger UI in the browser (API server must be running).
+docs-api:
 	open http://localhost:8080/docs
+
+# Install Python documentation dependencies.
+docs-install:
+	pip3 install -r requirements-docs.txt
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
