@@ -66,4 +66,5 @@ nav:
   - Modules:
       - Authentication: auth.md
       - Audio & Recordings: audio.md
+      - Forms: forms.md
   - Compliance: compliance.md
