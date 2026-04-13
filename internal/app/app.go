@@ -20,6 +20,7 @@ import (
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/clinic"
+	"github.com/melamphic/sal/internal/forms"
 	"github.com/melamphic/sal/internal/patient"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
@@ -121,6 +122,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioSvc := audio.NewService(audioRepo, store, riverClient)
 	audioHandler := audio.NewHandler(audioSvc)
 
+	// ── Forms module ──────────────────────────────────────────────────────────
+	formsRepo := forms.NewRepository(db)
+	formsSvc := forms.NewService(formsRepo)
+	formsHandler := forms.NewHandler(formsSvc)
+
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -155,6 +161,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	staffHandler.Mount(r, api, jwtSecret)
 	patientHandler.Mount(r, api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
+	formsHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
