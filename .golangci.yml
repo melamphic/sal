@@ -1,0 +1,54 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck       # No unchecked errors.
+    - govet          # go vet checks.
+    - staticcheck    # Advanced static analysis.
+    - revive         # Style linting (replaces golint).
+    - wrapcheck      # Errors from external packages must be wrapped.
+    - noctx          # Functions calling HTTP or DB must accept context.
+    - godot          # Comments must end with a period.
+    - goimports      # Imports must be grouped and sorted.
+    - misspell       # Catch typos in comments and strings.
+    - unconvert      # Remove unnecessary type conversions.
+    - unparam        # Report unused function parameters.
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: false
+      - name: unexported-return
+        severity: warning
+        disabled: false
+
+  wrapcheck:
+    ignoreSigs:
+      - .Errorf(
+      - errors.New(
+      - errors.Unwrap(
+      - .Wrap(
+      - .Wrapf(
+      - .WithMessage(
+      - domain.Err
+
+  godot:
+    scope: declarations
+    capital: false
+
+issues:
+  exclude-rules:
+    # Test files are exempt from some rules.
+    - path: _test\.go
+      linters:
+        - wrapcheck
+        - godot
+    # Generated sqlc files are exempt.
+    - path: sqlc/generated
+      linters:
+        - all
+
+  max-issues-per-linter: 0
+  max-same-issues: 0

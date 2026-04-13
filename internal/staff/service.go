@@ -1,0 +1,229 @@
+package staff
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/platform/crypto"
+	"github.com/melamphic/sal/internal/platform/mailer"
+)
+
+// Service handles all staff business logic.
+type Service struct {
+	repo   *Repository
+	cipher *crypto.Cipher
+	mailer mailer.Mailer
+	appURL string
+}
+
+// NewService creates a new staff Service.
+func NewService(repo *Repository, cipher *crypto.Cipher, m mailer.Mailer, appURL string) *Service {
+	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL}
+}
+
+// StaffDTO is the decrypted service-layer representation of a staff member.
+type StaffDTO struct {
+	ID           string              `json:"id"`
+	ClinicID     string              `json:"clinic_id"`
+	Email        string              `json:"email"`
+	FullName     string              `json:"full_name"`
+	Role         domain.StaffRole    `json:"role"`
+	NoteTier     domain.NoteTier     `json:"note_tier"`
+	Permissions  domain.Permissions  `json:"permissions"`
+	Status       domain.StaffStatus  `json:"status"`
+	LastActiveAt *time.Time          `json:"last_active_at,omitempty"`
+	CreatedAt    time.Time           `json:"created_at"`
+}
+
+// StaffPage is a paginated list of staff DTOs.
+type StaffPage struct {
+	Items  []*StaffDTO `json:"items"`
+	Total  int         `json:"total"`
+	Limit  int         `json:"limit"`
+	Offset int         `json:"offset"`
+}
+
+// InviteInput holds the data for a staff invitation.
+type InviteInput struct {
+	Email       string
+	FullName    string
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+	InviterName string
+	ClinicName  string
+}
+
+// CreateStaffInput is used when a staff member accepts an invite and sets up their account.
+type CreateStaffInput struct {
+	ClinicID    uuid.UUID
+	Email       string
+	FullName    string
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+}
+
+// Invite creates a pending invite and sends the invitation email.
+// Returns domain.ErrConflict if an active staff member with that email already exists in this clinic.
+func (s *Service) Invite(ctx context.Context, clinicID uuid.UUID, in InviteInput) error {
+	emailHash := s.cipher.Hash(in.Email)
+
+	exists, err := s.repo.ExistsByEmailHash(ctx, emailHash, clinicID)
+	if err != nil {
+		return fmt.Errorf("staff.service.Invite: check duplicate: %w", err)
+	}
+	if exists {
+		return domain.ErrConflict
+	}
+
+	// The invite token itself is stored in auth_tokens (auth module manages this).
+	// The staff.service only sends the email — the auth module creates the token.
+	// This avoids a circular dependency: auth → staff (to create the user on accept).
+	inviteURL := fmt.Sprintf("%s/invite/accept", s.appURL)
+
+	if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, in.ClinicName, inviteURL); err != nil {
+		return fmt.Errorf("staff.service.Invite: send invite: %w", err)
+	}
+
+	return nil
+}
+
+// Create inserts a new staff member from an accepted invite.
+// Called by the auth module when an invite token is verified.
+func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffDTO, error) {
+	encEmail, err := s.cipher.Encrypt(in.Email)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.Create: encrypt email: %w", err)
+	}
+
+	encName, err := s.cipher.Encrypt(in.FullName)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.Create: encrypt name: %w", err)
+	}
+
+	p := CreateParams{
+		ID:        domain.NewID(),
+		ClinicID:  in.ClinicID,
+		Email:     encEmail,
+		EmailHash: s.cipher.Hash(in.Email),
+		FullName:  encName,
+		Role:      in.Role,
+		NoteTier:  in.NoteTier,
+		Perms:     in.Permissions,
+		Status:    domain.StaffStatusActive,
+	}
+
+	row, err := s.repo.Create(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.Create: %w", err)
+	}
+
+	return s.toDTO(row, in.Email, in.FullName), nil
+}
+
+// GetByID returns decrypted staff details.
+func (s *Service) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffDTO, error) {
+	row, err := s.repo.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.GetByID: %w", err)
+	}
+	return s.decryptAndBuild(row)
+}
+
+// List returns a paginated, decrypted list of staff members.
+func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset int) (*StaffPage, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	rows, total, err := s.repo.List(ctx, clinicID, ListParams{Limit: limit, Offset: offset})
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.List: %w", err)
+	}
+
+	dtos := make([]*StaffDTO, 0, len(rows))
+	for _, row := range rows {
+		dto, err := s.decryptAndBuild(row)
+		if err != nil {
+			return nil, fmt.Errorf("staff.service.List: decrypt: %w", err)
+		}
+		dtos = append(dtos, dto)
+	}
+
+	return &StaffPage{
+		Items:  dtos,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	}, nil
+}
+
+// UpdatePermissions updates a staff member's capability flags.
+// Only super_admin may grant manage_billing or rollback_policies.
+func (s *Service) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, callerRole domain.StaffRole, perms domain.Permissions) (*StaffDTO, error) {
+	// Guard: only super_admin can grant billing or policy rollback.
+	if callerRole != domain.StaffRoleSuperAdmin {
+		perms.ManageBilling = false
+		perms.RollbackPolicies = false
+	}
+
+	row, err := s.repo.UpdatePermissions(ctx, staffID, clinicID, UpdatePermsParams{Perms: perms})
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("staff.service.UpdatePermissions: %w", err)
+	}
+
+	return s.decryptAndBuild(row)
+}
+
+// Deactivate marks a staff member as deactivated. Cannot deactivate the caller's own account.
+func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uuid.UUID) (*StaffDTO, error) {
+	if staffID == callerID {
+		return nil, fmt.Errorf("staff.service.Deactivate: %w", domain.ErrForbidden)
+	}
+
+	row, err := s.repo.Deactivate(ctx, staffID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.Deactivate: %w", err)
+	}
+
+	return s.decryptAndBuild(row)
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+func (s *Service) decryptAndBuild(row *StaffRow) (*StaffDTO, error) {
+	email, err := s.cipher.Decrypt(row.Email)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service: decrypt email: %w", err)
+	}
+
+	name, err := s.cipher.Decrypt(row.FullName)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service: decrypt name: %w", err)
+	}
+
+	return s.toDTO(row, email, name), nil
+}
+
+func (s *Service) toDTO(row *StaffRow, email, fullName string) *StaffDTO {
+	return &StaffDTO{
+		ID:           row.ID.String(),
+		ClinicID:     row.ClinicID.String(),
+		Email:        email,
+		FullName:     fullName,
+		Role:         row.Role,
+		NoteTier:     row.NoteTier,
+		Permissions:  row.Perms,
+		Status:       row.Status,
+		LastActiveAt: row.LastActiveAt,
+		CreatedAt:    row.CreatedAt,
+	}
+}

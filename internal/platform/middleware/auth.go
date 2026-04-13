@@ -1,0 +1,105 @@
+package middleware
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/melamphic/sal/internal/domain"
+)
+
+// Claims is the JWT payload structure for Salvia access tokens.
+type Claims struct {
+	jwt.RegisteredClaims
+	ClinicID uuid.UUID          `json:"clinic_id"`
+	StaffID  uuid.UUID          `json:"staff_id"`
+	Role     domain.StaffRole   `json:"role"`
+	Perms    domain.Permissions `json:"perms"`
+}
+
+// Authenticate is a Chi middleware that validates a Bearer JWT on every request.
+// It rejects unauthenticated requests with 401 and sets clinic/staff context values
+// for downstream handlers.
+//
+// Usage:
+//
+//	r.Group(func(r chi.Router) {
+//	    r.Use(middleware.Authenticate([]byte(cfg.JWTSecret)))
+//	    // protected routes...
+//	})
+func Authenticate(jwtSecret []byte) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if !strings.HasPrefix(authHeader, "Bearer ") {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid authorization header")
+				return
+			}
+
+			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+
+			claims := &Claims{}
+			token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+				}
+				return jwtSecret, nil
+			})
+
+			if err != nil || !token.Valid {
+				writeError(w, http.StatusUnauthorized, "TOKEN_INVALID", "access token is invalid or expired")
+				return
+			}
+
+			// Set all auth context values for downstream use.
+			ctx := r.Context()
+			ctx = WithClinicID(ctx, claims.ClinicID)
+			ctx = WithStaffID(ctx, claims.StaffID)
+			ctx = WithRole(ctx, claims.Role)
+			ctx = WithPermissions(ctx, claims.Perms)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequirePermission returns a middleware that checks a single boolean permission.
+// The check function receives the permissions struct from context and returns true
+// if the request is allowed to proceed.
+//
+// Usage:
+//
+//	r.With(middleware.RequirePermission(func(p domain.Permissions) bool {
+//	    return p.ManageStaff
+//	})).Post("/staff/invite", handler)
+func RequirePermission(check func(domain.Permissions) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			perms := PermissionsFromContext(r.Context())
+			if !check(perms) {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "you do not have permission to perform this action")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// writeError writes a consistent JSON error response.
+// Handlers also use huma's error helpers, but middleware runs before huma
+// so it writes raw JSON using the same envelope shape.
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"$schema": "http://jerv.it/json/errors",
+		"status":  status,
+		"title":   message,
+		"errors": []map[string]string{
+			{"message": message, "path": ""},
+		},
+	})
+}

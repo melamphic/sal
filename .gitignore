@@ -1,0 +1,29 @@
+# Compiled binary
+bin/
+
+# Environment — never commit secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test output
+*.out
+coverage.html
+coverage.txt
+
+# Go workspace (if used locally)
+go.work
+go.work.sum
+
+# Temporary files
+tmp/

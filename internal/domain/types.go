@@ -1,0 +1,129 @@
+package domain
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
+// Vertical represents the clinical domain a clinic operates in.
+// Adding a new vertical is additive — existing code is unchanged.
+type Vertical string
+
+const (
+	VerticalVeterinary Vertical = "veterinary"
+	VerticalDental     Vertical = "dental"
+	VerticalAgedCare   Vertical = "aged_care"
+)
+
+// ClinicStatus represents the subscription lifecycle state of a clinic.
+type ClinicStatus string
+
+const (
+	ClinicStatusTrial       ClinicStatus = "trial"
+	ClinicStatusActive      ClinicStatus = "active"
+	ClinicStatusGracePeriod ClinicStatus = "grace_period"
+	ClinicStatusCancelled   ClinicStatus = "cancelled"
+	ClinicStatusSuspended   ClinicStatus = "suspended"
+)
+
+// StaffRole represents a staff member's role within their clinic.
+type StaffRole string
+
+const (
+	StaffRoleSuperAdmin  StaffRole = "super_admin"
+	StaffRoleAdmin       StaffRole = "admin"
+	StaffRoleVet         StaffRole = "vet"
+	StaffRoleVetNurse    StaffRole = "vet_nurse"
+	StaffRoleReceptionist StaffRole = "receptionist"
+)
+
+// NoteTier determines how a staff member is counted for billing purposes.
+type NoteTier string
+
+const (
+	// NoteTierStandard counts toward the clinic's billing tier and gets full note quota.
+	NoteTierStandard NoteTier = "standard"
+	// NoteTierNurse does not count toward billing tier and gets 50% note quota.
+	NoteTierNurse NoteTier = "nurse"
+	// NoteTierNone does not get a personal note quota (admin/reception staff).
+	NoteTierNone NoteTier = "none"
+)
+
+// StaffStatus represents the lifecycle state of a staff account.
+type StaffStatus string
+
+const (
+	StaffStatusInvited     StaffStatus = "invited"
+	StaffStatusActive      StaffStatus = "active"
+	StaffStatusDeactivated StaffStatus = "deactivated"
+)
+
+// Permissions holds the full set of boolean capability flags for a staff member.
+// These are embedded in the JWT and enforced by middleware on every request.
+type Permissions struct {
+	ManageStaff         bool `json:"manage_staff"`
+	ManageForms         bool `json:"manage_forms"`
+	ManagePolicies      bool `json:"manage_policies"`
+	ManageBilling       bool `json:"manage_billing"`
+	RollbackPolicies    bool `json:"rollback_policies"`
+	RecordAudio         bool `json:"record_audio"`
+	SubmitForms         bool `json:"submit_forms"`
+	ViewAllPatients     bool `json:"view_all_patients"`
+	ViewOwnPatients     bool `json:"view_own_patients"`
+	Dispense            bool `json:"dispense"`
+	GenerateAuditExport bool `json:"generate_audit_export"`
+}
+
+// DefaultPermissions returns the minimum permissions for the given role.
+// These are the defaults at invite time — admins may grant additional permissions.
+func DefaultPermissions(role StaffRole) Permissions {
+	switch role {
+	case StaffRoleSuperAdmin:
+		return Permissions{
+			ManageStaff: true, ManageForms: true, ManagePolicies: true,
+			ManageBilling: true, RollbackPolicies: true, RecordAudio: true,
+			SubmitForms: true, ViewAllPatients: true, GenerateAuditExport: true,
+		}
+	case StaffRoleAdmin:
+		return Permissions{
+			ManageStaff: true, ManageForms: true, ManagePolicies: true,
+			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
+			GenerateAuditExport: true,
+		}
+	case StaffRoleVet:
+		return Permissions{
+			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+		}
+	case StaffRoleVetNurse:
+		return Permissions{
+			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+		}
+	case StaffRoleReceptionist:
+		return Permissions{
+			ViewAllPatients: true,
+		}
+	default:
+		return Permissions{}
+	}
+}
+
+// Page represents a cursor-paginated list result.
+type Page[T any] struct {
+	Items      []T    `json:"items"`
+	NextCursor string `json:"next_cursor,omitempty"`
+	Total      int    `json:"total"`
+}
+
+// NewID generates a new UUID v4 for use as a primary key.
+// We use v4 (random) for now — v7 (time-ordered) can be introduced via a
+// library update when needed for index performance at large scale.
+func NewID() uuid.UUID {
+	return uuid.New()
+}
+
+// TimeNow returns the current UTC time. Use this instead of time.Now() so tests
+// can substitute a controlled clock later.
+var TimeNow = func() time.Time {
+	return time.Now().UTC()
+}
