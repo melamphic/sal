@@ -60,6 +60,55 @@ const (
 	StaffStatusDeactivated StaffStatus = "deactivated"
 )
 
+// SubjectStatus represents the lifecycle state of a subject (animal, patient, resident).
+type SubjectStatus string
+
+const (
+	SubjectStatusActive      SubjectStatus = "active"
+	SubjectStatusDeceased    SubjectStatus = "deceased"
+	SubjectStatusTransferred SubjectStatus = "transferred"
+	SubjectStatusArchived    SubjectStatus = "archived"
+)
+
+// VetSpecies represents the species of an animal in a veterinary clinic.
+type VetSpecies string
+
+const (
+	VetSpeciesDog     VetSpecies = "dog"
+	VetSpeciesCat     VetSpecies = "cat"
+	VetSpeciesBird    VetSpecies = "bird"
+	VetSpeciesRabbit  VetSpecies = "rabbit"
+	VetSpeciesReptile VetSpecies = "reptile"
+	VetSpeciesOther   VetSpecies = "other"
+)
+
+// VetSex represents the biological sex of a veterinary subject.
+type VetSex string
+
+const (
+	VetSexMale    VetSex = "male"
+	VetSexFemale  VetSex = "female"
+	VetSexUnknown VetSex = "unknown"
+)
+
+// RecordingStatus represents the lifecycle state of an audio recording.
+type RecordingStatus string
+
+const (
+	// RecordingStatusPendingUpload means the recording row exists but the client
+	// has not yet uploaded the audio file to storage.
+	RecordingStatusPendingUpload RecordingStatus = "pending_upload"
+	// RecordingStatusUploaded means the client confirmed the upload and the
+	// transcription job has been enqueued.
+	RecordingStatusUploaded RecordingStatus = "uploaded"
+	// RecordingStatusTranscribing means the River job is actively calling Deepgram.
+	RecordingStatusTranscribing RecordingStatus = "transcribing"
+	// RecordingStatusTranscribed means the transcript is available.
+	RecordingStatusTranscribed RecordingStatus = "transcribed"
+	// RecordingStatusFailed means all transcription retries were exhausted.
+	RecordingStatusFailed RecordingStatus = "failed"
+)
+
 // Permissions holds the full set of boolean capability flags for a staff member.
 // These are embedded in the JWT and enforced by middleware on every request.
 type Permissions struct {
@@ -74,6 +123,7 @@ type Permissions struct {
 	ViewOwnPatients     bool `json:"view_own_patients"`
 	Dispense            bool `json:"dispense"`
 	GenerateAuditExport bool `json:"generate_audit_export"`
+	ManagePatients      bool `json:"manage_patients"`
 }
 
 // DefaultPermissions returns the minimum permissions for the given role.
@@ -85,24 +135,27 @@ func DefaultPermissions(role StaffRole) Permissions {
 			ManageStaff: true, ManageForms: true, ManagePolicies: true,
 			ManageBilling: true, RollbackPolicies: true, RecordAudio: true,
 			SubmitForms: true, ViewAllPatients: true, GenerateAuditExport: true,
+			ManagePatients: true,
 		}
 	case StaffRoleAdmin:
 		return Permissions{
 			ManageStaff: true, ManageForms: true, ManagePolicies: true,
 			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
-			GenerateAuditExport: true,
+			GenerateAuditExport: true, ManagePatients: true,
 		}
 	case StaffRoleVet:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+			ManagePatients: true,
 		}
 	case StaffRoleVetNurse:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+			ManagePatients: true,
 		}
 	case StaffRoleReceptionist:
 		return Permissions{
-			ViewAllPatients: true,
+			ViewAllPatients: true, ManagePatients: true,
 		}
 	default:
 		return Permissions{}

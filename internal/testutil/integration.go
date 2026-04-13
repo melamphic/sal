@@ -36,6 +36,10 @@ var sharedDB *pgxpool.Pool
 // Order matters: child tables before parent tables (foreign key constraints).
 var truncateTables = []string{
 	"auth_tokens",
+	"recordings",
+	"vet_subject_details",
+	"subjects",
+	"contacts",
 	"staff",
 	"clinics",
 }

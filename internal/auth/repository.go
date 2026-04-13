@@ -70,7 +70,7 @@ func (r *Repository) FindStaffByEmailHash(ctx context.Context, emailHash string)
 		       perm_manage_staff, perm_manage_forms, perm_manage_policies,
 		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
-		       perm_dispense, perm_generate_audit_export
+		       perm_dispense, perm_generate_audit_export, perm_manage_patients
 		FROM staff
 		WHERE email_hash = $1 AND archived_at IS NULL
 	`, emailHash)
@@ -146,7 +146,7 @@ func (r *Repository) GetStaffByID(ctx context.Context, staffID uuid.UUID) (*staf
 		       perm_manage_staff, perm_manage_forms, perm_manage_policies,
 		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
-		       perm_dispense, perm_generate_audit_export
+		       perm_dispense, perm_generate_audit_export, perm_manage_patients
 		FROM staff
 		WHERE id = $1 AND archived_at IS NULL
 	`, staffID)
@@ -232,7 +232,7 @@ func scanStaff(row pgxScanner) (*staffRow, error) {
 		&s.Perms.ManageStaff, &s.Perms.ManageForms, &s.Perms.ManagePolicies,
 		&s.Perms.ManageBilling, &s.Perms.RollbackPolicies, &s.Perms.RecordAudio,
 		&s.Perms.SubmitForms, &s.Perms.ViewAllPatients, &s.Perms.ViewOwnPatients,
-		&s.Perms.Dispense, &s.Perms.GenerateAuditExport,
+		&s.Perms.Dispense, &s.Perms.GenerateAuditExport, &s.Perms.ManagePatients,
 	); err != nil {
 		return nil, fmt.Errorf("auth.repo.scanStaff: %w", err)
 	}
