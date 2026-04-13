@@ -325,3 +325,11 @@ Documentation pages:
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## License
+
+Salvia is Source-Available software. You are free to view, modify, and self-host this project for personal or internal business use. However, **Competitive Use is prohibited**—you may not offer Salvia as a managed or hosted service to third parties.
+
+See the [LICENSE](LICENSE) file for the full text of the PolyForm Shield License 1.0.0.
