@@ -39,13 +39,6 @@ Install these before starting:
 | Docker Compose | v2+ | bundled with Docker Desktop |
 | golangci-lint | 1.60+ | `brew install golangci-lint` or [install guide](https://golangci-lint.run/usage/install/) |
 
-Optional (for code generation):
-
-```bash
-go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-go install golang.org/x/tools/cmd/goimports@latest
-```
-
 ---
 
 ## Quick Start
@@ -150,8 +143,6 @@ make migrate          # apply pending migrations
 make migrate-down     # rollback one step
 make migrate-status   # show migration state
 
-# ── Code generation ────────────────────────────────────────────────────────
-make generate         # sqlc → regenerate Go from SQL queries
 make tidy             # go mod tidy
 
 # ── Docs ───────────────────────────────────────────────────────────────────
@@ -274,19 +265,6 @@ DROP TABLE subjects;
 ```
 
 **Never modify a committed migration.** Always add a new file.
-
----
-
-## Code Generation
-
-If adding complex queries via sqlc:
-
-```bash
-# After editing sqlc/queries/*.sql
-make generate
-```
-
-Most queries currently use raw `pgx` — sqlc is reserved for complex reporting queries.
 
 ---
 

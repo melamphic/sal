@@ -90,7 +90,6 @@ make test-integration  # all tests including repository tests (requires Docker)
 make lint         # golangci-lint (same checks as CI)
 make migrate      # apply pending goose migrations
 make migrate-down # rollback one migration step
-make generate     # run sqlc codegen (after changing .sql query files)
 make docs         # serve MkDocs documentation site locally
 make clean        # remove build artifacts
 ```
@@ -111,19 +110,6 @@ make clean        # remove build artifacts
    ```
 5. Write unit tests with a `fakeRepo` (see `internal/clinic/fake_repo_test.go` as a template)
 6. Write integration tests with `testutil.NewTestDB(t)` (see `internal/clinic/repository_integration_test.go`)
-
----
-
-## Code generation
-
-If using sqlc for a complex query set:
-
-```bash
-# After editing queries/*.sql
-make generate
-```
-
-Currently most queries use raw pgx — sqlc is reserved for complex joins and reporting queries.
 
 ---
 

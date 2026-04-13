@@ -45,10 +45,6 @@ issues:
       linters:
         - wrapcheck
         - godot
-    # Generated sqlc files are exempt.
-    - path: sqlc/generated
-      linters:
-        - all
     # These types are intentionally prefixed with their package name so
     # huma's global OpenAPI schema registry can distinguish them across packages.
     - text: "type name will be used as (clinic\\.ClinicResponse|staff\\.StaffResponse|staff\\.StaffListResponse|staff\\.StaffRecord)"

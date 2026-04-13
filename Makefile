@@ -1,4 +1,4 @@
-.PHONY: dev build test test-integration lint migrate migrate-down generate docs docs-api docs-install tidy
+.PHONY: dev build test test-integration lint migrate migrate-down docs docs-api docs-install tidy
 
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -57,12 +57,7 @@ migrate-down:
 migrate-status:
 	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; $(_GOOSE) "$$DATABASE_URL" status
 
-# ── Code generation ────────────────────────────────────────────────────────────
-
-# Regenerate sqlc Go code from SQL query files.
-# Requires: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-generate:
-	sqlc generate -f sqlc/sqlc.yaml
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 # Update go.mod and go.sum.
 tidy:
