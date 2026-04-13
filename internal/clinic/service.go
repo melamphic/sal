@@ -9,25 +9,29 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/platform/crypto"
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Service handles all clinic business logic.
 type Service struct {
-	repo   *Repository
+	repo   repo // interface — see repo.go
 	cipher *crypto.Cipher
 }
 
 // NewService creates a new clinic Service.
-func NewService(repo *Repository, cipher *crypto.Cipher) *Service {
+func NewService(repo repo, cipher *crypto.Cipher) *Service {
 	return &Service{repo: repo, cipher: cipher}
 }
 
-// ClinicDTO is the decrypted, service-layer representation of a clinic.
+// ClinicResponse is the decrypted, service-layer representation of a clinic.
 // This is what handlers receive and what API responses are built from.
 // The encrypted DB row is never exposed outside the service layer.
-type ClinicDTO struct {
+type ClinicResponse struct {
 	ID          string              `json:"id"`
 	Name        string              `json:"name"`
 	Slug        string              `json:"slug"`
@@ -55,7 +59,7 @@ type RegisterInput struct {
 
 // Register creates a new clinic in trial status.
 // Returns domain.ErrConflict if a clinic with the same email already exists.
-func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicDTO, error) {
+func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicResponse, error) {
 	emailHash := s.cipher.Hash(in.Email)
 
 	// Check for duplicate email.
@@ -119,13 +123,8 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicDTO, e
 }
 
 // GetByID returns decrypted clinic details for the authenticated clinic.
-func (s *Service) GetByID(ctx context.Context, clinicID fmt.Stringer) (*ClinicDTO, error) {
-	id, err := parseID(clinicID.String())
-	if err != nil {
-		return nil, fmt.Errorf("clinic.service.GetByID: %w", err)
-	}
-
-	row, err := s.repo.GetByID(ctx, id)
+func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicResponse, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service.GetByID: %w", err)
 	}
@@ -141,12 +140,7 @@ type UpdateInput struct {
 }
 
 // Update applies a partial update to the clinic settings.
-func (s *Service) Update(ctx context.Context, clinicID fmt.Stringer, in UpdateInput) (*ClinicDTO, error) {
-	id, err := parseID(clinicID.String())
-	if err != nil {
-		return nil, fmt.Errorf("clinic.service.Update: %w", err)
-	}
-
+func (s *Service) Update(ctx context.Context, clinicID uuid.UUID, in UpdateInput) (*ClinicResponse, error) {
 	p := UpdateParams{Name: in.Name}
 
 	if in.Phone != nil {
@@ -164,7 +158,7 @@ func (s *Service) Update(ctx context.Context, clinicID fmt.Stringer, in UpdateIn
 		p.Address = &ea
 	}
 
-	row, err := s.repo.Update(ctx, id, p)
+	row, err := s.repo.Update(ctx, clinicID, p)
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service.Update: %w", err)
 	}
@@ -174,7 +168,7 @@ func (s *Service) Update(ctx context.Context, clinicID fmt.Stringer, in UpdateIn
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
-func (s *Service) decryptAndBuild(row *Clinic) (*ClinicDTO, error) {
+func (s *Service) decryptAndBuild(row *Clinic) (*ClinicResponse, error) {
 	email, err := s.cipher.Decrypt(row.Email)
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service: decrypt email: %w", err)
@@ -199,8 +193,8 @@ func (s *Service) decryptAndBuild(row *Clinic) (*ClinicDTO, error) {
 	return s.toDTO(row, email, phone, address), nil
 }
 
-func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *ClinicDTO {
-	return &ClinicDTO{
+func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *ClinicResponse {
+	return &ClinicResponse{
 		ID:          row.ID.String(),
 		Name:        row.Name,
 		Slug:        row.Slug,
@@ -219,16 +213,21 @@ func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *Clin
 
 var slugNonAlpha = regexp.MustCompile(`[^a-z0-9]+`)
 
-// generateSlug creates a URL-safe slug from a clinic name.
-// Duplicates are handled at the DB level (UNIQUE constraint) — the caller
-// should append a random suffix on conflict.
+// generateSlug creates a URL-safe ASCII slug from a clinic name.
+// Unicode letters are decomposed (NFD) and their combining marks stripped so
+// that e.g. "Wānaka" → "wanaka". Duplicates are handled at the DB level
+// (UNIQUE constraint) — callers should append a random suffix on conflict.
 func generateSlug(name string) string {
+	// Strip diacritics: NFD decompose, remove non-spacing marks, re-encode.
+	t := transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+	ascii, _, _ := transform.String(t, name)
+
 	lower := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return unicode.ToLower(r)
 		}
 		return '-'
-	}, name)
+	}, ascii)
 	slug := slugNonAlpha.ReplaceAllString(lower, "-")
 	slug = strings.Trim(slug, "-")
 	if len(slug) > 60 {
@@ -236,14 +235,3 @@ func generateSlug(name string) string {
 	}
 	return slug
 }
-
-func parseID(s string) (interface{ String() string }, error) {
-	if s == "" {
-		return nil, fmt.Errorf("empty id")
-	}
-	return idString(s), nil
-}
-
-type idString string
-
-func (i idString) String() string { return string(i) }

@@ -25,7 +25,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Security:      []map[string][]string{{"bearerAuth": {}}},
 			DefaultStatus: http.StatusAccepted,
 			Middlewares: huma.Middlewares{
-				mw.RequirePermission(func(p domain.Permissions) bool { return p.ManageStaff }),
+				mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
 			},
 		}, h.invite)
 
@@ -58,7 +58,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Tags:        []string{"Staff"},
 			Security:    []map[string][]string{{"bearerAuth": {}}},
 			Middlewares: huma.Middlewares{
-				mw.RequirePermission(func(p domain.Permissions) bool { return p.ManageStaff }),
+				mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
 			},
 		}, h.updatePermissions)
 
@@ -67,11 +67,11 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodDelete,
 			Path:        "/api/v1/staff/{staff_id}",
 			Summary:     "Deactivate a staff member",
-			Description: "Marks a staff member as deactivated. Their records are preserved for audit trail integrity. Cannot deactivate your own account.",
+			Description: "Marks a staff member as deactivated. Records preserved for audit trail integrity. Cannot deactivate your own account.",
 			Tags:        []string{"Staff"},
 			Security:    []map[string][]string{{"bearerAuth": {}}},
 			Middlewares: huma.Middlewares{
-				mw.RequirePermission(func(p domain.Permissions) bool { return p.ManageStaff }),
+				mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
 			},
 		}, h.deactivate)
 	})

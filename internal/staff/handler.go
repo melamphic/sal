@@ -49,11 +49,11 @@ type updatePermsInput struct {
 }
 
 type staffResponse struct {
-	Body *StaffDTO
+	Body *StaffResponse
 }
 
 type staffListResponse struct {
-	Body *StaffPage
+	Body *StaffListResponse
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

@@ -137,7 +137,10 @@ func (m *SMTPMailer) send(to, subject, htmlBody string) error {
 		if _, err := w.Write(msg); err != nil {
 			return fmt.Errorf("mailer.send: write: %w", err)
 		}
-		return w.Close()
+		if err := w.Close(); err != nil {
+			return fmt.Errorf("mailer.send: close: %w", err)
+		}
+		return nil
 	}
 
 	// Plain SMTP (dev/Mailpit) or STARTTLS (port 587).

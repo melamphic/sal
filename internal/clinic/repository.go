@@ -83,6 +83,9 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*Clinic, error
 		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
 	)
 	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, domain.ErrConflict
+		}
 		return nil, fmt.Errorf("clinic.repo.Create: %w", err)
 	}
 	return &c, nil
@@ -172,12 +175,15 @@ type CreateParams struct {
 
 func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*Clinic, error) {
 	var c Clinic
-	return &c, r.db.QueryRow(ctx, query, args...).Scan(
+	if err := r.db.QueryRow(ctx, query, args...).Scan(
 		&c.ID, &c.Name, &c.Slug, &c.Email, &c.EmailHash, &c.Phone, &c.Address,
 		&c.Vertical, &c.Status, &c.TrialEndsAt,
 		&c.StripeCustomerID, &c.StripeSubscriptionID,
 		&c.NoteCap, &c.NoteCount, &c.NoteCountResetAt,
 		&c.DataRegion, &c.ScheduledForDeletionAt,
 		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
-	)
+	); err != nil {
+		return nil, fmt.Errorf("clinic.repo.scanOne: %w", err)
+	}
+	return &c, nil
 }

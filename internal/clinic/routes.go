@@ -5,6 +5,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
+	"github.com/melamphic/sal/internal/domain"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
 )
 
@@ -41,9 +42,12 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodPatch,
 			Path:        "/api/v1/clinic",
 			Summary:     "Update clinic settings",
-			Description: "Updates mutable clinic settings. Requires manage_forms or admin role.",
+			Description: "Updates mutable clinic settings. Requires manage_staff permission (admin or super_admin).",
 			Tags:        []string{"Clinic"},
 			Security:    []map[string][]string{{"bearerAuth": {}}},
+			Middlewares: huma.Middlewares{
+				mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
+			},
 		}, h.update)
 	})
 }

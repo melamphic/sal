@@ -14,37 +14,37 @@ import (
 
 // Service handles all staff business logic.
 type Service struct {
-	repo   *Repository
+	repo   repo // interface — see repo.go
 	cipher *crypto.Cipher
 	mailer mailer.Mailer
 	appURL string
 }
 
 // NewService creates a new staff Service.
-func NewService(repo *Repository, cipher *crypto.Cipher, m mailer.Mailer, appURL string) *Service {
+func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string) *Service {
 	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL}
 }
 
-// StaffDTO is the decrypted service-layer representation of a staff member.
-type StaffDTO struct {
-	ID           string              `json:"id"`
-	ClinicID     string              `json:"clinic_id"`
-	Email        string              `json:"email"`
-	FullName     string              `json:"full_name"`
-	Role         domain.StaffRole    `json:"role"`
-	NoteTier     domain.NoteTier     `json:"note_tier"`
-	Permissions  domain.Permissions  `json:"permissions"`
-	Status       domain.StaffStatus  `json:"status"`
-	LastActiveAt *time.Time          `json:"last_active_at,omitempty"`
-	CreatedAt    time.Time           `json:"created_at"`
+// DTO is the decrypted service-layer representation of a staff member.
+type StaffResponse struct {
+	ID           string             `json:"id"`
+	ClinicID     string             `json:"clinic_id"`
+	Email        string             `json:"email"`
+	FullName     string             `json:"full_name"`
+	Role         domain.StaffRole   `json:"role"`
+	NoteTier     domain.NoteTier    `json:"note_tier"`
+	Permissions  domain.Permissions `json:"permissions"`
+	Status       domain.StaffStatus `json:"status"`
+	LastActiveAt *time.Time         `json:"last_active_at,omitempty"`
+	CreatedAt    time.Time          `json:"created_at"`
 }
 
-// StaffPage is a paginated list of staff DTOs.
-type StaffPage struct {
-	Items  []*StaffDTO `json:"items"`
-	Total  int         `json:"total"`
-	Limit  int         `json:"limit"`
-	Offset int         `json:"offset"`
+// Page is a paginated list of staff DTOs.
+type StaffListResponse struct {
+	Items  []*StaffResponse `json:"items"`
+	Total  int              `json:"total"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
 }
 
 // InviteInput holds the data for a staff invitation.
@@ -95,7 +95,7 @@ func (s *Service) Invite(ctx context.Context, clinicID uuid.UUID, in InviteInput
 
 // Create inserts a new staff member from an accepted invite.
 // Called by the auth module when an invite token is verified.
-func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffDTO, error) {
+func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffResponse, error) {
 	encEmail, err := s.cipher.Encrypt(in.Email)
 	if err != nil {
 		return nil, fmt.Errorf("staff.service.Create: encrypt email: %w", err)
@@ -127,7 +127,7 @@ func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffDTO, e
 }
 
 // GetByID returns decrypted staff details.
-func (s *Service) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffDTO, error) {
+func (s *Service) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffResponse, error) {
 	row, err := s.repo.GetByID(ctx, staffID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("staff.service.GetByID: %w", err)
@@ -136,7 +136,7 @@ func (s *Service) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*St
 }
 
 // List returns a paginated, decrypted list of staff members.
-func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset int) (*StaffPage, error) {
+func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset int) (*StaffListResponse, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -146,7 +146,7 @@ func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset in
 		return nil, fmt.Errorf("staff.service.List: %w", err)
 	}
 
-	dtos := make([]*StaffDTO, 0, len(rows))
+	dtos := make([]*StaffResponse, 0, len(rows))
 	for _, row := range rows {
 		dto, err := s.decryptAndBuild(row)
 		if err != nil {
@@ -155,7 +155,7 @@ func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset in
 		dtos = append(dtos, dto)
 	}
 
-	return &StaffPage{
+	return &StaffListResponse{
 		Items:  dtos,
 		Total:  total,
 		Limit:  limit,
@@ -165,7 +165,7 @@ func (s *Service) List(ctx context.Context, clinicID uuid.UUID, limit, offset in
 
 // UpdatePermissions updates a staff member's capability flags.
 // Only super_admin may grant manage_billing or rollback_policies.
-func (s *Service) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, callerRole domain.StaffRole, perms domain.Permissions) (*StaffDTO, error) {
+func (s *Service) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, callerRole domain.StaffRole, perms domain.Permissions) (*StaffResponse, error) {
 	// Guard: only super_admin can grant billing or policy rollback.
 	if callerRole != domain.StaffRoleSuperAdmin {
 		perms.ManageBilling = false
@@ -184,7 +184,7 @@ func (s *Service) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.
 }
 
 // Deactivate marks a staff member as deactivated. Cannot deactivate the caller's own account.
-func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uuid.UUID) (*StaffDTO, error) {
+func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uuid.UUID) (*StaffResponse, error) {
 	if staffID == callerID {
 		return nil, fmt.Errorf("staff.service.Deactivate: %w", domain.ErrForbidden)
 	}
@@ -199,7 +199,7 @@ func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uu
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
-func (s *Service) decryptAndBuild(row *StaffRow) (*StaffDTO, error) {
+func (s *Service) decryptAndBuild(row *StaffRecord) (*StaffResponse, error) {
 	email, err := s.cipher.Decrypt(row.Email)
 	if err != nil {
 		return nil, fmt.Errorf("staff.service: decrypt email: %w", err)
@@ -213,8 +213,8 @@ func (s *Service) decryptAndBuild(row *StaffRow) (*StaffDTO, error) {
 	return s.toDTO(row, email, name), nil
 }
 
-func (s *Service) toDTO(row *StaffRow, email, fullName string) *StaffDTO {
-	return &StaffDTO{
+func (s *Service) toDTO(row *StaffRecord, email, fullName string) *StaffResponse {
+	return &StaffResponse{
 		ID:           row.ID.String(),
 		ClinicID:     row.ClinicID.String(),
 		Email:        email,

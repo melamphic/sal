@@ -41,7 +41,7 @@ type updateInput struct {
 }
 
 type clinicResponse struct {
-	Body *ClinicDTO
+	Body *ClinicResponse
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────

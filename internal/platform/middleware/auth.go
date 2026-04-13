@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
@@ -66,9 +67,8 @@ func Authenticate(jwtSecret []byte) func(http.Handler) http.Handler {
 	}
 }
 
-// RequirePermission returns a middleware that checks a single boolean permission.
-// The check function receives the permissions struct from context and returns true
-// if the request is allowed to proceed.
+// RequirePermission returns a Chi middleware that checks a single boolean permission.
+// Use this on Chi router groups (r.Use / r.With).
 //
 // Usage:
 //
@@ -88,6 +88,33 @@ func RequirePermission(check func(domain.Permissions) bool) func(http.Handler) h
 	}
 }
 
+// RequirePermissionHuma returns a huma operation middleware that checks a permission.
+// Use this in huma.Operation{Middlewares: ...} — it is NOT a Chi middleware.
+//
+// Huma middleware has a different signature to Chi middleware:
+//
+//	func(ctx huma.Context, next func(huma.Context))
+//
+// The huma.API reference is required by huma.WriteErr for error serialisation.
+//
+// Usage:
+//
+//	huma.Operation{
+//	    Middlewares: huma.Middlewares{
+//	        middleware.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
+//	    },
+//	}
+func RequirePermissionHuma(api huma.API, check func(domain.Permissions) bool) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		perms := PermissionsFromContext(ctx.Context())
+		if !check(perms) {
+			_ = huma.WriteErr(api, ctx, http.StatusForbidden, "you do not have permission to perform this action")
+			return
+		}
+		next(ctx)
+	}
+}
+
 // writeError writes a consistent JSON error response.
 // Handlers also use huma's error helpers, but middleware runs before huma
 // so it writes raw JSON using the same envelope shape.
@@ -99,7 +126,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 		"status":  status,
 		"title":   message,
 		"errors": []map[string]string{
-			{"message": message, "path": ""},
+			{"code": code, "message": message, "path": ""},
 		},
 	})
 }

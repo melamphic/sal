@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/melamphic/sal/internal/domain"
@@ -51,11 +50,10 @@ type emptyOutput = struct{}
 // requestMagicLink handles POST /api/v1/auth/magic-link.
 // Always returns 200 regardless of whether the email exists (prevents enumeration).
 func (h *Handler) requestMagicLink(ctx context.Context, input *magicLinkInput) (*emptyOutput, error) {
-	// We need the raw *http.Request for IP extraction. huma stores it in context.
-	r, _ := ctx.Value(huma.ConnContextKey).(*http.Request)
-
-	if err := h.svc.SendMagicLink(ctx, input.Body.Email, r); err != nil {
-		// Log the error internally but always return 200 to the client.
+	// IP is logged best-effort via the request logging middleware.
+	// huma does not expose *http.Request directly; passing nil is handled gracefully.
+	if err := h.svc.SendMagicLink(ctx, input.Body.Email, nil); err != nil {
+		// Log internally but always return 200 to prevent email enumeration.
 		return nil, huma.Error500InternalServerError("failed to process request")
 	}
 

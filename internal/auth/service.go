@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/platform/crypto"
 	"github.com/melamphic/sal/internal/platform/mailer"
@@ -16,7 +17,7 @@ import (
 // Service handles all authentication business logic.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
-	repo      *Repository
+	repo      repo // interface — see repo.go
 	cipher    *crypto.Cipher
 	mailer    mailer.Mailer
 	jwtSecret []byte
@@ -39,7 +40,7 @@ type TokenPair struct {
 }
 
 // NewService creates a new auth Service.
-func NewService(repo *Repository, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []byte, cfg ServiceConfig) *Service {
+func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []byte, cfg ServiceConfig) *Service {
 	return &Service{
 		repo:      repo,
 		cipher:    cipher,
@@ -139,13 +140,8 @@ func (s *Service) RefreshTokens(ctx context.Context, rawRefreshToken string) (*T
 }
 
 // Logout invalidates all refresh tokens for the authenticated staff member.
-func (s *Service) Logout(ctx context.Context, staffID interface{ String() string }) error {
-	// We accept a fmt.Stringer to keep the service decoupled from the uuid package in tests.
-	id, err := parseUUIDString(staffID.String())
-	if err != nil {
-		return fmt.Errorf("auth.service.Logout: parse staff id: %w", err)
-	}
-	if err := s.repo.DeleteRefreshTokensForStaff(ctx, id); err != nil {
+func (s *Service) Logout(ctx context.Context, staffID uuid.UUID) error {
+	if err := s.repo.DeleteRefreshTokensForStaff(ctx, staffID); err != nil {
 		return fmt.Errorf("auth.service.Logout: %w", err)
 	}
 	return nil
@@ -173,9 +169,11 @@ func (s *Service) issueTokenPair(ctx context.Context, staff *staffRow) (*TokenPa
 		return nil, fmt.Errorf("auth.service.issueTokenPair: store refresh: %w", err)
 	}
 
-	// Update last_active_at asynchronously — a failure here should not block login.
+	// Update last_active_at in the background — non-critical, must not block login.
+	// Note: we do NOT delete old refresh tokens here. Deletion only happens on
+	// explicit logout. Multiple active sessions (e.g. mobile + desktop) are allowed.
 	go func() {
-		_ = s.repo.DeleteRefreshTokensForStaff(context.Background(), staff.ID)
+		_ = s.repo.UpdateLastActive(context.Background(), staff.ID)
 	}()
 
 	return &TokenPair{
@@ -194,16 +192,3 @@ func extractIP(r *http.Request) string {
 	}
 	return r.RemoteAddr
 }
-
-func parseUUIDString(s string) (interface{ String() string }, error) {
-	// This indirection exists so the service does not import uuid directly in tests.
-	// In production, the value is always a uuid.UUID coming from middleware context.
-	if s == "" {
-		return nil, fmt.Errorf("empty uuid string")
-	}
-	return uuidString(s), nil
-}
-
-type uuidString string
-
-func (u uuidString) String() string { return string(u) }

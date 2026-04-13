@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -31,10 +32,10 @@ const (
 type StaffRole string
 
 const (
-	StaffRoleSuperAdmin  StaffRole = "super_admin"
-	StaffRoleAdmin       StaffRole = "admin"
-	StaffRoleVet         StaffRole = "vet"
-	StaffRoleVetNurse    StaffRole = "vet_nurse"
+	StaffRoleSuperAdmin   StaffRole = "super_admin"
+	StaffRoleAdmin        StaffRole = "admin"
+	StaffRoleVet          StaffRole = "vet"
+	StaffRoleVetNurse     StaffRole = "vet_nurse"
 	StaffRoleReceptionist StaffRole = "receptionist"
 )
 
@@ -122,8 +123,34 @@ func NewID() uuid.UUID {
 	return uuid.New()
 }
 
-// TimeNow returns the current UTC time. Use this instead of time.Now() so tests
-// can substitute a controlled clock later.
-var TimeNow = func() time.Time {
-	return time.Now().UTC()
+// clock is the package-level time source. Protected by clockMu so that test
+// code calling SetTimeNow from parallel goroutines does not race with
+// production calls to TimeNow.
+var (
+	clockMu sync.RWMutex
+	clockFn = func() time.Time { return time.Now().UTC() }
+)
+
+// TimeNow returns the current UTC time. Production code always calls this
+// instead of time.Now() directly so tests can override it via SetTimeNow.
+func TimeNow() time.Time {
+	clockMu.RLock()
+	defer clockMu.RUnlock()
+	return clockFn()
+}
+
+// SetTimeNow replaces the clock function and returns a restore function.
+// Tests should call the restore function via t.Cleanup:
+//
+//	t.Cleanup(domain.SetTimeNow(func() time.Time { return fixed }))
+func SetTimeNow(fn func() time.Time) (restore func()) {
+	clockMu.Lock()
+	old := clockFn
+	clockFn = fn
+	clockMu.Unlock()
+	return func() {
+		clockMu.Lock()
+		clockFn = old
+		clockMu.Unlock()
+	}
 }

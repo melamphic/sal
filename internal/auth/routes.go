@@ -14,12 +14,12 @@ import (
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	// ── Public routes (no JWT required) ──────────────────────────────────────
 	huma.Register(api, huma.Operation{
-		OperationID: "request-magic-link",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/auth/magic-link",
-		Summary:     "Request a magic link",
-		Description: "Sends a one-time login link to the provided email. Always returns 200 — does not reveal whether the email exists.",
-		Tags:        []string{"Auth"},
+		OperationID:   "request-magic-link",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/auth/magic-link",
+		Summary:       "Request a magic link",
+		Description:   "Sends a one-time login link to the provided email. Always returns 200 — does not reveal whether the email exists.",
+		Tags:          []string{"Auth"},
 		DefaultStatus: http.StatusOK,
 	}, h.requestMagicLink)
 

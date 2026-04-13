@@ -3,7 +3,11 @@
 // communicate with each other.
 package domain
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/jackc/pgx/v5/pgconn"
+)
 
 // Sentinel errors used throughout the application.
 // Handlers map these to HTTP status codes via errors.Is.
@@ -38,3 +42,11 @@ var (
 	// ErrValidation is returned for input that fails validation rules.
 	ErrValidation = errors.New("validation error")
 )
+
+// IsUniqueViolation reports whether err is a PostgreSQL unique-constraint
+// violation (SQLSTATE 23505). Use this in repository Create methods to map
+// DB errors to ErrConflict before returning to callers.
+func IsUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}

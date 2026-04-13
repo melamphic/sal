@@ -12,9 +12,9 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 )
 
-// StaffRow is the raw database representation of a staff member.
+// StaffRecord is the raw database representation of a staff member.
 // PII fields (email, full_name) are stored encrypted and decrypted by the service.
-type StaffRow struct {
+type StaffRecord struct {
 	ID           uuid.UUID
 	ClinicID     uuid.UUID
 	Email        string // encrypted
@@ -65,7 +65,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // Create inserts a new staff member and returns the created row.
-func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRow, error) {
+func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
 		INSERT INTO staff (
 			id, clinic_id, email, email_hash, full_name, role, note_tier,
@@ -98,7 +98,7 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRow, err
 }
 
 // GetByID fetches a staff member by ID within a clinic.
-func (r *Repository) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRow, error) {
+func (r *Repository) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
 		SELECT id, clinic_id, email, email_hash, full_name, role, note_tier,
 		       perm_manage_staff, perm_manage_forms, perm_manage_policies,
@@ -132,7 +132,7 @@ func (r *Repository) ExistsByEmailHash(ctx context.Context, emailHash string, cl
 }
 
 // List returns a page of staff members for a clinic, ordered by creation date.
-func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams) ([]*StaffRow, int, error) {
+func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams) ([]*StaffRecord, int, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, clinic_id, email, email_hash, full_name, role, note_tier,
 		       perm_manage_staff, perm_manage_forms, perm_manage_policies,
@@ -150,10 +150,10 @@ func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams)
 	}
 	defer rows.Close()
 
-	var staff []*StaffRow
+	var staff []*StaffRecord
 	for rows.Next() {
-		s := &StaffRow{}
-		if err := scanStaffRow(rows, s); err != nil {
+		s := &StaffRecord{}
+		if err := scanRow(rows, s); err != nil {
 			return nil, 0, fmt.Errorf("staff.repo.List: scan: %w", err)
 		}
 		staff = append(staff, s)
@@ -171,7 +171,7 @@ func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams)
 }
 
 // UpdatePermissions updates the permission flags for a staff member.
-func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, p UpdatePermsParams) (*StaffRow, error) {
+func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, p UpdatePermsParams) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
 		UPDATE staff SET
 			perm_manage_staff          = $3,
@@ -211,7 +211,7 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 }
 
 // Deactivate soft-deletes a staff member by setting status to 'deactivated'.
-func (r *Repository) Deactivate(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRow, error) {
+func (r *Repository) Deactivate(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
 		UPDATE staff SET status = 'deactivated', updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
@@ -238,13 +238,13 @@ type pgxRows interface {
 	Scan(dest ...any) error
 }
 
-func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*StaffRow, error) {
-	s := &StaffRow{}
-	return s, scanStaffRow(r.db.QueryRow(ctx, query, args...), s)
+func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*StaffRecord, error) {
+	s := &StaffRecord{}
+	return s, scanRow(r.db.QueryRow(ctx, query, args...), s)
 }
 
-func scanStaffRow(row pgxRows, s *StaffRow) error {
-	return row.Scan(
+func scanRow(row pgxRows, s *StaffRecord) error {
+	if err := row.Scan(
 		&s.ID, &s.ClinicID, &s.Email, &s.EmailHash, &s.FullName,
 		&s.Role, &s.NoteTier,
 		&s.Perms.ManageStaff, &s.Perms.ManageForms, &s.Perms.ManagePolicies,
@@ -252,5 +252,8 @@ func scanStaffRow(row pgxRows, s *StaffRow) error {
 		&s.Perms.SubmitForms, &s.Perms.ViewAllPatients, &s.Perms.ViewOwnPatients,
 		&s.Perms.Dispense, &s.Perms.GenerateAuditExport,
 		&s.Status, &s.LastActiveAt, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
-	)
+	); err != nil {
+		return fmt.Errorf("staff.repo.scanRow: %w", err)
+	}
+	return nil
 }

@@ -16,14 +16,14 @@ import (
 // We do not import the staff module to avoid circular dependencies — auth only
 // needs the fields required for token issuance and permission loading.
 type staffRow struct {
-	ID           uuid.UUID
-	ClinicID     uuid.UUID
-	EmailHash    string
-	FullName     string // encrypted
-	Role         domain.StaffRole
-	NoteTier     domain.NoteTier
-	Status       domain.StaffStatus
-	Perms        domain.Permissions
+	ID        uuid.UUID
+	ClinicID  uuid.UUID
+	EmailHash string
+	FullName  string // encrypted
+	Role      domain.StaffRole
+	NoteTier  domain.NoteTier
+	Status    domain.StaffStatus
+	Perms     domain.Permissions
 }
 
 // tokenRow is a projection of the auth_tokens table.
@@ -193,6 +193,16 @@ func (r *Repository) MarkInviteAccepted(ctx context.Context, tokenHash string) e
 	return nil
 }
 
+// UpdateLastActive sets last_active_at to now for the given staff member.
+// Called asynchronously after successful login — failure is non-fatal.
+func (r *Repository) UpdateLastActive(ctx context.Context, staffID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `UPDATE staff SET last_active_at = NOW(), status = 'active' WHERE id = $1`, staffID)
+	if err != nil {
+		return fmt.Errorf("auth.repo.UpdateLastActive: %w", err)
+	}
+	return nil
+}
+
 // DeleteRefreshTokensForStaff invalidates all refresh tokens on logout.
 func (r *Repository) DeleteRefreshTokensForStaff(ctx context.Context, staffID uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `
@@ -216,12 +226,15 @@ type permColumns = domain.Permissions
 
 func scanStaff(row pgxScanner) (*staffRow, error) {
 	var s staffRow
-	return &s, row.Scan(
+	if err := row.Scan(
 		&s.ID, &s.ClinicID, &s.EmailHash, &s.FullName,
 		&s.Role, &s.NoteTier, &s.Status,
 		&s.Perms.ManageStaff, &s.Perms.ManageForms, &s.Perms.ManagePolicies,
 		&s.Perms.ManageBilling, &s.Perms.RollbackPolicies, &s.Perms.RecordAudio,
 		&s.Perms.SubmitForms, &s.Perms.ViewAllPatients, &s.Perms.ViewOwnPatients,
 		&s.Perms.Dispense, &s.Perms.GenerateAuditExport,
-	)
+	); err != nil {
+		return nil, fmt.Errorf("auth.repo.scanStaff: %w", err)
+	}
+	return &s, nil
 }
