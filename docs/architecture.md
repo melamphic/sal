@@ -41,7 +41,7 @@ Every domain package (`auth`, `clinic`, `staff`, ...) contains exactly four file
 
 Supporting files (e.g. `tokens.go` inside `auth/`) are allowed when they contain logic that belongs clearly to that domain but doesn't fit a single file.
 
-**Layer rules are hard constraints.** A service may never import `net/http`. A handler may never write SQL. A repository may never contain business logic. See [CLAUDE.md](../CLAUDE.md) for the full enforcement rules.
+**Layer rules are hard constraints.** A service may never import `net/http`. A handler may never write SQL. A repository may never contain business logic. See `CLAUDE.md` in the repo root for the full enforcement rules.
 
 ---
 
