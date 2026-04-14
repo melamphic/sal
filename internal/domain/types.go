@@ -114,6 +114,20 @@ const (
 	ChangeTypeMajor ChangeType = "major"
 )
 
+// NoteStatus represents the lifecycle state of a clinical note.
+type NoteStatus string
+
+const (
+	// NoteStatusExtracting means the River job is running AI extraction.
+	NoteStatusExtracting NoteStatus = "extracting"
+	// NoteStatusDraft means extraction is complete and the note is ready for review.
+	NoteStatusDraft NoteStatus = "draft"
+	// NoteStatusSubmitted means the reviewer confirmed and submitted the note.
+	NoteStatusSubmitted NoteStatus = "submitted"
+	// NoteStatusFailed means extraction failed after all retries.
+	NoteStatusFailed NoteStatus = "failed"
+)
+
 // RecordingStatus represents the lifecycle state of an audio recording.
 type RecordingStatus string
 
