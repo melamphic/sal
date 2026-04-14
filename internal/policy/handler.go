@@ -154,18 +154,18 @@ func (h *Handler) getPolicy(ctx context.Context, input *getPolicyInput) (*policy
 }
 
 type listPoliciesInput struct {
-	Limit           int     `query:"limit"            minimum:"1" maximum:"100" default:"20"`
-	Offset          int     `query:"offset"           minimum:"0"               default:"0"`
-	FolderID        *string `query:"folder_id"        doc:"Filter by folder UUID."`
-	IncludeArchived bool    `query:"include_archived" doc:"Include retired policies."`
+	Limit           int    `query:"limit"            minimum:"1" maximum:"100" default:"20"`
+	Offset          int    `query:"offset"           minimum:"0"               default:"0"`
+	FolderID        string `query:"folder_id"        doc:"Filter by folder UUID."`
+	IncludeArchived bool   `query:"include_archived" doc:"Include retired policies."`
 }
 
 func (h *Handler) listPolicies(ctx context.Context, input *listPoliciesInput) (*policyListHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
 	var folderID *uuid.UUID
-	if input.FolderID != nil {
-		id, err := uuid.Parse(*input.FolderID)
+	if input.FolderID != "" {
+		id, err := uuid.Parse(input.FolderID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid folder_id")
 		}
