@@ -20,6 +20,9 @@ type repo interface {
 	// Used to enforce the 3-note-per-recording cap at service layer.
 	CountNotesByRecording(ctx context.Context, recordingID uuid.UUID) (int, error)
 
+	// UpdatePolicyAlignment persists the computed alignment score on a note.
+	UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error
+
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
 	GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error)

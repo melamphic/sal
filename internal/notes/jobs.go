@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // ExtractNoteArgs is the River job payload for AI form extraction.
@@ -19,8 +21,36 @@ type ExtractNoteArgs struct {
 // Kind returns the unique job type string used by River.
 func (ExtractNoteArgs) Kind() string { return "extract_note" }
 
+// ComputePolicyAlignmentArgs is the River job payload for policy alignment scoring.
+type ComputePolicyAlignmentArgs struct {
+	NoteID uuid.UUID `json:"note_id"`
+}
+
+// Kind returns the unique job type string used by River.
+func (ComputePolicyAlignmentArgs) Kind() string { return "compute_policy_alignment" }
+
 // ── Provider interfaces ───────────────────────────────────────────────────────
 // These are satisfied by adapters in app.go that bridge to other modules.
+
+// noteJobEnqueuer is the subset of river.Client used by the extraction worker to
+// enqueue downstream jobs (e.g. policy alignment).
+type noteJobEnqueuer interface {
+	Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error)
+}
+
+// PolicyClause is a single enforceable clause from a linked policy version.
+type PolicyClause struct {
+	PolicyID string
+	BlockID  string
+	Title    string
+	Parity   string // "high" | "medium" | "low"
+}
+
+// PolicyClauseProvider returns the enforceable policy clauses for a note's form version.
+// Implemented by an adapter in app.go that bridges to forms + policy repos.
+type PolicyClauseProvider interface {
+	GetClausesForNote(ctx context.Context, formVersionID uuid.UUID) ([]PolicyClause, error)
+}
 
 // FormFieldMeta is the subset of form_fields data needed by the extraction job.
 type FormFieldMeta struct {
@@ -58,6 +88,7 @@ type ExtractNoteWorker struct {
 	recording RecordingProvider
 	extractor extraction.Extractor // nil = skip extraction (no API key configured)
 	events    EventEmitter
+	enqueue   noteJobEnqueuer // nil = skip downstream job enqueue
 }
 
 // NewExtractNoteWorker constructs an ExtractNoteWorker.
@@ -67,6 +98,7 @@ func NewExtractNoteWorker(
 	recording RecordingProvider,
 	extractor extraction.Extractor,
 	events EventEmitter,
+	enqueue noteJobEnqueuer,
 ) *ExtractNoteWorker {
 	if events == nil {
 		events = noopEmitter{}
@@ -77,6 +109,7 @@ func NewExtractNoteWorker(
 		recording: recording,
 		extractor: extractor,
 		events:    events,
+		enqueue:   enqueue,
 	}
 }
 
@@ -97,6 +130,9 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		_, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil)
 		if err != nil {
 			return fmt.Errorf("extract_note: set draft (no extractor): %w", err)
+		}
+		if w.enqueue != nil {
+			_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
 		}
 		w.events.Emit(ctx, NoteEvent{
 			NoteID:    noteID,
@@ -223,6 +259,11 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return fmt.Errorf("extract_note: set draft: %w", err)
 	}
 
+	// Best-effort: kick off policy alignment scoring now that fields are populated.
+	if w.enqueue != nil {
+		_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
+	}
+
 	w.events.Emit(ctx, NoteEvent{
 		NoteID:    noteID,
 		SubjectID: note.SubjectID,
@@ -232,6 +273,109 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		ActorRole: "system",
 	})
 
+	return nil
+}
+
+// ── ComputePolicyAlignmentWorker ──────────────────────────────────────────────
+
+// ComputePolicyAlignmentWorker scores how well a note's field values align with
+// the enforceable clauses of all policies linked to the note's form.
+// The score is weighted by clause parity: high=3, medium=2, low=1.
+type ComputePolicyAlignmentWorker struct {
+	river.WorkerDefaults[ComputePolicyAlignmentArgs]
+	notes   repo
+	forms   FormFieldProvider
+	clauses PolicyClauseProvider
+	aligner extraction.PolicyAligner // nil = skip (no AI key configured)
+}
+
+// NewComputePolicyAlignmentWorker constructs a ComputePolicyAlignmentWorker.
+func NewComputePolicyAlignmentWorker(
+	notes repo,
+	forms FormFieldProvider,
+	clauses PolicyClauseProvider,
+	aligner extraction.PolicyAligner,
+) *ComputePolicyAlignmentWorker {
+	return &ComputePolicyAlignmentWorker{
+		notes:   notes,
+		forms:   forms,
+		clauses: clauses,
+		aligner: aligner,
+	}
+}
+
+// Work executes the policy alignment job.
+// Steps: fetch note → fetch fields → fetch clauses → call AI → persist score.
+func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[ComputePolicyAlignmentArgs]) error {
+	noteID := job.Args.NoteID
+
+	if w.aligner == nil {
+		return nil // no AI key — skip silently
+	}
+
+	note, err := w.notes.GetNoteByID(ctx, noteID, uuid.Nil)
+	if err != nil {
+		return fmt.Errorf("compute_policy_alignment: get note: %w", err)
+	}
+
+	clauses, err := w.clauses.GetClausesForNote(ctx, note.FormVersionID)
+	if err != nil {
+		return fmt.Errorf("compute_policy_alignment: get clauses: %w", err)
+	}
+	if len(clauses) == 0 {
+		return nil // no linked policies with clauses — nothing to score
+	}
+
+	// Build note content string from field values paired with field titles.
+	noteFields, err := w.notes.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return fmt.Errorf("compute_policy_alignment: get fields: %w", err)
+	}
+	formFields, err := w.forms.GetFieldsByVersionID(ctx, note.FormVersionID)
+	if err != nil {
+		return fmt.Errorf("compute_policy_alignment: get form fields: %w", err)
+	}
+
+	// Index form field metadata by ID for O(1) title lookup.
+	titleByID := make(map[uuid.UUID]string, len(formFields))
+	for _, f := range formFields {
+		titleByID[f.ID] = f.Title
+	}
+
+	var sb strings.Builder
+	for _, f := range noteFields {
+		title := titleByID[f.FieldID]
+		if title == "" {
+			title = f.FieldID.String()
+		}
+		val := "null"
+		if f.Value != nil {
+			val = *f.Value
+		}
+		sb.WriteString(title)
+		sb.WriteString(": ")
+		sb.WriteString(val)
+		sb.WriteString("\n")
+	}
+
+	// Convert clauses to extraction type.
+	extClauses := make([]extraction.PolicyClause, len(clauses))
+	for i, c := range clauses {
+		extClauses[i] = extraction.PolicyClause{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		}
+	}
+
+	pct, err := w.aligner.AlignPolicy(ctx, sb.String(), extClauses)
+	if err != nil {
+		return fmt.Errorf("compute_policy_alignment: align: %w", err)
+	}
+
+	if err := w.notes.UpdatePolicyAlignment(ctx, noteID, pct); err != nil {
+		return fmt.Errorf("compute_policy_alignment: update: %w", err)
+	}
 	return nil
 }
 

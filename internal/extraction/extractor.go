@@ -32,3 +32,18 @@ type Extractor interface {
 	// should be excluded from specs before calling.
 	Extract(ctx context.Context, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error)
 }
+
+// PolicyClause describes a single enforceable policy clause for alignment checking.
+type PolicyClause struct {
+	BlockID string
+	Title   string
+	Parity  string // "high" | "medium" | "low"
+}
+
+// PolicyAligner scores how well a note's field values align with a set of policy clauses.
+// The result is a percentage 0.0–100.0 weighted by clause parity.
+type PolicyAligner interface {
+	// AlignPolicy takes a plain-text summary of note field values and a list of
+	// enforceable policy clauses. Returns an alignment percentage 0.0–100.0.
+	AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error)
+}

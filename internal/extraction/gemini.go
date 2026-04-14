@@ -115,6 +115,92 @@ Respond with ONLY the JSON array. No markdown fences.
 	return sb.String()
 }
 
+// ── Policy alignment ──────────────────────────────────────────────────────────
+
+// geminiClauseResult is the per-clause JSON response from the alignment prompt.
+type geminiClauseResult struct {
+	BlockID   string `json:"block_id"`
+	Satisfied bool   `json:"satisfied"`
+}
+
+// AlignPolicy calls Gemini to assess how well the note content satisfies each policy clause.
+// Returns a weighted alignment percentage (0.0–100.0).
+// Weights: high=3, medium=2, low=1.
+func (e *GeminiExtractor) AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error) {
+	if len(clauses) == 0 {
+		return 100.0, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause.\n\n")
+	sb.WriteString("## Note content\n")
+	sb.WriteString(noteContent)
+	sb.WriteString("\n\n## Policy clauses\n")
+	for _, c := range clauses {
+		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
+	}
+	sb.WriteString(`
+## Instructions
+Return a JSON array with one object per clause in the same order.
+Each object: { "block_id": "<id>", "satisfied": true/false }
+satisfied=true if the note content clearly addresses the clause requirement.
+satisfied=false if the clause is not addressed or cannot be determined from the note.
+Respond with ONLY the JSON array. No markdown fences.
+`)
+
+	resp, err := e.client.Models.GenerateContent(
+		ctx,
+		geminiModel,
+		genai.Text(sb.String()),
+		&genai.GenerateContentConfig{
+			ResponseMIMEType: "application/json",
+			Temperature:      genai.Ptr[float32](0),
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: generate: %w", err)
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: empty response from model")
+	}
+
+	raw := resp.Candidates[0].Content.Parts[0].Text
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "```json")
+	raw = strings.TrimPrefix(raw, "```")
+	raw = strings.TrimSuffix(raw, "```")
+	raw = strings.TrimSpace(raw)
+
+	var results []geminiClauseResult
+	if err := json.Unmarshal([]byte(raw), &results); err != nil {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: parse response: %w (raw: %.200s)", err, raw)
+	}
+
+	// Index results by block_id for lookup.
+	satisfied := make(map[string]bool, len(results))
+	for _, r := range results {
+		satisfied[r.BlockID] = r.Satisfied
+	}
+
+	// Compute weighted score.
+	weights := map[string]float64{"high": 3, "medium": 2, "low": 1}
+	var total, earned float64
+	for _, c := range clauses {
+		w := weights[c.Parity]
+		if w == 0 {
+			w = 1
+		}
+		total += w
+		if satisfied[c.BlockID] {
+			earned += w
+		}
+	}
+	if total == 0 {
+		return 100.0, nil
+	}
+	return (earned / total) * 100.0, nil
+}
+
 func parseExtractionResponse(raw string, fields []FieldSpec) ([]FieldResult, error) {
 	// Strip markdown fences if model adds them despite instructions.
 	raw = strings.TrimSpace(raw)

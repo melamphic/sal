@@ -30,3 +30,17 @@ func NewFromConfig(ctx context.Context, cfg *config.Config) (Extractor, error) {
 		return nil, fmt.Errorf("extraction.NewFromConfig: unknown provider %q (use gemini or openai)", cfg.ExtractionProvider)
 	}
 }
+
+// NewPolicyAlignerFromConfig creates a PolicyAligner from config.
+// Only Gemini supports policy alignment; OpenAI returns nil (skipped).
+// Returns nil (no error) when no API key is set.
+func NewPolicyAlignerFromConfig(ctx context.Context, cfg *config.Config) (PolicyAligner, error) {
+	if cfg.ExtractionProvider != "gemini" || cfg.GeminiAPIKey == "" {
+		return nil, nil
+	}
+	e, err := NewGeminiExtractor(ctx, cfg.GeminiAPIKey)
+	if err != nil {
+		return nil, fmt.Errorf("extraction.NewPolicyAlignerFromConfig: %w", err)
+	}
+	return e, nil
+}

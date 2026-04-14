@@ -29,6 +29,7 @@ type NoteRecord struct {
 	SubmittedBy        *uuid.UUID
 	ArchivedAt         *time.Time // soft delete
 	FormVersionContext *string    // e.g. "before decommission" — set at submit time
+	PolicyAlignmentPct *float64   // 0.0–100.0; nil until alignment job runs
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -126,7 +127,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, created_by,
 	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
-	archived_at, form_version_context, created_at, updated_at`
+	archived_at, form_version_context, policy_alignment_pct, created_at, updated_at`
 
 // CreateNote inserts a new note with the given status.
 func (r *Repository) CreateNote(ctx context.Context, p CreateNoteParams) (*NoteRecord, error) {
@@ -291,6 +292,16 @@ func (r *Repository) CountNotesByRecording(ctx context.Context, recordingID uuid
 	return count, nil
 }
 
+// UpdatePolicyAlignment sets the policy_alignment_pct on a note.
+// Called by the ComputePolicyAlignmentWorker after the AI alignment job runs.
+func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error {
+	const q = `UPDATE notes SET policy_alignment_pct = $2 WHERE id = $1`
+	if _, err := r.db.Exec(ctx, q, noteID, pct); err != nil {
+		return fmt.Errorf("notes.repo.UpdatePolicyAlignment: %w", err)
+	}
+	return nil
+}
+
 // ── Note fields ───────────────────────────────────────────────────────────────
 
 const fieldCols = `id, note_id, field_id, value, confidence, source_quote,
@@ -397,7 +408,7 @@ func scanNote(row scannable) (*NoteRecord, error) {
 		&n.CreatedBy, &n.Status, &n.ErrorMessage,
 		&n.ReviewedBy, &n.ReviewedAt,
 		&n.SubmittedAt, &n.SubmittedBy,
-		&n.ArchivedAt, &n.FormVersionContext,
+		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct,
 		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {

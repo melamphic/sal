@@ -196,6 +196,17 @@ func (f *fakeRepo) GetNoteFields(_ context.Context, noteID uuid.UUID) ([]*NoteFi
 	return out, nil
 }
 
+func (f *fakeRepo) UpdatePolicyAlignment(_ context.Context, id uuid.UUID, pct float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n.PolicyAlignmentPct = &pct
+	return nil
+}
+
 func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

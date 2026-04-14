@@ -39,6 +39,7 @@ import (
 	"github.com/melamphic/sal/internal/timeline"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // App holds the running HTTP server and all wired dependencies.
@@ -125,6 +126,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: extraction: %w", err)
 	}
+	aligner, err := extraction.NewPolicyAlignerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: policy aligner: %w", err)
+	}
 
 	// ── Timeline repo + event adapter ─────────────────────────────────────────
 	timelineRepo := timeline.NewRepository(db)
@@ -134,14 +139,24 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
 
-	// ── Notes worker (registered before river.NewClient) ──────────────────────
+	// ── Notes workers (registered before river.NewClient) ─────────────────────
+	// lazyEnqueuer is set after river.NewClient so workers can enqueue downstream jobs.
 	notesRepo := notes.NewRepository(db)
+	policyRepo := policy.NewRepository(db)
+	lazy := &lazyEnqueuer{}
 	river.AddWorker(workers, notes.NewExtractNoteWorker(
 		notesRepo,
 		&formsFieldAdapter{repo: formsRepo},
 		&audioTranscriptAdapter{repo: audioRepo},
 		extractor,
 		eventAdapter,
+		lazy,
+	))
+	river.AddWorker(workers, notes.NewComputePolicyAlignmentWorker(
+		notesRepo,
+		&formsFieldAdapter{repo: formsRepo},
+		&policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo},
+		aligner,
 	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
@@ -153,6 +168,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: river client: %w", err)
 	}
+	lazy.client = riverClient
 
 	// ── Audio module ──────────────────────────────────────────────────────────
 	audioSvc := audio.NewService(audioRepo, store, riverClient)
@@ -175,7 +191,6 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notificationsHandler := notifications.NewHandler(broker)
 
 	// ── Policy module ─────────────────────────────────────────────────────────
-	policyRepo := policy.NewRepository(db)
 	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
 	policyHandler := policy.NewHandler(policySvc)
 
@@ -315,6 +330,63 @@ func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID 
 		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
 	}
 	return t, nil
+}
+
+// lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.
+// Workers registered before the client is created use this to enqueue downstream jobs.
+type lazyEnqueuer struct {
+	client *river.Client[pgx.Tx]
+}
+
+func (e *lazyEnqueuer) Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	res, err := e.client.Insert(ctx, args, opts)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyEnqueuer: %w", err)
+	}
+	return res, nil
+}
+
+// policyClauseProviderAdapter implements notes.PolicyClauseProvider.
+// Given a form version ID it traverses form_policies → policy versions → clauses.
+type policyClauseProviderAdapter struct {
+	forms  *forms.Repository
+	policy *policy.Repository
+}
+
+func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, formVersionID uuid.UUID) ([]notes.PolicyClause, error) {
+	version, err := a.forms.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
+	}
+
+	policyIDs, err := a.forms.ListLinkedPolicies(ctx, version.FormID)
+	if err != nil {
+		return nil, fmt.Errorf("app.policyClauseProviderAdapter: list policies: %w", err)
+	}
+
+	var result []notes.PolicyClause
+	for _, pid := range policyIDs {
+		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
+		if err != nil {
+			if err == domain.ErrNotFound {
+				continue // policy has no published version yet
+			}
+			return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
+		}
+		clauses, err := a.policy.ListClauses(ctx, pv.ID)
+		if err != nil {
+			return nil, fmt.Errorf("app.policyClauseProviderAdapter: list clauses: %w", err)
+		}
+		for _, c := range clauses {
+			result = append(result, notes.PolicyClause{
+				PolicyID: pid.String(),
+				BlockID:  c.BlockID,
+				Title:    c.Title,
+				Parity:   c.Parity,
+			})
+		}
+	}
+	return result, nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
