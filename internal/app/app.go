@@ -16,11 +16,14 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/clinic"
+	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
+	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/patient"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
@@ -103,10 +106,28 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// ── River (job queue) ─────────────────────────────────────────────────────
-	// Workers are registered here; the client is used by services to enqueue jobs.
+	// All workers must be registered before river.NewClient is called.
 	workers := river.NewWorkers()
 	audioRepo := audio.NewRepository(db)
 	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, cfg.DeepgramAPIKey))
+
+	// ── Forms repo (needed by extract worker adapter) ──────────────────────────
+	formsRepo := forms.NewRepository(db)
+
+	// ── AI extraction ──────────────────────────────────────────────────────────
+	extractor, err := extraction.NewFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: extraction: %w", err)
+	}
+
+	// ── Notes worker (registered before river.NewClient) ──────────────────────
+	notesRepo := notes.NewRepository(db)
+	river.AddWorker(workers, notes.NewExtractNoteWorker(
+		notesRepo,
+		&formsFieldAdapter{repo: formsRepo},
+		&audioTranscriptAdapter{repo: audioRepo},
+		extractor,
+	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
 		Queues: map[string]river.QueueConfig{
@@ -123,9 +144,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	formsRepo := forms.NewRepository(db)
 	formsSvc := forms.NewService(formsRepo)
 	formsHandler := forms.NewHandler(formsSvc)
+
+	// ── Notes module ──────────────────────────────────────────────────────────
+	notesSvc := notes.NewService(notesRepo, riverClient)
+	notesHandler := notes.NewHandler(notesSvc)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -162,6 +186,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	patientHandler.Mount(r, api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
+	notesHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -179,6 +204,41 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		Log:         log,
 		RiverClient: riverClient,
 	}, nil
+}
+
+// ── Cross-module adapters ─────────────────────────────────────────────────────
+// These bridge notes' provider interfaces to the concrete audio/forms repos.
+// They live here because app.go is the only place allowed to wire cross-module deps.
+
+type formsFieldAdapter struct{ repo *forms.Repository }
+
+func (a *formsFieldAdapter) GetFieldsByVersionID(ctx context.Context, versionID uuid.UUID) ([]notes.FormFieldMeta, error) {
+	fields, err := a.repo.GetFieldsByVersionID(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.formsFieldAdapter: %w", err)
+	}
+	out := make([]notes.FormFieldMeta, len(fields))
+	for i, f := range fields {
+		out[i] = notes.FormFieldMeta{
+			ID:        f.ID,
+			Title:     f.Title,
+			Type:      f.Type,
+			AIPrompt:  f.AIPrompt,
+			Required:  f.Required,
+			Skippable: f.Skippable,
+		}
+	}
+	return out, nil
+}
+
+type audioTranscriptAdapter struct{ repo *audio.Repository }
+
+func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID uuid.UUID) (*string, error) {
+	t, err := a.repo.GetTranscript(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
+	}
+	return t, nil
 }
 
 func connectDB(ctx context.Context, cfg *config.Config, log *slog.Logger) (*pgxpool.Pool, error) {
