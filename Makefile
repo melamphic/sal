@@ -1,5 +1,5 @@
 .PHONY: dev build test test-integration lint migrate migrate-down docs docs-api docs-install tidy
-
+SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
 # Start infrastructure (postgres, mailpit, minio) and run the API server.
