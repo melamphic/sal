@@ -9,6 +9,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -84,6 +85,21 @@ func (s *Store) PresignDownload(ctx context.Context, key string, ttl time.Durati
 		return "", fmt.Errorf("storage.PresignDownload: %w", err)
 	}
 	return req.URL, nil
+}
+
+// Upload writes a server-generated file to storage. Used by report export jobs.
+func (s *Store) Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		ContentType:   aws.String(contentType),
+		Body:          body,
+		ContentLength: aws.Int64(size),
+	})
+	if err != nil {
+		return fmt.Errorf("storage.Upload: %w", err)
+	}
+	return nil
 }
 
 // Delete removes an object from storage. Called when a recording is abandoned.
