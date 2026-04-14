@@ -128,6 +128,16 @@ const (
 	NoteStatusFailed NoteStatus = "failed"
 )
 
+// TransformationType describes how an AI-extracted field value was derived.
+type TransformationType string
+
+const (
+	// TransformationDirect means the value appears verbatim or near-verbatim in the transcript.
+	TransformationDirect TransformationType = "direct"
+	// TransformationInference means the value was derived or computed from surrounding context.
+	TransformationInference TransformationType = "inference"
+)
+
 // RecordingStatus represents the lifecycle state of an audio recording.
 type RecordingStatus string
 

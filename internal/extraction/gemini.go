@@ -64,10 +64,11 @@ func (e *GeminiExtractor) Extract(ctx context.Context, transcript, overallPrompt
 
 // geminiResponseField matches the JSON schema the model is asked to produce.
 type geminiResponseField struct {
-	FieldID     string   `json:"field_id"`
-	Value       *string  `json:"value"`        // JSON-encoded; null if not found
-	Confidence  *float64 `json:"confidence"`   // 0.0–1.0
-	SourceQuote *string  `json:"source_quote"` // verbatim quote from transcript
+	FieldID            string   `json:"field_id"`
+	Value              *string  `json:"value"`               // JSON-encoded; null if not found
+	Confidence         *float64 `json:"confidence"`          // 0.0–1.0
+	SourceQuote        *string  `json:"source_quote"`        // verbatim quote from transcript
+	TransformationType *string  `json:"transformation_type"` // "direct" or "inference"
 }
 
 func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
@@ -100,10 +101,11 @@ func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
 	sb.WriteString(`
 ## Instructions
 - Return a JSON array with one object per field.
-- Each object must have: field_id (string), value (string or null), confidence (0.0–1.0 float or null), source_quote (string or null).
+- Each object must have: field_id (string), value (string or null), confidence (0.0–1.0 float or null), source_quote (string or null), transformation_type (string or null).
 - value: JSON-encoded string representing the field value (e.g. "42", "\"mild\"", "[\"option1\"]"). Use null if not mentioned.
 - confidence: how certain you are (0.0 = guess, 1.0 = verbatim). Use null only when value is null.
 - source_quote: verbatim text from the transcript supporting the value. Use null when value is null.
+- transformation_type: "direct" if the value appears verbatim or near-verbatim in the transcript; "inference" if derived or computed from surrounding context. Use null when value is null.
 - Do not add fields not in the list. Do not omit any field from the list.
 - For required fields with no evidence, set value to null and confidence to 0.0.
 
@@ -141,10 +143,11 @@ func parseExtractionResponse(raw string, fields []FieldSpec) ([]FieldResult, err
 			continue
 		}
 		results[i] = FieldResult{
-			FieldID:     f.ID,
-			Value:       p.Value,
-			Confidence:  p.Confidence,
-			SourceQuote: p.SourceQuote,
+			FieldID:            f.ID,
+			Value:              p.Value,
+			Confidence:         p.Confidence,
+			SourceQuote:        p.SourceQuote,
+			TransformationType: p.TransformationType,
 		}
 	}
 	return results, nil

@@ -17,10 +17,11 @@ type FieldSpec struct {
 
 // FieldResult holds the AI output for a single field.
 type FieldResult struct {
-	FieldID     string   // matches FieldSpec.ID
-	Value       *string  // JSON-encoded value; nil = not found / skipped
-	Confidence  *float64 // 0.0–1.0; nil when skippable or no value found
-	SourceQuote *string  // supporting snippet from transcript; nil when not applicable
+	FieldID            string   // matches FieldSpec.ID
+	Value              *string  // JSON-encoded value; nil = not found / skipped
+	Confidence         *float64 // 0.0–1.0; nil when skippable or no value found
+	SourceQuote        *string  // supporting snippet from transcript; nil when not applicable
+	TransformationType *string  // "direct" | "inference"; nil when value is nil
 }
 
 // Extractor extracts structured form field values from a clinical transcript.
