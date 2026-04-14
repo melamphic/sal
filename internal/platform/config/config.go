@@ -51,6 +51,15 @@ type Config struct {
 	// API key from https://console.deepgram.com — used by the TranscribeAudio River job.
 	DeepgramAPIKey string `env:"DEEPGRAM_API_KEY"`
 
+	// AI extraction — form field filling from transcripts.
+	// GeminiAPIKey: Google AI Studio key (free tier — recommended for dev).
+	// OpenAIAPIKey: OpenAI platform key (GPT-4o — recommended for prod).
+	// ExtractionProvider: "gemini" (default) or "openai".
+	// Leave both keys empty to skip extraction (pipeline stops after transcription).
+	GeminiAPIKey       string `env:"GEMINI_API_KEY"`
+	OpenAIAPIKey       string `env:"OPENAI_API_KEY"`
+	ExtractionProvider string `env:"EXTRACTION_PROVIDER,default=gemini"`
+
 	// Frontend
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`
