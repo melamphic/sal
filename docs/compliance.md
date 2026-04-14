@@ -84,22 +84,45 @@ All external communication uses TLS. Internal service-to-service calls (when app
 
 ## Audit logging
 
-Every access to PHI is recorded in an append-only `access_logs` table:
+### Clinical note event trail (`note_events`)
+
+Every mutation to a clinical note is recorded in the `note_events` table:
 
 ```sql
-CREATE TABLE access_logs (
-    id           UUID PRIMARY KEY,
-    clinic_id    UUID NOT NULL,
-    staff_id     UUID NOT NULL,
-    action       VARCHAR NOT NULL,   -- 'read' | 'create' | 'update' | 'delete'
-    resource     VARCHAR NOT NULL,   -- 'patient' | 'note' | 'audio' | ...
-    resource_id  UUID NOT NULL,
-    metadata     JSONB,              -- non-PII context (e.g. field names changed)
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE note_events (
+    id          UUID PRIMARY KEY,
+    note_id     UUID NOT NULL REFERENCES notes(id),
+    clinic_id   UUID NOT NULL REFERENCES clinics(id),   -- denormalised for tenant scoping
+    subject_id  UUID,                                   -- denormalised for subject timeline
+    event_type  TEXT NOT NULL,  -- 'note.created' | 'note.field_changed' | 'note.submitted' | ...
+    actor_id    UUID NOT NULL,  -- staff who triggered the event
+    actor_role  TEXT NOT NULL,  -- role snapshotted at event time
+    field_id    UUID,           -- set for field_changed events
+    old_value   JSONB,          -- previous value (field_changed only)
+    new_value   JSONB,          -- new value (field_changed only)
+    reason      TEXT,           -- optional staff-provided reason
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-Audit logs record **resource IDs, not values**. PII is never written to logs. Retention: 7 years minimum.
+Events are **immutable and append-only**. Actor role is snapshotted so the record is accurate even if the staff member's role changes later. Old and new values are stored as JSON, never as plaintext PII — only field IDs and values the staff explicitly entered are captured.
+
+A PostgreSQL trigger fires `pg_notify('salvia_note_events', ...)` on every insert, driving real-time SSE delivery to connected clients.
+
+### Compliance report exports
+
+The `reports` module provides queryable audit views and async CSV export:
+
+| Report | What it covers |
+|---|---|
+| **Clinical audit** | All note events for the clinic in a date range |
+| **Staff actions** | All events performed by a specific staff member |
+| **Note history** | Full event trail for a single note (oldest first) |
+| **Consent log** | All `note.submitted` events (sign-off records) |
+
+Exports are generated as CSV, uploaded to S3, and retrieved via presigned URLs valid for 1 hour. All export endpoints require the `generate_audit_export` permission.
+
+See [Reports](reports.md) for endpoint details.
 
 ---
 

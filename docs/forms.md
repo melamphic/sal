@@ -13,7 +13,7 @@ Forms are the template engine of Salvia. Clinic administrators build structured 
 | **Draft** | The single mutable version of a form being edited; exactly one per form at any time |
 | **Published version** | A frozen, immutable snapshot; assigned a semver number when published |
 | **Field** | A typed input on a version; type is an open string so new field types never need schema migrations |
-| **Policy link** | A many-to-many pointer to a compliance policy (stored by ID; FK enforced once the policy engine is built) |
+| **Policy link** | A many-to-many link to a compliance policy; FK to the `policies` table enforced at the database level |
 | **Style version** | The clinic's PDF export style settings (logo, colour, font, header/footer); versioned independently from forms |
 
 ---
@@ -98,7 +98,7 @@ Before publishing, staff can run **Check policy alignment**:
 3. The result is stored on the draft version (`policy_check_result`, `policy_check_at`)
 4. Staff review issues and fix fields before publishing
 
-> **Note:** Full LLM-based analysis is implemented once the policy engine is built. Currently returns a placeholder message.
+> **Note:** Full LLM-based scoring against clause parity levels is tracked in the [backlog](backlog.md#pending-policy-alignment-score-on-notes). Currently returns a placeholder message. The policy engine is built — the scorer implementation is what remains.
 
 The form must have at least one policy linked before the check can run.
 

@@ -174,7 +174,16 @@ sal/
 │   │   └── middleware/   ← JWT auth + permission middleware
 │   ├── auth/             ← magic link auth, JWT, refresh tokens
 │   ├── clinic/           ← clinic registration and management
-│   └── staff/            ← staff invitations, roles, permissions
+│   ├── staff/            ← staff invitations, roles, permissions
+│   ├── patient/          ← subjects (patients/animals/residents) and contacts
+│   ├── audio/            ← recording upload, Deepgram transcription via River job
+│   ├── forms/            ← form builder, versioning, policy links, PDF style
+│   ├── notes/            ← AI extraction pipeline, field override, submission
+│   ├── extraction/       ← AI provider abstraction (Gemini, OpenAI stub)
+│   ├── timeline/         ← note event log, subject/clinic audit timelines
+│   ├── notifications/    ← SSE broker backed by PostgreSQL LISTEN/NOTIFY
+│   ├── policy/           ← policy engine, versioning, clauses, form linking
+│   └── reports/          ← compliance reports, async CSV export via River + S3
 ├── migrations/           ← goose SQL migrations (embedded in binary)
 ├── docs/                 ← MkDocs engineering documentation
 ├── mkdocs.yml            ← MkDocs configuration
@@ -187,7 +196,7 @@ sal/
 
 ### Domain package anatomy
 
-Every domain package (`auth`, `clinic`, `staff`, ...) has exactly four files:
+Every domain package has exactly four files:
 
 ```
 internal/<module>/
@@ -197,7 +206,7 @@ internal/<module>/
   routes.go       ← route mounting only
 ```
 
-Cross-domain imports are not allowed. Modules communicate through interfaces defined in `internal/domain/`.
+Extra files within a package are fine for domain-specific helpers (e.g. `notes/jobs.go` for the River worker). Cross-domain imports are never allowed — modules communicate through interfaces wired in `app.go`.
 
 ---
 
