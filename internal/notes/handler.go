@@ -52,10 +52,10 @@ type noteListHTTPResponse struct {
 
 type listNotesInput struct {
 	paginationInput
-	RecordingID     *string `query:"recording_id"     doc:"Filter notes by recording UUID."`
-	SubjectID       *string `query:"subject_id"       doc:"Filter notes by patient UUID."`
-	Status          *string `query:"status"           enum:"extracting,draft,submitted,failed" doc:"Filter by status."`
-	IncludeArchived bool    `query:"include_archived" doc:"Include archived notes in results. Default false."`
+	RecordingID     string `query:"recording_id"     doc:"Filter notes by recording UUID."`
+	SubjectID       string `query:"subject_id"       doc:"Filter notes by patient UUID."`
+	Status          string `query:"status"           enum:"extracting,draft,submitted,failed" doc:"Filter by status."`
+	IncludeArchived bool   `query:"include_archived" doc:"Include archived notes in results. Default false."`
 }
 
 // createNote handles POST /api/v1/notes.
@@ -130,22 +130,22 @@ func (h *Handler) listNotes(ctx context.Context, input *listNotesInput) (*noteLi
 		Offset:          input.Offset,
 		IncludeArchived: input.IncludeArchived,
 	}
-	if input.RecordingID != nil {
-		id, err := uuid.Parse(*input.RecordingID)
+	if input.RecordingID != "" {
+		id, err := uuid.Parse(input.RecordingID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid recording_id")
 		}
 		svcInput.RecordingID = &id
 	}
-	if input.SubjectID != nil {
-		id, err := uuid.Parse(*input.SubjectID)
+	if input.SubjectID != "" {
+		id, err := uuid.Parse(input.SubjectID)
 		if err != nil {
 			return nil, huma.Error400BadRequest("invalid subject_id")
 		}
 		svcInput.SubjectID = &id
 	}
-	if input.Status != nil {
-		s := domain.NoteStatus(*input.Status)
+	if input.Status != "" {
+		s := domain.NoteStatus(input.Status)
 		svcInput.Status = &s
 	}
 
