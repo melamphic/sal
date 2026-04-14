@@ -23,11 +23,16 @@ const maxNotesPerRecording = 3
 type Service struct {
 	repo    repo
 	enqueue jobEnqueuer
+	events  EventEmitter
 }
 
 // NewService constructs a notes Service.
-func NewService(r repo, riverClient jobEnqueuer) *Service {
-	return &Service{repo: r, enqueue: riverClient}
+// Pass nil for events to discard all lifecycle events (tests, local dev without timeline).
+func NewService(r repo, riverClient jobEnqueuer, events EventEmitter) *Service {
+	if events == nil {
+		events = noopEmitter{}
+	}
+	return &Service{repo: r, enqueue: riverClient, events: events}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -82,6 +87,7 @@ type NoteListResponse struct {
 type CreateNoteInput struct {
 	ClinicID       uuid.UUID
 	StaffID        uuid.UUID
+	ActorRole      string     // JWT role string — recorded in the audit event
 	RecordingID    *uuid.UUID // nil for manual notes
 	FormVersionID  uuid.UUID
 	SubjectID      *uuid.UUID
@@ -101,11 +107,12 @@ type ListNotesInput struct {
 
 // UpdateFieldInput holds validated input for a staff override of a single field.
 type UpdateFieldInput struct {
-	NoteID   uuid.UUID
-	ClinicID uuid.UUID
-	StaffID  uuid.UUID
-	FieldID  uuid.UUID
-	Value    *string // JSON-encoded
+	NoteID    uuid.UUID
+	ClinicID  uuid.UUID
+	StaffID   uuid.UUID
+	ActorRole string // JWT role string — recorded in the audit event
+	FieldID   uuid.UUID
+	Value     *string // JSON-encoded
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -113,7 +120,6 @@ type UpdateFieldInput struct {
 // CreateNote creates a note and (unless SkipExtraction) enqueues the extraction job.
 // Enforces the 3-notes-per-recording cap when a recording is provided.
 func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteResponse, error) {
-	// Cap only applies when a recording is linked.
 	if input.RecordingID != nil {
 		count, err := s.repo.CountNotesByRecording(ctx, *input.RecordingID)
 		if err != nil {
@@ -127,7 +133,6 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 
 	status := domain.NoteStatusExtracting
 	if input.SkipExtraction {
-		// Manual note — start in draft so staff can fill fields immediately.
 		status = domain.NoteStatusDraft
 	}
 
@@ -146,11 +151,19 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 	}
 
 	if !input.SkipExtraction {
-		// Enqueue extraction job.
 		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
 		}
 	}
+
+	s.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: input.SubjectID,
+		ClinicID:  input.ClinicID,
+		EventType: NoteEventCreated,
+		ActorID:   input.StaffID,
+		ActorRole: input.ActorRole,
+	})
 
 	return toNoteResponse(note, nil), nil
 }
@@ -204,6 +217,16 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 		return nil, fmt.Errorf("notes.service.UpdateField: note not in draft: %w", domain.ErrConflict)
 	}
 
+	// Capture old value for the audit event before overwriting.
+	existing, _ := s.repo.GetNoteFields(ctx, input.NoteID)
+	var oldVal *string
+	for _, f := range existing {
+		if f.FieldID == input.FieldID {
+			oldVal = f.Value
+			break
+		}
+	}
+
 	f, err := s.repo.UpdateNoteField(ctx, UpdateNoteFieldParams{
 		NoteID:       input.NoteID,
 		FieldID:      input.FieldID,
@@ -216,13 +239,25 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 		return nil, fmt.Errorf("notes.service.UpdateField: %w", err)
 	}
 
+	fieldID := input.FieldID
+	s.events.Emit(ctx, NoteEvent{
+		NoteID:    input.NoteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  input.ClinicID,
+		EventType: NoteEventFieldChanged,
+		FieldID:   &fieldID,
+		OldValue:  oldVal,
+		NewValue:  input.Value,
+		ActorID:   input.StaffID,
+		ActorRole: input.ActorRole,
+	})
+
 	return toFieldResponse(f), nil
 }
 
 // SubmitNote transitions a note from draft → submitted.
 // Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
-// If the linked form version is no longer published, form_version_context is set automatically.
-func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID) (*NoteResponse, error) {
+func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
 	now := domain.TimeNow()
 	note, err := s.repo.SubmitNote(ctx, SubmitNoteParams{
 		ID:          noteID,
@@ -235,12 +270,22 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
 	}
+
+	s.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  clinicID,
+		EventType: NoteEventSubmitted,
+		ActorID:   staffID,
+		ActorRole: staffRole,
+	})
+
 	return toNoteResponse(note, nil), nil
 }
 
 // ArchiveNote soft-deletes a note. Archived notes are hidden from list results
 // unless include_archived is set.
-func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
 	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.ArchiveNote: %w", err)
@@ -257,6 +302,16 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID uuid.UUID) (
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.ArchiveNote: %w", err)
 	}
+
+	s.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  clinicID,
+		EventType: NoteEventArchived,
+		ActorID:   staffID,
+		ActorRole: staffRole,
+	})
+
 	return toNoteResponse(archived, nil), nil
 }
 

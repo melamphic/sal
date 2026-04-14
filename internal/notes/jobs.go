@@ -57,6 +57,7 @@ type ExtractNoteWorker struct {
 	forms     FormFieldProvider
 	recording RecordingProvider
 	extractor extraction.Extractor // nil = skip extraction (no API key configured)
+	events    EventEmitter
 }
 
 // NewExtractNoteWorker constructs an ExtractNoteWorker.
@@ -65,12 +66,17 @@ func NewExtractNoteWorker(
 	forms FormFieldProvider,
 	recording RecordingProvider,
 	extractor extraction.Extractor,
+	events EventEmitter,
 ) *ExtractNoteWorker {
+	if events == nil {
+		events = noopEmitter{}
+	}
 	return &ExtractNoteWorker{
 		notes:     notes,
 		forms:     forms,
 		recording: recording,
 		extractor: extractor,
+		events:    events,
 	}
 }
 
@@ -92,6 +98,14 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		if err != nil {
 			return fmt.Errorf("extract_note: set draft (no extractor): %w", err)
 		}
+		w.events.Emit(ctx, NoteEvent{
+			NoteID:    noteID,
+			SubjectID: note.SubjectID,
+			ClinicID:  note.ClinicID,
+			EventType: NoteEventExtractionComplete,
+			ActorID:   note.CreatedBy,
+			ActorRole: "system",
+		})
 		return nil
 	}
 
@@ -157,6 +171,14 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		if err != nil {
 			errMsg := fmt.Sprintf("extraction failed: %v", err)
 			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusFailed, &errMsg)
+			w.events.Emit(ctx, NoteEvent{
+				NoteID:    noteID,
+				SubjectID: note.SubjectID,
+				ClinicID:  note.ClinicID,
+				EventType: NoteEventExtractionFailed,
+				ActorID:   note.CreatedBy,
+				ActorRole: "system",
+			})
 			return fmt.Errorf("extract_note: %w", err)
 		}
 	}
@@ -200,6 +222,15 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	if _, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil); err != nil {
 		return fmt.Errorf("extract_note: set draft: %w", err)
 	}
+
+	w.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  note.ClinicID,
+		EventType: NoteEventExtractionComplete,
+		ActorID:   note.CreatedBy,
+		ActorRole: "system",
+	})
 
 	return nil
 }

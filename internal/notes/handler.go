@@ -62,6 +62,7 @@ type listNotesInput struct {
 func (h *Handler) createNote(ctx context.Context, input *createNoteBodyInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
+	role := string(mw.RoleFromContext(ctx))
 
 	// recording_id required unless skip_extraction is set.
 	if !input.Body.SkipExtraction && input.Body.RecordingID == nil {
@@ -76,6 +77,7 @@ func (h *Handler) createNote(ctx context.Context, input *createNoteBodyInput) (*
 	svcInput := CreateNoteInput{
 		ClinicID:       clinicID,
 		StaffID:        staffID,
+		ActorRole:      role,
 		FormVersionID:  formVersionID,
 		SkipExtraction: input.Body.SkipExtraction,
 	}
@@ -172,6 +174,7 @@ type fieldHTTPResponse struct {
 func (h *Handler) updateField(ctx context.Context, input *updateFieldBodyInput) (*fieldHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
+	role := string(mw.RoleFromContext(ctx))
 
 	noteID, err := uuid.Parse(input.NoteID)
 	if err != nil {
@@ -183,11 +186,12 @@ func (h *Handler) updateField(ctx context.Context, input *updateFieldBodyInput) 
 	}
 
 	resp, err := h.svc.UpdateField(ctx, UpdateFieldInput{
-		NoteID:   noteID,
-		ClinicID: clinicID,
-		StaffID:  staffID,
-		FieldID:  fieldID,
-		Value:    input.Body.Value,
+		NoteID:    noteID,
+		ClinicID:  clinicID,
+		StaffID:   staffID,
+		ActorRole: role,
+		FieldID:   fieldID,
+		Value:     input.Body.Value,
 	})
 	if err != nil {
 		return nil, mapNoteError(err)
@@ -201,13 +205,14 @@ func (h *Handler) updateField(ctx context.Context, input *updateFieldBodyInput) 
 func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
+	role := string(mw.RoleFromContext(ctx))
 
 	noteID, err := uuid.Parse(input.NoteID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid note_id")
 	}
 
-	resp, err := h.svc.SubmitNote(ctx, noteID, clinicID, staffID)
+	resp, err := h.svc.SubmitNote(ctx, noteID, clinicID, staffID, role)
 	if err != nil {
 		return nil, mapNoteError(err)
 	}
@@ -219,13 +224,15 @@ func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTP
 // archiveNote handles POST /api/v1/notes/{note_id}/archive.
 func (h *Handler) archiveNote(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+	role := string(mw.RoleFromContext(ctx))
 
 	noteID, err := uuid.Parse(input.NoteID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid note_id")
 	}
 
-	resp, err := h.svc.ArchiveNote(ctx, noteID, clinicID)
+	resp, err := h.svc.ArchiveNote(ctx, noteID, clinicID, staffID, role)
 	if err != nil {
 		return nil, mapNoteError(err)
 	}

@@ -21,7 +21,7 @@ func (f *fakeEnqueuer) Insert(_ context.Context, _ river.JobArgs, _ *river.Inser
 }
 
 func newTestService() *Service {
-	return NewService(newFakeRepo(), &fakeEnqueuer{})
+	return NewService(newFakeRepo(), &fakeEnqueuer{}, nil)
 }
 
 var (
@@ -58,7 +58,7 @@ func TestService_CreateNote_AI_OK(t *testing.T) {
 func TestService_CreateNote_Manual_OK(t *testing.T) {
 	t.Parallel()
 	enq := &fakeEnqueuer{}
-	svc := NewService(newFakeRepo(), enq)
+	svc := NewService(newFakeRepo(), enq, nil)
 
 	resp, err := svc.CreateNote(context.Background(), CreateNoteInput{
 		ClinicID:       clinicID,
@@ -84,7 +84,7 @@ func TestService_CreateNote_Manual_OK(t *testing.T) {
 func TestService_CreateNote_EnqueuesJob(t *testing.T) {
 	t.Parallel()
 	enq := &fakeEnqueuer{}
-	svc := NewService(newFakeRepo(), enq)
+	svc := NewService(newFakeRepo(), enq, nil)
 
 	rid := recID
 	_, err := svc.CreateNote(context.Background(), CreateNoteInput{
@@ -203,7 +203,7 @@ func TestService_ListNotes_ExcludesArchivedByDefault(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	// Archive the note.
-	_, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	_, err := svc.ArchiveNote(ctx, noteID, clinicID, staffID, "")
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestService_UpdateField_RequiresDraft(t *testing.T) {
 func TestService_UpdateField_OK(t *testing.T) {
 	t.Parallel()
 	repo := newFakeRepo()
-	svc := NewService(repo, &fakeEnqueuer{})
+	svc := NewService(repo, &fakeEnqueuer{}, nil)
 	ctx := context.Background()
 
 	rid := recID
@@ -329,7 +329,7 @@ func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 	t.Cleanup(restore)
 
 	repo := newFakeRepo()
-	svc := NewService(repo, &fakeEnqueuer{})
+	svc := NewService(repo, &fakeEnqueuer{}, nil)
 	ctx := context.Background()
 
 	rid := recID
@@ -342,7 +342,7 @@ func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 	repo.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil) //nolint:errcheck
 
-	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID)
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestService_SubmitNote_NotDraft(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	// Note is still 'extracting' — cannot submit.
-	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID)
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "")
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict, got %v", err)
 	}
@@ -394,7 +394,7 @@ func TestService_ArchiveNote_OK(t *testing.T) {
 	})
 	noteID, _ := uuid.Parse(created.ID)
 
-	resp, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	resp, err := svc.ArchiveNote(ctx, noteID, clinicID, staffID, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -417,9 +417,9 @@ func TestService_ArchiveNote_AlreadyArchived(t *testing.T) {
 	})
 	noteID, _ := uuid.Parse(created.ID)
 
-	svc.ArchiveNote(ctx, noteID, clinicID) //nolint:errcheck
+	svc.ArchiveNote(ctx, noteID, clinicID, staffID, "") //nolint:errcheck
 
-	_, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	_, err := svc.ArchiveNote(ctx, noteID, clinicID, staffID, "")
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict for double-archive, got %v", err)
 	}
