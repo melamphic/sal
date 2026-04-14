@@ -33,6 +33,7 @@ import (
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
 	"github.com/melamphic/sal/internal/platform/storage"
+	"github.com/melamphic/sal/internal/policy"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/timeline"
@@ -173,6 +174,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	broker := notifications.NewBroker(db, log)
 	notificationsHandler := notifications.NewHandler(broker)
 
+	// ── Policy module ─────────────────────────────────────────────────────────
+	policyRepo := policy.NewRepository(db)
+	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
+	policyHandler := policy.NewHandler(policySvc)
+
 	// ── Reports module ────────────────────────────────────────────────────────
 	reportsSvc := reports.NewService(reportsRepo, riverClient)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
@@ -215,6 +221,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
 	notificationsHandler.Mount(r, jwtSecret)
+	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
@@ -308,6 +315,23 @@ func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID 
 		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
 	}
 	return t, nil
+}
+
+// policyFormLinkerAdapter implements policy.FormLinker.
+// When a policy is retired, it removes that policy from all linked forms.
+type policyFormLinkerAdapter struct{ repo *forms.Repository }
+
+func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID) error {
+	formIDs, err := a.repo.ListFormIDsByPolicyID(ctx, policyID)
+	if err != nil {
+		return fmt.Errorf("app.policyFormLinkerAdapter: list: %w", err)
+	}
+	for _, fid := range formIDs {
+		if err := a.repo.UnlinkPolicy(ctx, fid, policyID); err != nil {
+			return fmt.Errorf("app.policyFormLinkerAdapter: unlink: %w", err)
+		}
+	}
+	return nil
 }
 
 func connectDB(ctx context.Context, cfg *config.Config, log *slog.Logger) (*pgxpool.Pool, error) {

@@ -644,6 +644,30 @@ func (r *Repository) LinkPolicy(ctx context.Context, formID, policyID, linkedBy 
 	return nil
 }
 
+// ListFormIDsByPolicyID returns all form IDs that have the given policy linked.
+func (r *Repository) ListFormIDsByPolicyID(ctx context.Context, policyID uuid.UUID) ([]uuid.UUID, error) {
+	const q = `SELECT form_id FROM form_policies WHERE policy_id = $1`
+
+	rows, err := r.db.Query(ctx, q, policyID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListFormIDsByPolicyID: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("forms.repo.ListFormIDsByPolicyID: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListFormIDsByPolicyID: rows: %w", err)
+	}
+	return ids, nil
+}
+
 // UnlinkPolicy removes a form_policies row.
 func (r *Repository) UnlinkPolicy(ctx context.Context, formID, policyID uuid.UUID) error {
 	const q = `DELETE FROM form_policies WHERE form_id = $1 AND policy_id = $2`
