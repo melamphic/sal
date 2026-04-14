@@ -152,7 +152,7 @@ func TestService_ListNotes_FilterByRecording(t *testing.T) {
 	ctx := context.Background()
 
 	otherRec := uuid.New()
-	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: recID, FormVersionID: formVerID})        //nolint:errcheck
+	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: recID, FormVersionID: formVerID})     //nolint:errcheck
 	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: otherRec, FormVersionID: uuid.New()}) //nolint:errcheck
 
 	resp, err := svc.ListNotes(ctx, clinicID, ListNotesInput{

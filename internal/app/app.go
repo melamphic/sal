@@ -52,7 +52,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Database ──────────────────────────────────────────────────────────────
 	db, err := connectDB(ctx, cfg, log)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app.Build: %w", err)
 	}
 
 	// ── Encryption ────────────────────────────────────────────────────────────
@@ -229,6 +229,14 @@ func (a *formsFieldAdapter) GetFieldsByVersionID(ctx context.Context, versionID 
 		}
 	}
 	return out, nil
+}
+
+func (a *formsFieldAdapter) GetFormPrompt(ctx context.Context, versionID uuid.UUID) (*string, error) {
+	p, err := a.repo.GetFormPrompt(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.formsFieldAdapter: %w", err)
+	}
+	return p, nil
 }
 
 type audioTranscriptAdapter struct{ repo *audio.Repository }

@@ -124,7 +124,7 @@ func (r *Repository) GetAndConsumeAuthToken(ctx context.Context, tokenHash strin
 	if t.UsedAt != nil {
 		return nil, domain.ErrTokenUsed
 	}
-	if time.Now().After(t.ExpiresAt) {
+	if domain.TimeNow().After(t.ExpiresAt) {
 		return nil, domain.ErrTokenExpired
 	}
 

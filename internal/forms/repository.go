@@ -433,6 +433,21 @@ func (r *Repository) GetDraftVersion(ctx context.Context, formID uuid.UUID) (*Fo
 	return rec, nil
 }
 
+// GetFormPrompt returns the overall_prompt for the form that owns the given version.
+// Used by the notes extraction worker to provide context to the AI alongside field-level prompts.
+func (r *Repository) GetFormPrompt(ctx context.Context, versionID uuid.UUID) (*string, error) {
+	var prompt *string
+	err := r.db.QueryRow(ctx, `
+		SELECT f.overall_prompt
+		FROM form_versions fv
+		JOIN forms f ON f.id = fv.form_id
+		WHERE fv.id = $1`, versionID).Scan(&prompt)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.GetFormPrompt: %w", err)
+	}
+	return prompt, nil
+}
+
 // GetVersionByID fetches a specific version by its ID.
 func (r *Repository) GetVersionByID(ctx context.Context, id uuid.UUID) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM form_versions WHERE id = $1`, versionCols)

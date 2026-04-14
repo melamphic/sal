@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/riverqueue/river"
@@ -43,8 +42,8 @@ type Service struct {
 }
 
 // NewService constructs an audio Service.
-func NewService(r repo, store *storage.Store, riverClient *river.Client[pgx.Tx]) *Service {
-	return &Service{repo: r, store: store, enqueue: riverClient}
+func NewService(r repo, store *storage.Store, enqueue jobEnqueuer) *Service {
+	return &Service{repo: r, store: store, enqueue: enqueue}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────

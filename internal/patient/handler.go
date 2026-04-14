@@ -381,7 +381,7 @@ func parseVetDetailsInput(v *vetDetailsInput) (*VetDetailsInput, error) {
 	if v.DateOfBirth != nil {
 		parsed, err := time.Parse("2006-01-02", *v.DateOfBirth)
 		if err != nil {
-			return nil, errors.New("date_of_birth must be YYYY-MM-DD")
+			return nil, huma.Error400BadRequest("date_of_birth must be YYYY-MM-DD")
 		}
 		vd.DateOfBirth = &parsed
 	}

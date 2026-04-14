@@ -36,14 +36,15 @@ type FormFieldMeta struct {
 // Implemented by an adapter over forms.Repository in app.go.
 type FormFieldProvider interface {
 	GetFieldsByVersionID(ctx context.Context, versionID uuid.UUID) ([]FormFieldMeta, error)
+	// GetFormPrompt returns the overall_prompt for the form that owns the given version.
+	// This context prompt is passed to the AI alongside per-field prompts.
+	// Returns nil if no overall prompt has been configured.
+	GetFormPrompt(ctx context.Context, versionID uuid.UUID) (*string, error)
 }
 
 // RecordingProvider fetches transcript data from a recording.
 // Implemented by an adapter over audio.Repository in app.go.
 type RecordingProvider interface {
-	// GetTranscript returns (overallFormPrompt, transcript, error).
-	// overallFormPrompt is passed from the caller (notes service) at creation time —
-	// not from the recording itself. It's included here for convenience but may be nil.
 	GetTranscript(ctx context.Context, recordingID uuid.UUID) (transcript *string, err error)
 }
 
@@ -105,7 +106,11 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return fmt.Errorf("extract_note: %s", msg)
 	}
 
-	// Fetch form fields.
+	// Fetch form-level AI context prompt and field definitions.
+	overallPrompt, err := w.forms.GetFormPrompt(ctx, note.FormVersionID)
+	if err != nil {
+		return fmt.Errorf("extract_note: get form prompt: %w", err)
+	}
 	formFields, err := w.forms.GetFieldsByVersionID(ctx, note.FormVersionID)
 	if err != nil {
 		return fmt.Errorf("extract_note: get fields: %w", err)
@@ -133,9 +138,13 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	}
 
 	// Call AI extractor.
+	formPrompt := ""
+	if overallPrompt != nil {
+		formPrompt = *overallPrompt
+	}
 	var results []extraction.FieldResult
 	if len(specs) > 0 {
-		results, err = w.extractor.Extract(ctx, *transcript, "", specs)
+		results, err = w.extractor.Extract(ctx, *transcript, formPrompt, specs)
 		if err != nil {
 			errMsg := fmt.Sprintf("extraction failed: %v", err)
 			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusFailed, &errMsg)
