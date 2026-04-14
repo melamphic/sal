@@ -31,7 +31,9 @@ CREATE INDEX idx_notes_subject    ON notes(subject_id) WHERE subject_id IS NOT N
 CREATE INDEX idx_notes_created_by ON notes(created_by);
 CREATE INDEX idx_notes_status     ON notes(clinic_id, status);
 
-SELECT set_updated_at('notes');
+CREATE TRIGGER notes_updated_at
+    BEFORE UPDATE ON notes
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- note_fields: one row per field in the form version.
 -- value is JSON-encoded (string, number, array — whatever the field type needs).
@@ -54,7 +56,9 @@ CREATE TABLE note_fields (
 
 CREATE INDEX idx_note_fields_note ON note_fields(note_id);
 
-SELECT set_updated_at('note_fields');
+CREATE TRIGGER note_fields_updated_at
+    BEFORE UPDATE ON note_fields
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- +goose StatementEnd
 

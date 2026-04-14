@@ -22,6 +22,7 @@ CREATE INDEX ON note_events (actor_id,   occurred_at DESC);
 
 -- Notify the SSE broker whenever a new event is inserted.
 -- Payload format: <clinic_id>:<event_id>:<note_id>:<event_type>
+-- +goose StatementBegin
 CREATE FUNCTION notify_note_event()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -32,6 +33,7 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+-- +goose StatementEnd
 
 CREATE TRIGGER note_events_after_insert
 AFTER INSERT ON note_events
