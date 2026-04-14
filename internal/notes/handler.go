@@ -35,9 +35,10 @@ type paginationInput struct {
 
 type createNoteBodyInput struct {
 	Body struct {
-		RecordingID   string  `json:"recording_id"   doc:"UUID of the recording to fill from."`
-		FormVersionID string  `json:"form_version_id" doc:"UUID of the published form version to use."`
-		SubjectID     *string `json:"subject_id,omitempty" doc:"Optional patient UUID."`
+		RecordingID    *string `json:"recording_id,omitempty"   doc:"UUID of the recording to fill from. Omit for manual notes."`
+		FormVersionID  string  `json:"form_version_id"          doc:"UUID of the published form version to use."`
+		SubjectID      *string `json:"subject_id,omitempty"     doc:"Optional patient UUID."`
+		SkipExtraction bool    `json:"skip_extraction,omitempty" doc:"If true, creates a manual note without AI extraction. recording_id may be omitted."`
 	}
 }
 
@@ -51,9 +52,10 @@ type noteListHTTPResponse struct {
 
 type listNotesInput struct {
 	paginationInput
-	RecordingID *string `query:"recording_id" doc:"Filter notes by recording UUID."`
-	SubjectID   *string `query:"subject_id"   doc:"Filter notes by patient UUID."`
-	Status      *string `query:"status"       enum:"extracting,draft,submitted,failed" doc:"Filter by status."`
+	RecordingID     *string `query:"recording_id"     doc:"Filter notes by recording UUID."`
+	SubjectID       *string `query:"subject_id"       doc:"Filter notes by patient UUID."`
+	Status          *string `query:"status"           enum:"extracting,draft,submitted,failed" doc:"Filter by status."`
+	IncludeArchived bool    `query:"include_archived" doc:"Include archived notes in results. Default false."`
 }
 
 // createNote handles POST /api/v1/notes.
@@ -61,21 +63,31 @@ func (h *Handler) createNote(ctx context.Context, input *createNoteBodyInput) (*
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
-	recordingID, err := uuid.Parse(input.Body.RecordingID)
-	if err != nil {
-		return nil, huma.Error400BadRequest("invalid recording_id")
+	// recording_id required unless skip_extraction is set.
+	if !input.Body.SkipExtraction && input.Body.RecordingID == nil {
+		return nil, huma.Error400BadRequest("recording_id is required when skip_extraction is false")
 	}
+
 	formVersionID, err := uuid.Parse(input.Body.FormVersionID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid form_version_id")
 	}
 
 	svcInput := CreateNoteInput{
-		ClinicID:      clinicID,
-		StaffID:       staffID,
-		RecordingID:   recordingID,
-		FormVersionID: formVersionID,
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVersionID,
+		SkipExtraction: input.Body.SkipExtraction,
 	}
+
+	if input.Body.RecordingID != nil {
+		id, err := uuid.Parse(*input.Body.RecordingID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid recording_id")
+		}
+		svcInput.RecordingID = &id
+	}
+
 	if input.Body.SubjectID != nil {
 		id, err := uuid.Parse(*input.Body.SubjectID)
 		if err != nil {
@@ -112,8 +124,9 @@ func (h *Handler) listNotes(ctx context.Context, input *listNotesInput) (*noteLi
 	clinicID := mw.ClinicIDFromContext(ctx)
 
 	svcInput := ListNotesInput{
-		Limit:  input.Limit,
-		Offset: input.Offset,
+		Limit:           input.Limit,
+		Offset:          input.Offset,
+		IncludeArchived: input.IncludeArchived,
 	}
 	if input.RecordingID != nil {
 		id, err := uuid.Parse(*input.RecordingID)
@@ -195,6 +208,24 @@ func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTP
 	}
 
 	resp, err := h.svc.SubmitNote(ctx, noteID, clinicID, staffID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &noteHTTPResponse{Body: resp}, nil
+}
+
+// ── Archive ───────────────────────────────────────────────────────────────────
+
+// archiveNote handles POST /api/v1/notes/{note_id}/archive.
+func (h *Handler) archiveNote(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	resp, err := h.svc.ArchiveNote(ctx, noteID, clinicID)
 	if err != nil {
 		return nil, mapNoteError(err)
 	}

@@ -95,8 +95,17 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return nil
 	}
 
+	// Manual notes (no recording) should never reach this worker — guard defensively.
+	if note.RecordingID == nil {
+		_, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil)
+		if err != nil {
+			return fmt.Errorf("extract_note: set draft (manual note): %w", err)
+		}
+		return nil
+	}
+
 	// Fetch transcript.
-	transcript, err := w.recording.GetTranscript(ctx, note.RecordingID)
+	transcript, err := w.recording.GetTranscript(ctx, *note.RecordingID)
 	if err != nil {
 		return fmt.Errorf("extract_note: get transcript: %w", err)
 	}
@@ -160,12 +169,13 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 			continue
 		}
 		upserts = append(upserts, UpsertFieldParams{
-			ID:          domain.NewID(),
-			NoteID:      noteID,
-			FieldID:     fieldID,
-			Value:       r.Value,
-			Confidence:  r.Confidence,
-			SourceQuote: r.SourceQuote,
+			ID:                 domain.NewID(),
+			NoteID:             noteID,
+			FieldID:            fieldID,
+			Value:              r.Value,
+			Confidence:         r.Confidence,
+			SourceQuote:        r.SourceQuote,
+			TransformationType: r.TransformationType,
 		})
 	}
 	// Insert empty rows for skippable fields so they appear in the review screen.

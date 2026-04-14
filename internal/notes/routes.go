@@ -10,7 +10,7 @@ import (
 )
 
 // Mount registers all notes routes onto the provided Chi router.
-// All routes require a valid JWT. Creating/reviewing notes requires SubmitForms.
+// All routes require a valid JWT and the SubmitForms permission.
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	authMw := mw.Authenticate(jwtSecret)
 	submitForms := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.SubmitForms })
@@ -24,7 +24,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodPost,
 			Path:        "/api/v1/notes",
 			Summary:     "Create a note",
-			Description: "Creates a clinical note by pairing a recording with a published form version. Immediately enqueues the AI extraction job. Maximum 3 notes per recording.",
+			Description: "Creates a clinical note by pairing a recording with a published form version. Immediately enqueues the AI extraction job. Set skip_extraction=true for manual notes (no AI). Maximum 3 notes per recording.",
 			Tags:        []string{"Notes"},
 			Security:    security,
 			Middlewares: huma.Middlewares{submitForms},
@@ -35,7 +35,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodGet,
 			Path:        "/api/v1/notes",
 			Summary:     "List notes",
-			Description: "Returns a paginated list of notes for the clinic. Filter by recording_id, subject_id, or status.",
+			Description: "Returns a paginated list of notes for the clinic. Filter by recording_id, subject_id, or status. Archived notes are excluded by default; set include_archived=true to include them.",
 			Tags:        []string{"Notes"},
 			Security:    security,
 			Middlewares: huma.Middlewares{submitForms},
@@ -46,7 +46,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodGet,
 			Path:        "/api/v1/notes/{note_id}",
 			Summary:     "Get a note",
-			Description: "Returns the note with all extracted field values, confidence scores, and source quotes. Poll this endpoint after creating a note to check extraction progress.",
+			Description: "Returns the note with all extracted field values, confidence scores, source quotes, and transformation types. Poll this endpoint after creating a note to check extraction progress.",
 			Tags:        []string{"Notes"},
 			Security:    security,
 			Middlewares: huma.Middlewares{submitForms},
@@ -68,10 +68,21 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 			Method:      http.MethodPost,
 			Path:        "/api/v1/notes/{note_id}/submit",
 			Summary:     "Submit a note",
-			Description: "Transitions the note from draft to submitted. The note is locked after submission. Policy evaluation and timeline writing will be added in Phase 2.",
+			Description: "Transitions the note from draft to submitted. Sets reviewed_by and submitted_by to the authenticated staff member. If the linked form version has been decommissioned, form_version_context is set automatically.",
 			Tags:        []string{"Notes"},
 			Security:    security,
 			Middlewares: huma.Middlewares{submitForms},
 		}, h.submitNote)
+
+		huma.Register(api, huma.Operation{
+			OperationID: "archive-note",
+			Method:      http.MethodPost,
+			Path:        "/api/v1/notes/{note_id}/archive",
+			Summary:     "Archive a note",
+			Description: "Soft-deletes a note. Archived notes are excluded from list results unless include_archived=true is set. Notes cannot be hard-deleted.",
+			Tags:        []string{"Notes"},
+			Security:    security,
+			Middlewares: huma.Middlewares{submitForms},
+		}, h.archiveNote)
 	})
 }

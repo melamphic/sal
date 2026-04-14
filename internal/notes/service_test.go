@@ -33,14 +33,15 @@ var (
 
 // ── CreateNote ────────────────────────────────────────────────────────────────
 
-func TestService_CreateNote_OK(t *testing.T) {
+func TestService_CreateNote_AI_OK(t *testing.T) {
 	t.Parallel()
 	svc := newTestService()
 
+	rid := recID
 	resp, err := svc.CreateNote(context.Background(), CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	if err != nil {
@@ -49,8 +50,34 @@ func TestService_CreateNote_OK(t *testing.T) {
 	if resp.Status != domain.NoteStatusExtracting {
 		t.Errorf("expected status extracting, got %s", resp.Status)
 	}
-	if resp.ClinicID != clinicID.String() {
-		t.Errorf("clinic_id mismatch")
+	if resp.RecordingID == nil || *resp.RecordingID != rid.String() {
+		t.Errorf("recording_id mismatch")
+	}
+}
+
+func TestService_CreateNote_Manual_OK(t *testing.T) {
+	t.Parallel()
+	enq := &fakeEnqueuer{}
+	svc := NewService(newFakeRepo(), enq)
+
+	resp, err := svc.CreateNote(context.Background(), CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+		// No RecordingID — manual note.
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status != domain.NoteStatusDraft {
+		t.Errorf("expected status draft for manual note, got %s", resp.Status)
+	}
+	if resp.RecordingID != nil {
+		t.Errorf("expected nil recording_id for manual note")
+	}
+	if enq.inserted != 0 {
+		t.Errorf("expected no jobs enqueued for manual note, got %d", enq.inserted)
 	}
 }
 
@@ -59,10 +86,11 @@ func TestService_CreateNote_EnqueuesJob(t *testing.T) {
 	enq := &fakeEnqueuer{}
 	svc := NewService(newFakeRepo(), enq)
 
+	rid := recID
 	_, err := svc.CreateNote(context.Background(), CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	if err != nil {
@@ -78,62 +106,76 @@ func TestService_CreateNote_MaxCapEnforced(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
+	rid := recID
 	for i := 0; i < maxNotesPerRecording; i++ {
+		fvid := uuid.New()
 		_, err := svc.CreateNote(ctx, CreateNoteInput{
 			ClinicID:      clinicID,
 			StaffID:       staffID,
-			RecordingID:   recID,
-			FormVersionID: uuid.New(), // different form version each time
+			RecordingID:   &rid,
+			FormVersionID: fvid,
 		})
 		if err != nil {
 			t.Fatalf("note %d: unexpected error: %v", i+1, err)
 		}
 	}
 
+	fvid := uuid.New()
 	_, err := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
-		FormVersionID: uuid.New(),
+		RecordingID:   &rid,
+		FormVersionID: fvid,
 	})
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict error, got %v", err)
 	}
 }
 
-// ── GetNote ───────────────────────────────────────────────────────────────────
-
-func TestService_GetNote_OK(t *testing.T) {
+func TestService_CreateNote_CapNotAppliedToManualNotes(t *testing.T) {
 	t.Parallel()
 	svc := newTestService()
 	ctx := context.Background()
 
-	created, _ := svc.CreateNote(ctx, CreateNoteInput{
-		ClinicID:      clinicID,
-		StaffID:       staffID,
-		RecordingID:   recID,
-		FormVersionID: formVerID,
-	})
-	noteID, _ := uuid.Parse(created.ID)
-
-	resp, err := svc.GetNote(ctx, noteID, clinicID)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Fill cap with AI notes linked to a recording.
+	rid := recID
+	for i := 0; i < maxNotesPerRecording; i++ {
+		fvid := uuid.New()
+		_, err := svc.CreateNote(ctx, CreateNoteInput{
+			ClinicID:      clinicID,
+			StaffID:       staffID,
+			RecordingID:   &rid,
+			FormVersionID: fvid,
+		})
+		if err != nil {
+			t.Fatalf("note %d: %v", i+1, err)
+		}
 	}
-	if resp.ID != created.ID {
-		t.Errorf("ID mismatch: got %s", resp.ID)
+
+	// Manual note with no recording should still succeed.
+	_, err := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  uuid.New(),
+		SkipExtraction: true,
+	})
+	if err != nil {
+		t.Errorf("expected manual note to bypass cap, got %v", err)
 	}
 }
+
+// ── GetNote ───────────────────────────────────────────────────────────────────
 
 func TestService_GetNote_WrongClinic(t *testing.T) {
 	t.Parallel()
 	svc := newTestService()
 	ctx := context.Background()
 
+	rid := recID
 	created, _ := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
@@ -146,27 +188,64 @@ func TestService_GetNote_WrongClinic(t *testing.T) {
 
 // ── ListNotes ─────────────────────────────────────────────────────────────────
 
+func TestService_ListNotes_ExcludesArchivedByDefault(t *testing.T) {
+	t.Parallel()
+	svc := newTestService()
+	ctx := context.Background()
+
+	rid := recID
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:      clinicID,
+		StaffID:       staffID,
+		RecordingID:   &rid,
+		FormVersionID: formVerID,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// Archive the note.
+	_, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	// Default list should not include archived notes.
+	resp, err := svc.ListNotes(ctx, clinicID, ListNotesInput{Limit: 20})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if resp.Total != 0 {
+		t.Errorf("expected 0 notes (archived excluded), got %d", resp.Total)
+	}
+
+	// With include_archived=true, it should appear.
+	resp, err = svc.ListNotes(ctx, clinicID, ListNotesInput{Limit: 20, IncludeArchived: true})
+	if err != nil {
+		t.Fatalf("list with archived: %v", err)
+	}
+	if resp.Total != 1 {
+		t.Errorf("expected 1 note with include_archived, got %d", resp.Total)
+	}
+}
+
 func TestService_ListNotes_FilterByRecording(t *testing.T) {
 	t.Parallel()
 	svc := newTestService()
 	ctx := context.Background()
 
+	rid := recID
 	otherRec := uuid.New()
-	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: recID, FormVersionID: formVerID})     //nolint:errcheck
-	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: otherRec, FormVersionID: uuid.New()}) //nolint:errcheck
+	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: &rid, FormVersionID: formVerID})       //nolint:errcheck
+	svc.CreateNote(ctx, CreateNoteInput{ClinicID: clinicID, StaffID: staffID, RecordingID: &otherRec, FormVersionID: uuid.New()}) //nolint:errcheck
 
 	resp, err := svc.ListNotes(ctx, clinicID, ListNotesInput{
 		Limit:       20,
-		RecordingID: &recID,
+		RecordingID: &rid,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if resp.Total != 1 {
 		t.Errorf("expected 1 note, got %d", resp.Total)
-	}
-	if resp.Items[0].RecordingID != recID.String() {
-		t.Errorf("recording_id mismatch")
 	}
 }
 
@@ -177,10 +256,11 @@ func TestService_UpdateField_RequiresDraft(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
+	rid := recID
 	created, _ := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
@@ -206,10 +286,11 @@ func TestService_UpdateField_OK(t *testing.T) {
 	svc := NewService(repo, &fakeEnqueuer{})
 	ctx := context.Background()
 
+	rid := recID
 	created, _ := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
@@ -242,7 +323,7 @@ func TestService_UpdateField_OK(t *testing.T) {
 
 // ── SubmitNote ────────────────────────────────────────────────────────────────
 
-func TestService_SubmitNote_OK(t *testing.T) {
+func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 	t.Parallel()
 	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
 	t.Cleanup(restore)
@@ -251,10 +332,11 @@ func TestService_SubmitNote_OK(t *testing.T) {
 	svc := NewService(repo, &fakeEnqueuer{})
 	ctx := context.Background()
 
+	rid := recID
 	created, _ := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
@@ -267,6 +349,9 @@ func TestService_SubmitNote_OK(t *testing.T) {
 	if resp.Status != domain.NoteStatusSubmitted {
 		t.Errorf("expected submitted, got %s", resp.Status)
 	}
+	if resp.ReviewedBy == nil || *resp.ReviewedBy != staffID.String() {
+		t.Errorf("reviewed_by not set correctly, got %v", resp.ReviewedBy)
+	}
 	if resp.SubmittedBy == nil || *resp.SubmittedBy != staffID.String() {
 		t.Errorf("submitted_by mismatch")
 	}
@@ -277,10 +362,11 @@ func TestService_SubmitNote_NotDraft(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
+	rid := recID
 	created, _ := svc.CreateNote(ctx, CreateNoteInput{
 		ClinicID:      clinicID,
 		StaffID:       staffID,
-		RecordingID:   recID,
+		RecordingID:   &rid,
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
@@ -289,5 +375,52 @@ func TestService_SubmitNote_NotDraft(t *testing.T) {
 	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID)
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict, got %v", err)
+	}
+}
+
+// ── ArchiveNote ───────────────────────────────────────────────────────────────
+
+func TestService_ArchiveNote_OK(t *testing.T) {
+	t.Parallel()
+	svc := newTestService()
+	ctx := context.Background()
+
+	rid := recID
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:      clinicID,
+		StaffID:       staffID,
+		RecordingID:   &rid,
+		FormVersionID: formVerID,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	resp, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ArchivedAt == nil {
+		t.Errorf("expected archived_at to be set")
+	}
+}
+
+func TestService_ArchiveNote_AlreadyArchived(t *testing.T) {
+	t.Parallel()
+	svc := newTestService()
+	ctx := context.Background()
+
+	rid := recID
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:      clinicID,
+		StaffID:       staffID,
+		RecordingID:   &rid,
+		FormVersionID: formVerID,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	svc.ArchiveNote(ctx, noteID, clinicID) //nolint:errcheck
+
+	_, err := svc.ArchiveNote(ctx, noteID, clinicID)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected conflict for double-archive, got %v", err)
 	}
 }

@@ -15,32 +15,37 @@ import (
 
 // NoteRecord is the raw database representation of a notes row.
 type NoteRecord struct {
-	ID            uuid.UUID
-	ClinicID      uuid.UUID
-	RecordingID   uuid.UUID
-	FormVersionID uuid.UUID
-	SubjectID     *uuid.UUID
-	CreatedBy     uuid.UUID
-	Status        domain.NoteStatus
-	ErrorMessage  *string
-	SubmittedAt   *time.Time
-	SubmittedBy   *uuid.UUID
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID                 uuid.UUID
+	ClinicID           uuid.UUID
+	RecordingID        *uuid.UUID // nil for manual notes
+	FormVersionID      uuid.UUID
+	SubjectID          *uuid.UUID
+	CreatedBy          uuid.UUID
+	Status             domain.NoteStatus
+	ErrorMessage       *string
+	ReviewedBy         *uuid.UUID // set when staff acknowledges review
+	ReviewedAt         *time.Time
+	SubmittedAt        *time.Time
+	SubmittedBy        *uuid.UUID
+	ArchivedAt         *time.Time // soft delete
+	FormVersionContext *string    // e.g. "before decommission" — set at submit time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
 type NoteFieldRecord struct {
-	ID           uuid.UUID
-	NoteID       uuid.UUID
-	FieldID      uuid.UUID
-	Value        *string  // JSON-encoded
-	Confidence   *float64 // 0.0–1.0
-	SourceQuote  *string
-	OverriddenBy *uuid.UUID
-	OverriddenAt *time.Time
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID                 uuid.UUID
+	NoteID             uuid.UUID
+	FieldID            uuid.UUID
+	Value              *string  // JSON-encoded
+	Confidence         *float64 // 0.0–1.0; nil for manual/skippable
+	SourceQuote        *string
+	TransformationType *string // "direct" | "inference"; nil for manual/skippable
+	OverriddenBy       *uuid.UUID
+	OverriddenAt       *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -49,38 +54,50 @@ type NoteFieldRecord struct {
 type CreateNoteParams struct {
 	ID            uuid.UUID
 	ClinicID      uuid.UUID
-	RecordingID   uuid.UUID
+	RecordingID   *uuid.UUID // nil for manual notes
 	FormVersionID uuid.UUID
 	SubjectID     *uuid.UUID
 	CreatedBy     uuid.UUID
+	Status        domain.NoteStatus // 'extracting' for AI, 'draft' for manual
 }
 
 // ListNotesParams holds filter and pagination for listing notes.
 type ListNotesParams struct {
-	Limit       int
-	Offset      int
-	RecordingID *uuid.UUID
-	SubjectID   *uuid.UUID
-	Status      *domain.NoteStatus
+	Limit           int
+	Offset          int
+	RecordingID     *uuid.UUID
+	SubjectID       *uuid.UUID
+	Status          *domain.NoteStatus
+	IncludeArchived bool // default false = exclude archived
 }
 
 // SubmitNoteParams holds values for marking a note as submitted.
 type SubmitNoteParams struct {
 	ID          uuid.UUID
 	ClinicID    uuid.UUID
+	ReviewedBy  uuid.UUID
+	ReviewedAt  time.Time
 	SubmittedBy uuid.UUID
 	SubmittedAt time.Time
+}
+
+// ArchiveNoteParams holds values for soft-deleting a note.
+type ArchiveNoteParams struct {
+	ID         uuid.UUID
+	ClinicID   uuid.UUID
+	ArchivedAt time.Time
 }
 
 // UpsertFieldParams holds values for inserting or updating a note_field row.
 // Used by the extraction job to write AI results in bulk.
 type UpsertFieldParams struct {
-	ID          uuid.UUID
-	NoteID      uuid.UUID
-	FieldID     uuid.UUID
-	Value       *string
-	Confidence  *float64
-	SourceQuote *string
+	ID                 uuid.UUID
+	NoteID             uuid.UUID
+	FieldID            uuid.UUID
+	Value              *string
+	Confidence         *float64
+	SourceQuote        *string
+	TransformationType *string // "direct" | "inference"; nil for skippable
 }
 
 // UpdateNoteFieldParams holds values for a staff override of a single field.
@@ -108,17 +125,18 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
 const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, created_by,
-	status, error_message, submitted_at, submitted_by, created_at, updated_at`
+	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
+	archived_at, form_version_context, created_at, updated_at`
 
-// CreateNote inserts a new note in 'extracting' status.
+// CreateNote inserts a new note with the given status.
 func (r *Repository) CreateNote(ctx context.Context, p CreateNoteParams) (*NoteRecord, error) {
 	q := fmt.Sprintf(`
-		INSERT INTO notes (id, clinic_id, recording_id, form_version_id, subject_id, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO notes (id, clinic_id, recording_id, form_version_id, subject_id, created_by, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING %s`, noteCols)
 
 	row := r.db.QueryRow(ctx, q,
-		p.ID, p.ClinicID, p.RecordingID, p.FormVersionID, p.SubjectID, p.CreatedBy,
+		p.ID, p.ClinicID, p.RecordingID, p.FormVersionID, p.SubjectID, p.CreatedBy, string(p.Status),
 	)
 	rec, err := scanNote(row)
 	if err != nil {
@@ -128,9 +146,16 @@ func (r *Repository) CreateNote(ctx context.Context, p CreateNoteParams) (*NoteR
 }
 
 // GetNoteByID fetches a note by ID scoped to the clinic.
+// Pass uuid.Nil as clinicID to skip the clinic ownership check (internal worker use only).
 func (r *Repository) GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*NoteRecord, error) {
-	q := fmt.Sprintf(`SELECT %s FROM notes WHERE id = $1 AND clinic_id = $2`, noteCols)
-	row := r.db.QueryRow(ctx, q, id, clinicID)
+	var row pgx.Row
+	if clinicID == uuid.Nil {
+		q := fmt.Sprintf(`SELECT %s FROM notes WHERE id = $1`, noteCols)
+		row = r.db.QueryRow(ctx, q, id)
+	} else {
+		q := fmt.Sprintf(`SELECT %s FROM notes WHERE id = $1 AND clinic_id = $2`, noteCols)
+		row = r.db.QueryRow(ctx, q, id, clinicID)
+	}
 	rec, err := scanNote(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.GetNoteByID: %w", err)
@@ -139,10 +164,14 @@ func (r *Repository) GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*
 }
 
 // ListNotes returns a paginated list of notes for a clinic.
+// Archived notes are excluded by default; set IncludeArchived to include them.
 func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error) {
 	args := []any{clinicID}
 	where := "clinic_id = $1"
 
+	if !p.IncludeArchived {
+		where += " AND archived_at IS NULL"
+	}
 	if p.RecordingID != nil {
 		args = append(args, *p.RecordingID)
 		where += fmt.Sprintf(" AND recording_id = $%d", len(args))
@@ -203,15 +232,31 @@ func (r *Repository) UpdateNoteStatus(ctx context.Context, id uuid.UUID, status 
 	return rec, nil
 }
 
-// SubmitNote marks a note as submitted.
+// SubmitNote marks a note as submitted and sets reviewed_by/reviewed_at.
+// The form_version_context column is computed inline: if the linked form or version
+// is no longer published (decommissioned), the note is labelled "before decommission".
 func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error) {
 	q := fmt.Sprintf(`
 		UPDATE notes
-		SET status = 'submitted', submitted_by = $3, submitted_at = $4
+		SET status                = 'submitted',
+		    reviewed_by           = $3,
+		    reviewed_at           = $4,
+		    submitted_by          = $5,
+		    submitted_at          = $6,
+		    form_version_context  = (
+		        SELECT CASE
+		            WHEN f.archived_at IS NOT NULL THEN 'before decommission'
+		            WHEN fv.status != 'published'  THEN 'before decommission'
+		            ELSE NULL
+		        END
+		        FROM form_versions fv
+		        JOIN forms f ON f.id = fv.form_id
+		        WHERE fv.id = notes.form_version_id
+		    )
 		WHERE id = $1 AND clinic_id = $2 AND status = 'draft'
 		RETURNING %s`, noteCols)
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.SubmittedBy, p.SubmittedAt)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt)
 	rec, err := scanNote(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.SubmitNote: %w", err)
@@ -219,10 +264,28 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 	return rec, nil
 }
 
+// ArchiveNote soft-deletes a note by setting archived_at.
+func (r *Repository) ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*NoteRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE notes SET archived_at = $3
+		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
+		RETURNING %s`, noteCols)
+
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt)
+	rec, err := scanNote(row)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ArchiveNote: %w", err)
+	}
+	return rec, nil
+}
+
 // CountNotesByRecording returns how many notes exist for a recording.
 func (r *Repository) CountNotesByRecording(ctx context.Context, recordingID uuid.UUID) (int, error) {
 	var count int
-	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM notes WHERE recording_id = $1`, recordingID).Scan(&count); err != nil {
+	if err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM notes WHERE recording_id = $1`,
+		recordingID,
+	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("notes.repo.CountNotesByRecording: %w", err)
 	}
 	return count, nil
@@ -231,7 +294,11 @@ func (r *Repository) CountNotesByRecording(ctx context.Context, recordingID uuid
 // ── Note fields ───────────────────────────────────────────────────────────────
 
 const fieldCols = `id, note_id, field_id, value, confidence, source_quote,
-	overridden_by, overridden_at, created_at, updated_at`
+	transformation_type, overridden_by, overridden_at, created_at, updated_at`
+
+// fieldColsAliased is used in JOIN queries to avoid ambiguous column names.
+const fieldColsAliased = `nf.id, nf.note_id, nf.field_id, nf.value, nf.confidence, nf.source_quote,
+	nf.transformation_type, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
 
 // UpsertNoteFields inserts or replaces note_field rows in bulk (extraction job output).
 func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error) {
@@ -240,17 +307,18 @@ func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fie
 	}
 
 	q := fmt.Sprintf(`
-		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote, transformation_type)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (note_id, field_id) DO UPDATE
-		SET value = EXCLUDED.value,
-		    confidence = EXCLUDED.confidence,
-		    source_quote = EXCLUDED.source_quote
+		SET value               = EXCLUDED.value,
+		    confidence          = EXCLUDED.confidence,
+		    source_quote        = EXCLUDED.source_quote,
+		    transformation_type = EXCLUDED.transformation_type
 		RETURNING %s`, fieldCols)
 
 	result := make([]*NoteFieldRecord, 0, len(fields))
 	for _, p := range fields {
-		row := r.db.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote)
+		row := r.db.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType)
 		f, err := scanField(row)
 		if err != nil {
 			return nil, fmt.Errorf("notes.repo.UpsertNoteFields: %w", err)
@@ -263,10 +331,10 @@ func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fie
 // GetNoteFields returns all fields for a note, ordered by their form field position.
 func (r *Repository) GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error) {
 	q := fmt.Sprintf(`
-		SELECT nf.%s FROM note_fields nf
+		SELECT %s FROM note_fields nf
 		JOIN form_fields ff ON ff.id = nf.field_id
 		WHERE nf.note_id = $1
-		ORDER BY ff.position`, fieldCols)
+		ORDER BY ff.position`, fieldColsAliased)
 
 	rows, err := r.db.Query(ctx, q, noteID)
 	if err != nil {
@@ -327,7 +395,10 @@ func scanNote(row scannable) (*NoteRecord, error) {
 	err := row.Scan(
 		&n.ID, &n.ClinicID, &n.RecordingID, &n.FormVersionID, &n.SubjectID,
 		&n.CreatedBy, &n.Status, &n.ErrorMessage,
-		&n.SubmittedAt, &n.SubmittedBy, &n.CreatedAt, &n.UpdatedAt,
+		&n.ReviewedBy, &n.ReviewedAt,
+		&n.SubmittedAt, &n.SubmittedBy,
+		&n.ArchivedAt, &n.FormVersionContext,
+		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -342,7 +413,7 @@ func scanField(row scannable) (*NoteFieldRecord, error) {
 	var f NoteFieldRecord
 	err := row.Scan(
 		&f.ID, &f.NoteID, &f.FieldID, &f.Value, &f.Confidence, &f.SourceQuote,
-		&f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
+		&f.TransformationType, &f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

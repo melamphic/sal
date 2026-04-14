@@ -32,7 +32,7 @@ func (f *fakeRepo) CreateNote(_ context.Context, p CreateNoteParams) (*NoteRecor
 		FormVersionID: p.FormVersionID,
 		SubjectID:     p.SubjectID,
 		CreatedBy:     p.CreatedBy,
-		Status:        domain.NoteStatusExtracting,
+		Status:        p.Status,
 		CreatedAt:     domain.TimeNow(),
 		UpdatedAt:     domain.TimeNow(),
 	}
@@ -47,7 +47,7 @@ func (f *fakeRepo) GetNoteByID(_ context.Context, id, clinicID uuid.UUID) (*Note
 	if !ok {
 		return nil, domain.ErrNotFound
 	}
-	// Allow uuid.Nil for internal job use (no clinic check).
+	// uuid.Nil = internal worker use, skip clinic check.
 	if clinicID != uuid.Nil && n.ClinicID != clinicID {
 		return nil, domain.ErrNotFound
 	}
@@ -62,8 +62,13 @@ func (f *fakeRepo) ListNotes(_ context.Context, clinicID uuid.UUID, p ListNotesP
 		if n.ClinicID != clinicID {
 			continue
 		}
-		if p.RecordingID != nil && n.RecordingID != *p.RecordingID {
+		if !p.IncludeArchived && n.ArchivedAt != nil {
 			continue
+		}
+		if p.RecordingID != nil {
+			if n.RecordingID == nil || *n.RecordingID != *p.RecordingID {
+				continue
+			}
 		}
 		if p.SubjectID != nil {
 			if n.SubjectID == nil || *n.SubjectID != *p.SubjectID {
@@ -76,7 +81,6 @@ func (f *fakeRepo) ListNotes(_ context.Context, clinicID uuid.UUID, p ListNotesP
 		out = append(out, cloneNote(n))
 	}
 	total := len(out)
-	// Apply offset + limit.
 	if p.Offset >= total {
 		return []*NoteRecord{}, total, nil
 	}
@@ -111,9 +115,27 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 		return nil, domain.ErrConflict
 	}
 	n.Status = domain.NoteStatusSubmitted
+	n.ReviewedBy = &p.ReviewedBy
+	n.ReviewedAt = &p.ReviewedAt
 	n.SubmittedBy = &p.SubmittedBy
 	t := p.SubmittedAt
 	n.SubmittedAt = &t
+	n.UpdatedAt = domain.TimeNow()
+	return cloneNote(n), nil
+}
+
+func (f *fakeRepo) ArchiveNote(_ context.Context, p ArchiveNoteParams) (*NoteRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[p.ID]
+	if !ok || n.ClinicID != p.ClinicID {
+		return nil, domain.ErrNotFound
+	}
+	if n.ArchivedAt != nil {
+		return nil, domain.ErrNotFound // archived_at IS NULL condition failed
+	}
+	t := p.ArchivedAt
+	n.ArchivedAt = &t
 	n.UpdatedAt = domain.TimeNow()
 	return cloneNote(n), nil
 }
@@ -123,7 +145,7 @@ func (f *fakeRepo) CountNotesByRecording(_ context.Context, recordingID uuid.UUI
 	defer f.mu.RUnlock()
 	count := 0
 	for _, n := range f.notes {
-		if n.RecordingID == recordingID {
+		if n.RecordingID != nil && *n.RecordingID == recordingID {
 			count++
 		}
 	}
@@ -133,7 +155,6 @@ func (f *fakeRepo) CountNotesByRecording(_ context.Context, recordingID uuid.UUI
 func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// Build existing index by field_id for upsert semantics.
 	existing := make(map[uuid.UUID]*NoteFieldRecord)
 	for _, nf := range f.fields[noteID] {
 		existing[nf.FieldID] = nf
@@ -143,17 +164,19 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 			rec.Value = p.Value
 			rec.Confidence = p.Confidence
 			rec.SourceQuote = p.SourceQuote
+			rec.TransformationType = p.TransformationType
 			rec.UpdatedAt = domain.TimeNow()
 		} else {
 			rec := &NoteFieldRecord{
-				ID:          p.ID,
-				NoteID:      noteID,
-				FieldID:     p.FieldID,
-				Value:       p.Value,
-				Confidence:  p.Confidence,
-				SourceQuote: p.SourceQuote,
-				CreatedAt:   domain.TimeNow(),
-				UpdatedAt:   domain.TimeNow(),
+				ID:                 p.ID,
+				NoteID:             noteID,
+				FieldID:            p.FieldID,
+				Value:              p.Value,
+				Confidence:         p.Confidence,
+				SourceQuote:        p.SourceQuote,
+				TransformationType: p.TransformationType,
+				CreatedAt:          domain.TimeNow(),
+				UpdatedAt:          domain.TimeNow(),
 			}
 			f.fields[noteID] = append(f.fields[noteID], rec)
 			existing[p.FieldID] = rec

@@ -34,31 +34,36 @@ func NewService(r repo, riverClient jobEnqueuer) *Service {
 
 // NoteFieldResponse is the API-safe representation of a single note field.
 type NoteFieldResponse struct {
-	FieldID      string   `json:"field_id"`
-	Value        *string  `json:"value,omitempty"`      // JSON-encoded
-	Confidence   *float64 `json:"confidence,omitempty"` // 0.0–1.0
-	SourceQuote  *string  `json:"source_quote,omitempty"`
-	OverriddenBy *string  `json:"overridden_by,omitempty"`
-	OverriddenAt *string  `json:"overridden_at,omitempty"`
+	FieldID            string   `json:"field_id"`
+	Value              *string  `json:"value,omitempty"`
+	Confidence         *float64 `json:"confidence,omitempty"`
+	SourceQuote        *string  `json:"source_quote,omitempty"`
+	TransformationType *string  `json:"transformation_type,omitempty"`
+	OverriddenBy       *string  `json:"overridden_by,omitempty"`
+	OverriddenAt       *string  `json:"overridden_at,omitempty"`
 }
 
 // NoteResponse is the API-safe representation of a clinical note.
 //
 //nolint:revive
 type NoteResponse struct {
-	ID            string               `json:"id"`
-	ClinicID      string               `json:"clinic_id"`
-	RecordingID   string               `json:"recording_id"`
-	FormVersionID string               `json:"form_version_id"`
-	SubjectID     *string              `json:"subject_id,omitempty"`
-	CreatedBy     string               `json:"created_by"`
-	Status        domain.NoteStatus    `json:"status"`
-	ErrorMessage  *string              `json:"error_message,omitempty"`
-	SubmittedAt   *string              `json:"submitted_at,omitempty"`
-	SubmittedBy   *string              `json:"submitted_by,omitempty"`
-	CreatedAt     string               `json:"created_at"`
-	UpdatedAt     string               `json:"updated_at"`
-	Fields        []*NoteFieldResponse `json:"fields,omitempty"`
+	ID                 string               `json:"id"`
+	ClinicID           string               `json:"clinic_id"`
+	RecordingID        *string              `json:"recording_id,omitempty"` // nil for manual notes
+	FormVersionID      string               `json:"form_version_id"`
+	SubjectID          *string              `json:"subject_id,omitempty"`
+	CreatedBy          string               `json:"created_by"`
+	Status             domain.NoteStatus    `json:"status"`
+	ErrorMessage       *string              `json:"error_message,omitempty"`
+	ReviewedBy         *string              `json:"reviewed_by,omitempty"`
+	ReviewedAt         *string              `json:"reviewed_at,omitempty"`
+	SubmittedAt        *string              `json:"submitted_at,omitempty"`
+	SubmittedBy        *string              `json:"submitted_by,omitempty"`
+	ArchivedAt         *string              `json:"archived_at,omitempty"`
+	FormVersionContext *string              `json:"form_version_context,omitempty"`
+	CreatedAt          string               `json:"created_at"`
+	UpdatedAt          string               `json:"updated_at"`
+	Fields             []*NoteFieldResponse `json:"fields,omitempty"`
 }
 
 // NoteListResponse is a paginated list of notes.
@@ -75,20 +80,23 @@ type NoteListResponse struct {
 
 // CreateNoteInput holds validated input for creating a new note.
 type CreateNoteInput struct {
-	ClinicID      uuid.UUID
-	StaffID       uuid.UUID
-	RecordingID   uuid.UUID
-	FormVersionID uuid.UUID
-	SubjectID     *uuid.UUID
+	ClinicID       uuid.UUID
+	StaffID        uuid.UUID
+	RecordingID    *uuid.UUID // nil for manual notes
+	FormVersionID  uuid.UUID
+	SubjectID      *uuid.UUID
+	SkipExtraction bool // true = manual note; skip AI extraction job
 }
 
 // ListNotesInput holds filter and pagination parameters.
+// Must stay structurally identical to ListNotesParams for direct type conversion.
 type ListNotesInput struct {
-	Limit       int
-	Offset      int
-	RecordingID *uuid.UUID
-	SubjectID   *uuid.UUID
-	Status      *domain.NoteStatus
+	Limit           int
+	Offset          int
+	RecordingID     *uuid.UUID
+	SubjectID       *uuid.UUID
+	Status          *domain.NoteStatus
+	IncludeArchived bool
 }
 
 // UpdateFieldInput holds validated input for a staff override of a single field.
@@ -102,16 +110,25 @@ type UpdateFieldInput struct {
 
 // ── Service methods ───────────────────────────────────────────────────────────
 
-// CreateNote creates a note and enqueues the extraction job.
-// Enforces the 3-notes-per-recording cap.
+// CreateNote creates a note and (unless SkipExtraction) enqueues the extraction job.
+// Enforces the 3-notes-per-recording cap when a recording is provided.
 func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteResponse, error) {
-	count, err := s.repo.CountNotesByRecording(ctx, input.RecordingID)
-	if err != nil {
-		return nil, fmt.Errorf("notes.service.CreateNote: count: %w", err)
+	// Cap only applies when a recording is linked.
+	if input.RecordingID != nil {
+		count, err := s.repo.CountNotesByRecording(ctx, *input.RecordingID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: count: %w", err)
+		}
+		if count >= maxNotesPerRecording {
+			return nil, fmt.Errorf("notes.service.CreateNote: max %d notes per recording: %w",
+				maxNotesPerRecording, domain.ErrConflict)
+		}
 	}
-	if count >= maxNotesPerRecording {
-		return nil, fmt.Errorf("notes.service.CreateNote: max %d notes per recording: %w",
-			maxNotesPerRecording, domain.ErrConflict)
+
+	status := domain.NoteStatusExtracting
+	if input.SkipExtraction {
+		// Manual note — start in draft so staff can fill fields immediately.
+		status = domain.NoteStatusDraft
 	}
 
 	noteID := domain.NewID()
@@ -122,15 +139,17 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 		FormVersionID: input.FormVersionID,
 		SubjectID:     input.SubjectID,
 		CreatedBy:     input.StaffID,
+		Status:        status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.CreateNote: %w", err)
 	}
 
-	// Enqueue extraction job. If enqueue fails the note stays in 'extracting'
-	// and can be retried by the caller or a background sweep.
-	if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
-		return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
+	if !input.SkipExtraction {
+		// Enqueue extraction job.
+		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
+		}
 	}
 
 	return toNoteResponse(note, nil), nil
@@ -152,6 +171,7 @@ func (s *Service) GetNote(ctx context.Context, id, clinicID uuid.UUID) (*NoteRes
 }
 
 // ListNotes returns a paginated list of notes for a clinic.
+// Archived notes are excluded by default; set IncludeArchived to include them.
 func (s *Service) ListNotes(ctx context.Context, clinicID uuid.UUID, input ListNotesInput) (*NoteListResponse, error) {
 	input.Limit = clampLimit(input.Limit)
 
@@ -200,17 +220,44 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 }
 
 // SubmitNote transitions a note from draft → submitted.
+// Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
+// If the linked form version is no longer published, form_version_context is set automatically.
 func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID) (*NoteResponse, error) {
+	now := domain.TimeNow()
 	note, err := s.repo.SubmitNote(ctx, SubmitNoteParams{
 		ID:          noteID,
 		ClinicID:    clinicID,
+		ReviewedBy:  staffID,
+		ReviewedAt:  now,
 		SubmittedBy: staffID,
-		SubmittedAt: domain.TimeNow(),
+		SubmittedAt: now,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
 	}
 	return toNoteResponse(note, nil), nil
+}
+
+// ArchiveNote soft-deletes a note. Archived notes are hidden from list results
+// unless include_archived is set.
+func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.ArchiveNote: %w", err)
+	}
+	if note.ArchivedAt != nil {
+		return nil, fmt.Errorf("notes.service.ArchiveNote: already archived: %w", domain.ErrConflict)
+	}
+
+	archived, err := s.repo.ArchiveNote(ctx, ArchiveNoteParams{
+		ID:         noteID,
+		ClinicID:   clinicID,
+		ArchivedAt: domain.TimeNow(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.ArchiveNote: %w", err)
+	}
+	return toNoteResponse(archived, nil), nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -226,7 +273,6 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 	r := &NoteResponse{
 		ID:            n.ID.String(),
 		ClinicID:      n.ClinicID.String(),
-		RecordingID:   n.RecordingID.String(),
 		FormVersionID: n.FormVersionID.String(),
 		CreatedBy:     n.CreatedBy.String(),
 		Status:        n.Status,
@@ -234,9 +280,21 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 		CreatedAt:     n.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     n.UpdatedAt.Format(time.RFC3339),
 	}
+	if n.RecordingID != nil {
+		s := n.RecordingID.String()
+		r.RecordingID = &s
+	}
 	if n.SubjectID != nil {
 		s := n.SubjectID.String()
 		r.SubjectID = &s
+	}
+	if n.ReviewedBy != nil {
+		s := n.ReviewedBy.String()
+		r.ReviewedBy = &s
+	}
+	if n.ReviewedAt != nil {
+		s := n.ReviewedAt.Format(time.RFC3339)
+		r.ReviewedAt = &s
 	}
 	if n.SubmittedAt != nil {
 		s := n.SubmittedAt.Format(time.RFC3339)
@@ -246,6 +304,11 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 		s := n.SubmittedBy.String()
 		r.SubmittedBy = &s
 	}
+	if n.ArchivedAt != nil {
+		s := n.ArchivedAt.Format(time.RFC3339)
+		r.ArchivedAt = &s
+	}
+	r.FormVersionContext = n.FormVersionContext
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))
 		for i, f := range fields {
@@ -257,10 +320,11 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 
 func toFieldResponse(f *NoteFieldRecord) *NoteFieldResponse {
 	r := &NoteFieldResponse{
-		FieldID:     f.FieldID.String(),
-		Value:       f.Value,
-		Confidence:  f.Confidence,
-		SourceQuote: f.SourceQuote,
+		FieldID:            f.FieldID.String(),
+		Value:              f.Value,
+		Confidence:         f.Confidence,
+		SourceQuote:        f.SourceQuote,
+		TransformationType: f.TransformationType,
 	}
 	if f.OverriddenBy != nil {
 		s := f.OverriddenBy.String()
