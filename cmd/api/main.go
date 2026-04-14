@@ -48,6 +48,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start the SSE broker (LISTEN/NOTIFY → fan-out to connected clients).
+	go a.Broker.Start(ctx)
+
 	go func() {
 		a.Log.Info("server starting", slog.String("addr", a.Server.Addr))
 		if err := a.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -61,6 +64,9 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	// Stop the SSE broker first — it holds a dedicated DB connection.
+	a.Broker.Stop()
 
 	// Stop River before closing the DB pool — River needs the pool to complete
 	// in-flight jobs gracefully.

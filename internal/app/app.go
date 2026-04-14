@@ -21,9 +21,11 @@ import (
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/clinic"
+	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
 	"github.com/melamphic/sal/internal/notes"
+	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
@@ -32,6 +34,7 @@ import (
 	mw "github.com/melamphic/sal/internal/platform/middleware"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/staff"
+	"github.com/melamphic/sal/internal/timeline"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
@@ -42,6 +45,7 @@ type App struct {
 	DB          *pgxpool.Pool
 	Log         *slog.Logger
 	RiverClient *river.Client[pgx.Tx]
+	Broker      *notifications.Broker
 }
 
 // Build constructs the full application from config.
@@ -120,6 +124,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app.Build: extraction: %w", err)
 	}
 
+	// ── Timeline repo + event adapter ─────────────────────────────────────────
+	timelineRepo := timeline.NewRepository(db)
+	eventAdapter := &timelineEventAdapter{repo: timelineRepo, log: log}
+
 	// ── Notes worker (registered before river.NewClient) ──────────────────────
 	notesRepo := notes.NewRepository(db)
 	river.AddWorker(workers, notes.NewExtractNoteWorker(
@@ -127,6 +135,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&formsFieldAdapter{repo: formsRepo},
 		&audioTranscriptAdapter{repo: audioRepo},
 		extractor,
+		eventAdapter,
 	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
@@ -148,8 +157,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
-	notesSvc := notes.NewService(notesRepo, riverClient)
+	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter)
 	notesHandler := notes.NewHandler(notesSvc)
+
+	// ── Timeline module ───────────────────────────────────────────────────────
+	timelineSvc := timeline.NewService(timelineRepo)
+	timelineHandler := timeline.NewHandler(timelineSvc)
+
+	// ── Notifications (SSE broker) ────────────────────────────────────────────
+	broker := notifications.NewBroker(db, log)
+	notificationsHandler := notifications.NewHandler(broker)
 
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
@@ -187,6 +204,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
 	notesHandler.Mount(r, api, jwtSecret)
+	timelineHandler.Mount(r, api, jwtSecret)
+	notificationsHandler.Mount(r, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -203,12 +222,44 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		DB:          db,
 		Log:         log,
 		RiverClient: riverClient,
+		Broker:      broker,
 	}, nil
 }
 
 // ── Cross-module adapters ─────────────────────────────────────────────────────
-// These bridge notes' provider interfaces to the concrete audio/forms repos.
+// These bridge notes' provider interfaces to the concrete audio/forms/timeline repos.
 // They live here because app.go is the only place allowed to wire cross-module deps.
+
+// timelineEventAdapter implements notes.EventEmitter by writing to the timeline repo.
+// Errors are logged but never propagated — event emission is best-effort.
+type timelineEventAdapter struct {
+	repo *timeline.Repository
+	log  *slog.Logger
+}
+
+func (a *timelineEventAdapter) Emit(ctx context.Context, e notes.NoteEvent) {
+	err := a.repo.InsertNoteEvent(ctx, timeline.InsertEventParams{
+		ID:         domain.NewID(),
+		NoteID:     e.NoteID,
+		SubjectID:  e.SubjectID,
+		ClinicID:   e.ClinicID,
+		EventType:  string(e.EventType),
+		FieldID:    e.FieldID,
+		OldValue:   e.OldValue,
+		NewValue:   e.NewValue,
+		ActorID:    e.ActorID,
+		ActorRole:  e.ActorRole,
+		Reason:     e.Reason,
+		OccurredAt: domain.TimeNow(),
+	})
+	if err != nil {
+		a.log.Error("timeline: failed to emit note event",
+			"error", err,
+			"note_id", e.NoteID,
+			"event_type", string(e.EventType),
+		)
+	}
+}
 
 type formsFieldAdapter struct{ repo *forms.Repository }
 
