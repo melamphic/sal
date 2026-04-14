@@ -44,7 +44,28 @@ ExtractNoteWorker.Work()
 ```
 
 If no extractor is configured (no API key), the worker skips AI and immediately sets `draft`
-so staff can fill fields manually.
+so staff can fill fields manually. In both cases a `ComputePolicyAlignmentArgs` job is
+enqueued immediately after so the alignment score appears in the review screen.
+
+## Policy alignment score
+
+After extraction (and again after submission), a `ComputePolicyAlignmentWorker` River job
+scores how well the note's field values satisfy the linked form's policy clauses:
+
+```
+ComputePolicyAlignmentWorker.Work()
+  → GetNoteByID
+  → GetClausesForNote (form_policies → latest published policy version → policy_clauses)
+  → GetNoteFields + GetFieldsByVersionID (build "title: value" content string)
+  → PolicyAligner.AlignPolicy(content, clauses) → Gemini scores each clause satisfied/not
+  → weighted score: high=3× medium=2× low=1×
+  → UpdatePolicyAlignment → notes.policy_alignment_pct
+```
+
+The score is surfaced in `NoteResponse.policy_alignment_pct` (null until the job runs, or when
+the form has no linked policies with published clauses).
+
+Only Gemini supports `PolicyAligner`; OpenAI returns nil and the worker skips silently.
 
 ## Field values
 
@@ -88,6 +109,7 @@ defines provider interfaces implemented by adapters in `app.go`:
 |---|---|---|
 | `FormFieldProvider` | `formsFieldAdapter` | `forms.Repository.GetFieldsByVersionID` |
 | `RecordingProvider` | `audioTranscriptAdapter` | `audio.Repository.GetTranscript` |
+| `PolicyClauseProvider` | `policyClauseProviderAdapter` | `forms.Repository.ListLinkedPolicies` + `policy.Repository.ListClauses` |
 
 ## Database tables
 
@@ -105,6 +127,7 @@ defines provider interfaces implemented by adapters in `app.go`:
 | `error_message` | TEXT? | Set on failed status |
 | `submitted_at` | TIMESTAMPTZ? | Set on submit |
 | `submitted_by` | UUID? | Staff who submitted |
+| `policy_alignment_pct` | DECIMAL(5,2)? | Weighted alignment score 0–100; null until job runs |
 
 Unique index on `(recording_id, form_version_id)` — one note per recording+form combination.
 

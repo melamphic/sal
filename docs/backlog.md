@@ -13,25 +13,7 @@ These items were listed as backlog but are now implemented:
 | Timeline & SSE notifications (`note_events`, subject/clinic audit, real-time SSE) | Phase 2 |
 | Policy engine (block content, semver versioning, clause tagging, form links, retire) | Phase 2 |
 | Compliance reports (query endpoints + async CSV export via River + S3) | Phase 2 |
-
----
-
-## Pending: Policy Alignment Score on Notes
-
-**Spec rule:** After review, the note shows what percentage of the linked form's policies are satisfied by the transcript + extracted field values.
-
-**What's needed:**
-
-- Add `policy_alignment_pct DECIMAL(5,2)` column to `notes` table.
-- After note submission (or as a separate async River job), compute alignment:
-  1. Load clause list from linked policy versions (via `policy_clauses`).
-  2. Score each clause against note field values and transcript.
-  3. Compute weighted score by parity: `high` clauses weighted 3×, `medium` 2×, `low` 1×.
-- Store result on `notes.policy_alignment_pct`.
-- Surface in `NoteResponse`.
-- `RunPolicyCheck()` stub in `forms/service.go` should invoke the real scorer.
-
-**Dependencies:** Policy engine ✅ (built). Requires scorer implementation in `extraction` or new `compliance` package.
+| Policy alignment score on notes (`policy_alignment_pct`, weighted by parity, Gemini) | Phase 2 |
 
 ---
 
