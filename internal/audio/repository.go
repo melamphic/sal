@@ -209,6 +209,21 @@ func (r *Repository) LinkSubject(ctx context.Context, id, clinicID, subjectID uu
 	return rec, nil
 }
 
+// GetTranscript returns the transcript for a recording by ID.
+// No clinic_id check — for internal pipeline use only (River workers).
+// Returns nil transcript when the recording has not been transcribed yet.
+func (r *Repository) GetTranscript(ctx context.Context, id uuid.UUID) (*string, error) {
+	var transcript *string
+	err := r.db.QueryRow(ctx, `SELECT transcript FROM recordings WHERE id = $1`, id).Scan(&transcript)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("audio.repo.GetTranscript: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("audio.repo.GetTranscript: %w", err)
+	}
+	return transcript, nil
+}
+
 // ── Scan helper ───────────────────────────────────────────────────────────────
 
 // scanner is satisfied by both pgx.Row and pgx.Rows.
