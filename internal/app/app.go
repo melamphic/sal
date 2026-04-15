@@ -33,6 +33,7 @@ import (
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
 	"github.com/melamphic/sal/internal/platform/storage"
+	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/timeline"
 	"github.com/riverqueue/river"
@@ -128,6 +129,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	timelineRepo := timeline.NewRepository(db)
 	eventAdapter := &timelineEventAdapter{repo: timelineRepo, log: log}
 
+	// ── Reports repo + worker (registered before river.NewClient) ─────────────
+	reportsRepo := reports.NewRepository(db)
+	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
+
 	// ── Notes worker (registered before river.NewClient) ──────────────────────
 	notesRepo := notes.NewRepository(db)
 	river.AddWorker(workers, notes.NewExtractNoteWorker(
@@ -168,6 +173,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	broker := notifications.NewBroker(db, log)
 	notificationsHandler := notifications.NewHandler(broker)
 
+	// ── Reports module ────────────────────────────────────────────────────────
+	reportsSvc := reports.NewService(reportsRepo, riverClient)
+	reportsHandler := reports.NewHandler(reportsSvc, store)
+
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -206,6 +215,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
 	notificationsHandler.Mount(r, jwtSecret)
+	reportsHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
