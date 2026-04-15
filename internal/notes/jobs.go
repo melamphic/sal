@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
+	"github.com/melamphic/sal/internal/platform/confidence"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -72,10 +73,13 @@ type FormFieldProvider interface {
 	GetFormPrompt(ctx context.Context, versionID uuid.UUID) (*string, error)
 }
 
-// RecordingProvider fetches transcript data from a recording.
+// RecordingProvider fetches transcript and ASR word data from a recording.
 // Implemented by an adapter over audio.Repository in app.go.
 type RecordingProvider interface {
 	GetTranscript(ctx context.Context, recordingID uuid.UUID) (transcript *string, err error)
+	// GetWordConfidences returns the ASR word confidence index for a recording.
+	// Returns nil (no error) when the recording has no word data (GeminiTranscriber).
+	GetWordConfidences(ctx context.Context, recordingID uuid.UUID) ([]confidence.WordConfidence, error)
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────
@@ -165,6 +169,12 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return fmt.Errorf("extract_note: %s", msg)
 	}
 
+	// Fetch ASR word confidence index (nil for GeminiTranscriber — handled gracefully).
+	var wordIndex []confidence.WordConfidence
+	if wc, wcErr := w.recording.GetWordConfidences(ctx, *note.RecordingID); wcErr == nil {
+		wordIndex = wc
+	}
+
 	// Fetch form-level AI context prompt and field definitions.
 	overallPrompt, err := w.forms.GetFormPrompt(ctx, note.FormVersionID)
 	if err != nil {
@@ -219,14 +229,20 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		}
 	}
 
-	// Build upsert params from AI results.
+	// Build upsert params from AI results, attaching deterministic confidence scores.
 	upserts := make([]UpsertFieldParams, 0, len(results)+len(skippableIDs))
 	for _, r := range results {
 		fieldID, err := uuid.Parse(r.FieldID)
 		if err != nil {
 			continue
 		}
-		upserts = append(upserts, UpsertFieldParams{
+		cr := confidence.ComputeFieldConfidence(
+			derefStr(r.SourceQuote),
+			derefStr(r.TransformationType),
+			wordIndex,
+		)
+
+		p := UpsertFieldParams{
 			ID:                 domain.NewID(),
 			NoteID:             noteID,
 			FieldID:            fieldID,
@@ -234,7 +250,16 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 			Confidence:         r.Confidence,
 			SourceQuote:        r.SourceQuote,
 			TransformationType: r.TransformationType,
-		})
+			RequiresReview:     cr.GroundingSource == "ungrounded",
+		}
+		// Only populate ASR columns when we have real word data.
+		if cr.GroundingSource != "no_asr_data" {
+			p.ASRConfidence = &cr.ASRConfidence
+			p.MinWordConfidence = &cr.MinWordConfidence
+			p.AlignmentScore = &cr.AlignmentScore
+			p.GroundingSource = &cr.GroundingSource
+		}
+		upserts = append(upserts, p)
 	}
 	// Insert empty rows for skippable fields so they appear in the review screen.
 	for _, f := range formFields {
@@ -382,4 +407,12 @@ func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[
 func jsonNull() string {
 	b, _ := json.Marshal(nil)
 	return string(b)
+}
+
+// derefStr returns the string value of a pointer, or "" if nil.
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

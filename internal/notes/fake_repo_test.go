@@ -165,6 +165,11 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 			rec.Confidence = p.Confidence
 			rec.SourceQuote = p.SourceQuote
 			rec.TransformationType = p.TransformationType
+			rec.ASRConfidence = p.ASRConfidence
+			rec.MinWordConfidence = p.MinWordConfidence
+			rec.AlignmentScore = p.AlignmentScore
+			rec.GroundingSource = p.GroundingSource
+			rec.RequiresReview = p.RequiresReview
 			rec.UpdatedAt = domain.TimeNow()
 		} else {
 			rec := &NoteFieldRecord{
@@ -175,6 +180,11 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 				Confidence:         p.Confidence,
 				SourceQuote:        p.SourceQuote,
 				TransformationType: p.TransformationType,
+				ASRConfidence:      p.ASRConfidence,
+				MinWordConfidence:  p.MinWordConfidence,
+				AlignmentScore:     p.AlignmentScore,
+				GroundingSource:    p.GroundingSource,
+				RequiresReview:     p.RequiresReview,
 				CreatedAt:          domain.TimeNow(),
 				UpdatedAt:          domain.TimeNow(),
 			}

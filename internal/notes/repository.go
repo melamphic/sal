@@ -36,14 +36,23 @@ type NoteRecord struct {
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
+// Confidence is the LLM-estimated value (kept as fallback when no ASR data).
+// ASRConfidence/MinWordConfidence/AlignmentScore/GroundingSource are deterministic
+// scores populated when Deepgram word data is available (nil for GeminiTranscriber).
+// RequiresReview is true when grounding_source="ungrounded" or min confidence is low.
 type NoteFieldRecord struct {
 	ID                 uuid.UUID
 	NoteID             uuid.UUID
 	FieldID            uuid.UUID
-	Value              *string  // JSON-encoded
-	Confidence         *float64 // 0.0–1.0; nil for manual/skippable
+	Value              *string
+	Confidence         *float64
 	SourceQuote        *string
-	TransformationType *string // "direct" | "inference"; nil for manual/skippable
+	TransformationType *string
+	ASRConfidence      *float64
+	MinWordConfidence  *float64
+	AlignmentScore     *float64
+	GroundingSource    *string
+	RequiresReview     bool
 	OverriddenBy       *uuid.UUID
 	OverriddenAt       *time.Time
 	CreatedAt          time.Time
@@ -92,6 +101,7 @@ type ArchiveNoteParams struct {
 
 // UpsertFieldParams holds values for inserting or updating a note_field row.
 // Used by the extraction job to write AI results in bulk.
+// ASRConfidence/MinWordConfidence/AlignmentScore/GroundingSource are nil when no ASR data.
 type UpsertFieldParams struct {
 	ID                 uuid.UUID
 	NoteID             uuid.UUID
@@ -99,7 +109,12 @@ type UpsertFieldParams struct {
 	Value              *string
 	Confidence         *float64
 	SourceQuote        *string
-	TransformationType *string // "direct" | "inference"; nil for skippable
+	TransformationType *string
+	ASRConfidence      *float64
+	MinWordConfidence  *float64
+	AlignmentScore     *float64
+	GroundingSource    *string
+	RequiresReview     bool
 }
 
 // UpdateNoteFieldParams holds values for a staff override of a single field.
@@ -322,11 +337,13 @@ func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID
 // ── Note fields ───────────────────────────────────────────────────────────────
 
 const fieldCols = `id, note_id, field_id, value, confidence, source_quote,
-	transformation_type, overridden_by, overridden_at, created_at, updated_at`
+	transformation_type, asr_confidence, min_word_confidence, alignment_score,
+	grounding_source, requires_review, overridden_by, overridden_at, created_at, updated_at`
 
 // fieldColsAliased is used in JOIN queries to avoid ambiguous column names.
 const fieldColsAliased = `nf.id, nf.note_id, nf.field_id, nf.value, nf.confidence, nf.source_quote,
-	nf.transformation_type, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
+	nf.transformation_type, nf.asr_confidence, nf.min_word_confidence, nf.alignment_score,
+	nf.grounding_source, nf.requires_review, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
 
 // UpsertNoteFields inserts or replaces note_field rows in bulk (extraction job output).
 // All upserts run inside a single transaction — a partial failure rolls back all changes.
@@ -342,18 +359,28 @@ func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fie
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	q := fmt.Sprintf(`
-		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote, transformation_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote,
+		    transformation_type, asr_confidence, min_word_confidence, alignment_score,
+		    grounding_source, requires_review)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (note_id, field_id) DO UPDATE
 		SET value               = EXCLUDED.value,
 		    confidence          = EXCLUDED.confidence,
 		    source_quote        = EXCLUDED.source_quote,
-		    transformation_type = EXCLUDED.transformation_type
+		    transformation_type = EXCLUDED.transformation_type,
+		    asr_confidence      = EXCLUDED.asr_confidence,
+		    min_word_confidence = EXCLUDED.min_word_confidence,
+		    alignment_score     = EXCLUDED.alignment_score,
+		    grounding_source    = EXCLUDED.grounding_source,
+		    requires_review     = EXCLUDED.requires_review
 		RETURNING %s`, fieldCols)
 
 	result := make([]*NoteFieldRecord, 0, len(fields))
 	for _, p := range fields {
-		row := tx.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType)
+		row := tx.QueryRow(ctx, q,
+			p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType,
+			p.ASRConfidence, p.MinWordConfidence, p.AlignmentScore, p.GroundingSource, p.RequiresReview,
+		)
 		f, err := scanField(row)
 		if err != nil {
 			return nil, fmt.Errorf("notes.repo.UpsertNoteFields: %w", err)
@@ -445,7 +472,10 @@ func scanField(row scannable) (*NoteFieldRecord, error) {
 	var f NoteFieldRecord
 	err := row.Scan(
 		&f.ID, &f.NoteID, &f.FieldID, &f.Value, &f.Confidence, &f.SourceQuote,
-		&f.TransformationType, &f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
+		&f.TransformationType,
+		&f.ASRConfidence, &f.MinWordConfidence, &f.AlignmentScore,
+		&f.GroundingSource, &f.RequiresReview,
+		&f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

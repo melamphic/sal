@@ -27,6 +27,7 @@ import (
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
+	"github.com/melamphic/sal/internal/platform/confidence"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
 	"github.com/melamphic/sal/internal/platform/logger"
@@ -346,6 +347,14 @@ func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID 
 		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
 	}
 	return t, nil
+}
+
+func (a *audioTranscriptAdapter) GetWordConfidences(ctx context.Context, recordingID uuid.UUID) ([]confidence.WordConfidence, error) {
+	wc, err := a.repo.GetWordConfidences(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
+	}
+	return wc, nil
 }
 
 // adminBootstrapAdapter implements clinic.AdminBootstrapper.
