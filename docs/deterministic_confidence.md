@@ -227,7 +227,21 @@ requires_review      BOOLEAN   -- true if below threshold or ungrounded
 | `ComputeFieldConfidence` called per field in `ExtractNoteWorker` | `internal/notes/jobs.go` | ✅ |
 | New columns persisted via `UpsertNoteFields` | `internal/notes/repository.go` | ✅ |
 
+**Completed (2026-04-15, migration 00018)**
+
+| Step | File | Status |
+|---|---|---|
+| `allow_inference`, `min_confidence` columns on `form_fields` | `migrations/00018_add_field_inference_controls.sql` | ✅ |
+| `FieldRecord` + `CreateFieldParams` carry both fields | `internal/forms/repository.go` | ✅ |
+| `FieldSpec.AllowInference` → AI prompt `direct_only` hint | `internal/extraction/extractor.go`, `internal/extraction/gemini.go` | ✅ |
+| `FormFieldMeta` carries `AllowInference`, `MinConfidence` | `internal/notes/jobs.go` | ✅ |
+| Inference rejection + min-confidence threshold in `ExtractNoteWorker` | `internal/notes/jobs.go` | ✅ |
+| `formsFieldAdapter` maps both fields | `internal/app/app.go` | ✅ |
+| `fieldBodyInput`, `FieldInput`, `FieldResponse` carry both fields | `internal/forms/handler.go`, `internal/forms/service.go` | ✅ |
+| `RollbackForm` copies both fields when cloning fields | `internal/forms/service.go` | ✅ |
+
 **Implementation notes vs. original plan:**
 - `rapidfuzz` not used — Go implementation with LCS-ratio sliding window is sufficient and adds no dependency.
-- `MinConfidence` per-field threshold not added to `FieldSpec` yet — the `requires_review` flag exposes the signal to the frontend; threshold enforcement can be added per-field when the frontend review UI is built.
 - `no_asr_data` grounding source (Gemini transcriber path) leaves all ASR columns NULL and keeps the LLM `confidence` value as-is.
+- Inference rejection (allow_inference=false) nulls the value and sets `requires_review=true` rather than failing the job — partial extraction is preferable to a total failure.
+- `min_confidence` check only fires when grounding is "exact" or "fuzzy"; ungrounded results already set `requires_review=true` via the grounding path.

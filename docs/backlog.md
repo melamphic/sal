@@ -20,6 +20,7 @@ These items were listed as backlog but are now implemented:
 | RunPolicyCheck real LLM implementation (form coverage analysis) | Phase 2 |
 | Factory functions for all providers (extractor, aligner, checker) | Phase 2 |
 | Deterministic confidence scoring (ASR word alignment, LCS fuzzy match, inference penalty, requires_review) | Phase 2 |
+| Per-field inference controls (`allow_inference`, `min_confidence` on `form_fields`) | Phase 2 |
 
 ---
 
