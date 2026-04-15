@@ -35,14 +35,16 @@ func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCove
 
 // FieldResponse is the API-safe representation of a form field.
 type FieldResponse struct {
-	ID        string          `json:"id"`
-	Position  int             `json:"position"`
-	Title     string          `json:"title"`
-	Type      string          `json:"type"`
-	Config    json.RawMessage `json:"config"`
-	AIPrompt  *string         `json:"ai_prompt,omitempty"`
-	Required  bool            `json:"required"`
-	Skippable bool            `json:"skippable"`
+	ID             string          `json:"id"`
+	Position       int             `json:"position"`
+	Title          string          `json:"title"`
+	Type           string          `json:"type"`
+	Config         json.RawMessage `json:"config"`
+	AIPrompt       *string         `json:"ai_prompt,omitempty"`
+	Required       bool            `json:"required"`
+	Skippable      bool            `json:"skippable"`
+	AllowInference bool            `json:"allow_inference"`
+	MinConfidence  *float64        `json:"min_confidence,omitempty"`
 }
 
 // FormVersionResponse is the API-safe representation of a form version.
@@ -163,13 +165,15 @@ type UpdateDraftInput struct {
 
 // FieldInput holds the values for a single field in a draft update.
 type FieldInput struct {
-	Position  int
-	Title     string
-	Type      string
-	Config    json.RawMessage
-	AIPrompt  *string
-	Required  bool
-	Skippable bool
+	Position       int
+	Title          string
+	Type           string
+	Config         json.RawMessage
+	AIPrompt       *string
+	Required       bool
+	Skippable      bool
+	AllowInference bool
+	MinConfidence  *float64
 }
 
 // PublishFormInput holds input for publishing the draft version.
@@ -381,15 +385,17 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 			cfg = json.RawMessage(`{}`)
 		}
 		fieldParams[i] = CreateFieldParams{
-			ID:            domain.NewID(),
-			FormVersionID: draft.ID,
-			Position:      fi.Position,
-			Title:         fi.Title,
-			Type:          fi.Type,
-			Config:        cfg,
-			AIPrompt:      fi.AIPrompt,
-			Required:      fi.Required,
-			Skippable:     fi.Skippable,
+			ID:             domain.NewID(),
+			FormVersionID:  draft.ID,
+			Position:       fi.Position,
+			Title:          fi.Title,
+			Type:           fi.Type,
+			Config:         cfg,
+			AIPrompt:       fi.AIPrompt,
+			Required:       fi.Required,
+			Skippable:      fi.Skippable,
+			AllowInference: fi.AllowInference,
+			MinConfidence:  fi.MinConfidence,
 		}
 	}
 
@@ -495,11 +501,12 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 			prompt = *f.AIPrompt
 		}
 		specs = append(specs, extraction.FieldSpec{
-			ID:       f.ID.String(),
-			Title:    f.Title,
-			Type:     f.Type,
-			AIPrompt: prompt,
-			Required: f.Required,
+			ID:             f.ID.String(),
+			Title:          f.Title,
+			Type:           f.Type,
+			AIPrompt:       prompt,
+			Required:       f.Required,
+			AllowInference: f.AllowInference,
 		})
 	}
 
@@ -573,15 +580,17 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 	fieldParams := make([]CreateFieldParams, len(sourceFields))
 	for i, f := range sourceFields {
 		fieldParams[i] = CreateFieldParams{
-			ID:            domain.NewID(),
-			FormVersionID: newDraftID,
-			Position:      f.Position,
-			Title:         f.Title,
-			Type:          f.Type,
-			Config:        f.Config,
-			AIPrompt:      f.AIPrompt,
-			Required:      f.Required,
-			Skippable:     f.Skippable,
+			ID:             domain.NewID(),
+			FormVersionID:  newDraftID,
+			Position:       f.Position,
+			Title:          f.Title,
+			Type:           f.Type,
+			Config:         f.Config,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
 		}
 	}
 	fields, err := s.repo.ReplaceFields(ctx, newDraftID, fieldParams)
@@ -851,14 +860,16 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 
 func toFieldResponse(f *FieldRecord) *FieldResponse {
 	return &FieldResponse{
-		ID:        f.ID.String(),
-		Position:  f.Position,
-		Title:     f.Title,
-		Type:      f.Type,
-		Config:    f.Config,
-		AIPrompt:  f.AIPrompt,
-		Required:  f.Required,
-		Skippable: f.Skippable,
+		ID:             f.ID.String(),
+		Position:       f.Position,
+		Title:          f.Title,
+		Type:           f.Type,
+		Config:         f.Config,
+		AIPrompt:       f.AIPrompt,
+		Required:       f.Required,
+		Skippable:      f.Skippable,
+		AllowInference: f.AllowInference,
+		MinConfidence:  f.MinConfidence,
 	}
 }
 
