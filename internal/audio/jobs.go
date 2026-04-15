@@ -71,7 +71,7 @@ func (w *TranscribeAudioWorker) Work(ctx context.Context, job *river.Job[Transcr
 		return fmt.Errorf("transcribe_audio: transcribe: %w", err)
 	}
 
-	if _, err := w.repo.UpdateRecordingTranscript(ctx, recID, result.Transcript, result.DurationSeconds); err != nil {
+	if _, err := w.repo.UpdateRecordingTranscript(ctx, recID, result.Transcript, result.DurationSeconds, result.WordConfidences); err != nil {
 		return fmt.Errorf("transcribe_audio: save transcript: %w", err)
 	}
 

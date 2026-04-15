@@ -10,6 +10,7 @@ import (
 	listenapi "github.com/deepgram/deepgram-go-sdk/v3/pkg/api/listen/v1/rest"
 	interfaces "github.com/deepgram/deepgram-go-sdk/v3/pkg/client/interfaces"
 	"github.com/deepgram/deepgram-go-sdk/v3/pkg/client/listen"
+	"github.com/melamphic/sal/internal/platform/confidence"
 	"google.golang.org/genai"
 )
 
@@ -17,6 +18,9 @@ import (
 type TranscriptResult struct {
 	Transcript      string
 	DurationSeconds *int
+	// WordConfidences is the ASR word-level confidence index built from the Deepgram response.
+	// Nil when using GeminiTranscriber (no word-level data in dev/staging).
+	WordConfidences []confidence.WordConfidence
 }
 
 // Transcriber is the interface for audio-to-text providers.
@@ -63,7 +67,21 @@ func (t *DeepgramTranscriber) Transcribe(ctx context.Context, presignedURL, _ st
 	if resp.Results != nil && len(resp.Results.Channels) > 0 {
 		ch := resp.Results.Channels[0]
 		if len(ch.Alternatives) > 0 {
-			result.Transcript = ch.Alternatives[0].Transcript
+			alt := ch.Alternatives[0]
+			result.Transcript = alt.Transcript
+			// Build word confidence index for deterministic scoring downstream.
+			rawWords := make([]confidence.RawWord, len(alt.Words))
+			for i, w := range alt.Words {
+				rawWords[i] = confidence.RawWord{
+					Word:           w.Word,
+					PunctuatedWord: w.PunctuatedWord,
+					Start:          w.Start,
+					End:            w.End,
+					Confidence:     w.Confidence,
+					Speaker:        w.Speaker,
+				}
+			}
+			result.WordConfidences = confidence.BuildWordIndex(rawWords)
 		}
 	}
 	if resp.Metadata != nil {

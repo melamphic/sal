@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/platform/confidence"
 )
 
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
@@ -90,7 +91,7 @@ func (f *fakeRepo) UpdateRecordingStatus(_ context.Context, id uuid.UUID, status
 	return cloneRec(rec), nil
 }
 
-func (f *fakeRepo) UpdateRecordingTranscript(_ context.Context, id uuid.UUID, transcript string, durationSeconds *int) (*RecordingRecord, error) {
+func (f *fakeRepo) UpdateRecordingTranscript(_ context.Context, id uuid.UUID, transcript string, durationSeconds *int, _ []confidence.WordConfidence) (*RecordingRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	rec, ok := f.recordings[id]

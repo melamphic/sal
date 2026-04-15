@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/platform/confidence"
 )
 
 // repo is the internal data-access interface for the audio module.
@@ -14,6 +15,6 @@ type repo interface {
 	GetRecordingByID(ctx context.Context, id, clinicID uuid.UUID) (*RecordingRecord, error)
 	ListRecordings(ctx context.Context, clinicID uuid.UUID, p ListRecordingsParams) ([]*RecordingRecord, int, error)
 	UpdateRecordingStatus(ctx context.Context, id uuid.UUID, status domain.RecordingStatus, errorMsg *string) (*RecordingRecord, error)
-	UpdateRecordingTranscript(ctx context.Context, id uuid.UUID, transcript string, durationSeconds *int) (*RecordingRecord, error)
+	UpdateRecordingTranscript(ctx context.Context, id uuid.UUID, transcript string, durationSeconds *int, wordConfidences []confidence.WordConfidence) (*RecordingRecord, error)
 	LinkSubject(ctx context.Context, id, clinicID, subjectID uuid.UUID) (*RecordingRecord, error)
 }
