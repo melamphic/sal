@@ -443,6 +443,9 @@ func (r *Repository) GetFormPrompt(ctx context.Context, versionID uuid.UUID) (*s
 		JOIN forms f ON f.id = fv.form_id
 		WHERE fv.id = $1`, versionID).Scan(&prompt)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
 		return nil, fmt.Errorf("forms.repo.GetFormPrompt: %w", err)
 	}
 	return prompt, nil

@@ -2,6 +2,7 @@ package notes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -260,6 +261,22 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt)
 	rec, err := scanNote(row)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			// UPDATE matched 0 rows — either note missing or wrong status.
+			// Do a secondary lookup to return the correct sentinel.
+			var status domain.NoteStatus
+			checkErr := r.db.QueryRow(ctx,
+				`SELECT status FROM notes WHERE id = $1 AND clinic_id = $2`,
+				p.ID, p.ClinicID,
+			).Scan(&status)
+			if errors.Is(checkErr, pgx.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			if checkErr != nil {
+				return nil, fmt.Errorf("notes.repo.SubmitNote: status check: %w", checkErr)
+			}
+			return nil, domain.ErrConflict
+		}
 		return nil, fmt.Errorf("notes.repo.SubmitNote: %w", err)
 	}
 	return rec, nil
@@ -280,12 +297,12 @@ func (r *Repository) ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*Not
 	return rec, nil
 }
 
-// CountNotesByRecording returns how many notes exist for a recording.
-func (r *Repository) CountNotesByRecording(ctx context.Context, recordingID uuid.UUID) (int, error) {
+// CountNotesByRecording returns how many notes exist for a recording within a clinic.
+func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error) {
 	var count int
 	if err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM notes WHERE recording_id = $1`,
-		recordingID,
+		`SELECT COUNT(*) FROM notes WHERE clinic_id = $1 AND recording_id = $2`,
+		clinicID, recordingID,
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("notes.repo.CountNotesByRecording: %w", err)
 	}
@@ -312,10 +329,17 @@ const fieldColsAliased = `nf.id, nf.note_id, nf.field_id, nf.value, nf.confidenc
 	nf.transformation_type, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
 
 // UpsertNoteFields inserts or replaces note_field rows in bulk (extraction job output).
+// All upserts run inside a single transaction — a partial failure rolls back all changes.
 func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error) {
 	if len(fields) == 0 {
 		return nil, nil
 	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.UpsertNoteFields: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	q := fmt.Sprintf(`
 		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote, transformation_type)
@@ -329,12 +353,16 @@ func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fie
 
 	result := make([]*NoteFieldRecord, 0, len(fields))
 	for _, p := range fields {
-		row := r.db.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType)
+		row := tx.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType)
 		f, err := scanField(row)
 		if err != nil {
 			return nil, fmt.Errorf("notes.repo.UpsertNoteFields: %w", err)
 		}
 		result = append(result, f)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("notes.repo.UpsertNoteFields: commit: %w", err)
 	}
 	return result, nil
 }
@@ -368,26 +396,19 @@ func (r *Repository) GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*No
 }
 
 // UpdateNoteField records a staff override on a single field.
+// The clinic ownership check and field update are performed atomically in one query.
 func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
-	// Verify note belongs to clinic before updating.
-	var noteClinic uuid.UUID
-	if err := r.db.QueryRow(ctx, `SELECT clinic_id FROM notes WHERE id = $1`, p.NoteID).Scan(&noteClinic); err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, domain.ErrNotFound
-		}
-		return nil, fmt.Errorf("notes.repo.UpdateNoteField: clinic check: %w", err)
-	}
-	if noteClinic != p.ClinicID {
-		return nil, domain.ErrForbidden
-	}
-
 	q := fmt.Sprintf(`
-		UPDATE note_fields
-		SET value = $3, overridden_by = $4, overridden_at = $5
-		WHERE note_id = $1 AND field_id = $2
-		RETURNING %s`, fieldCols)
+		UPDATE note_fields nf
+		SET value = $4, overridden_by = $5, overridden_at = $6
+		FROM notes n
+		WHERE nf.note_id = n.id
+		  AND nf.note_id = $1
+		  AND nf.field_id = $2
+		  AND n.clinic_id = $3
+		RETURNING %s`, fieldColsAliased)
 
-	row := r.db.QueryRow(ctx, q, p.NoteID, p.FieldID, p.Value, p.OverriddenBy, p.OverriddenAt)
+	row := r.db.QueryRow(ctx, q, p.NoteID, p.FieldID, p.ClinicID, p.Value, p.OverriddenBy, p.OverriddenAt)
 	f, err := scanField(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.UpdateNoteField: %w", err)

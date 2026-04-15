@@ -76,17 +76,18 @@ func (h *Handler) getClinicalAudit(ctx context.Context, input *clinicalAuditInpu
 type staffActionsInput struct {
 	reportPaginationInput
 	reportFilterInput
-	StaffIDPath string `query:"staff_id" doc:"Staff UUID to filter actions for. Required."`
+	// Note: StaffID is already on reportFilterInput (query:"staff_id").
+	// staffActionsInput requires it — validated in the handler.
 }
 
 // getStaffActions handles GET /api/v1/reports/staff-actions.
 func (h *Handler) getStaffActions(ctx context.Context, input *staffActionsInput) (*auditHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
-	if input.StaffIDPath == "" {
+	if input.StaffID == "" {
 		return nil, huma.Error400BadRequest("staff_id is required")
 	}
-	staffID, err := uuid.Parse(input.StaffIDPath)
+	staffID, err := uuid.Parse(input.StaffID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid staff_id")
 	}
@@ -204,7 +205,7 @@ func (h *Handler) getExportJob(ctx context.Context, input *exportJobInput) (*job
 	}
 
 	// Pre-fetch the job to get the storage key (if complete) before building the response.
-	rec, err := h.svc.repo.GetReportJob(ctx, jobID, clinicID)
+	rec, err := h.svc.GetReportJobRecord(ctx, jobID, clinicID)
 	if err != nil {
 		return nil, mapReportError(err)
 	}
@@ -242,7 +243,6 @@ func mapReportError(err error) error {
 
 func parseFilters(f reportFilterInput) (ReportFilters, error) {
 	out := ReportFilters{}
-	var err error
 
 	if f.From != "" {
 		t, err := time.Parse(time.RFC3339, f.From)
@@ -272,7 +272,7 @@ func parseFilters(f reportFilterInput) (ReportFilters, error) {
 		}
 		out.SubjectID = &id
 	}
-	return out, err
+	return out, nil
 }
 
 func parseExportFilters(f exportFilters) (ReportFilters, error) {

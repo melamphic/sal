@@ -16,9 +16,9 @@ type repo interface {
 	UpdateNoteStatus(ctx context.Context, id uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error)
 	SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error)
 	ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*NoteRecord, error)
-	// CountNotesByRecording returns how many notes exist for a recording.
+	// CountNotesByRecording returns how many notes exist for a recording within a clinic.
 	// Used to enforce the 3-note-per-recording cap at service layer.
-	CountNotesByRecording(ctx context.Context, recordingID uuid.UUID) (int, error)
+	CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error)
 
 	// UpdatePolicyAlignment persists the computed alignment score on a note.
 	UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error

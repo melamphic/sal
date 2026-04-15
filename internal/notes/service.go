@@ -122,7 +122,7 @@ type UpdateFieldInput struct {
 // Enforces the 3-notes-per-recording cap when a recording is provided.
 func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteResponse, error) {
 	if input.RecordingID != nil {
-		count, err := s.repo.CountNotesByRecording(ctx, *input.RecordingID)
+		count, err := s.repo.CountNotesByRecording(ctx, input.ClinicID, *input.RecordingID)
 		if err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: count: %w", err)
 		}

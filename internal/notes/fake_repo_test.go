@@ -140,12 +140,12 @@ func (f *fakeRepo) ArchiveNote(_ context.Context, p ArchiveNoteParams) (*NoteRec
 	return cloneNote(n), nil
 }
 
-func (f *fakeRepo) CountNotesByRecording(_ context.Context, recordingID uuid.UUID) (int, error) {
+func (f *fakeRepo) CountNotesByRecording(_ context.Context, clinicID, recordingID uuid.UUID) (int, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	count := 0
 	for _, n := range f.notes {
-		if n.RecordingID != nil && *n.RecordingID == recordingID {
+		if n.ClinicID == clinicID && n.RecordingID != nil && *n.RecordingID == recordingID {
 			count++
 		}
 	}

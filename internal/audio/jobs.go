@@ -61,9 +61,11 @@ func (w *TranscribeAudioWorker) Work(ctx context.Context, job *river.Job[Transcr
 		return fmt.Errorf("transcribe_audio: mark transcribing: %w", err)
 	}
 
-	// If no API key is configured, skip transcription. Status stays transcribing
-	// so developers can see the job ran without needing a live Deepgram account.
+	// If no API key is configured, mark the recording as failed immediately.
+	// Leaving it in "transcribing" forever would be misleading and unrecoverable.
 	if w.deepgramAPIKey == "" {
+		msg := "DEEPGRAM_API_KEY not configured"
+		_, _ = w.repo.UpdateRecordingStatus(ctx, recID, domain.RecordingStatusFailed, &msg)
 		return nil
 	}
 

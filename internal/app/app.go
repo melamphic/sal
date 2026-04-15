@@ -370,6 +370,9 @@ type lazyEnqueuer struct {
 }
 
 func (e *lazyEnqueuer) Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	if e.client == nil {
+		return nil, fmt.Errorf("app.lazyEnqueuer: client not yet initialized")
+	}
 	res, err := e.client.Insert(ctx, args, opts)
 	if err != nil {
 		return nil, fmt.Errorf("app.lazyEnqueuer: %w", err)
