@@ -29,6 +29,8 @@ type registerInput struct {
 		Address    *string         `json:"address,omitempty" doc:"Clinic physical address."`
 		Vertical   domain.Vertical `json:"vertical" enum:"veterinary,dental,aged_care" doc:"The clinical domain this clinic operates in."`
 		DataRegion string          `json:"data_region" doc:"Where clinic data is stored (e.g. ap-southeast-2, eu-west-2)." default:"ap-southeast-2"`
+		AdminEmail string          `json:"admin_email" format:"email" doc:"Email of the first super admin. A magic link is sent here after registration."`
+		AdminName  string          `json:"admin_name" minLength:"1" maxLength:"200" doc:"Full name of the first super admin."`
 	}
 }
 
@@ -56,6 +58,8 @@ func (h *Handler) register(ctx context.Context, input *registerInput) (*clinicRe
 		Address:    input.Body.Address,
 		Vertical:   input.Body.Vertical,
 		DataRegion: input.Body.DataRegion,
+		AdminEmail: input.Body.AdminEmail,
+		AdminName:  input.Body.AdminName,
 	})
 	if err != nil {
 		return nil, mapClinicError(err)

@@ -17,15 +17,23 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+// AdminBootstrapper creates the first super admin for a newly registered clinic
+// and sends them a magic link so they can log in immediately.
+// Implemented by an adapter in app.go that bridges to staff.Service + auth.Service.
+type AdminBootstrapper interface {
+	Bootstrap(ctx context.Context, clinicID uuid.UUID, email, name string) error
+}
+
 // Service handles all clinic business logic.
 type Service struct {
-	repo   repo // interface — see repo.go
-	cipher *crypto.Cipher
+	repo         repo // interface — see repo.go
+	cipher       *crypto.Cipher
+	bootstrapper AdminBootstrapper // nil = skip (for tests that don't need the full flow)
 }
 
 // NewService creates a new clinic Service.
-func NewService(repo repo, cipher *crypto.Cipher) *Service {
-	return &Service{repo: repo, cipher: cipher}
+func NewService(repo repo, cipher *crypto.Cipher, bootstrapper AdminBootstrapper) *Service {
+	return &Service{repo: repo, cipher: cipher, bootstrapper: bootstrapper}
 }
 
 // ClinicResponse is the decrypted, service-layer representation of a clinic.
@@ -55,6 +63,9 @@ type RegisterInput struct {
 	Address    *string
 	Vertical   domain.Vertical
 	DataRegion string
+	// First super admin — created and emailed a magic link after the clinic row is inserted.
+	AdminEmail string
+	AdminName  string
 }
 
 // Register creates a new clinic in trial status.
@@ -117,6 +128,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicRespon
 	row, err := s.repo.Create(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service.Register: create: %w", err)
+	}
+
+	// Create the first super admin and send them a magic link.
+	if s.bootstrapper != nil && in.AdminEmail != "" {
+		if err := s.bootstrapper.Bootstrap(ctx, row.ID, in.AdminEmail, in.AdminName); err != nil {
+			return nil, fmt.Errorf("clinic.service.Register: bootstrap admin: %w", err)
+		}
 	}
 
 	return s.toDTO(row, in.Email, in.Phone, in.Address), nil

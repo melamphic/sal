@@ -74,11 +74,13 @@ export const notes = {
 };
 
 export const clinic = {
-  register: (data: { 
-    name: string; 
-    email: string; 
+  register: (data: {
+    name: string;
+    email: string;
     vertical: 'veterinary' | 'dental' | 'aged_care';
     data_region?: string;
+    admin_email: string;
+    admin_name: string;
   }) => api.post('/clinic/register', data),
   get: () => api.get('/clinic'),
 };

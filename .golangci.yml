@@ -39,6 +39,8 @@ linters-settings:
     capital: false
 
 issues:
+  exclude-dirs:
+    - sal_test_app
   exclude-rules:
     # Test files are exempt from some rules.
     - path: _test\.go

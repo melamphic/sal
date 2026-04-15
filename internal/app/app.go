@@ -95,12 +95,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	authHandler := auth.NewHandler(authSvc)
 
 	clinicRepo := clinic.NewRepository(db)
-	clinicSvc := clinic.NewService(clinicRepo, cipher)
+	// adminBootstrapAdapter is set after authSvc and staffSvc are wired below.
+	clinicBootstrap := &adminBootstrapAdapter{}
+	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap)
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
 	staffRepo := staff.NewRepository(db)
 	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL)
 	staffHandler := staff.NewHandler(staffSvc)
+
+	// Now both authSvc and staffSvc exist — set up the clinic bootstrap adapter.
+	clinicBootstrap.auth = authSvc
+	clinicBootstrap.staff = staffSvc
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
@@ -330,6 +336,31 @@ func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID 
 		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
 	}
 	return t, nil
+}
+
+// adminBootstrapAdapter implements clinic.AdminBootstrapper.
+// After clinic registration, it creates the first super admin and sends a magic link.
+// auth and staff are set after their respective services are constructed.
+type adminBootstrapAdapter struct {
+	auth  *auth.Service
+	staff *staff.Service
+}
+
+func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUID, email, name string) error {
+	if _, err := a.staff.Create(ctx, staff.CreateStaffInput{
+		ClinicID:    clinicID,
+		Email:       email,
+		FullName:    name,
+		Role:        domain.StaffRoleSuperAdmin,
+		NoteTier:    domain.NoteTierStandard,
+		Permissions: domain.DefaultPermissions(domain.StaffRoleSuperAdmin),
+	}); err != nil {
+		return fmt.Errorf("app.adminBootstrapAdapter: create staff: %w", err)
+	}
+	if err := a.auth.SendMagicLink(ctx, email, nil); err != nil {
+		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
+	}
+	return nil
 }
 
 // lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.
