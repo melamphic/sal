@@ -130,6 +130,9 @@ func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
 		if f.Required {
 			sb.WriteString(", required: true")
 		}
+		if !f.AllowInference {
+			sb.WriteString(", direct_only: true")
+		}
 		sb.WriteString("\n")
 	}
 
@@ -141,6 +144,7 @@ func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
 - confidence: how certain you are (0.0 = guess, 1.0 = verbatim). Use null only when value is null.
 - source_quote: verbatim text from the transcript supporting the value. Use null when value is null.
 - transformation_type: "direct" if the value appears verbatim or near-verbatim in the transcript; "inference" if derived or computed from surrounding context. Use null when value is null.
+- direct_only: true means the field must only be set when the value appears verbatim or near-verbatim. Set transformation_type to "direct" only. If no verbatim match found, set value to null.
 - Do not add fields not in the list. Do not omit any field from the list.
 - For required fields with no evidence, set value to null and confidence to 0.0.
 

@@ -62,17 +62,19 @@ type FormVersionRecord struct {
 
 // FieldRecord is the raw database representation of a form_fields row.
 type FieldRecord struct {
-	ID            uuid.UUID
-	FormVersionID uuid.UUID
-	Position      int
-	Title         string
-	Type          string
-	Config        json.RawMessage
-	AIPrompt      *string
-	Required      bool
-	Skippable     bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uuid.UUID
+	FormVersionID  uuid.UUID
+	Position       int
+	Title          string
+	Type           string
+	Config         json.RawMessage
+	AIPrompt       *string
+	Required       bool
+	Skippable      bool
+	AllowInference bool     // false = reject AI inference; only direct quotes accepted
+	MinConfidence  *float64 // ASR confidence floor; nil = no threshold enforced
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // StyleVersionRecord is the raw database representation of a clinic_form_style_versions row.
@@ -178,15 +180,17 @@ type SavePolicyCheckParams struct {
 
 // CreateFieldParams holds values needed to insert a single field.
 type CreateFieldParams struct {
-	ID            uuid.UUID
-	FormVersionID uuid.UUID
-	Position      int
-	Title         string
-	Type          string
-	Config        json.RawMessage
-	AIPrompt      *string
-	Required      bool
-	Skippable     bool
+	ID             uuid.UUID
+	FormVersionID  uuid.UUID
+	Position       int
+	Title          string
+	Type           string
+	Config         json.RawMessage
+	AIPrompt       *string
+	Required       bool
+	Skippable      bool
+	AllowInference bool
+	MinConfidence  *float64
 }
 
 // CreateStyleVersionParams holds values for a new style version row.
@@ -566,7 +570,7 @@ func (r *Repository) SavePolicyCheckResult(ctx context.Context, p SavePolicyChec
 
 // ── Fields ────────────────────────────────────────────────────────────────────
 
-const fieldCols = `id, form_version_id, position, title, type, config, ai_prompt, required, skippable, created_at, updated_at`
+const fieldCols = `id, form_version_id, position, title, type, config, ai_prompt, required, skippable, allow_inference, min_confidence, created_at, updated_at`
 
 // GetFieldsByVersionID returns all fields for a version ordered by position.
 func (r *Repository) GetFieldsByVersionID(ctx context.Context, versionID uuid.UUID) ([]*FieldRecord, error) {
@@ -609,8 +613,8 @@ func (r *Repository) ReplaceFields(ctx context.Context, versionID uuid.UUID, fie
 	}
 
 	q := fmt.Sprintf(`
-		INSERT INTO form_fields (id, form_version_id, position, title, type, config, ai_prompt, required, skippable)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO form_fields (id, form_version_id, position, title, type, config, ai_prompt, required, skippable, allow_inference, min_confidence)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING %s`, fieldCols)
 
 	result := make([]*FieldRecord, 0, len(fields))
@@ -618,6 +622,7 @@ func (r *Repository) ReplaceFields(ctx context.Context, versionID uuid.UUID, fie
 		row := tx.QueryRow(ctx, q,
 			fp.ID, fp.FormVersionID, fp.Position, fp.Title, fp.Type,
 			fp.Config, fp.AIPrompt, fp.Required, fp.Skippable,
+			fp.AllowInference, fp.MinConfidence,
 		)
 		f, err := scanField(row)
 		if err != nil {
@@ -807,6 +812,7 @@ func scanField(row scannable) (*FieldRecord, error) {
 	err := row.Scan(
 		&f.ID, &f.FormVersionID, &f.Position, &f.Title, &f.Type,
 		&f.Config, &f.AIPrompt, &f.Required, &f.Skippable,
+		&f.AllowInference, &f.MinConfidence,
 		&f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {

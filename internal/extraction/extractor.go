@@ -7,12 +7,13 @@ import "context"
 
 // FieldSpec describes a single form field to extract.
 type FieldSpec struct {
-	ID        string // UUID of the form_fields row
-	Title     string // display name — included in prompt
-	Type      string // widget type (text, slider, select, …) — helps AI understand expected format
-	AIPrompt  string // per-field extraction hint from the form designer
-	Required  bool   // AI must provide a value; absence flagged as low confidence
-	Skippable bool   // excluded from AI extraction; leave value nil
+	ID             string // UUID of the form_fields row
+	Title          string // display name — included in prompt
+	Type           string // widget type (text, slider, select, …) — helps AI understand expected format
+	AIPrompt       string // per-field extraction hint from the form designer
+	Required       bool   // AI must provide a value; absence flagged as low confidence
+	Skippable      bool   // excluded from AI extraction; leave value nil
+	AllowInference bool   // when false, only direct (verbatim) quotes accepted; hint to AI
 }
 
 // FieldResult holds the AI output for a single field.

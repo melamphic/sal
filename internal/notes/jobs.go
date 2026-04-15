@@ -55,12 +55,14 @@ type PolicyClauseProvider interface {
 
 // FormFieldMeta is the subset of form_fields data needed by the extraction job.
 type FormFieldMeta struct {
-	ID        uuid.UUID
-	Title     string
-	Type      string
-	AIPrompt  *string
-	Required  bool
-	Skippable bool
+	ID             uuid.UUID
+	Title          string
+	Type           string
+	AIPrompt       *string
+	Required       bool
+	Skippable      bool
+	AllowInference bool
+	MinConfidence  *float64
 }
 
 // FormFieldProvider fetches form field definitions for a version.
@@ -186,9 +188,12 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	}
 
 	// Build extraction specs — exclude skippable fields.
+	// Also build a meta index for post-processing enforcement.
 	specs := make([]extraction.FieldSpec, 0, len(formFields))
 	skippableIDs := make(map[uuid.UUID]bool)
+	fieldMetaByID := make(map[uuid.UUID]FormFieldMeta, len(formFields))
 	for _, f := range formFields {
+		fieldMetaByID[f.ID] = f
 		if f.Skippable {
 			skippableIDs[f.ID] = true
 			continue
@@ -198,11 +203,12 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 			prompt = *f.AIPrompt
 		}
 		specs = append(specs, extraction.FieldSpec{
-			ID:       f.ID.String(),
-			Title:    f.Title,
-			Type:     f.Type,
-			AIPrompt: prompt,
-			Required: f.Required,
+			ID:             f.ID.String(),
+			Title:          f.Title,
+			Type:           f.Type,
+			AIPrompt:       prompt,
+			Required:       f.Required,
+			AllowInference: f.AllowInference,
 		})
 	}
 
@@ -259,6 +265,21 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 			p.AlignmentScore = &cr.AlignmentScore
 			p.GroundingSource = &cr.GroundingSource
 		}
+
+		// Inference control: reject AI-inferred values for direct-only fields.
+		meta := fieldMetaByID[fieldID]
+		if !meta.AllowInference && derefStr(r.TransformationType) == "inference" {
+			p.Value = nil
+			p.Confidence = nil
+			p.RequiresReview = true
+		}
+		// Min-confidence threshold: flag for review when ASR score is too low.
+		if meta.MinConfidence != nil && cr.GroundingSource != "no_asr_data" && cr.GroundingSource != "ungrounded" {
+			if cr.ASRConfidence < *meta.MinConfidence {
+				p.RequiresReview = true
+			}
+		}
+
 		upserts = append(upserts, p)
 	}
 	// Insert empty rows for skippable fields so they appear in the review screen.

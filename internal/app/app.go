@@ -320,12 +320,14 @@ func (a *formsFieldAdapter) GetFieldsByVersionID(ctx context.Context, versionID 
 	out := make([]notes.FormFieldMeta, len(fields))
 	for i, f := range fields {
 		out[i] = notes.FormFieldMeta{
-			ID:        f.ID,
-			Title:     f.Title,
-			Type:      f.Type,
-			AIPrompt:  f.AIPrompt,
-			Required:  f.Required,
-			Skippable: f.Skippable,
+			ID:             f.ID,
+			Title:          f.Title,
+			Type:           f.Type,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
 		}
 	}
 	return out, nil
