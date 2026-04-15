@@ -47,9 +47,12 @@ type Config struct {
 	StorageRegion       string `env:"STORAGE_REGION,default=ap-southeast-2"`
 	StorageUsePathStyle bool   `env:"STORAGE_USE_PATH_STYLE,default=true"`
 
-	// Deepgram transcription
-	// API key from https://console.deepgram.com — used by the TranscribeAudio River job.
-	DeepgramAPIKey string `env:"DEEPGRAM_API_KEY"`
+	// Transcription provider — "deepgram" (production) or "gemini" (dev/staging, free tier).
+	// deepgram: uses Deepgram Nova-3 Medical; requires DEEPGRAM_API_KEY.
+	// gemini:   uses Gemini audio understanding; requires GEMINI_API_KEY; no word-level confidence.
+	// Leave key empty for the configured provider to skip transcription entirely.
+	TranscriptionProvider string `env:"TRANSCRIPTION_PROVIDER,default=deepgram"`
+	DeepgramAPIKey        string `env:"DEEPGRAM_API_KEY"`
 
 	// AI extraction — form field filling from transcripts.
 	// GeminiAPIKey: Google AI Studio key (free tier — recommended for dev).

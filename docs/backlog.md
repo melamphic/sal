@@ -14,6 +14,11 @@ These items were listed as backlog but are now implemented:
 | Policy engine (block content, semver versioning, clause tagging, form links, retire) | Phase 2 |
 | Compliance reports (query endpoints + async CSV export via River + S3) | Phase 2 |
 | Policy alignment score on notes (`policy_alignment_pct`, weighted by parity, Gemini) | Phase 2 |
+| OpenAI extraction provider (strict JSON schema, GPT-4.1-mini) | Phase 2 |
+| Gemini ResponseSchema + ThinkingBudget=0 (cost fix) | Phase 2 |
+| GeminiTranscriber for dev/staging (replaces Deepgram in non-prod) | Phase 2 |
+| RunPolicyCheck real LLM implementation (form coverage analysis) | Phase 2 |
+| Factory functions for all providers (extractor, aligner, checker) | Phase 2 |
 
 ---
 

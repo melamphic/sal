@@ -118,11 +118,17 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app.Build: storage: %w", err)
 	}
 
+	// ── Transcription provider ─────────────────────────────────────────────────
+	transcriber, err := newTranscriberFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: transcriber: %w", err)
+	}
+
 	// ── River (job queue) ─────────────────────────────────────────────────────
 	// All workers must be registered before river.NewClient is called.
 	workers := river.NewWorkers()
 	audioRepo := audio.NewRepository(db)
-	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, cfg.DeepgramAPIKey))
+	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, transcriber))
 
 	// ── Forms repo (needed by extract worker adapter) ──────────────────────────
 	formsRepo := forms.NewRepository(db)
@@ -135,6 +141,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	aligner, err := extraction.NewPolicyAlignerFromConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: policy aligner: %w", err)
+	}
+	formChecker, err := extraction.NewFormCheckerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: form checker: %w", err)
 	}
 
 	// ── Timeline repo + event adapter ─────────────────────────────────────────
@@ -181,7 +191,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	formsSvc := forms.NewService(formsRepo)
+	formsSvc := forms.NewService(formsRepo, &formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo}, formChecker)
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
@@ -423,6 +433,43 @@ func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, for
 	return result, nil
 }
 
+// formPolicyClauseFetcherAdapter implements forms.PolicyClauseFetcher.
+// For a given form, it traverses form_policies → latest published policy version → clauses.
+type formPolicyClauseFetcherAdapter struct {
+	forms  *forms.Repository
+	policy *policy.Repository
+}
+
+func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error) {
+	policyIDs, err := a.forms.ListLinkedPolicies(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list policies: %w", err)
+	}
+
+	var result []extraction.PolicyClause
+	for _, pid := range policyIDs {
+		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
+		if err != nil {
+			if err == domain.ErrNotFound {
+				continue // policy has no published version yet — skip
+			}
+			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: get version: %w", err)
+		}
+		clauses, err := a.policy.ListClauses(ctx, pv.ID)
+		if err != nil {
+			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list clauses: %w", err)
+		}
+		for _, c := range clauses {
+			result = append(result, extraction.PolicyClause{
+				BlockID: c.BlockID,
+				Title:   c.Title,
+				Parity:  c.Parity,
+			})
+		}
+	}
+	return result, nil
+}
+
 // policyFormLinkerAdapter implements policy.FormLinker.
 // When a policy is retired, it removes that policy from all linked forms.
 type policyFormLinkerAdapter struct{ repo *forms.Repository }
@@ -438,6 +485,29 @@ func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, pol
 		}
 	}
 	return nil
+}
+
+// newTranscriberFromConfig builds the correct Transcriber based on TRANSCRIPTION_PROVIDER.
+// Returns nil (no error) when the provider's API key is not configured.
+func newTranscriberFromConfig(ctx context.Context, cfg *config.Config) (audio.Transcriber, error) {
+	switch cfg.TranscriptionProvider {
+	case "deepgram":
+		if cfg.DeepgramAPIKey == "" {
+			return nil, nil
+		}
+		return audio.NewDeepgramTranscriber(cfg.DeepgramAPIKey), nil
+	case "gemini":
+		if cfg.GeminiAPIKey == "" {
+			return nil, nil
+		}
+		t, err := audio.NewGeminiTranscriber(ctx, cfg.GeminiAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("newTranscriberFromConfig: %w", err)
+		}
+		return t, nil
+	default:
+		return nil, fmt.Errorf("newTranscriberFromConfig: unknown TRANSCRIPTION_PROVIDER %q (use deepgram or gemini)", cfg.TranscriptionProvider)
+	}
 }
 
 func connectDB(ctx context.Context, cfg *config.Config, log *slog.Logger) (*pgxpool.Pool, error) {

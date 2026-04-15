@@ -15,7 +15,7 @@ var (
 )
 
 func newTestService() *Service {
-	return NewService(newFakeRepo())
+	return NewService(newFakeRepo(), nil, nil)
 }
 
 // ── CreateForm ────────────────────────────────────────────────────────────────

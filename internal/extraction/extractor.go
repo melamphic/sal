@@ -47,3 +47,13 @@ type PolicyAligner interface {
 	// enforceable policy clauses. Returns an alignment percentage 0.0–100.0.
 	AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error)
 }
+
+// FormCoverageChecker assesses whether a form's field design covers the requirements
+// of the policy clauses linked to that form. Used at form-design time (not runtime).
+// Returns a qualitative text report the user can read and act on before publishing.
+type FormCoverageChecker interface {
+	// CheckFormCoverage takes the form's overall context prompt, its field definitions,
+	// and the enforceable clauses from all linked policies. Returns a plain-text
+	// compliance analysis with gaps and suggestions.
+	CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (string, error)
+}
