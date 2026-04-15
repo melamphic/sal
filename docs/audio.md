@@ -10,7 +10,10 @@ The `internal/audio` package handles the full lifecycle of a clinical audio reco
 The server hands the mobile client a pre-signed URL and steps aside. The client uploads the file directly to object storage (MinIO in dev, Cloudflare R2 or AWS S3 in prod). This keeps the API server stateless and avoids memory pressure from large file uploads.
 
 **Transcription is always asynchronous.**
-After the client confirms the upload, a [River](https://riverqueue.com) background job calls Deepgram. The client polls `GET /api/v1/recordings/{id}` or (in future) subscribes to an SSE topic to receive the status update.
+After the client confirms the upload, a [River](https://riverqueue.com) background job calls the configured transcription provider. The client polls `GET /api/v1/recordings/{id}` or (in future) subscribes to an SSE topic to receive the status update.
+
+**Transcription provider is swappable.**
+`TRANSCRIPTION_PROVIDER=deepgram` (default, production) uses Deepgram Nova-3 Medical and stores word-level confidence data. `TRANSCRIPTION_PROVIDER=gemini` uses Gemini's audio understanding — free tier, no Deepgram account needed, but no word-level confidence data (deterministic scoring is skipped for those recordings).
 
 ---
 
@@ -72,6 +75,18 @@ Full request/response schemas are in the Swagger UI at `/docs`.
 
 Storage is abstracted behind `internal/platform/storage.Store` using the AWS SDK v2. The same code runs against all S3-compatible backends — only env vars differ.
 
+### Transcription provider env vars
+
+| Env var | Values | Default |
+|---|---|---|
+| `TRANSCRIPTION_PROVIDER` | `deepgram` \| `gemini` | `deepgram` |
+| `DEEPGRAM_API_KEY` | Deepgram API key | _(empty = skip transcription)_ |
+| `GEMINI_API_KEY` | Google AI Studio key | _(empty = skip transcription)_ |
+
+---
+
+## Object Storage
+
 | Env var | Dev value | Prod value |
 |---|---|---|
 | `STORAGE_ENDPOINT` | `http://localhost:9000` | Cloudflare R2 / AWS S3 endpoint |
@@ -118,13 +133,15 @@ River is a PostgreSQL-backed job queue — no Redis, no additional infrastructur
 **Steps:**
 1. Sets status → `transcribing`.
 2. Generates a 1-hour pre-signed download URL for the stored audio file.
-3. Calls [Deepgram Nova-3 Medical](https://deepgram.com) with `punctuate`, `diarize`, `utterances`.
-4. Stores the plain-text transcript and duration on the recording row.
+3. Calls the configured transcription provider:
+   - **Deepgram** (`TRANSCRIPTION_PROVIDER=deepgram`): passes the pre-signed URL directly to Nova-3 Medical with `punctuate`, `diarize`, `utterances`. Receives a full word-level confidence array alongside the transcript.
+   - **Gemini** (`TRANSCRIPTION_PROVIDER=gemini`): downloads audio bytes from the pre-signed URL, passes inline to Gemini 2.5 Flash. Returns transcript only — no word-level data.
+4. Stores plain-text transcript, duration, and (Deepgram only) `word_confidences JSONB` on the recording row.
 5. Sets status → `transcribed`.
 
 On error: sets status → `failed` with `error_message`. River retries with exponential backoff (up to 25 attempts, ~4 days total window).
 
-**Dev without a Deepgram key:** If `DEEPGRAM_API_KEY` is empty, the worker runs but skips the Deepgram call. Status stays `transcribing`. This lets you develop the pipeline locally without a paid API key.
+**Dev without any API key:** If the configured provider's key is empty, the worker runs but skips the transcription call. This lets you develop the pipeline locally with no paid keys.
 
 ### Worker configuration
 

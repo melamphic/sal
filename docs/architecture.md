@@ -12,7 +12,8 @@ sal/
 ├── internal/
 │   ├── app/          ← dependency wiring, server lifecycle
 │   ├── domain/       ← shared types, sentinel errors (NO business logic)
-│   ├── platform/     ← infrastructure (DB, config, crypto, mailer, middleware, logger)
+│   ├── platform/     ← infrastructure (DB, config, crypto, mailer, middleware, logger, confidence)
+│   │   ├── confidence/ ← ASR word alignment + deterministic confidence scoring
 │   │   ├── config/
 │   │   ├── crypto/
 │   │   ├── db/
@@ -143,3 +144,6 @@ PostgreSQL-backed job queue via **River** (no Redis dependency). Jobs are define
 | `riverqueue/river` | Background job queue |
 | `testcontainers-go` | Real PostgreSQL in integration tests |
 | `stretchr/testify` | Test assertions |
+| `deepgram/deepgram-go-sdk/v3` | Deepgram Nova-3 Medical transcription |
+| `google.golang.org/genai` | Gemini extraction + transcription (dev) |
+| `openai/openai-go` | OpenAI GPT-4.1-mini extraction |

@@ -19,35 +19,9 @@ These items were listed as backlog but are now implemented:
 | GeminiTranscriber for dev/staging (replaces Deepgram in non-prod) | Phase 2 |
 | RunPolicyCheck real LLM implementation (form coverage analysis) | Phase 2 |
 | Factory functions for all providers (extractor, aligner, checker) | Phase 2 |
+| Deterministic confidence scoring (ASR word alignment, LCS fuzzy match, inference penalty, requires_review) | Phase 2 |
 
 ---
-
-## Pending: Deterministic Confidence Scoring
-
-**Spec formula:**
-```
-evidence ∈ transcript
-confidence = avg(word_confidence(evidence_words))
-if confidence < min_confidence → reject
-```
-
-**Current state:** Gemini returns a confidence float stored as-is. This is AI-estimated, not deterministic.
-
-**What's needed:**
-
-- Store Deepgram word-level confidence data in `recordings` table:
-  ```sql
-  ALTER TABLE recordings ADD COLUMN word_confidences JSONB;
-  -- array of {word, start, end, confidence} from Deepgram response
-  ```
-- In `ExtractNoteWorker`, after receiving AI results:
-  1. Find `source_quote` words in `word_confidences`.
-  2. Average the word-level confidence scores for matched words.
-  3. Apply `min_confidence` threshold (per-clinic or global config).
-  4. Replace AI confidence with the computed value.
-- Add `MinConfidence float64` field to extraction config or `FieldSpec`.
-
-**Dependencies:** Deepgram word-confidence data must be persisted (currently discarded). Requires migration + changes to audio transcription worker.
 
 ---
 

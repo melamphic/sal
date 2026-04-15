@@ -211,14 +211,23 @@ requires_review      BOOLEAN   -- true if below threshold or ungrounded
 
 ---
 
-## 7. Implementation Plan
+## 7. Implementation — Status
 
-1. **Migration:** Add `word_confidences JSONB` to `recordings`.
-2. **TranscribeAudioWorker:** Persist Deepgram `words[]` array to `word_confidences` (currently discarded). No change for GeminiTranscriber — word data unavailable, column stays NULL.
-3. **`audio` package:** Add `BuildWordIndex()` helper. Add `AlignQuote()` using exact match + rapidfuzz fallback.
-4. **`extraction` package:** Add `ComputeFieldConfidence(quote string, index []IndexedWord) FieldConfidenceResult`. Called in `ExtractNoteWorker` after LLM returns results.
-5. **`notes` repo:** Add columns `asr_confidence`, `min_word_confidence`, `alignment_score`, `grounding_source`, `requires_review` to `note_field_values`.
-6. **`FieldSpec`:** Add `MinConfidence float64` for per-field threshold config.
-7. **Migration:** Add `requires_review` column + index for surfacing to-review queue.
+**Completed (2026-04-15, migration 00017)**
 
-**No new external Go dependencies** — rapidfuzz is Python-specific. The alignment algorithm is simple enough to implement directly in Go using `strings.Index` (exact) and a sliding-window edit distance for fuzzy fallback (or just `golang.org/x/text` for normalization). The research confirms threshold 0.85 + exact-match fast path covers the vast majority of production cases.
+| Step | File | Status |
+|---|---|---|
+| `word_confidences JSONB` on `recordings` | `migrations/00017_add_deterministic_confidence.sql` | ✅ |
+| 5 new columns on `note_fields` | `migrations/00017_add_deterministic_confidence.sql` | ✅ |
+| `platform/confidence` package (`BuildWordIndex`, `AlignQuote`, `ComputeFieldConfidence`) | `internal/platform/confidence/confidence.go` | ✅ |
+| Deepgram word array → `WordConfidence` index in `TranscriptResult` | `internal/audio/transcriber.go` | ✅ |
+| Persist word confidences in `UpdateRecordingTranscript` | `internal/audio/repository.go` | ✅ |
+| `GetWordConfidences` repo method | `internal/audio/repository.go` | ✅ |
+| `RecordingProvider.GetWordConfidences` interface + adapter | `internal/notes/jobs.go`, `internal/app/app.go` | ✅ |
+| `ComputeFieldConfidence` called per field in `ExtractNoteWorker` | `internal/notes/jobs.go` | ✅ |
+| New columns persisted via `UpsertNoteFields` | `internal/notes/repository.go` | ✅ |
+
+**Implementation notes vs. original plan:**
+- `rapidfuzz` not used — Go implementation with LCS-ratio sliding window is sufficient and adds no dependency.
+- `MinConfidence` per-field threshold not added to `FieldSpec` yet — the `requires_review` flag exposes the signal to the frontend; threshold enforcement can be added per-field when the frontend review UI is built.
+- `no_asr_data` grounding source (Gemini transcriber path) leaves all ASR columns NULL and keeps the LLM `confidence` value as-is.

@@ -36,16 +36,33 @@ POST /notes
 ExtractNoteWorker.Work()
   → GetNoteByID (no clinic check — internal)
   → GetTranscript (audio.Repository)
+  → GetWordConfidences (audio.Repository — nil for GeminiTranscriber)
   → GetFieldsByVersionID (forms.Repository via adapter)
   → build FieldSpec list (skip skippable fields)
   → Extractor.Extract(transcript, specs)
-  → UpsertNoteFields (AI results + null rows for skippable)
+  → for each result: confidence.ComputeFieldConfidence(source_quote, word_index)
+  → UpsertNoteFields (AI results + deterministic confidence + null rows for skippable)
   → UpdateNoteStatus → draft
 ```
 
 If no extractor is configured (no API key), the worker skips AI and immediately sets `draft`
 so staff can fill fields manually. In both cases a `ComputePolicyAlignmentArgs` job is
 enqueued immediately after so the alignment score appears in the review screen.
+
+### Deterministic confidence scoring
+
+After the LLM returns results, the worker computes a deterministic confidence score for each
+field by aligning the `source_quote` back to the Deepgram word-level data:
+
+1. **Exact match** — normalised `source_quote` found verbatim in the normalised transcript → score 1.0.
+2. **Fuzzy match** — sliding-window LCS-ratio search; score 0.60–1.0 → `grounding_source="fuzzy"`.
+3. **Ungrounded** — score below 0.60; quote not found → `asr_confidence=0`, `requires_review=true`.
+4. **No ASR data** — GeminiTranscriber was used; ASR columns stay `NULL`, LLM confidence kept as-is.
+
+An `"inference"` `transformation_type` (LLM derived a value rather than quoting verbatim)
+applies an additional 0.85× penalty to reflect the extra reasoning step.
+
+See `docs/deterministic_confidence.md` and `internal/platform/confidence/confidence.go` for full details.
 
 ## Policy alignment score
 
@@ -74,8 +91,14 @@ Each extracted field in `note_fields` stores:
 | Column | Description |
 |---|---|
 | `value` | JSON-encoded extracted value (string, number, boolean, null) |
-| `confidence` | AI confidence 0.0–1.0 |
+| `confidence` | LLM-estimated confidence 0.0–1.0 (fallback when no ASR data) |
 | `source_quote` | Verbatim transcript snippet that justified the value |
+| `transformation_type` | `"direct"` (verbatim quote) or `"inference"` (LLM derived the value) |
+| `asr_confidence` | Mean ASR word confidence for the matched span (NULL when no Deepgram data) |
+| `min_word_confidence` | Minimum word confidence in span — used as the review trigger |
+| `alignment_score` | Quote-to-transcript match quality (1.0=exact, NULL when no ASR data) |
+| `grounding_source` | `"exact"` \| `"fuzzy"` \| `"ungrounded"` \| `"no_asr_data"` |
+| `requires_review` | `true` when grounding_source=`"ungrounded"` (possible hallucination) |
 | `overridden_by` | Staff UUID who manually changed the value |
 | `overridden_at` | When the override was recorded |
 
@@ -87,10 +110,10 @@ Configured via `EXTRACTION_PROVIDER` env var (default: `gemini`).
 
 | Provider | Env var | Notes |
 |---|---|---|
-| `gemini` | `GEMINI_API_KEY` | Gemini 2.5 Flash, free tier available, used in dev |
-| `openai` | `OPENAI_API_KEY` | Stub — not yet implemented |
+| `gemini` | `GEMINI_API_KEY` | Gemini 2.5 Flash, ResponseSchema + ThinkingBudget=0, free tier, used in dev |
+| `openai` | `OPENAI_API_KEY` | GPT-4.1-mini, strict JSON schema mode |
 
-If no key is set for the configured provider, extraction is disabled (worker skips AI).
+If no key is set for the configured provider, extraction is disabled (worker skips AI, note goes straight to `draft`).
 
 The `Extractor` interface (`internal/extraction/extractor.go`):
 
@@ -102,13 +125,13 @@ type Extractor interface {
 
 ## Cross-module wiring
 
-Notes needs data from two other modules. To avoid direct imports, the `notes` package
+Notes needs data from several other modules. To avoid direct imports, the `notes` package
 defines provider interfaces implemented by adapters in `app.go`:
 
 | Interface | Adapter | Backed by |
 |---|---|---|
 | `FormFieldProvider` | `formsFieldAdapter` | `forms.Repository.GetFieldsByVersionID` |
-| `RecordingProvider` | `audioTranscriptAdapter` | `audio.Repository.GetTranscript` |
+| `RecordingProvider` | `audioTranscriptAdapter` | `audio.Repository.GetTranscript` + `GetWordConfidences` |
 | `PolicyClauseProvider` | `policyClauseProviderAdapter` | `forms.Repository.ListLinkedPolicies` + `policy.Repository.ListClauses` |
 
 ## Database tables
@@ -139,12 +162,19 @@ Unique index on `(recording_id, form_version_id)` — one note per recording+for
 | `note_id` | UUID | FK → notes |
 | `field_id` | UUID | FK → form_fields |
 | `value` | TEXT? | JSON-encoded |
-| `confidence` | DECIMAL(5,2)? | AI confidence |
+| `confidence` | DECIMAL(5,2)? | LLM-estimated confidence (fallback) |
 | `source_quote` | TEXT? | Supporting transcript excerpt |
+| `transformation_type` | VARCHAR(20)? | `"direct"` or `"inference"` |
+| `asr_confidence` | DECIMAL(5,4)? | Mean ASR word confidence for matched span |
+| `min_word_confidence` | DECIMAL(5,4)? | Minimum word confidence in span |
+| `alignment_score` | DECIMAL(5,4)? | Quote-to-transcript match quality |
+| `grounding_source` | VARCHAR(20)? | `"exact"` / `"fuzzy"` / `"ungrounded"` / `"no_asr_data"` |
+| `requires_review` | BOOLEAN | `true` when grounding_source=`"ungrounded"` |
 | `overridden_by` | UUID? | Staff override author |
 | `overridden_at` | TIMESTAMPTZ? | Override timestamp |
 
 Unique on `(note_id, field_id)`. Ordered by `form_fields.position` in GET responses.
+Index `idx_note_fields_review` on `(note_id) WHERE requires_review = TRUE` for fast review-queue queries.
 
 ## Endpoints
 

@@ -154,6 +154,29 @@ Configured in `internal/platform/db/db.go`.
 
 ---
 
+### `recordings` (additional columns — migration 00008, 00017)
+
+| Column | Type | Notes |
+|---|---|---|
+| `transcript` | TEXT? | Plain-text transcript from ASR provider |
+| `duration_seconds` | INTEGER? | Audio duration from Deepgram metadata |
+| `word_confidences` | JSONB? | Deepgram word array `[{word, start, end, confidence, punctuated_word, ...}]`; NULL for GeminiTranscriber |
+
+### `note_fields` (additional columns — migration 00010, 00011, 00017)
+
+| Column | Type | Notes |
+|---|---|---|
+| `confidence` | DECIMAL(5,2)? | LLM-estimated confidence (fallback when no ASR data) |
+| `source_quote` | TEXT? | Verbatim transcript snippet cited by LLM |
+| `transformation_type` | VARCHAR(20)? | `"direct"` or `"inference"` |
+| `asr_confidence` | DECIMAL(5,4)? | Mean ASR word confidence for matched quote span |
+| `min_word_confidence` | DECIMAL(5,4)? | Minimum word confidence — review trigger |
+| `alignment_score` | DECIMAL(5,4)? | Quote-to-transcript match quality (1.0=exact) |
+| `grounding_source` | VARCHAR(20)? | `"exact"` / `"fuzzy"` / `"ungrounded"` / `"no_asr_data"` |
+| `requires_review` | BOOLEAN | true when grounding_source=`"ungrounded"` |
+
+---
+
 ## Transactions
 
 Repository methods that require atomicity accept no `tx` parameter — they manage their own transaction internally. The one exception is `GetAndConsumeAuthToken`, which uses `FOR UPDATE` to prevent concurrent token consumption.

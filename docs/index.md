@@ -15,10 +15,11 @@
 | **clinic** | Clinic registration, profile management, multi-tenancy foundation |
 | **staff** | Staff invitations, role-based permissions, deactivation |
 | **patient** | Subjects (patients, animals, residents) and contacts |
-| **audio** | Recording upload, Deepgram medical transcription via River job queue |
-| **forms** | Form builder with field types, semver versioning, rollback, policy links, PDF style |
-| **extraction** | AI provider abstraction (Gemini 2.5 Flash; OpenAI stub) |
-| **notes** | AI extraction pipeline, per-field override with audit trail, submission |
+| **audio** | Recording upload; Deepgram Nova-3 Medical (prod) or Gemini (dev) transcription; word-level confidence stored |
+| **forms** | Form builder with field types, semver versioning, rollback, policy links, PDF style, AI coverage check |
+| **extraction** | Gemini 2.5 Flash + GPT-4.1-mini; field extraction, policy alignment, form coverage check |
+| **platform/confidence** | Deterministic confidence scoring via ASR word alignment (LCS fuzzy match, inference penalty) |
+| **notes** | AI extraction pipeline, deterministic per-field confidence, requires_review flagging, override audit trail |
 | **timeline** | Note event log; subject-level and clinic-level audit timelines |
 | **notifications** | SSE broker backed by PostgreSQL LISTEN/NOTIFY for real-time updates |
 | **policy** | Policy engine with block-based content, semver versioning, clause enforcement levels |
@@ -72,7 +73,7 @@ See [Testing](testing.md) for how the test harness works.
 |---|---|---|
 | **0 — Foundation** | Auth, clinic, staff, PII encryption, compliance baseline | ✅ Done |
 | **1 — Core workflow** | Subjects, audio ingestion, AI transcription, forms, notes | ✅ Done |
-| **2 — Intelligence + Compliance** | Timeline, SSE notifications, policy engine, compliance reports | ✅ Done |
+| **2 — Intelligence + Compliance** | Timeline, SSE, policy engine, compliance reports, AI extraction (both providers), deterministic confidence | ✅ Done |
 | **3 — Billing** | Stripe integration, usage caps, plan management | Planned |
 | **4 — Growth** | Multi-vertical, marketplace, SSO | Planned |
 
