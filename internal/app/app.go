@@ -223,6 +223,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	r.Use(chimw.RealIP)
 	r.Use(mw.RequestLogger(log))
 	r.Use(chimw.Recoverer)
+	r.Use(chimw.RequestSize(8 * 1024 * 1024)) // 8 MB — audio uploads bypass via S3 presigned URLs
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
