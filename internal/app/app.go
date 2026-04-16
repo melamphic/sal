@@ -485,14 +485,8 @@ func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, 
 type policyFormLinkerAdapter struct{ repo *forms.Repository }
 
 func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID) error {
-	formIDs, err := a.repo.ListFormIDsByPolicyID(ctx, policyID)
-	if err != nil {
-		return fmt.Errorf("app.policyFormLinkerAdapter: list: %w", err)
-	}
-	for _, fid := range formIDs {
-		if err := a.repo.UnlinkPolicy(ctx, fid, policyID); err != nil {
-			return fmt.Errorf("app.policyFormLinkerAdapter: unlink: %w", err)
-		}
+	if err := a.repo.UnlinkPolicyFromAllForms(ctx, policyID); err != nil {
+		return fmt.Errorf("app.policyFormLinkerAdapter: %w", err)
 	}
 	return nil
 }
