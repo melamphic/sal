@@ -258,8 +258,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	reportsHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if err := db.Ping(req.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"db_unavailable"}`))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
