@@ -173,9 +173,11 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 
 	// Fetch ASR word confidence index (nil for GeminiTranscriber — handled gracefully).
 	var wordIndex []confidence.WordConfidence
-	if wc, wcErr := w.recording.GetWordConfidences(ctx, *note.RecordingID); wcErr == nil {
-		wordIndex = wc
+	wc, wcErr := w.recording.GetWordConfidences(ctx, *note.RecordingID)
+	if wcErr != nil {
+		return fmt.Errorf("extract_note: get word confidences: %w", wcErr)
 	}
+	wordIndex = wc
 
 	// Fetch form-level AI context prompt and field definitions.
 	overallPrompt, err := w.forms.GetFormPrompt(ctx, note.FormVersionID)
