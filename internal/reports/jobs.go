@@ -40,36 +40,27 @@ func NewGenerateReportWorker(repo *Repository, store *storage.Store) *GenerateRe
 func (w *GenerateReportWorker) Work(ctx context.Context, job *river.Job[GenerateReportArgs]) error {
 	args := job.Args
 
-	// Fetch all data for the report (no pagination — export is the full result set).
-	events, err := w.fetchAll(ctx, args)
-	if err != nil {
-		errMsg := fmt.Sprintf("fetch data: %v", err)
-		_ = w.repo.MarkFailed(ctx, args.JobID, errMsg)
-		return fmt.Errorf("generate_report: %w", err)
-	}
-
-	// Generate file in memory.
-	var buf bytes.Buffer
-	ext := "csv"
-	contentType := "text/csv"
-
 	switch args.Format {
 	case "csv", "":
-		if err := writeCSV(&buf, args.ReportType, events); err != nil {
-			errMsg := fmt.Sprintf("generate csv: %v", err)
-			_ = w.repo.MarkFailed(ctx, args.JobID, errMsg)
-			return fmt.Errorf("generate_report: %w", err)
-		}
 	default:
 		errMsg := fmt.Sprintf("unsupported format: %s", args.Format)
 		_ = w.repo.MarkFailed(ctx, args.JobID, errMsg)
 		return fmt.Errorf("generate_report: %s", errMsg)
 	}
 
+	// Build the CSV in memory using paginated fetches to avoid loading tens of
+	// thousands of rows at once.
+	var buf bytes.Buffer
+	if err := w.buildCSV(ctx, args, &buf); err != nil {
+		errMsg := fmt.Sprintf("build csv: %v", err)
+		_ = w.repo.MarkFailed(ctx, args.JobID, errMsg)
+		return fmt.Errorf("generate_report: %w", err)
+	}
+
 	// Upload to S3.
-	key := fmt.Sprintf("reports/%s/%s.%s", args.ClinicID, args.JobID, ext)
+	key := fmt.Sprintf("reports/%s/%s.csv", args.ClinicID, args.JobID)
 	size := int64(buf.Len())
-	if err := w.store.Upload(ctx, key, contentType, &buf, size); err != nil {
+	if err := w.store.Upload(ctx, key, "text/csv", &buf, size); err != nil {
 		errMsg := fmt.Sprintf("upload: %v", err)
 		_ = w.repo.MarkFailed(ctx, args.JobID, errMsg)
 		return fmt.Errorf("generate_report: %w", err)
@@ -83,32 +74,63 @@ func (w *GenerateReportWorker) Work(ctx context.Context, job *river.Job[Generate
 	return nil
 }
 
-// fetchAll retrieves the full (un-paginated) dataset for the report type.
-func (w *GenerateReportWorker) fetchAll(ctx context.Context, args GenerateReportArgs) ([]*AuditEventRecord, error) {
-	const maxRows = 50_000
-	p := ListParams{Limit: maxRows, Offset: 0}
+const pageSize = 1_000
 
-	switch args.ReportType {
-	case "clinical_audit":
-		events, _, err := w.repo.QueryClinicalAudit(ctx, args.ClinicID, args.Filters, p)
-		return events, err
-	case "staff_actions":
-		if args.Filters.StaffID == nil {
-			return nil, fmt.Errorf("staff_id required for staff_actions report")
-		}
-		events, _, err := w.repo.QueryStaffActions(ctx, args.ClinicID, *args.Filters.StaffID, args.Filters, p)
-		return events, err
-	case "note_history":
-		if args.Filters.NoteID == nil {
-			return nil, fmt.Errorf("note_id required for note_history report")
-		}
-		return w.repo.QueryNoteHistory(ctx, *args.Filters.NoteID, args.ClinicID)
-	case "consent_log":
-		events, _, err := w.repo.QueryConsentLog(ctx, args.ClinicID, args.Filters, p)
-		return events, err
-	default:
-		return nil, fmt.Errorf("unknown report_type: %s", args.ReportType)
+// buildCSV writes the full report as CSV to buf, fetching rows in pages of
+// pageSize to avoid loading the entire result set into memory at once.
+func (w *GenerateReportWorker) buildCSV(ctx context.Context, args GenerateReportArgs, buf *bytes.Buffer) error {
+	cw := csv.NewWriter(buf)
+	if err := cw.Write(csvHeaders); err != nil {
+		return fmt.Errorf("header: %w", err)
 	}
+
+	// note_history is bounded and does not use the pagination path.
+	if args.ReportType == "note_history" {
+		if args.Filters.NoteID == nil {
+			return fmt.Errorf("note_id required for note_history report")
+		}
+		events, err := w.repo.QueryNoteHistory(ctx, *args.Filters.NoteID, args.ClinicID)
+		if err != nil {
+			return err
+		}
+		return writeRows(cw, events)
+	}
+
+	for offset := 0; ; offset += pageSize {
+		p := ListParams{Limit: pageSize, Offset: offset}
+		var (
+			events []*AuditEventRecord
+			err    error
+		)
+		switch args.ReportType {
+		case "clinical_audit":
+			events, _, err = w.repo.QueryClinicalAudit(ctx, args.ClinicID, args.Filters, p)
+		case "staff_actions":
+			if args.Filters.StaffID == nil {
+				return fmt.Errorf("staff_id required for staff_actions report")
+			}
+			events, _, err = w.repo.QueryStaffActions(ctx, args.ClinicID, *args.Filters.StaffID, args.Filters, p)
+		case "consent_log":
+			events, _, err = w.repo.QueryConsentLog(ctx, args.ClinicID, args.Filters, p)
+		default:
+			return fmt.Errorf("unknown report_type: %s", args.ReportType)
+		}
+		if err != nil {
+			return err
+		}
+		if err := writeRows(cw, events); err != nil {
+			return err
+		}
+		if len(events) < pageSize {
+			break
+		}
+	}
+
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		return fmt.Errorf("csv flush: %w", err)
+	}
+	return nil
 }
 
 // ── CSV renderer ──────────────────────────────────────────────────────────────
@@ -118,11 +140,7 @@ var csvHeaders = []string{
 	"actor_id", "actor_role", "field_id", "old_value", "new_value", "reason",
 }
 
-func writeCSV(buf *bytes.Buffer, _ string, events []*AuditEventRecord) error {
-	w := csv.NewWriter(buf)
-	if err := w.Write(csvHeaders); err != nil {
-		return fmt.Errorf("writeCSV: header: %w", err)
-	}
+func writeRows(w *csv.Writer, events []*AuditEventRecord) error {
 	for _, e := range events {
 		row := []string{
 			e.OccurredAt.UTC().Format(time.RFC3339),
@@ -137,12 +155,8 @@ func writeCSV(buf *bytes.Buffer, _ string, events []*AuditEventRecord) error {
 			nilStr(e.Reason),
 		}
 		if err := w.Write(row); err != nil {
-			return fmt.Errorf("writeCSV: row: %w", err)
+			return fmt.Errorf("writeRows: %w", err)
 		}
-	}
-	w.Flush()
-	if err := w.Error(); err != nil {
-		return fmt.Errorf("writeCSV: flush: %w", err)
 	}
 	return nil
 }
