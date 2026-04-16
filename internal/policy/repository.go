@@ -505,6 +505,52 @@ func (r *Repository) ReplaceClauses(ctx context.Context, versionID uuid.UUID, cl
 	return result, nil
 }
 
+// ClauseWithPolicyID extends PolicyClauseRecord with the owning policy ID.
+type ClauseWithPolicyID struct {
+	PolicyClauseRecord
+	PolicyID uuid.UUID
+}
+
+// GetLatestClausesForPolicies returns all clauses from the most recently published
+// version of each given policy in a single query. Policies with no published version
+// are silently skipped.
+func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs []uuid.UUID) ([]*ClauseWithPolicyID, error) {
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
+
+	const q = `
+		WITH latest AS (
+			SELECT DISTINCT ON (policy_id) id AS version_id, policy_id
+			FROM policy_versions
+			WHERE policy_id = ANY($1) AND status = 'published'
+			ORDER BY policy_id, published_at DESC
+		)
+		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.parity, pc.created_at
+		FROM latest l
+		JOIN policy_clauses pc ON pc.policy_version_id = l.version_id
+		ORDER BY l.policy_id, pc.created_at`
+
+	rows, err := r.db.Query(ctx, q, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*ClauseWithPolicyID
+	for rows.Next() {
+		var c ClauseWithPolicyID
+		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Parity, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: scan: %w", err)
+		}
+		list = append(list, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: rows: %w", err)
+	}
+	return list, nil
+}
+
 // ListClauses returns all clauses for a policy version ordered by creation time.
 func (r *Repository) ListClauses(ctx context.Context, versionID uuid.UUID) ([]*PolicyClauseRecord, error) {
 	const q = `

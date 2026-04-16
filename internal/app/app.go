@@ -422,28 +422,23 @@ func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, for
 	if err != nil {
 		return nil, fmt.Errorf("app.policyClauseProviderAdapter: list policies: %w", err)
 	}
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
 
-	var result []notes.PolicyClause
-	for _, pid := range policyIDs {
-		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
-		if err != nil {
-			if err == domain.ErrNotFound {
-				continue // policy has no published version yet
-			}
-			return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
-		}
-		clauses, err := a.policy.ListClauses(ctx, pv.ID)
-		if err != nil {
-			return nil, fmt.Errorf("app.policyClauseProviderAdapter: list clauses: %w", err)
-		}
-		for _, c := range clauses {
-			result = append(result, notes.PolicyClause{
-				PolicyID: pid.String(),
-				BlockID:  c.BlockID,
-				Title:    c.Title,
-				Parity:   c.Parity,
-			})
-		}
+	clauses, err := a.policy.GetLatestClausesForPolicies(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.policyClauseProviderAdapter: get clauses: %w", err)
+	}
+
+	result := make([]notes.PolicyClause, 0, len(clauses))
+	for _, c := range clauses {
+		result = append(result, notes.PolicyClause{
+			PolicyID: c.PolicyID.String(),
+			BlockID:  c.BlockID,
+			Title:    c.Title,
+			Parity:   c.Parity,
+		})
 	}
 	return result, nil
 }
@@ -460,27 +455,22 @@ func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list policies: %w", err)
 	}
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
 
-	var result []extraction.PolicyClause
-	for _, pid := range policyIDs {
-		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
-		if err != nil {
-			if err == domain.ErrNotFound {
-				continue // policy has no published version yet — skip
-			}
-			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: get version: %w", err)
-		}
-		clauses, err := a.policy.ListClauses(ctx, pv.ID)
-		if err != nil {
-			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list clauses: %w", err)
-		}
-		for _, c := range clauses {
-			result = append(result, extraction.PolicyClause{
-				BlockID: c.BlockID,
-				Title:   c.Title,
-				Parity:  c.Parity,
-			})
-		}
+	clauses, err := a.policy.GetLatestClausesForPolicies(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: get clauses: %w", err)
+	}
+
+	result := make([]extraction.PolicyClause, 0, len(clauses))
+	for _, c := range clauses {
+		result = append(result, extraction.PolicyClause{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		})
 	}
 	return result, nil
 }
