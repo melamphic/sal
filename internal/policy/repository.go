@@ -473,6 +473,7 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 // ── Clauses ───────────────────────────────────────────────────────────────────
 
 // ReplaceClauses atomically replaces all clauses for a policy version.
+// All inserts are sent as a single batch to minimise round-trips.
 func (r *Repository) ReplaceClauses(ctx context.Context, versionID uuid.UUID, clauses []ClauseInput) ([]*PolicyClauseRecord, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -484,19 +485,38 @@ func (r *Repository) ReplaceClauses(ctx context.Context, versionID uuid.UUID, cl
 		return nil, fmt.Errorf("policy.repo.ReplaceClauses: delete: %w", err)
 	}
 
+	if len(clauses) == 0 {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("policy.repo.ReplaceClauses: commit: %w", err)
+		}
+		return nil, nil
+	}
+
 	const insertQ = `
 		INSERT INTO policy_clauses (id, policy_version_id, block_id, title, parity)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, policy_version_id, block_id, title, parity, created_at`
 
+	batch := &pgx.Batch{}
+	ids := make([]uuid.UUID, len(clauses))
+	for i, c := range clauses {
+		ids[i] = domain.NewID()
+		batch.Queue(insertQ, ids[i], versionID, c.BlockID, c.Title, c.Parity)
+	}
+
+	br := tx.SendBatch(ctx, batch)
 	result := make([]*PolicyClauseRecord, 0, len(clauses))
-	for _, c := range clauses {
-		row := tx.QueryRow(ctx, insertQ, domain.NewID(), versionID, c.BlockID, c.Title, c.Parity)
+	for range clauses {
+		row := br.QueryRow()
 		rec, err := scanClause(row)
 		if err != nil {
+			_ = br.Close()
 			return nil, fmt.Errorf("policy.repo.ReplaceClauses: insert: %w", err)
 		}
 		result = append(result, rec)
+	}
+	if err := br.Close(); err != nil {
+		return nil, fmt.Errorf("policy.repo.ReplaceClauses: batch close: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
