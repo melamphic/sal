@@ -138,7 +138,9 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 			return fmt.Errorf("extract_note: set draft (no extractor): %w", err)
 		}
 		if w.enqueue != nil {
-			_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
+			_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, &river.InsertOpts{
+				UniqueOpts: river.UniqueOpts{ByArgs: true},
+			})
 		}
 		w.events.Emit(ctx, NoteEvent{
 			NoteID:    noteID,
@@ -309,7 +311,9 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 
 	// Best-effort: kick off policy alignment scoring now that fields are populated.
 	if w.enqueue != nil {
-		_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
+		_, _ = w.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, &river.InsertOpts{
+			UniqueOpts: river.UniqueOpts{ByArgs: true},
+		})
 	}
 
 	w.events.Emit(ctx, NoteEvent{
