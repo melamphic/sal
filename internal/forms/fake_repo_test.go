@@ -362,6 +362,21 @@ func (f *fakeRepo) ListLinkedPolicies(_ context.Context, formID uuid.UUID) ([]uu
 	return append([]uuid.UUID{}, f.policies[formID]...), nil
 }
 
+func (f *fakeRepo) ListFormIDsByPolicyID(_ context.Context, policyID uuid.UUID) ([]uuid.UUID, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []uuid.UUID
+	for formID, pids := range f.policies {
+		for _, pid := range pids {
+			if pid == policyID {
+				out = append(out, formID)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
 // ── Style ─────────────────────────────────────────────────────────────────────
 
 func (f *fakeRepo) GetCurrentStyle(_ context.Context, clinicID uuid.UUID) (*StyleVersionRecord, error) {

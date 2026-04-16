@@ -2,6 +2,7 @@ package audio
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/platform/confidence"
 )
 
 // RecordingRecord is the raw database representation of a recording row.
@@ -172,23 +174,55 @@ func (r *Repository) UpdateRecordingStatus(ctx context.Context, id uuid.UUID, st
 	return rec, nil
 }
 
-// UpdateRecordingTranscript stores the Deepgram transcript and duration after
-// a successful transcription job. Also transitions status to transcribed.
-func (r *Repository) UpdateRecordingTranscript(ctx context.Context, id uuid.UUID, transcript string, durationSeconds *int) (*RecordingRecord, error) {
+// UpdateRecordingTranscript stores the transcript, duration, and Deepgram word
+// confidence data after a successful transcription job. Transitions status to transcribed.
+// wordConfidences is nil when using GeminiTranscriber (no word-level data available).
+func (r *Repository) UpdateRecordingTranscript(ctx context.Context, id uuid.UUID, transcript string, durationSeconds *int, wordConfidences []confidence.WordConfidence) (*RecordingRecord, error) {
+	var wcJSON []byte
+	if len(wordConfidences) > 0 {
+		var err error
+		wcJSON, err = json.Marshal(wordConfidences)
+		if err != nil {
+			return nil, fmt.Errorf("audio.repo.UpdateRecordingTranscript: marshal word confidences: %w", err)
+		}
+	}
+
 	const q = `
 		UPDATE recordings
 		SET status = 'transcribed', transcript = $2, duration_seconds = $3,
-		    error_message = NULL, updated_at = NOW()
+		    word_confidences = $4, error_message = NULL, updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, clinic_id, staff_id, subject_id, status, file_key, content_type,
 		          duration_seconds, transcript, error_message, created_at, updated_at`
 
-	row := r.db.QueryRow(ctx, q, id, transcript, durationSeconds)
+	row := r.db.QueryRow(ctx, q, id, transcript, durationSeconds, wcJSON)
 	rec, err := scanRecording(row)
 	if err != nil {
 		return nil, fmt.Errorf("audio.repo.UpdateRecordingTranscript: %w", err)
 	}
 	return rec, nil
+}
+
+// GetWordConfidences returns the ASR word confidence index for a recording.
+// Returns nil (no error) when the recording has no word confidence data
+// (GeminiTranscriber or not yet transcribed).
+func (r *Repository) GetWordConfidences(ctx context.Context, id uuid.UUID) ([]confidence.WordConfidence, error) {
+	var raw []byte
+	err := r.db.QueryRow(ctx, `SELECT word_confidences FROM recordings WHERE id = $1`, id).Scan(&raw)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("audio.repo.GetWordConfidences: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("audio.repo.GetWordConfidences: %w", err)
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	var words []confidence.WordConfidence
+	if err := json.Unmarshal(raw, &words); err != nil {
+		return nil, fmt.Errorf("audio.repo.GetWordConfidences: unmarshal: %w", err)
+	}
+	return words, nil
 }
 
 // LinkSubject associates a recording with a patient subject.

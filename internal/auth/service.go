@@ -88,7 +88,10 @@ func (s *Service) SendMagicLink(ctx context.Context, email string, r *http.Reque
 	if err != nil {
 		name = "there"
 	}
-	firstName := strings.Fields(name)[0]
+	firstName := "there"
+	if fields := strings.Fields(name); len(fields) > 0 {
+		firstName = fields[0]
+	}
 
 	if err := s.mailer.SendMagicLink(ctx, email, firstName, loginURL); err != nil {
 		return fmt.Errorf("auth.service.SendMagicLink: send email: %w", err)
@@ -113,6 +116,10 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*TokenP
 	staff, err := s.repo.GetStaffByID(ctx, tokenRow.StaffID)
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.VerifyMagicLink: get staff: %w", err)
+	}
+
+	if staff.Status == domain.StaffStatusDeactivated {
+		return nil, domain.ErrForbidden
 	}
 
 	return s.issueTokenPair(ctx, staff)

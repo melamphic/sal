@@ -56,6 +56,9 @@ type repo interface {
 	LinkPolicy(ctx context.Context, formID, policyID, linkedBy uuid.UUID) error
 	UnlinkPolicy(ctx context.Context, formID, policyID uuid.UUID) error
 	ListLinkedPolicies(ctx context.Context, formID uuid.UUID) ([]uuid.UUID, error)
+	// ListFormIDsByPolicyID returns all form IDs that have the given policy linked.
+	// Used by the policy engine when retiring a policy to remove all links.
+	ListFormIDsByPolicyID(ctx context.Context, policyID uuid.UUID) ([]uuid.UUID, error)
 
 	// ── Style ─────────────────────────────────────────────────────────────────
 

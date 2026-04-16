@@ -66,6 +66,7 @@ type NoteResponse struct {
 	SubmittedBy        *string              `json:"submitted_by,omitempty"`
 	ArchivedAt         *string              `json:"archived_at,omitempty"`
 	FormVersionContext *string              `json:"form_version_context,omitempty"`
+	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
 	CreatedAt          string               `json:"created_at"`
 	UpdatedAt          string               `json:"updated_at"`
 	Fields             []*NoteFieldResponse `json:"fields,omitempty"`
@@ -121,7 +122,7 @@ type UpdateFieldInput struct {
 // Enforces the 3-notes-per-recording cap when a recording is provided.
 func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteResponse, error) {
 	if input.RecordingID != nil {
-		count, err := s.repo.CountNotesByRecording(ctx, *input.RecordingID)
+		count, err := s.repo.CountNotesByRecording(ctx, input.ClinicID, *input.RecordingID)
 		if err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: count: %w", err)
 		}
@@ -280,6 +281,9 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 		ActorRole: staffRole,
 	})
 
+	// Best-effort: recompute alignment against submitted field values.
+	_, _ = s.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
+
 	return toNoteResponse(note, nil), nil
 }
 
@@ -364,6 +368,7 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 		r.ArchivedAt = &s
 	}
 	r.FormVersionContext = n.FormVersionContext
+	r.PolicyAlignmentPct = n.PolicyAlignmentPct
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))
 		for i, f := range fields {

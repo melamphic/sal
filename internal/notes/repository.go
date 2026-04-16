@@ -2,6 +2,7 @@ package notes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,19 +30,29 @@ type NoteRecord struct {
 	SubmittedBy        *uuid.UUID
 	ArchivedAt         *time.Time // soft delete
 	FormVersionContext *string    // e.g. "before decommission" — set at submit time
+	PolicyAlignmentPct *float64   // 0.0–100.0; nil until alignment job runs
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
+// Confidence is the LLM-estimated value (kept as fallback when no ASR data).
+// ASRConfidence/MinWordConfidence/AlignmentScore/GroundingSource are deterministic
+// scores populated when Deepgram word data is available (nil for GeminiTranscriber).
+// RequiresReview is true when grounding_source="ungrounded" or min confidence is low.
 type NoteFieldRecord struct {
 	ID                 uuid.UUID
 	NoteID             uuid.UUID
 	FieldID            uuid.UUID
-	Value              *string  // JSON-encoded
-	Confidence         *float64 // 0.0–1.0; nil for manual/skippable
+	Value              *string
+	Confidence         *float64
 	SourceQuote        *string
-	TransformationType *string // "direct" | "inference"; nil for manual/skippable
+	TransformationType *string
+	ASRConfidence      *float64
+	MinWordConfidence  *float64
+	AlignmentScore     *float64
+	GroundingSource    *string
+	RequiresReview     bool
 	OverriddenBy       *uuid.UUID
 	OverriddenAt       *time.Time
 	CreatedAt          time.Time
@@ -90,6 +101,7 @@ type ArchiveNoteParams struct {
 
 // UpsertFieldParams holds values for inserting or updating a note_field row.
 // Used by the extraction job to write AI results in bulk.
+// ASRConfidence/MinWordConfidence/AlignmentScore/GroundingSource are nil when no ASR data.
 type UpsertFieldParams struct {
 	ID                 uuid.UUID
 	NoteID             uuid.UUID
@@ -97,7 +109,12 @@ type UpsertFieldParams struct {
 	Value              *string
 	Confidence         *float64
 	SourceQuote        *string
-	TransformationType *string // "direct" | "inference"; nil for skippable
+	TransformationType *string
+	ASRConfidence      *float64
+	MinWordConfidence  *float64
+	AlignmentScore     *float64
+	GroundingSource    *string
+	RequiresReview     bool
 }
 
 // UpdateNoteFieldParams holds values for a staff override of a single field.
@@ -126,7 +143,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, created_by,
 	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
-	archived_at, form_version_context, created_at, updated_at`
+	archived_at, form_version_context, policy_alignment_pct, created_at, updated_at`
 
 // CreateNote inserts a new note with the given status.
 func (r *Repository) CreateNote(ctx context.Context, p CreateNoteParams) (*NoteRecord, error) {
@@ -259,6 +276,22 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt)
 	rec, err := scanNote(row)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			// UPDATE matched 0 rows — either note missing or wrong status.
+			// Do a secondary lookup to return the correct sentinel.
+			var status domain.NoteStatus
+			checkErr := r.db.QueryRow(ctx,
+				`SELECT status FROM notes WHERE id = $1 AND clinic_id = $2`,
+				p.ID, p.ClinicID,
+			).Scan(&status)
+			if errors.Is(checkErr, pgx.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			if checkErr != nil {
+				return nil, fmt.Errorf("notes.repo.SubmitNote: status check: %w", checkErr)
+			}
+			return nil, domain.ErrConflict
+		}
 		return nil, fmt.Errorf("notes.repo.SubmitNote: %w", err)
 	}
 	return rec, nil
@@ -279,51 +312,84 @@ func (r *Repository) ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*Not
 	return rec, nil
 }
 
-// CountNotesByRecording returns how many notes exist for a recording.
-func (r *Repository) CountNotesByRecording(ctx context.Context, recordingID uuid.UUID) (int, error) {
+// CountNotesByRecording returns how many notes exist for a recording within a clinic.
+func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error) {
 	var count int
 	if err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM notes WHERE recording_id = $1`,
-		recordingID,
+		`SELECT COUNT(*) FROM notes WHERE clinic_id = $1 AND recording_id = $2`,
+		clinicID, recordingID,
 	).Scan(&count); err != nil {
 		return 0, fmt.Errorf("notes.repo.CountNotesByRecording: %w", err)
 	}
 	return count, nil
 }
 
+// UpdatePolicyAlignment sets the policy_alignment_pct on a note.
+// Called by the ComputePolicyAlignmentWorker after the AI alignment job runs.
+func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error {
+	const q = `UPDATE notes SET policy_alignment_pct = $2 WHERE id = $1`
+	if _, err := r.db.Exec(ctx, q, noteID, pct); err != nil {
+		return fmt.Errorf("notes.repo.UpdatePolicyAlignment: %w", err)
+	}
+	return nil
+}
+
 // ── Note fields ───────────────────────────────────────────────────────────────
 
 const fieldCols = `id, note_id, field_id, value, confidence, source_quote,
-	transformation_type, overridden_by, overridden_at, created_at, updated_at`
+	transformation_type, asr_confidence, min_word_confidence, alignment_score,
+	grounding_source, requires_review, overridden_by, overridden_at, created_at, updated_at`
 
 // fieldColsAliased is used in JOIN queries to avoid ambiguous column names.
 const fieldColsAliased = `nf.id, nf.note_id, nf.field_id, nf.value, nf.confidence, nf.source_quote,
-	nf.transformation_type, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
+	nf.transformation_type, nf.asr_confidence, nf.min_word_confidence, nf.alignment_score,
+	nf.grounding_source, nf.requires_review, nf.overridden_by, nf.overridden_at, nf.created_at, nf.updated_at`
 
 // UpsertNoteFields inserts or replaces note_field rows in bulk (extraction job output).
+// All upserts run inside a single transaction — a partial failure rolls back all changes.
 func (r *Repository) UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error) {
 	if len(fields) == 0 {
 		return nil, nil
 	}
 
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.UpsertNoteFields: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	q := fmt.Sprintf(`
-		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote, transformation_type)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO note_fields (id, note_id, field_id, value, confidence, source_quote,
+		    transformation_type, asr_confidence, min_word_confidence, alignment_score,
+		    grounding_source, requires_review)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		ON CONFLICT (note_id, field_id) DO UPDATE
 		SET value               = EXCLUDED.value,
 		    confidence          = EXCLUDED.confidence,
 		    source_quote        = EXCLUDED.source_quote,
-		    transformation_type = EXCLUDED.transformation_type
+		    transformation_type = EXCLUDED.transformation_type,
+		    asr_confidence      = EXCLUDED.asr_confidence,
+		    min_word_confidence = EXCLUDED.min_word_confidence,
+		    alignment_score     = EXCLUDED.alignment_score,
+		    grounding_source    = EXCLUDED.grounding_source,
+		    requires_review     = EXCLUDED.requires_review
 		RETURNING %s`, fieldCols)
 
 	result := make([]*NoteFieldRecord, 0, len(fields))
 	for _, p := range fields {
-		row := r.db.QueryRow(ctx, q, p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType)
+		row := tx.QueryRow(ctx, q,
+			p.ID, noteID, p.FieldID, p.Value, p.Confidence, p.SourceQuote, p.TransformationType,
+			p.ASRConfidence, p.MinWordConfidence, p.AlignmentScore, p.GroundingSource, p.RequiresReview,
+		)
 		f, err := scanField(row)
 		if err != nil {
 			return nil, fmt.Errorf("notes.repo.UpsertNoteFields: %w", err)
 		}
 		result = append(result, f)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("notes.repo.UpsertNoteFields: commit: %w", err)
 	}
 	return result, nil
 }
@@ -357,26 +423,19 @@ func (r *Repository) GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*No
 }
 
 // UpdateNoteField records a staff override on a single field.
+// The clinic ownership check and field update are performed atomically in one query.
 func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
-	// Verify note belongs to clinic before updating.
-	var noteClinic uuid.UUID
-	if err := r.db.QueryRow(ctx, `SELECT clinic_id FROM notes WHERE id = $1`, p.NoteID).Scan(&noteClinic); err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, domain.ErrNotFound
-		}
-		return nil, fmt.Errorf("notes.repo.UpdateNoteField: clinic check: %w", err)
-	}
-	if noteClinic != p.ClinicID {
-		return nil, domain.ErrForbidden
-	}
-
 	q := fmt.Sprintf(`
-		UPDATE note_fields
-		SET value = $3, overridden_by = $4, overridden_at = $5
-		WHERE note_id = $1 AND field_id = $2
-		RETURNING %s`, fieldCols)
+		UPDATE note_fields nf
+		SET value = $4, overridden_by = $5, overridden_at = $6
+		FROM notes n
+		WHERE nf.note_id = n.id
+		  AND nf.note_id = $1
+		  AND nf.field_id = $2
+		  AND n.clinic_id = $3
+		RETURNING %s`, fieldColsAliased)
 
-	row := r.db.QueryRow(ctx, q, p.NoteID, p.FieldID, p.Value, p.OverriddenBy, p.OverriddenAt)
+	row := r.db.QueryRow(ctx, q, p.NoteID, p.FieldID, p.ClinicID, p.Value, p.OverriddenBy, p.OverriddenAt)
 	f, err := scanField(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.UpdateNoteField: %w", err)
@@ -397,7 +456,7 @@ func scanNote(row scannable) (*NoteRecord, error) {
 		&n.CreatedBy, &n.Status, &n.ErrorMessage,
 		&n.ReviewedBy, &n.ReviewedAt,
 		&n.SubmittedAt, &n.SubmittedBy,
-		&n.ArchivedAt, &n.FormVersionContext,
+		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct,
 		&n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
@@ -413,7 +472,10 @@ func scanField(row scannable) (*NoteFieldRecord, error) {
 	var f NoteFieldRecord
 	err := row.Scan(
 		&f.ID, &f.NoteID, &f.FieldID, &f.Value, &f.Confidence, &f.SourceQuote,
-		&f.TransformationType, &f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
+		&f.TransformationType,
+		&f.ASRConfidence, &f.MinWordConfidence, &f.AlignmentScore,
+		&f.GroundingSource, &f.RequiresReview,
+		&f.OverriddenBy, &f.OverriddenAt, &f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

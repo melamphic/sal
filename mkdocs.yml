@@ -68,5 +68,8 @@ nav:
       - Audio & Recordings: audio.md
       - Forms: forms.md
       - Notes & Extraction: notes.md
+      - Timeline & Notifications: timeline.md
+      - Policy Engine: policy.md
+      - Compliance Reports: reports.md
   - Backlog: backlog.md
   - Compliance: compliance.md

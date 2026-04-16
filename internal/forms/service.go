@@ -9,30 +9,42 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/extraction"
 )
+
+// PolicyClauseFetcher retrieves enforceable clauses for all policies linked to a form.
+// Implemented by an adapter in app.go that bridges to the policy repository.
+type PolicyClauseFetcher interface {
+	GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error)
+}
 
 // Service handles business logic for the forms module.
 type Service struct {
-	repo repo
+	repo    repo
+	clauses PolicyClauseFetcher
+	checker extraction.FormCoverageChecker
 }
 
 // NewService constructs a forms Service.
-func NewService(r repo) *Service {
-	return &Service{repo: r}
+// Pass nil for clauses and checker to disable policy checking (tests, local dev).
+func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker) *Service {
+	return &Service{repo: r, clauses: clauses, checker: checker}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
 
 // FieldResponse is the API-safe representation of a form field.
 type FieldResponse struct {
-	ID        string          `json:"id"`
-	Position  int             `json:"position"`
-	Title     string          `json:"title"`
-	Type      string          `json:"type"`
-	Config    json.RawMessage `json:"config"`
-	AIPrompt  *string         `json:"ai_prompt,omitempty"`
-	Required  bool            `json:"required"`
-	Skippable bool            `json:"skippable"`
+	ID             string          `json:"id"`
+	Position       int             `json:"position"`
+	Title          string          `json:"title"`
+	Type           string          `json:"type"`
+	Config         json.RawMessage `json:"config"`
+	AIPrompt       *string         `json:"ai_prompt,omitempty"`
+	Required       bool            `json:"required"`
+	Skippable      bool            `json:"skippable"`
+	AllowInference bool            `json:"allow_inference"`
+	MinConfidence  *float64        `json:"min_confidence,omitempty"`
 }
 
 // FormVersionResponse is the API-safe representation of a form version.
@@ -153,13 +165,15 @@ type UpdateDraftInput struct {
 
 // FieldInput holds the values for a single field in a draft update.
 type FieldInput struct {
-	Position  int
-	Title     string
-	Type      string
-	Config    json.RawMessage
-	AIPrompt  *string
-	Required  bool
-	Skippable bool
+	Position       int
+	Title          string
+	Type           string
+	Config         json.RawMessage
+	AIPrompt       *string
+	Required       bool
+	Skippable      bool
+	AllowInference bool
+	MinConfidence  *float64
 }
 
 // PublishFormInput holds input for publishing the draft version.
@@ -371,15 +385,17 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 			cfg = json.RawMessage(`{}`)
 		}
 		fieldParams[i] = CreateFieldParams{
-			ID:            domain.NewID(),
-			FormVersionID: draft.ID,
-			Position:      fi.Position,
-			Title:         fi.Title,
-			Type:          fi.Type,
-			Config:        cfg,
-			AIPrompt:      fi.AIPrompt,
-			Required:      fi.Required,
-			Skippable:     fi.Skippable,
+			ID:             domain.NewID(),
+			FormVersionID:  draft.ID,
+			Position:       fi.Position,
+			Title:          fi.Title,
+			Type:           fi.Type,
+			Config:         cfg,
+			AIPrompt:       fi.AIPrompt,
+			Required:       fi.Required,
+			Skippable:      fi.Skippable,
+			AllowInference: fi.AllowInference,
+			MinConfidence:  fi.MinConfidence,
 		}
 	}
 
@@ -440,15 +456,16 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 	return toVersionResponse(published, fields), nil
 }
 
-// RunPolicyCheck stores a placeholder result on the draft version.
-// Full LLM-based checking will be implemented when the policy engine is built.
+// RunPolicyCheck calls the AI to assess whether the form's fields cover the
+// requirements of all linked policy clauses. Saves the result on the draft.
+// Returns ErrConflict if no policies are linked or no checker is configured.
 func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID uuid.UUID) (*FormVersionResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: form is retired: %w", domain.ErrConflict)
 	}
 
 	draft, err := s.repo.GetDraftVersion(ctx, formID)
@@ -456,16 +473,52 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
 	}
 
-	policies, err := s.repo.ListLinkedPolicies(ctx, formID)
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.RunPolicyCheck: policies: %w", err)
-	}
-	if len(policies) == 0 {
-		return nil, fmt.Errorf("forms.service.RunPolicyCheck: no policies linked: %w", domain.ErrConflict)
+	if s.clauses == nil || s.checker == nil {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: policy checker not configured: %w", domain.ErrConflict)
 	}
 
-	// Stub: full LLM call will be added when the policy engine is built.
-	result := "Policy check engine is not yet available. Link policies via the policy engine to enable compliance analysis."
+	clauses, err := s.clauses.GetClausesForForm(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: get clauses: %w", err)
+	}
+	if len(clauses) == 0 {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: no policy clauses found — link policies with clauses first: %w", domain.ErrConflict)
+	}
+
+	fields, err := s.repo.GetFieldsByVersionID(ctx, draft.ID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: get fields: %w", err)
+	}
+
+	// Build FieldSpec slice for the checker — exclude skippable fields.
+	specs := make([]extraction.FieldSpec, 0, len(fields))
+	for _, f := range fields {
+		if f.Skippable {
+			continue
+		}
+		prompt := ""
+		if f.AIPrompt != nil {
+			prompt = *f.AIPrompt
+		}
+		specs = append(specs, extraction.FieldSpec{
+			ID:             f.ID.String(),
+			Title:          f.Title,
+			Type:           f.Type,
+			AIPrompt:       prompt,
+			Required:       f.Required,
+			AllowInference: f.AllowInference,
+		})
+	}
+
+	overallPrompt := ""
+	if form.OverallPrompt != nil {
+		overallPrompt = *form.OverallPrompt
+	}
+
+	result, err := s.checker.CheckFormCoverage(ctx, overallPrompt, specs, clauses)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: checker: %w", err)
+	}
 
 	version, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
 		VersionID: draft.ID,
@@ -527,15 +580,17 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 	fieldParams := make([]CreateFieldParams, len(sourceFields))
 	for i, f := range sourceFields {
 		fieldParams[i] = CreateFieldParams{
-			ID:            domain.NewID(),
-			FormVersionID: newDraftID,
-			Position:      f.Position,
-			Title:         f.Title,
-			Type:          f.Type,
-			Config:        f.Config,
-			AIPrompt:      f.AIPrompt,
-			Required:      f.Required,
-			Skippable:     f.Skippable,
+			ID:             domain.NewID(),
+			FormVersionID:  newDraftID,
+			Position:       f.Position,
+			Title:          f.Title,
+			Type:           f.Type,
+			Config:         f.Config,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
 		}
 	}
 	fields, err := s.repo.ReplaceFields(ctx, newDraftID, fieldParams)
@@ -805,14 +860,16 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 
 func toFieldResponse(f *FieldRecord) *FieldResponse {
 	return &FieldResponse{
-		ID:        f.ID.String(),
-		Position:  f.Position,
-		Title:     f.Title,
-		Type:      f.Type,
-		Config:    f.Config,
-		AIPrompt:  f.AIPrompt,
-		Required:  f.Required,
-		Skippable: f.Skippable,
+		ID:             f.ID.String(),
+		Position:       f.Position,
+		Title:          f.Title,
+		Type:           f.Type,
+		Config:         f.Config,
+		AIPrompt:       f.AIPrompt,
+		Required:       f.Required,
+		Skippable:      f.Skippable,
+		AllowInference: f.AllowInference,
+		MinConfidence:  f.MinConfidence,
 	}
 }
 

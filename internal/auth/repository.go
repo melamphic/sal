@@ -169,7 +169,7 @@ func (r *Repository) GetInviteByTokenHash(ctx context.Context, tokenHash string)
 		SELECT id, clinic_id, email, email_hash, role, note_tier, permissions,
 		       token_hash, expires_at, invited_by_id, accepted_at
 		FROM invite_tokens
-		WHERE token_hash = $1 AND accepted_at IS NULL
+		WHERE token_hash = $1 AND accepted_at IS NULL AND expires_at > NOW()
 	`, tokenHash).Scan(
 		&inv.ID, &inv.ClinicID, &inv.Email, &inv.EmailHash,
 		&inv.Role, &inv.NoteTier, &perms,

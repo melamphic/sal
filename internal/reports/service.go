@@ -176,6 +176,16 @@ func (s *Service) GetExportJob(ctx context.Context, jobID, clinicID uuid.UUID, d
 	return toJobResponse(rec, downloadURL), nil
 }
 
+// GetReportJobRecord fetches the raw job record for a clinic.
+// Used by the handler to retrieve the storage key before generating a presigned URL.
+func (s *Service) GetReportJobRecord(ctx context.Context, jobID, clinicID uuid.UUID) (*ReportJobRecord, error) {
+	rec, err := s.repo.GetReportJob(ctx, jobID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.GetReportJobRecord: %w", err)
+	}
+	return rec, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func clampLimit(limit int) int {

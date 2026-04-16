@@ -1,111 +1,72 @@
 # Engineering Backlog
 
-Items deferred from the April 2026 audit. Ordered by dependency and complexity.
+Items deferred or planned for future phases. Ordered by dependency and complexity.
 
 ---
 
-## Phase 2: Timeline & Metamorphosis History
+## Completed (previously deferred)
 
-**Spec rule:** Notes appear in a subject's profile with a full audit trail — when the recording was made, when the note was reviewed, when it was submitted, and every field value change in between.
+These items were listed as backlog but are now implemented:
+
+| Item | Delivered |
+|---|---|
+| Timeline & SSE notifications (`note_events`, subject/clinic audit, real-time SSE) | Phase 2 |
+| Policy engine (block content, semver versioning, clause tagging, form links, retire) | Phase 2 |
+| Compliance reports (query endpoints + async CSV export via River + S3) | Phase 2 |
+| Policy alignment score on notes (`policy_alignment_pct`, weighted by parity, Gemini) | Phase 2 |
+| OpenAI extraction provider (strict JSON schema, GPT-4.1-mini) | Phase 2 |
+| Gemini ResponseSchema + ThinkingBudget=0 (cost fix) | Phase 2 |
+| GeminiTranscriber for dev/staging (replaces Deepgram in non-prod) | Phase 2 |
+| RunPolicyCheck real LLM implementation (form coverage analysis) | Phase 2 |
+| Factory functions for all providers (extractor, aligner, checker) | Phase 2 |
+| Deterministic confidence scoring (ASR word alignment, LCS fuzzy match, inference penalty, requires_review) | Phase 2 |
+| Per-field inference controls (`allow_inference`, `min_confidence` on `form_fields`) | Phase 2 |
+
+---
+
+---
+
+## Pending: PDF/Doc Import → Policy Extraction
+
+**Spec:** Clinics upload existing policy documents (PDF, Word). AI parses them into block-based policy content in the policy engine.
 
 **What's needed:**
 
-- New table `note_events` (or `note_audit_log`):
-  ```sql
-  CREATE TABLE note_events (
-      id          UUID PRIMARY KEY,
-      note_id     UUID NOT NULL REFERENCES notes(id),
-      event_type  VARCHAR NOT NULL, -- 'created', 'field_changed', 'reviewed', 'submitted', 'archived'
-      field_id    UUID REFERENCES form_fields(id), -- set for field_changed events
-      old_value   TEXT,  -- JSON-encoded previous value
-      new_value   TEXT,  -- JSON-encoded new value
-      actor_id    UUID NOT NULL REFERENCES staff(id),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-  ```
-- Emit events from `notes/service.go` on every state transition and field override.
-- New endpoint: `GET /api/v1/notes/{note_id}/timeline` — paginated event log.
-- Subject timeline endpoint: `GET /api/v1/subjects/{subject_id}/timeline` — all notes and events for a patient, primary sort by recording time.
-- Real-time push: websocket or SSE so the frontend updates live.
+- Upload endpoint: `POST /api/v1/policies/import` — accepts multipart PDF/DOCX.
+- Store file temporarily in S3, enqueue a River job.
+- River job: extract text from document → call AI to structure it into AppFlowy blocks + identify clauses + assign parity levels → create a new policy draft with the result.
+- Suitable for the add-on tier; gate behind a feature flag or plan check.
 
-**Dependencies:** None — can be built standalone.
+**Dependencies:** Policy engine ✅ (built). Requires document parsing library (e.g. `pdfcpu` for PDF).
 
 ---
 
-## Phase 2: Policy Alignment Score
+## Pending: Policy RAG Chat
 
-**Spec rule:** After review, the note shows what percentage of the linked form's policies are satisfied by the transcript + extracted values.
+**Spec:** Staff can query the clinic's policies in natural language ("What is the protocol for dispensing controlled substances?").
 
 **What's needed:**
 
-- Policy engine must be built first (currently `forms.RunPolicyCheck()` is a stub returning placeholder text).
-- Add `policy_alignment_pct DECIMAL(5,2)` column to `notes` table.
-- After submission (or as a separate async job), run policy check against the note's field values and transcript.
-- Store result on `notes.policy_alignment_pct`.
-- Surface in `NoteResponse`.
+- Vector embeddings of published policy clause content (pgvector or external vector DB).
+- Embedding job triggered on each policy publish.
+- Chat endpoint: accepts a question, retrieves top-K clauses by similarity, sends to AI with policy context, returns cited answer.
+- Access gated by a new `query_policies` permission.
 
-**Dependencies:** Policy engine (clause enforcement, scoring logic). Blocked until policy engine is functional.
-
----
-
-## Phase 3: Deterministic Confidence Scoring
-
-**Spec formula:**
-```
-evidence ∈ transcript
-confidence = avg(word_confidence(evidence_words))
-if confidence < min_confidence → reject
-```
-
-**Current state:** Gemini returns a confidence float which is stored as-is. This is AI-guessed, not deterministic.
-
-**What's needed:**
-
-- Deepgram's transcription response already includes word-level confidence scores. Store these in the `recordings` table (currently only the transcript text is stored).
-- New column: `recordings.word_confidences JSONB` — array of `{word, start, end, confidence}` objects from Deepgram.
-- In `ExtractNoteWorker`, after receiving AI results, compute deterministic confidence:
-  1. For each field result, find `source_quote` words in `word_confidences`.
-  2. Average the word-level confidence scores for matched words.
-  3. Apply `min_confidence` threshold (configurable per clinic or global).
-  4. Replace AI-provided confidence with the computed value.
-- Add `MinConfidence float64` to `extraction.FieldSpec` or pass as a global config.
-
-**Dependencies:** Deepgram word-confidence data must be persisted (currently discarded). Requires migration + changes to audio transcription worker.
+**Dependencies:** Policy engine ✅. Requires pgvector extension or external vector store.
 
 ---
 
-## Notes: Subject Timeline Integration
+## Pending: Marketplace Module
 
-**Spec:** The subject profile shows a chronological timeline of all notes, sorted by recording time (not note creation time). Staff can drill into any note to see its full metamorphosis.
+Not yet started. Clinics can discover and install form templates and policy packs published by Salvia and third parties.
 
-**What's needed:**
-
-- `GET /api/v1/subjects/{subject_id}/timeline` endpoint returning notes (and eventually policies, appointments) sorted by `recordings.created_at` (the recording time), not `notes.created_at`.
-- Archived notes hidden unless `include_archived=true`.
-- Pagination.
-- Requires timeline events table (Phase 2) for full metamorphosis detail.
-
-**Dependencies:** Phase 2 timeline table.
+See `salvia_specs.md` for requirements. No dependencies on current modules beyond auth and forms.
 
 ---
 
-## Policy Engine
+## Pending: Billing (Phase 3)
 
-**Current state:** `form_policies` is a link table with no target (no `policies` table). `RunPolicyCheck()` returns placeholder text.
-
-**What's needed:**
-
-- `policies` table with block-based content (Appflowy-style: blocks stored as JSONB).
-- Policy versioning (same semver pattern as forms).
-- Clause marking: blocks can be tagged `high`/`medium`/`low` enforcement level.
-- Import flow: upload PDF/doc → AI extracts policy clauses → creates policy blocks.
-- Policy-to-form compliance check: given a form version and its fields, compute what % of linked policy clauses are addressed.
-- RAG chat (later): staff can query org policies via natural language.
-
-**Dependencies:** None — standalone module. Enables policy alignment on notes.
-
----
-
-## Marketplace Module
-
-Not yet started. See `salvia_specs.md` for requirements. No dependencies on current modules beyond auth.
+- Stripe customer + subscription lifecycle
+- Usage caps per plan tier (note quota, staff seats)
+- Webhook handler for subscription events
+- `NoteTier` enforcement (standard / nurse / none) already modelled in `domain` — needs usage counting

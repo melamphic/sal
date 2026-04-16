@@ -1,10 +1,10 @@
 # Salvia Backend
 
-`sal` is the Go backend for **Salvia** — a voice-first AI documentation and compliance platform for veterinary clinics (and future verticals: dental, aged care).
+`sal` is the Go backend for **Salvia** — a voice-first AI documentation and compliance platform for veterinary clinics and future verticals (dental, aged care).
 
 ---
 
-## What's built (Phase 0)
+## What's built
 
 | Module | What it does |
 |---|---|
@@ -14,13 +14,23 @@
 | **auth** | Passwordless magic link login, JWT access tokens, opaque refresh tokens |
 | **clinic** | Clinic registration, profile management, multi-tenancy foundation |
 | **staff** | Staff invitations, role-based permissions, deactivation |
+| **patient** | Subjects (patients, animals, residents) and contacts |
+| **audio** | Recording upload; Deepgram Nova-3 Medical (prod) or Gemini (dev) transcription; word-level confidence stored |
+| **forms** | Form builder with field types, semver versioning, rollback, policy links, PDF style, AI coverage check |
+| **extraction** | Gemini 2.5 Flash + GPT-4.1-mini; field extraction, policy alignment, form coverage check |
+| **platform/confidence** | Deterministic confidence scoring via ASR word alignment (LCS fuzzy match, inference penalty) |
+| **notes** | AI extraction pipeline, deterministic per-field confidence, requires_review flagging, override audit trail |
+| **timeline** | Note event log; subject-level and clinic-level audit timelines |
+| **notifications** | SSE broker backed by PostgreSQL LISTEN/NOTIFY for real-time updates |
+| **policy** | Policy engine with block-based content, semver versioning, clause enforcement levels |
+| **reports** | Compliance report queries + async CSV export via River job and S3 |
 
 ---
 
 ## Architecture at a glance
 
 - **Modularised monolith** — one binary, bounded internal packages, split-to-services later if needed
-- **PostgreSQL only** — no Redis, no secondary store in Phase 0
+- **PostgreSQL only** — no Redis, no secondary store; River job queue uses the same DB
 - **AES-256-GCM at the app layer** — PII encrypted before it hits the DB
 - **huma v2** — auto-generated OpenAPI 3.1 + Swagger UI from Go types
 - **HIPAA / GDPR / SOC 2** — designed in from day one, not retrofitted
@@ -33,7 +43,7 @@ See [Architecture](architecture.md) for the full picture.
 
 ```bash
 cp .env.example .env   # set ENCRYPTION_KEY and JWT_SECRET
-make dev-deps          # start Postgres + Mailpit + MinIO
+make infra             # start Postgres + Mailpit + MinIO
 make migrate           # run migrations
 make dev               # start API on :8080
 ```
@@ -59,14 +69,13 @@ See [Testing](testing.md) for how the test harness works.
 
 ## Delivery phases
 
-| Phase | Scope |
-|---|---|
-| **0 — Foundation** ✅ | Auth, clinic, staff, PII encryption, compliance baseline |
-| 1 — Core workflow | Subjects, audio ingestion, AI transcription, notes |
-| 2 — Intelligence | AI note generation, templates, smart suggestions |
-| 3 — Compliance | Audit export, GDPR tools, retention policies |
-| 4 — Billing | Stripe integration, usage caps, plan management |
-| 5 — Growth | Multi-vertical, marketplace, SSO |
+| Phase | Scope | Status |
+|---|---|---|
+| **0 — Foundation** | Auth, clinic, staff, PII encryption, compliance baseline | ✅ Done |
+| **1 — Core workflow** | Subjects, audio ingestion, AI transcription, forms, notes | ✅ Done |
+| **2 — Intelligence + Compliance** | Timeline, SSE, policy engine, compliance reports, AI extraction (both providers), deterministic confidence | ✅ Done |
+| **3 — Billing** | Stripe integration, usage caps, plan management | Planned |
+| **4 — Growth** | Multi-vertical, marketplace, SSO | Planned |
 
 ---
 
@@ -77,3 +86,4 @@ See [Testing](testing.md) for how the test harness works.
 - **`vertical` field** — single codebase supports multiple clinic types without forking
 - **River for jobs** — PostgreSQL-backed queue; no Redis operational overhead
 - **testcontainers** — integration tests run against real Postgres, not mocks
+- **Cross-module interfaces** — modules never import each other; adapters wired in `app.go`

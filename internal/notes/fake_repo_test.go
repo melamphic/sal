@@ -140,12 +140,12 @@ func (f *fakeRepo) ArchiveNote(_ context.Context, p ArchiveNoteParams) (*NoteRec
 	return cloneNote(n), nil
 }
 
-func (f *fakeRepo) CountNotesByRecording(_ context.Context, recordingID uuid.UUID) (int, error) {
+func (f *fakeRepo) CountNotesByRecording(_ context.Context, clinicID, recordingID uuid.UUID) (int, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	count := 0
 	for _, n := range f.notes {
-		if n.RecordingID != nil && *n.RecordingID == recordingID {
+		if n.ClinicID == clinicID && n.RecordingID != nil && *n.RecordingID == recordingID {
 			count++
 		}
 	}
@@ -165,6 +165,11 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 			rec.Confidence = p.Confidence
 			rec.SourceQuote = p.SourceQuote
 			rec.TransformationType = p.TransformationType
+			rec.ASRConfidence = p.ASRConfidence
+			rec.MinWordConfidence = p.MinWordConfidence
+			rec.AlignmentScore = p.AlignmentScore
+			rec.GroundingSource = p.GroundingSource
+			rec.RequiresReview = p.RequiresReview
 			rec.UpdatedAt = domain.TimeNow()
 		} else {
 			rec := &NoteFieldRecord{
@@ -175,6 +180,11 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 				Confidence:         p.Confidence,
 				SourceQuote:        p.SourceQuote,
 				TransformationType: p.TransformationType,
+				ASRConfidence:      p.ASRConfidence,
+				MinWordConfidence:  p.MinWordConfidence,
+				AlignmentScore:     p.AlignmentScore,
+				GroundingSource:    p.GroundingSource,
+				RequiresReview:     p.RequiresReview,
 				CreatedAt:          domain.TimeNow(),
 				UpdatedAt:          domain.TimeNow(),
 			}
@@ -194,6 +204,17 @@ func (f *fakeRepo) GetNoteFields(_ context.Context, noteID uuid.UUID) ([]*NoteFi
 		out[i] = &cp
 	}
 	return out, nil
+}
+
+func (f *fakeRepo) UpdatePolicyAlignment(_ context.Context, id uuid.UUID, pct float64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n.PolicyAlignmentPct = &pct
+	return nil
 }
 
 func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {

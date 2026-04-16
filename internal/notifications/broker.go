@@ -31,7 +31,8 @@ type Broker struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[string]chan Event // clinic_id → client_id → chan
 
-	done chan struct{}
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
 // NewBroker creates a Broker. Call Start(ctx) in a goroutine to begin listening.
@@ -66,8 +67,9 @@ func (b *Broker) Start(ctx context.Context) {
 }
 
 // Stop signals the broker to shut down after the current reconnect cycle.
+// Safe to call multiple times.
 func (b *Broker) Stop() {
-	close(b.done)
+	b.stopOnce.Do(func() { close(b.done) })
 }
 
 // Subscribe registers a client for clinicID and returns a unique clientID and

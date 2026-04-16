@@ -35,13 +35,15 @@ type paginationInput struct {
 // ── Field input type ──────────────────────────────────────────────────────────
 
 type fieldBodyInput struct {
-	Position  int             `json:"position" minimum:"1" doc:"1-based display order."`
-	Title     string          `json:"title"    minLength:"1" doc:"Display label for the field."`
-	Type      string          `json:"type"     minLength:"1" doc:"Field type (text, long_text, number, decimal, slider, select, button_group, percentage, image, etc.)."`
-	Config    json.RawMessage `json:"config,omitempty"  doc:"Type-specific configuration (options, range bounds, etc.)."`
-	AIPrompt  *string         `json:"ai_prompt,omitempty" doc:"Optional per-field prompt for AI extraction."`
-	Required  bool            `json:"required"   doc:"Whether the field must be filled by AI or reviewer."`
-	Skippable bool            `json:"skippable"  doc:"If true, this field is excluded from AI extraction entirely."`
+	Position       int             `json:"position" minimum:"1" doc:"1-based display order."`
+	Title          string          `json:"title"    minLength:"1" doc:"Display label for the field."`
+	Type           string          `json:"type"     minLength:"1" doc:"Field type (text, long_text, number, decimal, slider, select, button_group, percentage, image, etc.)."`
+	Config         json.RawMessage `json:"config,omitempty"  doc:"Type-specific configuration (options, range bounds, etc.)."`
+	AIPrompt       *string         `json:"ai_prompt,omitempty" doc:"Optional per-field prompt for AI extraction."`
+	Required       bool            `json:"required"   doc:"Whether the field must be filled by AI or reviewer."`
+	Skippable      bool            `json:"skippable"  doc:"If true, this field is excluded from AI extraction entirely."`
+	AllowInference bool            `json:"allow_inference" doc:"When false, AI inference is rejected; only verbatim quotes accepted."`
+	MinConfidence  *float64        `json:"min_confidence,omitempty" doc:"ASR confidence floor (0.0–1.0). Results below this threshold are flagged for review."`
 }
 
 // ── Forms ─────────────────────────────────────────────────────────────────────

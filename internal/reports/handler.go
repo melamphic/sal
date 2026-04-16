@@ -31,10 +31,10 @@ type reportPaginationInput struct {
 }
 
 type reportFilterInput struct {
-	From      *string `query:"from"       doc:"ISO 8601 start datetime (inclusive)."`
-	To        *string `query:"to"         doc:"ISO 8601 end datetime (inclusive)."`
-	StaffID   *string `query:"staff_id"   doc:"Filter by actor staff UUID."`
-	SubjectID *string `query:"subject_id" doc:"Filter by subject UUID."`
+	From      string `query:"from"       doc:"ISO 8601 start datetime (inclusive)."`
+	To        string `query:"to"         doc:"ISO 8601 end datetime (inclusive)."`
+	StaffID   string `query:"staff_id"   doc:"Filter by actor staff UUID."`
+	SubjectID string `query:"subject_id" doc:"Filter by subject UUID."`
 }
 
 type auditHTTPResponse struct {
@@ -76,17 +76,18 @@ func (h *Handler) getClinicalAudit(ctx context.Context, input *clinicalAuditInpu
 type staffActionsInput struct {
 	reportPaginationInput
 	reportFilterInput
-	StaffIDPath string `query:"staff_id" doc:"Staff UUID to filter actions for. Required."`
+	// Note: StaffID is already on reportFilterInput (query:"staff_id").
+	// staffActionsInput requires it — validated in the handler.
 }
 
 // getStaffActions handles GET /api/v1/reports/staff-actions.
 func (h *Handler) getStaffActions(ctx context.Context, input *staffActionsInput) (*auditHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
-	if input.StaffIDPath == "" {
+	if input.StaffID == "" {
 		return nil, huma.Error400BadRequest("staff_id is required")
 	}
-	staffID, err := uuid.Parse(input.StaffIDPath)
+	staffID, err := uuid.Parse(input.StaffID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid staff_id")
 	}
@@ -204,7 +205,7 @@ func (h *Handler) getExportJob(ctx context.Context, input *exportJobInput) (*job
 	}
 
 	// Pre-fetch the job to get the storage key (if complete) before building the response.
-	rec, err := h.svc.repo.GetReportJob(ctx, jobID, clinicID)
+	rec, err := h.svc.GetReportJobRecord(ctx, jobID, clinicID)
 	if err != nil {
 		return nil, mapReportError(err)
 	}
@@ -242,37 +243,36 @@ func mapReportError(err error) error {
 
 func parseFilters(f reportFilterInput) (ReportFilters, error) {
 	out := ReportFilters{}
-	var err error
 
-	if f.From != nil {
-		t, err := time.Parse(time.RFC3339, *f.From)
+	if f.From != "" {
+		t, err := time.Parse(time.RFC3339, f.From)
 		if err != nil {
 			return out, huma.Error400BadRequest("invalid from: use RFC3339 format")
 		}
 		out.From = &t
 	}
-	if f.To != nil {
-		t, err := time.Parse(time.RFC3339, *f.To)
+	if f.To != "" {
+		t, err := time.Parse(time.RFC3339, f.To)
 		if err != nil {
 			return out, huma.Error400BadRequest("invalid to: use RFC3339 format")
 		}
 		out.To = &t
 	}
-	if f.StaffID != nil {
-		id, err := uuid.Parse(*f.StaffID)
+	if f.StaffID != "" {
+		id, err := uuid.Parse(f.StaffID)
 		if err != nil {
 			return out, huma.Error400BadRequest("invalid staff_id")
 		}
 		out.StaffID = &id
 	}
-	if f.SubjectID != nil {
-		id, err := uuid.Parse(*f.SubjectID)
+	if f.SubjectID != "" {
+		id, err := uuid.Parse(f.SubjectID)
 		if err != nil {
 			return out, huma.Error400BadRequest("invalid subject_id")
 		}
 		out.SubjectID = &id
 	}
-	return out, err
+	return out, nil
 }
 
 func parseExportFilters(f exportFilters) (ReportFilters, error) {

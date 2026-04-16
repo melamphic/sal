@@ -29,6 +29,40 @@ func NewGeminiExtractor(ctx context.Context, apiKey string) (*GeminiExtractor, e
 	return &GeminiExtractor{client: client}, nil
 }
 
+// extractionSchema is the ResponseSchema for form field extraction.
+// Using ResponseSchema gives API-level enforcement — stronger than prompt-only JSON mode.
+var extractionSchema = &genai.Schema{
+	Type: genai.TypeArray,
+	Items: &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"field_id":            {Type: genai.TypeString},
+			"value":               {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+			"confidence":          {Type: genai.TypeNumber, Nullable: genai.Ptr(true)},
+			"source_quote":        {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+			"transformation_type": {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+		},
+		Required: []string{"field_id"},
+	},
+}
+
+// clauseSchema is the ResponseSchema for policy alignment clause results.
+var clauseSchema = &genai.Schema{
+	Type: genai.TypeArray,
+	Items: &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"block_id":  {Type: genai.TypeString},
+			"satisfied": {Type: genai.TypeBoolean},
+		},
+		Required: []string{"block_id", "satisfied"},
+	},
+}
+
+// noThinking disables thinking tokens on gemini-2.5-flash.
+// Without this, thinking tokens are billed at output token rates ($2.50/M).
+var noThinking = &genai.ThinkingConfig{ThinkingBudget: genai.Ptr[int32](0)}
+
 // Extract calls Gemini to fill form fields from a transcript.
 // Returns one FieldResult per non-skippable field spec in order.
 func (e *GeminiExtractor) Extract(ctx context.Context, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error) {
@@ -44,8 +78,9 @@ func (e *GeminiExtractor) Extract(ctx context.Context, transcript, overallPrompt
 		genai.Text(prompt),
 		&genai.GenerateContentConfig{
 			ResponseMIMEType: "application/json",
-			// Temperature 0 = deterministic, maximally consistent extraction.
-			Temperature: genai.Ptr[float32](0),
+			ResponseSchema:   extractionSchema,
+			Temperature:      genai.Ptr[float32](0),
+			ThinkingConfig:   noThinking,
 		},
 	)
 	if err != nil {
@@ -95,6 +130,9 @@ func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
 		if f.Required {
 			sb.WriteString(", required: true")
 		}
+		if !f.AllowInference {
+			sb.WriteString(", direct_only: true")
+		}
 		sb.WriteString("\n")
 	}
 
@@ -106,6 +144,7 @@ func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
 - confidence: how certain you are (0.0 = guess, 1.0 = verbatim). Use null only when value is null.
 - source_quote: verbatim text from the transcript supporting the value. Use null when value is null.
 - transformation_type: "direct" if the value appears verbatim or near-verbatim in the transcript; "inference" if derived or computed from surrounding context. Use null when value is null.
+- direct_only: true means the field must only be set when the value appears verbatim or near-verbatim. Set transformation_type to "direct" only. If no verbatim match found, set value to null.
 - Do not add fields not in the list. Do not omit any field from the list.
 - For required fields with no evidence, set value to null and confidence to 0.0.
 
@@ -113,6 +152,164 @@ Respond with ONLY the JSON array. No markdown fences.
 `)
 
 	return sb.String()
+}
+
+// ── Policy alignment ──────────────────────────────────────────────────────────
+
+// geminiClauseResult is the per-clause JSON response from the alignment prompt.
+type geminiClauseResult struct {
+	BlockID   string `json:"block_id"`
+	Satisfied bool   `json:"satisfied"`
+}
+
+// AlignPolicy calls Gemini to assess how well the note content satisfies each policy clause.
+// Returns a weighted alignment percentage (0.0–100.0).
+// Weights: high=3, medium=2, low=1.
+func (e *GeminiExtractor) AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error) {
+	if len(clauses) == 0 {
+		return 100.0, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause.\n\n")
+	sb.WriteString("## Note content\n")
+	sb.WriteString(noteContent)
+	sb.WriteString("\n\n## Policy clauses\n")
+	for _, c := range clauses {
+		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
+	}
+	sb.WriteString(`
+## Instructions
+Return a JSON array with one object per clause in the same order.
+Each object: { "block_id": "<id>", "satisfied": true/false }
+satisfied=true if the note content clearly addresses the clause requirement.
+satisfied=false if the clause is not addressed or cannot be determined from the note.
+Respond with ONLY the JSON array. No markdown fences.
+`)
+
+	resp, err := e.client.Models.GenerateContent(
+		ctx,
+		geminiModel,
+		genai.Text(sb.String()),
+		&genai.GenerateContentConfig{
+			ResponseMIMEType: "application/json",
+			ResponseSchema:   clauseSchema,
+			Temperature:      genai.Ptr[float32](0),
+			ThinkingConfig:   noThinking,
+		},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: generate: %w", err)
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: empty response from model")
+	}
+
+	raw := resp.Candidates[0].Content.Parts[0].Text
+
+	var results []geminiClauseResult
+	if err := json.Unmarshal([]byte(raw), &results); err != nil {
+		return 0, fmt.Errorf("extraction.gemini.AlignPolicy: parse response: %w (raw: %.200s)", err, raw)
+	}
+
+	// Index results by block_id for lookup.
+	satisfied := make(map[string]bool, len(results))
+	for _, r := range results {
+		satisfied[r.BlockID] = r.Satisfied
+	}
+
+	// Compute weighted score.
+	weights := map[string]float64{"high": 3, "medium": 2, "low": 1}
+	var total, earned float64
+	for _, c := range clauses {
+		w := weights[c.Parity]
+		if w == 0 {
+			w = 1
+		}
+		total += w
+		if satisfied[c.BlockID] {
+			earned += w
+		}
+	}
+	if total == 0 {
+		return 100.0, nil
+	}
+	return (earned / total) * 100.0, nil
+}
+
+// ── Form coverage check ───────────────────────────────────────────────────────
+
+// CheckFormCoverage calls Gemini to assess whether the form's fields cover the
+// requirements of the linked policy clauses. Returns a qualitative text report.
+func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (string, error) {
+	if len(clauses) == 0 {
+		return "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("You are a clinical compliance analyst. Assess whether the following form design adequately captures the data required by the linked policy clauses.\n\n")
+
+	if overallPrompt != "" {
+		sb.WriteString("## Form purpose\n")
+		sb.WriteString(overallPrompt)
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString("## Form fields\n")
+	for _, f := range fields {
+		if f.Skippable {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("- %q (type: %s", f.Title, f.Type))
+		if f.AIPrompt != "" {
+			sb.WriteString(fmt.Sprintf(", hint: %q", f.AIPrompt))
+		}
+		if f.Required {
+			sb.WriteString(", required")
+		}
+		sb.WriteString(")\n")
+	}
+
+	sb.WriteString("\n## Policy clauses to satisfy\n")
+	for _, c := range clauses {
+		sb.WriteString(fmt.Sprintf("- [%s parity] %s\n", c.Parity, c.Title))
+	}
+
+	sb.WriteString(`
+## Instructions
+Write a plain-text compliance analysis (no markdown, no JSON). Structure your response as:
+
+OVERALL: One sentence summary of how well the form covers the policy.
+
+COVERED:
+List each policy clause that is adequately addressed by one or more fields. One line per clause.
+
+GAPS:
+List each policy clause that has no field capturing the required data. One line per clause, with a concrete suggestion for what field to add.
+
+SUGGESTIONS:
+Up to 3 actionable improvements to strengthen policy coverage, if any.
+
+Be specific. Reference actual field names and clause titles. Keep each point to one line.
+`)
+
+	resp, err := e.client.Models.GenerateContent(
+		ctx,
+		geminiModel,
+		genai.Text(sb.String()),
+		&genai.GenerateContentConfig{
+			Temperature:    genai.Ptr[float32](0.2),
+			ThinkingConfig: noThinking,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("extraction.gemini.CheckFormCoverage: generate: %w", err)
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("extraction.gemini.CheckFormCoverage: empty response from model")
+	}
+
+	return strings.TrimSpace(resp.Candidates[0].Content.Parts[0].Text), nil
 }
 
 func parseExtractionResponse(raw string, fields []FieldSpec) ([]FieldResult, error) {

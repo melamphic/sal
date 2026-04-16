@@ -34,13 +34,23 @@ type Claims struct {
 func Authenticate(jwtSecret []byte) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenStr := ""
+
+			// Check Authorization header first (standard).
 			authHeader := r.Header.Get("Authorization")
-			if !strings.HasPrefix(authHeader, "Bearer ") {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid authorization header")
-				return
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
 			}
 
-			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+			// Fall back to ?token= query parameter (useful for SSE EventSource).
+			if tokenStr == "" {
+				tokenStr = r.URL.Query().Get("token")
+			}
+
+			if tokenStr == "" {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or invalid authorization header or token query parameter")
+				return
+			}
 
 			claims := &Claims{}
 			token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {

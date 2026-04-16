@@ -27,17 +27,20 @@ import (
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
+	"github.com/melamphic/sal/internal/platform/confidence"
 	"github.com/melamphic/sal/internal/platform/config"
 	"github.com/melamphic/sal/internal/platform/crypto"
 	"github.com/melamphic/sal/internal/platform/logger"
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
 	"github.com/melamphic/sal/internal/platform/storage"
+	"github.com/melamphic/sal/internal/policy"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/timeline"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
 )
 
 // App holds the running HTTP server and all wired dependencies.
@@ -93,12 +96,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	authHandler := auth.NewHandler(authSvc)
 
 	clinicRepo := clinic.NewRepository(db)
-	clinicSvc := clinic.NewService(clinicRepo, cipher)
+	// adminBootstrapAdapter is set after authSvc and staffSvc are wired below.
+	clinicBootstrap := &adminBootstrapAdapter{}
+	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap)
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
 	staffRepo := staff.NewRepository(db)
 	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL)
 	staffHandler := staff.NewHandler(staffSvc)
+
+	// Now both authSvc and staffSvc exist — set up the clinic bootstrap adapter.
+	clinicBootstrap.auth = authSvc
+	clinicBootstrap.staff = staffSvc
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
@@ -110,11 +119,17 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app.Build: storage: %w", err)
 	}
 
+	// ── Transcription provider ─────────────────────────────────────────────────
+	transcriber, err := newTranscriberFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: transcriber: %w", err)
+	}
+
 	// ── River (job queue) ─────────────────────────────────────────────────────
 	// All workers must be registered before river.NewClient is called.
 	workers := river.NewWorkers()
 	audioRepo := audio.NewRepository(db)
-	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, cfg.DeepgramAPIKey))
+	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, transcriber))
 
 	// ── Forms repo (needed by extract worker adapter) ──────────────────────────
 	formsRepo := forms.NewRepository(db)
@@ -123,6 +138,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	extractor, err := extraction.NewFromConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: extraction: %w", err)
+	}
+	aligner, err := extraction.NewPolicyAlignerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: policy aligner: %w", err)
+	}
+	formChecker, err := extraction.NewFormCheckerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: form checker: %w", err)
 	}
 
 	// ── Timeline repo + event adapter ─────────────────────────────────────────
@@ -133,14 +156,24 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
 
-	// ── Notes worker (registered before river.NewClient) ──────────────────────
+	// ── Notes workers (registered before river.NewClient) ─────────────────────
+	// lazyEnqueuer is set after river.NewClient so workers can enqueue downstream jobs.
 	notesRepo := notes.NewRepository(db)
+	policyRepo := policy.NewRepository(db)
+	lazy := &lazyEnqueuer{}
 	river.AddWorker(workers, notes.NewExtractNoteWorker(
 		notesRepo,
 		&formsFieldAdapter{repo: formsRepo},
 		&audioTranscriptAdapter{repo: audioRepo},
 		extractor,
 		eventAdapter,
+		lazy,
+	))
+	river.AddWorker(workers, notes.NewComputePolicyAlignmentWorker(
+		notesRepo,
+		&formsFieldAdapter{repo: formsRepo},
+		&policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo},
+		aligner,
 	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
@@ -152,13 +185,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: river client: %w", err)
 	}
+	lazy.client = riverClient
 
 	// ── Audio module ──────────────────────────────────────────────────────────
 	audioSvc := audio.NewService(audioRepo, store, riverClient)
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	formsSvc := forms.NewService(formsRepo)
+	formsSvc := forms.NewService(formsRepo, &formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo}, formChecker)
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
@@ -172,6 +206,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Notifications (SSE broker) ────────────────────────────────────────────
 	broker := notifications.NewBroker(db, log)
 	notificationsHandler := notifications.NewHandler(broker)
+
+	// ── Policy module ─────────────────────────────────────────────────────────
+	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
+	policyHandler := policy.NewHandler(policySvc)
 
 	// ── Reports module ────────────────────────────────────────────────────────
 	reportsSvc := reports.NewService(reportsRepo, riverClient)
@@ -215,6 +253,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
 	notificationsHandler.Mount(r, jwtSecret)
+	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 
 	// Health check — no auth, no logging overhead.
@@ -281,12 +320,14 @@ func (a *formsFieldAdapter) GetFieldsByVersionID(ctx context.Context, versionID 
 	out := make([]notes.FormFieldMeta, len(fields))
 	for i, f := range fields {
 		out[i] = notes.FormFieldMeta{
-			ID:        f.ID,
-			Title:     f.Title,
-			Type:      f.Type,
-			AIPrompt:  f.AIPrompt,
-			Required:  f.Required,
-			Skippable: f.Skippable,
+			ID:             f.ID,
+			Title:          f.Title,
+			Type:           f.Type,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
 		}
 	}
 	return out, nil
@@ -308,6 +349,176 @@ func (a *audioTranscriptAdapter) GetTranscript(ctx context.Context, recordingID 
 		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
 	}
 	return t, nil
+}
+
+func (a *audioTranscriptAdapter) GetWordConfidences(ctx context.Context, recordingID uuid.UUID) ([]confidence.WordConfidence, error) {
+	wc, err := a.repo.GetWordConfidences(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
+	}
+	return wc, nil
+}
+
+// adminBootstrapAdapter implements clinic.AdminBootstrapper.
+// After clinic registration, it creates the first super admin and sends a magic link.
+// auth and staff are set after their respective services are constructed.
+type adminBootstrapAdapter struct {
+	auth  *auth.Service
+	staff *staff.Service
+}
+
+func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUID, email, name string) error {
+	if _, err := a.staff.Create(ctx, staff.CreateStaffInput{
+		ClinicID:    clinicID,
+		Email:       email,
+		FullName:    name,
+		Role:        domain.StaffRoleSuperAdmin,
+		NoteTier:    domain.NoteTierStandard,
+		Permissions: domain.DefaultPermissions(domain.StaffRoleSuperAdmin),
+	}); err != nil {
+		return fmt.Errorf("app.adminBootstrapAdapter: create staff: %w", err)
+	}
+	if err := a.auth.SendMagicLink(ctx, email, nil); err != nil {
+		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
+	}
+	return nil
+}
+
+// lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.
+// Workers registered before the client is created use this to enqueue downstream jobs.
+type lazyEnqueuer struct {
+	client *river.Client[pgx.Tx]
+}
+
+func (e *lazyEnqueuer) Insert(ctx context.Context, args river.JobArgs, opts *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	if e.client == nil {
+		return nil, fmt.Errorf("app.lazyEnqueuer: client not yet initialized")
+	}
+	res, err := e.client.Insert(ctx, args, opts)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyEnqueuer: %w", err)
+	}
+	return res, nil
+}
+
+// policyClauseProviderAdapter implements notes.PolicyClauseProvider.
+// Given a form version ID it traverses form_policies → policy versions → clauses.
+type policyClauseProviderAdapter struct {
+	forms  *forms.Repository
+	policy *policy.Repository
+}
+
+func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, formVersionID uuid.UUID) ([]notes.PolicyClause, error) {
+	version, err := a.forms.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
+	}
+
+	policyIDs, err := a.forms.ListLinkedPolicies(ctx, version.FormID)
+	if err != nil {
+		return nil, fmt.Errorf("app.policyClauseProviderAdapter: list policies: %w", err)
+	}
+
+	var result []notes.PolicyClause
+	for _, pid := range policyIDs {
+		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
+		if err != nil {
+			if err == domain.ErrNotFound {
+				continue // policy has no published version yet
+			}
+			return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
+		}
+		clauses, err := a.policy.ListClauses(ctx, pv.ID)
+		if err != nil {
+			return nil, fmt.Errorf("app.policyClauseProviderAdapter: list clauses: %w", err)
+		}
+		for _, c := range clauses {
+			result = append(result, notes.PolicyClause{
+				PolicyID: pid.String(),
+				BlockID:  c.BlockID,
+				Title:    c.Title,
+				Parity:   c.Parity,
+			})
+		}
+	}
+	return result, nil
+}
+
+// formPolicyClauseFetcherAdapter implements forms.PolicyClauseFetcher.
+// For a given form, it traverses form_policies → latest published policy version → clauses.
+type formPolicyClauseFetcherAdapter struct {
+	forms  *forms.Repository
+	policy *policy.Repository
+}
+
+func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error) {
+	policyIDs, err := a.forms.ListLinkedPolicies(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list policies: %w", err)
+	}
+
+	var result []extraction.PolicyClause
+	for _, pid := range policyIDs {
+		pv, err := a.policy.GetLatestPublishedVersion(ctx, pid)
+		if err != nil {
+			if err == domain.ErrNotFound {
+				continue // policy has no published version yet — skip
+			}
+			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: get version: %w", err)
+		}
+		clauses, err := a.policy.ListClauses(ctx, pv.ID)
+		if err != nil {
+			return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list clauses: %w", err)
+		}
+		for _, c := range clauses {
+			result = append(result, extraction.PolicyClause{
+				BlockID: c.BlockID,
+				Title:   c.Title,
+				Parity:  c.Parity,
+			})
+		}
+	}
+	return result, nil
+}
+
+// policyFormLinkerAdapter implements policy.FormLinker.
+// When a policy is retired, it removes that policy from all linked forms.
+type policyFormLinkerAdapter struct{ repo *forms.Repository }
+
+func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID) error {
+	formIDs, err := a.repo.ListFormIDsByPolicyID(ctx, policyID)
+	if err != nil {
+		return fmt.Errorf("app.policyFormLinkerAdapter: list: %w", err)
+	}
+	for _, fid := range formIDs {
+		if err := a.repo.UnlinkPolicy(ctx, fid, policyID); err != nil {
+			return fmt.Errorf("app.policyFormLinkerAdapter: unlink: %w", err)
+		}
+	}
+	return nil
+}
+
+// newTranscriberFromConfig builds the correct Transcriber based on TRANSCRIPTION_PROVIDER.
+// Returns nil (no error) when the provider's API key is not configured.
+func newTranscriberFromConfig(ctx context.Context, cfg *config.Config) (audio.Transcriber, error) {
+	switch cfg.TranscriptionProvider {
+	case "deepgram":
+		if cfg.DeepgramAPIKey == "" {
+			return nil, nil
+		}
+		return audio.NewDeepgramTranscriber(cfg.DeepgramAPIKey), nil
+	case "gemini":
+		if cfg.GeminiAPIKey == "" {
+			return nil, nil
+		}
+		t, err := audio.NewGeminiTranscriber(ctx, cfg.GeminiAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("newTranscriberFromConfig: %w", err)
+		}
+		return t, nil
+	default:
+		return nil, fmt.Errorf("newTranscriberFromConfig: unknown TRANSCRIPTION_PROVIDER %q (use deepgram or gemini)", cfg.TranscriptionProvider)
+	}
 }
 
 func connectDB(ctx context.Context, cfg *config.Config, log *slog.Logger) (*pgxpool.Pool, error) {
