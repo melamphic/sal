@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -265,8 +266,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	return &App{
 		Server: &http.Server{
-			Addr:    fmt.Sprintf(":%d", cfg.Port),
-			Handler: r,
+			Addr:         fmt.Sprintf(":%d", cfg.Port),
+			Handler:      r,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 60 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		},
 		DB:          db,
 		Log:         log,
