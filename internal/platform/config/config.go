@@ -63,6 +63,10 @@ type Config struct {
 	OpenAIAPIKey       string `env:"OPENAI_API_KEY"`
 	ExtractionProvider string `env:"EXTRACTION_PROVIDER,default=gemini"`
 
+	// Database pool tuning
+	DBMaxConns int `env:"DB_MAX_CONNS,default=30"`
+	DBMinConns int `env:"DB_MIN_CONNS,default=2"`
+
 	// Frontend
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`

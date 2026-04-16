@@ -532,7 +532,7 @@ func connectDB(ctx context.Context, cfg *config.Config, log *slog.Logger) (*pgxp
 	_ = cfg2
 
 	// Connect via platform/db.
-	pool, err := connectPool(ctx, cfg.DatabaseURL)
+	pool, err := connectPool(ctx, cfg.DatabaseURL, int32(cfg.DBMaxConns), int32(cfg.DBMinConns))
 	if err != nil {
 		return nil, fmt.Errorf("%s: connect db: %w", from, err)
 	}
