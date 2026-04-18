@@ -129,4 +129,15 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, managePatients},
 	}, h.linkContact)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unmask-patient-pii",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/patients/{subject_id}/reveal",
+		Summary:     "Reveal an encrypted patient field",
+		Description: "Returns the plaintext of a single encrypted PHI/PII field (e.g. insurance_policy_number, allergies) and appends an 'unmask_pii' entry to the subject access log. Requires manage_patients. Pair every tap-to-reveal UI with this endpoint.",
+		Tags:        []string{"Patients"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.unmaskPII)
 }

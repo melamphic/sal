@@ -381,3 +381,98 @@ func TestRepository_ListSubjectsByContact_ReturnsSubjects(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, rows, 2)
 }
+
+// ── Dental details ────────────────────────────────────────────────────────────
+
+func TestRepository_CreateDentalDetails_Roundtrip(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	ctx := context.Background()
+	clinicID := domain.NewID()
+	staffID := domain.NewID()
+	seedClinic(t, clinicID)
+	seedStaff(t, clinicID, staffID)
+
+	s, err := r.CreateSubject(ctx, patient.CreateSubjectParams{
+		ID: domain.NewID(), ClinicID: clinicID, DisplayName: "Jane Doe",
+		Status: domain.SubjectStatusActive, Vertical: domain.VerticalDental, CreatedBy: staffID,
+	})
+	require.NoError(t, err)
+
+	sex := domain.DentalSexFemale
+	alerts := "enc-alerts"
+	d, err := r.CreateDentalDetails(ctx, patient.CreateDentalDetailsParams{
+		SubjectID:     s.ID,
+		Sex:           &sex,
+		MedicalAlerts: &alerts,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, s.ID, d.SubjectID)
+	require.NotNil(t, d.Sex)
+	assert.Equal(t, domain.DentalSexFemale, *d.Sex)
+	require.NotNil(t, d.MedicalAlerts)
+	assert.Equal(t, "enc-alerts", *d.MedicalAlerts)
+}
+
+// ── General clinic details ────────────────────────────────────────────────────
+
+func TestRepository_CreateGeneralDetails_Roundtrip(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	ctx := context.Background()
+	clinicID := domain.NewID()
+	staffID := domain.NewID()
+	seedClinic(t, clinicID)
+	seedStaff(t, clinicID, staffID)
+
+	s, err := r.CreateSubject(ctx, patient.CreateSubjectParams{
+		ID: domain.NewID(), ClinicID: clinicID, DisplayName: "John Doe",
+		Status: domain.SubjectStatusActive, Vertical: domain.VerticalGeneralClinic, CreatedBy: staffID,
+	})
+	require.NoError(t, err)
+
+	sex := domain.GeneralSexMale
+	meds := "enc-meds"
+	g, err := r.CreateGeneralDetails(ctx, patient.CreateGeneralDetailsParams{
+		SubjectID:   s.ID,
+		Sex:         &sex,
+		Medications: &meds,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, s.ID, g.SubjectID)
+	require.NotNil(t, g.Medications)
+	assert.Equal(t, "enc-meds", *g.Medications)
+}
+
+// ── Subject access log ────────────────────────────────────────────────────────
+
+func TestRepository_CreateSubjectAccessLog_Appends(t *testing.T) {
+	t.Parallel()
+	r := newRepo(t)
+	ctx := context.Background()
+	clinicID := domain.NewID()
+	staffID := domain.NewID()
+	seedClinic(t, clinicID)
+	seedStaff(t, clinicID, staffID)
+
+	s, err := r.CreateSubject(ctx, patient.CreateSubjectParams{
+		ID: domain.NewID(), ClinicID: clinicID, DisplayName: "Rex",
+		Status: domain.SubjectStatusActive, Vertical: domain.VerticalVeterinary, CreatedBy: staffID,
+	})
+	require.NoError(t, err)
+
+	purpose := "pharmacy lookup"
+	rec, err := r.CreateSubjectAccessLog(ctx, patient.CreateSubjectAccessLogParams{
+		ID:        domain.NewID(),
+		SubjectID: s.ID,
+		StaffID:   staffID,
+		ClinicID:  clinicID,
+		Action:    domain.SubjectAccessActionUnmaskPII,
+		Purpose:   &purpose,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, domain.SubjectAccessActionUnmaskPII, rec.Action)
+	require.NotNil(t, rec.Purpose)
+	assert.Equal(t, "pharmacy lookup", *rec.Purpose)
+	assert.False(t, rec.At.IsZero())
+}

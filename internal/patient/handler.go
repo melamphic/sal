@@ -76,14 +76,20 @@ type contactWithSubjectsResponse struct {
 // ── Subject request / response types ─────────────────────────────────────────
 
 type vetDetailsInput struct {
-	Species     domain.VetSpecies `json:"species" enum:"dog,cat,bird,rabbit,reptile,other" doc:"Animal species."`
-	Breed       *string           `json:"breed,omitempty"         maxLength:"100" doc:"Breed of the animal."`
-	Sex         *domain.VetSex    `json:"sex,omitempty"           enum:"male,female,unknown" doc:"Biological sex."`
-	Desexed     *bool             `json:"desexed,omitempty"                       doc:"Whether the animal has been desexed."`
-	DateOfBirth *string           `json:"date_of_birth,omitempty" format:"date"   doc:"Date of birth in YYYY-MM-DD format."`
-	Color       *string           `json:"color,omitempty"         maxLength:"100" doc:"Coat color or markings."`
-	Microchip   *string           `json:"microchip,omitempty"     maxLength:"50"  doc:"Microchip identifier — not PII, stored unencrypted."`
-	WeightKg    *float64          `json:"weight_kg,omitempty"                    doc:"Weight in kilograms."`
+	Species               domain.VetSpecies `json:"species" enum:"dog,cat,bird,rabbit,reptile,other" doc:"Animal species."`
+	Breed                 *string           `json:"breed,omitempty"         maxLength:"100" doc:"Breed of the animal."`
+	Sex                   *domain.VetSex    `json:"sex,omitempty"           enum:"male,female,unknown" doc:"Biological sex."`
+	Desexed               *bool             `json:"desexed,omitempty"                       doc:"Whether the animal has been desexed."`
+	DateOfBirth           *string           `json:"date_of_birth,omitempty" format:"date"   doc:"Date of birth in YYYY-MM-DD format."`
+	Color                 *string           `json:"color,omitempty"         maxLength:"100" doc:"Coat color or markings."`
+	Microchip             *string           `json:"microchip,omitempty"     maxLength:"50"  doc:"Microchip identifier — not PII, stored unencrypted."`
+	WeightKg              *float64          `json:"weight_kg,omitempty"                    doc:"Weight in kilograms."`
+	Allergies             *string           `json:"allergies,omitempty"              maxLength:"2000" doc:"Known allergies and reactions. Encrypted at rest."`
+	ChronicConditions     *string           `json:"chronic_conditions,omitempty"     maxLength:"2000" doc:"Chronic medical conditions. Encrypted at rest."`
+	AdmissionWarnings     *string           `json:"admission_warnings,omitempty"     maxLength:"500"  doc:"Safety warnings at intake (e.g. aggressive, bite history)."`
+	InsuranceProviderName *string           `json:"insurance_provider_name,omitempty" maxLength:"200" doc:"Pet insurance provider display name."`
+	InsurancePolicyNumber *string           `json:"insurance_policy_number,omitempty" maxLength:"100" doc:"Insurance policy number. Encrypted at rest."`
+	ReferringVetName      *string           `json:"referring_vet_name,omitempty"     maxLength:"200"  doc:"Name of referring veterinarian, if any."`
 }
 
 type createSubjectInput struct {
@@ -100,13 +106,19 @@ type updateSubjectInput struct {
 		DisplayName *string               `json:"display_name,omitempty" minLength:"1" maxLength:"200"                        doc:"Updated display name."`
 		Status      *domain.SubjectStatus `json:"status,omitempty"       enum:"active,deceased,transferred,archived"          doc:"Updated lifecycle status."`
 		VetDetails  *struct {
-			Breed       *string        `json:"breed,omitempty"         maxLength:"100"             doc:"Updated breed."`
-			Sex         *domain.VetSex `json:"sex,omitempty"           enum:"male,female,unknown"  doc:"Updated sex."`
-			Desexed     *bool          `json:"desexed,omitempty"                                  doc:"Updated desexed status."`
-			DateOfBirth *string        `json:"date_of_birth,omitempty" format:"date"              doc:"Updated date of birth (YYYY-MM-DD)."`
-			Color       *string        `json:"color,omitempty"         maxLength:"100"             doc:"Updated color."`
-			Microchip   *string        `json:"microchip,omitempty"     maxLength:"50"              doc:"Updated microchip ID."`
-			WeightKg    *float64       `json:"weight_kg,omitempty"                                doc:"Updated weight in kg."`
+			Breed                 *string        `json:"breed,omitempty"         maxLength:"100"             doc:"Updated breed."`
+			Sex                   *domain.VetSex `json:"sex,omitempty"           enum:"male,female,unknown"  doc:"Updated sex."`
+			Desexed               *bool          `json:"desexed,omitempty"                                  doc:"Updated desexed status."`
+			DateOfBirth           *string        `json:"date_of_birth,omitempty" format:"date"              doc:"Updated date of birth (YYYY-MM-DD)."`
+			Color                 *string        `json:"color,omitempty"         maxLength:"100"             doc:"Updated color."`
+			Microchip             *string        `json:"microchip,omitempty"     maxLength:"50"              doc:"Updated microchip ID."`
+			WeightKg              *float64       `json:"weight_kg,omitempty"                                doc:"Updated weight in kg."`
+			Allergies             *string        `json:"allergies,omitempty"              maxLength:"2000"  doc:"Updated allergies. Encrypted at rest."`
+			ChronicConditions     *string        `json:"chronic_conditions,omitempty"     maxLength:"2000"  doc:"Updated chronic conditions. Encrypted at rest."`
+			AdmissionWarnings     *string        `json:"admission_warnings,omitempty"     maxLength:"500"   doc:"Updated admission warnings."`
+			InsuranceProviderName *string        `json:"insurance_provider_name,omitempty" maxLength:"200"  doc:"Updated insurance provider name."`
+			InsurancePolicyNumber *string        `json:"insurance_policy_number,omitempty" maxLength:"100"  doc:"Updated policy number. Encrypted at rest."`
+			ReferringVetName      *string        `json:"referring_vet_name,omitempty"     maxLength:"200"   doc:"Updated referring vet name."`
 		} `json:"vet_details,omitempty" doc:"Veterinary details to update. Only provided fields are changed."`
 	}
 }
@@ -131,6 +143,18 @@ type subjectResponse struct {
 
 type subjectListResponse struct {
 	Body *SubjectListResponse
+}
+
+type unmaskPIIInput struct {
+	SubjectID string `path:"subject_id" doc:"The subject's UUID."`
+	Body      struct {
+		Field   string  `json:"field" enum:"allergies,chronic_conditions,insurance_policy_number,medical_alerts,medications" doc:"Encrypted field to reveal."`
+		Purpose *string `json:"purpose,omitempty" maxLength:"500" doc:"Free-text reason for revealing this field. Logged to the audit trail."`
+	}
+}
+
+type unmaskPIIResponse struct {
+	Body *UnmaskPIIResponse
 }
 
 // ── Contact handlers ──────────────────────────────────────────────────────────
@@ -291,6 +315,7 @@ func (h *Handler) listSubjects(ctx context.Context, input *listSubjectsInput) (*
 // updateSubject handles PATCH /api/v1/patients/{subject_id}.
 func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) (*subjectResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
+	callerID := mw.StaffIDFromContext(ctx)
 
 	subjectID, err := uuid.Parse(input.SubjectID)
 	if err != nil {
@@ -305,12 +330,18 @@ func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) 
 	if input.Body.VetDetails != nil {
 		v := input.Body.VetDetails
 		vd := &UpdateVetDetailsInput{
-			Breed:     v.Breed,
-			Sex:       v.Sex,
-			Desexed:   v.Desexed,
-			Color:     v.Color,
-			Microchip: v.Microchip,
-			WeightKg:  v.WeightKg,
+			Breed:                 v.Breed,
+			Sex:                   v.Sex,
+			Desexed:               v.Desexed,
+			Color:                 v.Color,
+			Microchip:             v.Microchip,
+			WeightKg:              v.WeightKg,
+			Allergies:             v.Allergies,
+			ChronicConditions:     v.ChronicConditions,
+			AdmissionWarnings:     v.AdmissionWarnings,
+			InsuranceProviderName: v.InsuranceProviderName,
+			InsurancePolicyNumber: v.InsurancePolicyNumber,
+			ReferringVetName:      v.ReferringVetName,
 		}
 		if v.DateOfBirth != nil {
 			parsed, err := time.Parse("2006-01-02", *v.DateOfBirth)
@@ -322,7 +353,7 @@ func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) 
 		svcInput.VetDetails = vd
 	}
 
-	dto, err := h.svc.UpdateSubject(ctx, subjectID, clinicID, svcInput)
+	dto, err := h.svc.UpdateSubject(ctx, subjectID, clinicID, callerID, svcInput)
 	if err != nil {
 		return nil, mapPatientError(err)
 	}
@@ -332,13 +363,14 @@ func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) 
 // archiveSubject handles DELETE /api/v1/patients/{subject_id}.
 func (h *Handler) archiveSubject(ctx context.Context, input *subjectIDInput) (*subjectResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
+	callerID := mw.StaffIDFromContext(ctx)
 
 	subjectID, err := uuid.Parse(input.SubjectID)
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid subject_id")
 	}
 
-	dto, err := h.svc.ArchiveSubject(ctx, subjectID, clinicID)
+	dto, err := h.svc.ArchiveSubject(ctx, subjectID, clinicID, callerID)
 	if err != nil {
 		return nil, mapPatientError(err)
 	}
@@ -348,6 +380,7 @@ func (h *Handler) archiveSubject(ctx context.Context, input *subjectIDInput) (*s
 // linkContact handles POST /api/v1/patients/{subject_id}/contact.
 func (h *Handler) linkContact(ctx context.Context, input *linkContactInput) (*subjectResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
+	callerID := mw.StaffIDFromContext(ctx)
 
 	subjectID, err := uuid.Parse(input.SubjectID)
 	if err != nil {
@@ -359,24 +392,55 @@ func (h *Handler) linkContact(ctx context.Context, input *linkContactInput) (*su
 		return nil, huma.Error400BadRequest("invalid contact_id")
 	}
 
-	dto, err := h.svc.LinkContact(ctx, subjectID, clinicID, contactID)
+	dto, err := h.svc.LinkContact(ctx, subjectID, clinicID, contactID, callerID)
 	if err != nil {
 		return nil, mapPatientError(err)
 	}
 	return &subjectResponse{Body: dto}, nil
 }
 
+// unmaskPII handles POST /api/v1/patients/{subject_id}/reveal.
+// Returns the plaintext of a single encrypted field and writes a
+// subject_access_log entry with action='unmask_pii'.
+func (h *Handler) unmaskPII(ctx context.Context, input *unmaskPIIInput) (*unmaskPIIResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	callerID := mw.StaffIDFromContext(ctx)
+
+	subjectID, err := uuid.Parse(input.SubjectID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid subject_id")
+	}
+
+	dto, err := h.svc.UnmaskPII(ctx, UnmaskPIIInput{
+		SubjectID: subjectID,
+		ClinicID:  clinicID,
+		CallerID:  callerID,
+		Field:     input.Body.Field,
+		Purpose:   input.Body.Purpose,
+	})
+	if err != nil {
+		return nil, mapPatientError(err)
+	}
+	return &unmaskPIIResponse{Body: dto}, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func parseVetDetailsInput(v *vetDetailsInput) (*VetDetailsInput, error) {
 	vd := &VetDetailsInput{
-		Species:   v.Species,
-		Breed:     v.Breed,
-		Sex:       v.Sex,
-		Desexed:   v.Desexed,
-		Color:     v.Color,
-		Microchip: v.Microchip,
-		WeightKg:  v.WeightKg,
+		Species:               v.Species,
+		Breed:                 v.Breed,
+		Sex:                   v.Sex,
+		Desexed:               v.Desexed,
+		Color:                 v.Color,
+		Microchip:             v.Microchip,
+		WeightKg:              v.WeightKg,
+		Allergies:             v.Allergies,
+		ChronicConditions:     v.ChronicConditions,
+		AdmissionWarnings:     v.AdmissionWarnings,
+		InsuranceProviderName: v.InsuranceProviderName,
+		InsurancePolicyNumber: v.InsurancePolicyNumber,
+		ReferringVetName:      v.ReferringVetName,
 	}
 	if v.DateOfBirth != nil {
 		parsed, err := time.Parse("2006-01-02", *v.DateOfBirth)
