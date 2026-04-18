@@ -175,6 +175,31 @@ func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffRespon
 	return s.toDTO(row, in.Email, in.FullName), nil
 }
 
+// EnsureOwner finds-or-creates the super-admin staff for a clinic during /mel
+// handoff provisioning. Idempotent on (email_hash, clinic_id) — replaying the
+// same email returns the existing row. Bypasses the invite flow: no token,
+// no email, staff is active immediately so the handoff can mint a session.
+func (s *Service) EnsureOwner(ctx context.Context, clinicID uuid.UUID, email, fullName string) (*StaffResponse, error) {
+	emailHash := s.cipher.Hash(email)
+
+	existing, err := s.repo.GetByEmailHash(ctx, emailHash, clinicID)
+	if err == nil {
+		return s.decryptAndBuild(existing)
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("staff.service.EnsureOwner: lookup: %w", err)
+	}
+
+	return s.Create(ctx, CreateStaffInput{
+		ClinicID:    clinicID,
+		Email:       email,
+		FullName:    fullName,
+		Role:        domain.StaffRoleSuperAdmin,
+		NoteTier:    domain.NoteTierStandard,
+		Permissions: domain.DefaultPermissions(domain.StaffRoleSuperAdmin),
+	})
+}
+
 // GetByID returns decrypted staff details.
 func (s *Service) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffResponse, error) {
 	row, err := s.repo.GetByID(ctx, staffID, clinicID)

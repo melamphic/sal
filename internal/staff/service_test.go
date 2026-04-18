@@ -372,3 +372,36 @@ func TestService_Deactivate_NotFound_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+// ── EnsureOwner ───────────────────────────────────────────────────────────────
+
+func TestService_EnsureOwner_CreatesNewSuperAdmin(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newTestService(t)
+	clinicID := uuid.New()
+
+	dto, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Jane Founder")
+	require.NoError(t, err)
+
+	assert.Equal(t, "founder@clinic.test", dto.Email)
+	assert.Equal(t, "Jane Founder", dto.FullName)
+	assert.Equal(t, domain.StaffRoleSuperAdmin, dto.Role)
+	assert.Equal(t, domain.NoteTierStandard, dto.NoteTier)
+	assert.Equal(t, domain.StaffStatusActive, dto.Status)
+}
+
+func TestService_EnsureOwner_Idempotent_ReturnsExisting(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newTestService(t)
+	clinicID := uuid.New()
+
+	first, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Jane Founder")
+	require.NoError(t, err)
+
+	// Replay — must return the same staff row.
+	second, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Different Name")
+	require.NoError(t, err)
+
+	assert.Equal(t, first.ID, second.ID, "same email must return same staff")
+	assert.Equal(t, "Jane Founder", second.FullName, "existing name must not be overwritten")
+}
