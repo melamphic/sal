@@ -244,6 +244,17 @@ func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (
 	return nil, domain.ErrNotFound
 }
 
+func (f *fakeRepo) UpdatePDFKey(_ context.Context, id uuid.UUID, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n.PDFStorageKey = &key
+	return nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func cloneNote(n *NoteRecord) *NoteRecord {
