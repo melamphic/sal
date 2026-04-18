@@ -21,7 +21,7 @@ func (f *fakeEnqueuer) Insert(_ context.Context, _ river.JobArgs, _ *river.Inser
 }
 
 func newTestService() *Service {
-	return NewService(newFakeRepo(), &fakeEnqueuer{}, nil)
+	return NewService(newFakeRepo(), &fakeEnqueuer{}, nil, nil)
 }
 
 var (
@@ -58,7 +58,7 @@ func TestService_CreateNote_AI_OK(t *testing.T) {
 func TestService_CreateNote_Manual_OK(t *testing.T) {
 	t.Parallel()
 	enq := &fakeEnqueuer{}
-	svc := NewService(newFakeRepo(), enq, nil)
+	svc := NewService(newFakeRepo(), enq, nil, nil)
 
 	resp, err := svc.CreateNote(context.Background(), CreateNoteInput{
 		ClinicID:       clinicID,
@@ -84,7 +84,7 @@ func TestService_CreateNote_Manual_OK(t *testing.T) {
 func TestService_CreateNote_EnqueuesJob(t *testing.T) {
 	t.Parallel()
 	enq := &fakeEnqueuer{}
-	svc := NewService(newFakeRepo(), enq, nil)
+	svc := NewService(newFakeRepo(), enq, nil, nil)
 
 	rid := recID
 	_, err := svc.CreateNote(context.Background(), CreateNoteInput{
@@ -283,7 +283,7 @@ func TestService_UpdateField_RequiresDraft(t *testing.T) {
 func TestService_UpdateField_OK(t *testing.T) {
 	t.Parallel()
 	repo := newFakeRepo()
-	svc := NewService(repo, &fakeEnqueuer{}, nil)
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
 	ctx := context.Background()
 
 	rid := recID
@@ -329,7 +329,7 @@ func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 	t.Cleanup(restore)
 
 	repo := newFakeRepo()
-	svc := NewService(repo, &fakeEnqueuer{}, nil)
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
 	ctx := context.Background()
 
 	rid := recID
@@ -375,6 +375,123 @@ func TestService_SubmitNote_NotDraft(t *testing.T) {
 	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "")
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict, got %v", err)
+	}
+}
+
+// ── SubmitNote validation ─────────────────────────────────────────────────────
+
+// fakeFormFieldProvider satisfies FormFieldProvider in tests.
+type fakeFormFieldProvider struct {
+	fields []FormFieldMeta
+}
+
+func (f *fakeFormFieldProvider) GetFieldsByVersionID(_ context.Context, _ uuid.UUID) ([]FormFieldMeta, error) {
+	return f.fields, nil
+}
+
+func (f *fakeFormFieldProvider) GetFormPrompt(_ context.Context, _ uuid.UUID) (*string, error) {
+	return nil, nil
+}
+
+func TestService_SubmitNote_ValidationBlocksMissingRequiredFields(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	requiredFieldID := uuid.New()
+	optionalFieldID := uuid.New()
+	fp := &fakeFormFieldProvider{
+		fields: []FormFieldMeta{
+			{ID: requiredFieldID, Title: "Chief Complaint", Required: true},
+			{ID: optionalFieldID, Title: "Extra Notes", Required: false},
+		},
+	}
+	svc := NewService(repo, &fakeEnqueuer{}, nil, fp)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// Don't fill any fields — submit should fail.
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestService_SubmitNote_ValidationPassesWhenFieldsFilled(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	requiredFieldID := uuid.New()
+	fp := &fakeFormFieldProvider{
+		fields: []FormFieldMeta{
+			{ID: requiredFieldID, Title: "Chief Complaint", Required: true},
+		},
+	}
+	svc := NewService(repo, &fakeEnqueuer{}, nil, fp)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// Fill the required field.
+	val := `"Persistent cough"`
+	repo.UpsertNoteFields(ctx, noteID, []UpsertFieldParams{ //nolint:errcheck
+		{ID: uuid.New(), NoteID: noteID, FieldID: requiredFieldID, Value: &val},
+	})
+
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status != domain.NoteStatusSubmitted {
+		t.Errorf("expected submitted, got %s", resp.Status)
+	}
+}
+
+func TestService_SubmitNote_ValidationIgnoresOptionalFields(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	fp := &fakeFormFieldProvider{
+		fields: []FormFieldMeta{
+			{ID: uuid.New(), Title: "Extra Notes", Required: false},
+		},
+	}
+	svc := NewService(repo, &fakeEnqueuer{}, nil, fp)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// No fields filled — should still succeed because nothing is required.
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status != domain.NoteStatusSubmitted {
+		t.Errorf("expected submitted, got %s", resp.Status)
 	}
 }
 

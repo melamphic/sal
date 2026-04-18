@@ -66,7 +66,8 @@ type ReportJobResponse struct {
 	ReportType  string  `json:"report_type"`
 	Format      string  `json:"format"`
 	Status      string  `json:"status"`
-	DownloadURL *string `json:"download_url,omitempty"` // set when status=complete
+	DownloadURL *string `json:"download_url,omitempty"`  // set when status=complete
+	ContentHash *string `json:"content_hash,omitempty"` // SHA-256 of exported file for integrity verification
 	ErrorMsg    *string `json:"error_msg,omitempty"`
 	CreatedAt   string  `json:"created_at"`
 	CompletedAt *string `json:"completed_at,omitempty"`
@@ -234,12 +235,13 @@ func toEventResponse(e *AuditEventRecord) *AuditEventResponse {
 
 func toJobResponse(j *ReportJobRecord, downloadURL *string) *ReportJobResponse {
 	r := &ReportJobResponse{
-		ID:         j.ID.String(),
-		ReportType: j.ReportType,
-		Format:     j.Format,
-		Status:     j.Status,
-		ErrorMsg:   j.ErrorMsg,
-		CreatedAt:  j.CreatedAt.Format(time.RFC3339),
+		ID:          j.ID.String(),
+		ReportType:  j.ReportType,
+		Format:      j.Format,
+		Status:      j.Status,
+		ContentHash: j.ContentHash,
+		ErrorMsg:    j.ErrorMsg,
+		CreatedAt:   j.CreatedAt.Format(time.RFC3339),
 	}
 	if j.CompletedAt != nil {
 		s := j.CompletedAt.Format(time.RFC3339)

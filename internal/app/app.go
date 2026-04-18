@@ -205,7 +205,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
-	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter)
+	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
 	notesHandler := notes.NewHandler(notesSvc)
 
 	// ── Timeline module ───────────────────────────────────────────────────────

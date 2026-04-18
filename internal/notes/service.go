@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,15 +25,16 @@ type Service struct {
 	repo    repo
 	enqueue jobEnqueuer
 	events  EventEmitter
+	fields  FormFieldProvider // nil = skip field validation on submit (test mode)
 }
 
 // NewService constructs a notes Service.
 // Pass nil for events to discard all lifecycle events (tests, local dev without timeline).
-func NewService(r repo, riverClient jobEnqueuer, events EventEmitter) *Service {
+func NewService(r repo, riverClient jobEnqueuer, events EventEmitter, fields FormFieldProvider) *Service {
 	if events == nil {
 		events = noopEmitter{}
 	}
-	return &Service{repo: r, enqueue: riverClient, events: events}
+	return &Service{repo: r, enqueue: riverClient, events: events, fields: fields}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -258,7 +260,19 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 
 // SubmitNote transitions a note from draft → submitted.
 // Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
+// Returns domain.ErrValidation if any required fields are missing values.
 func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
+	// Validate required fields before allowing submission.
+	if s.fields != nil {
+		note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.SubmitNote: get note: %w", err)
+		}
+		if err := s.validateForSubmission(ctx, note.FormVersionID, noteID); err != nil {
+			return nil, err
+		}
+	}
+
 	now := domain.TimeNow()
 	note, err := s.repo.SubmitNote(ctx, SubmitNoteParams{
 		ID:          noteID,
@@ -317,6 +331,44 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 	})
 
 	return toNoteResponse(archived, nil), nil
+}
+
+// validateForSubmission checks that every required form field has a non-null value.
+// Returns domain.ErrValidation listing the missing field titles on failure.
+func (s *Service) validateForSubmission(ctx context.Context, formVersionID uuid.UUID, noteID uuid.UUID) error {
+	formFields, err := s.fields.GetFieldsByVersionID(ctx, formVersionID)
+	if err != nil {
+		return fmt.Errorf("notes.service.validateForSubmission: get fields: %w", err)
+	}
+
+	noteFields, err := s.repo.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return fmt.Errorf("notes.service.validateForSubmission: get note fields: %w", err)
+	}
+
+	// Index note field values by field ID.
+	valueByFieldID := make(map[uuid.UUID]*string, len(noteFields))
+	for _, nf := range noteFields {
+		valueByFieldID[nf.FieldID] = nf.Value
+	}
+
+	var missing []string
+	for _, ff := range formFields {
+		if !ff.Required {
+			continue
+		}
+		val, exists := valueByFieldID[ff.ID]
+		if !exists || val == nil || *val == "" || *val == "null" {
+			missing = append(missing, ff.Title)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("notes.service.SubmitNote: missing required fields: %s: %w",
+			strings.Join(missing, ", "), domain.ErrValidation)
+	}
+
+	return nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

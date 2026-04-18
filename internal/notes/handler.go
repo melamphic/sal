@@ -243,6 +243,8 @@ func (h *Handler) archiveNote(ctx context.Context, input *noteIDInput) (*noteHTT
 
 func mapNoteError(err error) error {
 	switch {
+	case errors.Is(err, domain.ErrValidation):
+		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.Is(err, domain.ErrNotFound):
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrConflict):
