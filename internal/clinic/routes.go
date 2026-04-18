@@ -12,6 +12,9 @@ import (
 // Mount registers all clinic routes onto the provided Chi router.
 // Registration is public. All other clinic endpoints require authentication.
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
+	auth := mw.AuthenticateHuma(api, jwtSecret)
+	manageStaff := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff })
+
 	// ── Public ────────────────────────────────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID:   "register-clinic",
@@ -24,30 +27,25 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.register)
 
 	// ── Authenticated ─────────────────────────────────────────────────────────
-	r.Group(func(r chi.Router) {
-		r.Use(mw.Authenticate(jwtSecret))
+	huma.Register(api, huma.Operation{
+		OperationID: "get-clinic",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/clinic",
+		Summary:     "Get clinic",
+		Description: "Returns the authenticated clinic's profile and settings.",
+		Tags:        []string{"Clinic"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth},
+	}, h.get)
 
-		huma.Register(api, huma.Operation{
-			OperationID: "get-clinic",
-			Method:      http.MethodGet,
-			Path:        "/api/v1/clinic",
-			Summary:     "Get clinic",
-			Description: "Returns the authenticated clinic's profile and settings.",
-			Tags:        []string{"Clinic"},
-			Security:    []map[string][]string{{"bearerAuth": {}}},
-		}, h.get)
-
-		huma.Register(api, huma.Operation{
-			OperationID: "update-clinic",
-			Method:      http.MethodPatch,
-			Path:        "/api/v1/clinic",
-			Summary:     "Update clinic settings",
-			Description: "Updates mutable clinic settings. Requires manage_staff permission (admin or super_admin).",
-			Tags:        []string{"Clinic"},
-			Security:    []map[string][]string{{"bearerAuth": {}}},
-			Middlewares: huma.Middlewares{
-				mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageStaff }),
-			},
-		}, h.update)
-	})
+	huma.Register(api, huma.Operation{
+		OperationID: "update-clinic",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/clinic",
+		Summary:     "Update clinic settings",
+		Description: "Updates mutable clinic settings. Requires manage_staff permission (admin or super_admin).",
+		Tags:        []string{"Clinic"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.update)
 }
