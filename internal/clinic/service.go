@@ -112,22 +112,34 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicRespon
 		dataRegion = "ap-southeast-2"
 	}
 
-	p := CreateParams{
-		ID:          domain.NewID(),
-		Name:        in.Name,
-		Slug:        generateSlug(in.Name),
-		Email:       encEmail,
-		EmailHash:   emailHash,
-		Phone:       encPhone,
-		Address:     encAddress,
-		Vertical:    vertical,
-		TrialEndsAt: domain.TimeNow().Add(14 * 24 * time.Hour),
-		DataRegion:  dataRegion,
-	}
+	slug := generateSlug(in.Name)
 
-	row, err := s.repo.Create(ctx, p)
-	if err != nil {
-		return nil, fmt.Errorf("clinic.service.Register: create: %w", err)
+	var row *Clinic
+	for attempt := 0; attempt < 3; attempt++ {
+		p := CreateParams{
+			ID:          domain.NewID(),
+			Name:        in.Name,
+			Slug:        slug,
+			Email:       encEmail,
+			EmailHash:   emailHash,
+			Phone:       encPhone,
+			Address:     encAddress,
+			Vertical:    vertical,
+			TrialEndsAt: domain.TimeNow().Add(14 * 24 * time.Hour),
+			DataRegion:  dataRegion,
+		}
+		row, err = s.repo.Create(ctx, p)
+		if err == nil {
+			break
+		}
+		if !domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("clinic.service.Register: create: %w", err)
+		}
+		// Slug collision — append a random suffix and retry.
+		slug = generateSlug(in.Name) + "-" + domain.NewID().String()[:4]
+	}
+	if row == nil {
+		return nil, fmt.Errorf("clinic.service.Register: slug collision after retries")
 	}
 
 	// Create the first super admin and send them a magic link.
