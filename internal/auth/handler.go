@@ -12,12 +12,13 @@ import (
 // Handler wires auth HTTP endpoints to the auth Service.
 // It contains no business logic — only request parsing, service calls, and response writing.
 type Handler struct {
-	svc *Service
+	svc       *Service
+	rateStore *mw.RateLimiterStore // nil = no rate limiting (tests)
 }
 
 // NewHandler creates a new auth Handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, rateStore *mw.RateLimiterStore) *Handler {
+	return &Handler{svc: svc, rateStore: rateStore}
 }
 
 // ── Request / Response types ──────────────────────────────────────────────────

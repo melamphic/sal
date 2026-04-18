@@ -14,6 +14,12 @@ import (
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	auth := mw.AuthenticateHuma(api, jwtSecret)
 
+	// Rate limit middleware for public auth endpoints (nil-safe: skipped in tests).
+	var rl huma.Middlewares
+	if h.rateStore != nil {
+		rl = huma.Middlewares{mw.RateLimitHuma(api, h.rateStore)}
+	}
+
 	// ── Public routes (no JWT required) ──────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID:   "request-magic-link",
@@ -23,6 +29,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Description:   "Sends a one-time login link to the provided email. Always returns 200 — does not reveal whether the email exists.",
 		Tags:          []string{"Auth"},
 		DefaultStatus: http.StatusOK,
+		Middlewares:   rl,
 	}, h.requestMagicLink)
 
 	huma.Register(api, huma.Operation{
@@ -32,6 +39,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Summary:     "Verify a magic link token",
 		Description: "Exchanges a one-time magic link token for an access and refresh token pair.",
 		Tags:        []string{"Auth"},
+		Middlewares: rl,
 	}, h.verifyToken)
 
 	huma.Register(api, huma.Operation{
@@ -41,6 +49,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Summary:     "Refresh access token",
 		Description: "Exchanges a refresh token for a new access and refresh token pair. The old refresh token is invalidated.",
 		Tags:        []string{"Auth"},
+		Middlewares: rl,
 	}, h.refreshTokens)
 
 	huma.Register(api, huma.Operation{
@@ -50,6 +59,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Summary:     "Accept a staff invitation",
 		Description: "Verifies the invite token, creates the staff record, and returns an access and refresh token pair. The invited person provides their full name.",
 		Tags:        []string{"Auth"},
+		Middlewares: rl,
 	}, h.acceptInvite)
 
 	// ── Authenticated routes ──────────────────────────────────────────────────

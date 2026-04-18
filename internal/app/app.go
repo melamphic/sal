@@ -97,7 +97,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		MagicLinkTTL:  cfg.MagicLinkTTL,
 		AppURL:        cfg.AppURL,
 	}, staffCreator)
-	authHandler := auth.NewHandler(authSvc)
+	// 10 requests per minute per IP on public auth endpoints.
+	rlStore := mw.NewRateLimiterStore(10.0/60.0, 10)
+	authHandler := auth.NewHandler(authSvc, rlStore)
 
 	clinicRepo := clinic.NewRepository(db)
 	// adminBootstrapAdapter is set after authSvc and staffSvc are wired below.
