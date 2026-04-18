@@ -12,6 +12,8 @@ import (
 // Public routes (magic link, verify, refresh) require no authentication.
 // The logout route requires a valid access token.
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
+	auth := mw.AuthenticateHuma(api, jwtSecret)
+
 	// ── Public routes (no JWT required) ──────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID:   "request-magic-link",
@@ -41,18 +43,24 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Tags:        []string{"Auth"},
 	}, h.refreshTokens)
 
-	// ── Authenticated routes ──────────────────────────────────────────────────
-	r.Group(func(r chi.Router) {
-		r.Use(mw.Authenticate(jwtSecret))
+	huma.Register(api, huma.Operation{
+		OperationID: "accept-invite",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/accept-invite",
+		Summary:     "Accept a staff invitation",
+		Description: "Verifies the invite token, creates the staff record, and returns an access and refresh token pair. The invited person provides their full name.",
+		Tags:        []string{"Auth"},
+	}, h.acceptInvite)
 
-		huma.Register(api, huma.Operation{
-			OperationID: "logout",
-			Method:      http.MethodPost,
-			Path:        "/api/v1/auth/logout",
-			Summary:     "Logout",
-			Description: "Invalidates all refresh tokens for the current staff member.",
-			Tags:        []string{"Auth"},
-			Security:    []map[string][]string{{"bearerAuth": {}}},
-		}, h.logout)
-	})
+	// ── Authenticated routes ──────────────────────────────────────────────────
+	huma.Register(api, huma.Operation{
+		OperationID: "logout",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/logout",
+		Summary:     "Logout",
+		Description: "Invalidates all refresh tokens for the current staff member.",
+		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth},
+	}, h.logout)
 }
