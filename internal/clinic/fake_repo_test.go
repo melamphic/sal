@@ -11,16 +11,18 @@ import (
 
 // fakeRepo is an in-memory implementation of the clinic repo interface.
 type fakeRepo struct {
-	mu       sync.Mutex
-	byID     map[uuid.UUID]*Clinic
-	byEmail  map[string]*Clinic // keyed by emailHash
-	createFn func(CreateParams) (*Clinic, error)
+	mu             sync.Mutex
+	byID           map[uuid.UUID]*Clinic
+	byEmail        map[string]*Clinic // keyed by emailHash
+	byStripeCustID map[string]*Clinic // keyed by stripe customer id
+	createFn       func(CreateParams) (*Clinic, error)
 }
 
 func newFakeClinicRepo() *fakeRepo {
 	return &fakeRepo{
-		byID:    make(map[uuid.UUID]*Clinic),
-		byEmail: make(map[string]*Clinic),
+		byID:           make(map[uuid.UUID]*Clinic),
+		byEmail:        make(map[string]*Clinic),
+		byStripeCustID: make(map[string]*Clinic),
 	}
 }
 
@@ -31,22 +33,59 @@ func (f *fakeRepo) Create(_ context.Context, p CreateParams) (*Clinic, error) {
 		return f.createFn(p)
 	}
 	c := &Clinic{
-		ID:          p.ID,
-		Name:        p.Name,
-		Slug:        p.Slug,
-		Email:       p.Email,
-		EmailHash:   p.EmailHash,
-		Phone:       p.Phone,
-		Address:     p.Address,
-		Vertical:    p.Vertical,
-		Status:      domain.ClinicStatusTrial,
-		TrialEndsAt: p.TrialEndsAt,
-		DataRegion:  p.DataRegion,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+		ID:               p.ID,
+		Name:             p.Name,
+		Slug:             p.Slug,
+		Email:            p.Email,
+		EmailHash:        p.EmailHash,
+		Phone:            p.Phone,
+		Address:          p.Address,
+		Vertical:         p.Vertical,
+		Status:           domain.ClinicStatusTrial,
+		TrialEndsAt:      p.TrialEndsAt,
+		DataRegion:       p.DataRegion,
+		PlanCode:         p.PlanCode,
+		StripeCustomerID: p.StripeCustomerID,
+		CreatedAt:        time.Now().UTC(),
+		UpdatedAt:        time.Now().UTC(),
 	}
 	f.byID[c.ID] = c
 	f.byEmail[c.EmailHash] = c
+	if c.StripeCustomerID != nil {
+		f.byStripeCustID[*c.StripeCustomerID] = c
+	}
+	return c, nil
+}
+
+func (f *fakeRepo) GetByStripeCustomerID(_ context.Context, stripeCustomerID string) (*Clinic, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byStripeCustID[stripeCustomerID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	return c, nil
+}
+
+func (f *fakeRepo) ApplySubscriptionState(_ context.Context, id uuid.UUID, p ApplySubscriptionStateParams) (*Clinic, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	c.Status = p.Status
+	if p.PlanCode != nil {
+		c.PlanCode = p.PlanCode
+	}
+	if p.StripeCustomerID != nil {
+		c.StripeCustomerID = p.StripeCustomerID
+		f.byStripeCustID[*p.StripeCustomerID] = c
+	}
+	if p.StripeSubscriptionID != nil {
+		c.StripeSubscriptionID = p.StripeSubscriptionID
+	}
+	c.UpdatedAt = time.Now().UTC()
 	return c, nil
 }
 
