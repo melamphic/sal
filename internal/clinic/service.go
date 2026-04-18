@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -24,35 +25,57 @@ type AdminBootstrapper interface {
 	Bootstrap(ctx context.Context, clinicID uuid.UUID, email, name string) error
 }
 
+// LogoSigner produces a short-lived signed GET URL for a logo object key.
+// Implemented by platform/storage in app.go.
+type LogoSigner interface {
+	SignLogoURL(ctx context.Context, key string) (string, error)
+}
+
+// LogoUploader uploads bytes to object storage and returns the persisted key.
+// Implemented by platform/storage in app.go.
+type LogoUploader interface {
+	UploadLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error)
+}
+
 // Service handles all clinic business logic.
 type Service struct {
 	repo         repo // interface — see repo.go
 	cipher       *crypto.Cipher
 	bootstrapper AdminBootstrapper // nil = skip (for tests that don't need the full flow)
+	logoSigner   LogoSigner        // nil = skip URL signing (logo_url omitted)
+	logoUploader LogoUploader      // nil = logo upload disabled
 }
 
 // NewService creates a new clinic Service.
-func NewService(repo repo, cipher *crypto.Cipher, bootstrapper AdminBootstrapper) *Service {
-	return &Service{repo: repo, cipher: cipher, bootstrapper: bootstrapper}
+func NewService(repo repo, cipher *crypto.Cipher, bootstrapper AdminBootstrapper, signer LogoSigner, uploader LogoUploader) *Service {
+	return &Service{repo: repo, cipher: cipher, bootstrapper: bootstrapper, logoSigner: signer, logoUploader: uploader}
 }
 
 // ClinicResponse is the decrypted, service-layer representation of a clinic.
 // This is what handlers receive and what API responses are built from.
 // The encrypted DB row is never exposed outside the service layer.
 type ClinicResponse struct {
-	ID          string              `json:"id"`
-	Name        string              `json:"name"`
-	Slug        string              `json:"slug"`
-	Email       string              `json:"email"`
-	Phone       *string             `json:"phone,omitempty"`
-	Address     *string             `json:"address,omitempty"`
-	Vertical    domain.Vertical     `json:"vertical"`
-	Status      domain.ClinicStatus `json:"status"`
-	TrialEndsAt time.Time           `json:"trial_ends_at"`
-	NoteCount   int                 `json:"note_count"`
-	NoteCap     *int                `json:"note_cap,omitempty"`
-	DataRegion  string              `json:"data_region"`
-	CreatedAt   time.Time           `json:"created_at"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	Slug               string              `json:"slug"`
+	Email              string              `json:"email"`
+	Phone              *string             `json:"phone,omitempty"`
+	Address            *string             `json:"address,omitempty"`
+	Vertical           domain.Vertical     `json:"vertical"`
+	Status             domain.ClinicStatus `json:"status"`
+	TrialEndsAt        time.Time           `json:"trial_ends_at"`
+	NoteCount          int                 `json:"note_count"`
+	NoteCap            *int                `json:"note_cap,omitempty"`
+	DataRegion         string              `json:"data_region"`
+	LogoURL            *string             `json:"logo_url,omitempty"`
+	AccentColor        *string             `json:"accent_color,omitempty"`
+	PDFHeaderText      *string             `json:"pdf_header_text,omitempty"`
+	PDFFooterText      *string             `json:"pdf_footer_text,omitempty"`
+	PDFPrimaryColor    *string             `json:"pdf_primary_color,omitempty"`
+	PDFFont            *string             `json:"pdf_font,omitempty"`
+	OnboardingStep     int16               `json:"onboarding_step"`
+	OnboardingComplete bool                `json:"onboarding_complete"`
+	CreatedAt          time.Time           `json:"created_at"`
 }
 
 // RegisterInput holds the data required to register a new clinic.
@@ -159,19 +182,35 @@ func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicRespo
 		return nil, fmt.Errorf("clinic.service.GetByID: %w", err)
 	}
 
-	return s.decryptAndBuild(row)
+	return s.decryptAndBuild(ctx, row)
 }
 
 // UpdateInput holds optional update fields. Nil = leave unchanged.
 type UpdateInput struct {
-	Name    *string
-	Phone   *string
-	Address *string
+	Name               *string
+	Phone              *string
+	Address            *string
+	AccentColor        *string
+	PDFHeaderText      *string
+	PDFFooterText      *string
+	PDFPrimaryColor    *string
+	PDFFont            *string
+	OnboardingStep     *int16
+	OnboardingComplete *bool
 }
 
 // Update applies a partial update to the clinic settings.
 func (s *Service) Update(ctx context.Context, clinicID uuid.UUID, in UpdateInput) (*ClinicResponse, error) {
-	p := UpdateParams{Name: in.Name}
+	p := UpdateParams{
+		Name:               in.Name,
+		AccentColor:        in.AccentColor,
+		PDFHeaderText:      in.PDFHeaderText,
+		PDFFooterText:      in.PDFFooterText,
+		PDFPrimaryColor:    in.PDFPrimaryColor,
+		PDFFont:            in.PDFFont,
+		OnboardingStep:     in.OnboardingStep,
+		OnboardingComplete: in.OnboardingComplete,
+	}
 
 	if in.Phone != nil {
 		ep, err := s.cipher.Encrypt(*in.Phone)
@@ -193,12 +232,29 @@ func (s *Service) Update(ctx context.Context, clinicID uuid.UUID, in UpdateInput
 		return nil, fmt.Errorf("clinic.service.Update: %w", err)
 	}
 
-	return s.decryptAndBuild(row)
+	return s.decryptAndBuild(ctx, row)
+}
+
+// UploadLogo persists a logo to object storage and updates the clinic's logo_key.
+// Returns the updated clinic with a freshly-signed logo_url.
+func (s *Service) UploadLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (*ClinicResponse, error) {
+	if s.logoUploader == nil {
+		return nil, fmt.Errorf("clinic.service.UploadLogo: storage not configured")
+	}
+	key, err := s.logoUploader.UploadLogo(ctx, clinicID, contentType, body, size)
+	if err != nil {
+		return nil, fmt.Errorf("clinic.service.UploadLogo: upload: %w", err)
+	}
+	row, err := s.repo.Update(ctx, clinicID, UpdateParams{LogoKey: &key})
+	if err != nil {
+		return nil, fmt.Errorf("clinic.service.UploadLogo: persist key: %w", err)
+	}
+	return s.decryptAndBuild(ctx, row)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
-func (s *Service) decryptAndBuild(row *Clinic) (*ClinicResponse, error) {
+func (s *Service) decryptAndBuild(ctx context.Context, row *Clinic) (*ClinicResponse, error) {
 	email, err := s.cipher.Decrypt(row.Email)
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service: decrypt email: %w", err)
@@ -220,24 +276,41 @@ func (s *Service) decryptAndBuild(row *Clinic) (*ClinicResponse, error) {
 		address = &a
 	}
 
-	return s.toDTO(row, email, phone, address), nil
+	dto := s.toDTO(row, email, phone, address)
+
+	if row.LogoKey != nil && s.logoSigner != nil {
+		url, err := s.logoSigner.SignLogoURL(ctx, *row.LogoKey)
+		if err != nil {
+			return nil, fmt.Errorf("clinic.service: sign logo url: %w", err)
+		}
+		dto.LogoURL = &url
+	}
+
+	return dto, nil
 }
 
 func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *ClinicResponse {
 	return &ClinicResponse{
-		ID:          row.ID.String(),
-		Name:        row.Name,
-		Slug:        row.Slug,
-		Email:       email,
-		Phone:       phone,
-		Address:     address,
-		Vertical:    row.Vertical,
-		Status:      row.Status,
-		TrialEndsAt: row.TrialEndsAt,
-		NoteCount:   row.NoteCount,
-		NoteCap:     row.NoteCap,
-		DataRegion:  row.DataRegion,
-		CreatedAt:   row.CreatedAt,
+		ID:                 row.ID.String(),
+		Name:               row.Name,
+		Slug:               row.Slug,
+		Email:              email,
+		Phone:              phone,
+		Address:            address,
+		Vertical:           row.Vertical,
+		Status:             row.Status,
+		TrialEndsAt:        row.TrialEndsAt,
+		NoteCount:          row.NoteCount,
+		NoteCap:            row.NoteCap,
+		DataRegion:         row.DataRegion,
+		AccentColor:        row.AccentColor,
+		PDFHeaderText:      row.PDFHeaderText,
+		PDFFooterText:      row.PDFFooterText,
+		PDFPrimaryColor:    row.PDFPrimaryColor,
+		PDFFont:            row.PDFFont,
+		OnboardingStep:     row.OnboardingStep,
+		OnboardingComplete: row.OnboardingComplete,
+		CreatedAt:          row.CreatedAt,
 	}
 }
 

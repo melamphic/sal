@@ -39,6 +39,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.list)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-current-staff",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/staff/me",
+		Summary:     "Get the authenticated staff member",
+		Description: "Returns the profile and permissions for the staff member identified by the bearer token.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth},
+	}, h.getMe)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-staff-member",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/staff/{staff_id}",

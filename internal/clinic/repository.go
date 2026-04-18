@@ -33,6 +33,14 @@ type Clinic struct {
 	NoteCountResetAt       *time.Time
 	DataRegion             string
 	ScheduledForDeletionAt *time.Time
+	LogoKey                *string
+	AccentColor            *string
+	PDFHeaderText          *string
+	PDFFooterText          *string
+	PDFPrimaryColor        *string
+	PDFFont                *string
+	OnboardingStep         int16
+	OnboardingComplete     bool
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
 	ArchivedAt             *time.Time
@@ -41,9 +49,17 @@ type Clinic struct {
 // UpdateParams holds the fields that can be updated on a clinic.
 // A nil pointer means "leave unchanged".
 type UpdateParams struct {
-	Name    *string
-	Phone   *string // pre-encrypted by service
-	Address *string // pre-encrypted by service
+	Name               *string
+	Phone              *string // pre-encrypted by service
+	Address            *string // pre-encrypted by service
+	LogoKey            *string
+	AccentColor        *string
+	PDFHeaderText      *string
+	PDFFooterText      *string
+	PDFPrimaryColor    *string
+	PDFFont            *string
+	OnboardingStep     *int16
+	OnboardingComplete *bool
 }
 
 // Repository handles all database interactions for the clinic module.
@@ -56,31 +72,28 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+const clinicCols = `
+	id, name, slug, email, email_hash, phone, address,
+	vertical, status, trial_ends_at,
+	stripe_customer_id, stripe_subscription_id,
+	note_cap, note_count, note_count_reset_at,
+	data_region, scheduled_for_deletion_at,
+	logo_key, accent_color,
+	pdf_header_text, pdf_footer_text, pdf_primary_color, pdf_font,
+	onboarding_step, onboarding_complete,
+	created_at, updated_at, archived_at
+`
+
 // Create inserts a new clinic row and returns the created record.
 func (r *Repository) Create(ctx context.Context, p CreateParams) (*Clinic, error) {
-	var c Clinic
-	err := r.db.QueryRow(ctx, `
+	c, err := r.scanOne(ctx, `
 		INSERT INTO clinics (
 			id, name, slug, email, email_hash, phone, address,
 			vertical, status, trial_ends_at, data_region
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING
-			id, name, slug, email, email_hash, phone, address,
-			vertical, status, trial_ends_at,
-			stripe_customer_id, stripe_subscription_id,
-			note_cap, note_count, note_count_reset_at,
-			data_region, scheduled_for_deletion_at,
-			created_at, updated_at, archived_at
-	`,
+		RETURNING `+clinicCols,
 		p.ID, p.Name, p.Slug, p.Email, p.EmailHash, p.Phone, p.Address,
 		p.Vertical, domain.ClinicStatusTrial, p.TrialEndsAt, p.DataRegion,
-	).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.Email, &c.EmailHash, &c.Phone, &c.Address,
-		&c.Vertical, &c.Status, &c.TrialEndsAt,
-		&c.StripeCustomerID, &c.StripeSubscriptionID,
-		&c.NoteCap, &c.NoteCount, &c.NoteCountResetAt,
-		&c.DataRegion, &c.ScheduledForDeletionAt,
-		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
 	)
 	if err != nil {
 		if domain.IsUniqueViolation(err) {
@@ -88,18 +101,13 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*Clinic, error
 		}
 		return nil, fmt.Errorf("clinic.repo.Create: %w", err)
 	}
-	return &c, nil
+	return c, nil
 }
 
 // GetByID fetches a clinic by primary key.
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Clinic, error) {
 	c, err := r.scanOne(ctx, `
-		SELECT id, name, slug, email, email_hash, phone, address,
-		       vertical, status, trial_ends_at,
-		       stripe_customer_id, stripe_subscription_id,
-		       note_cap, note_count, note_count_reset_at,
-		       data_region, scheduled_for_deletion_at,
-		       created_at, updated_at, archived_at
+		SELECT `+clinicCols+`
 		FROM clinics WHERE id = $1 AND archived_at IS NULL
 	`, id)
 	if err != nil {
@@ -114,12 +122,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*Clinic, error)
 // GetByEmailHash fetches a clinic by its hashed email (used during registration deduplication).
 func (r *Repository) GetByEmailHash(ctx context.Context, emailHash string) (*Clinic, error) {
 	c, err := r.scanOne(ctx, `
-		SELECT id, name, slug, email, email_hash, phone, address,
-		       vertical, status, trial_ends_at,
-		       stripe_customer_id, stripe_subscription_id,
-		       note_cap, note_count, note_count_reset_at,
-		       data_region, scheduled_for_deletion_at,
-		       created_at, updated_at, archived_at
+		SELECT `+clinicCols+`
 		FROM clinics WHERE email_hash = $1 AND archived_at IS NULL
 	`, emailHash)
 	if err != nil {
@@ -135,19 +138,25 @@ func (r *Repository) GetByEmailHash(ctx context.Context, emailHash string) (*Cli
 func (r *Repository) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Clinic, error) {
 	c, err := r.scanOne(ctx, `
 		UPDATE clinics SET
-			name    = COALESCE($2, name),
-			phone   = COALESCE($3, phone),
-			address = COALESCE($4, address),
-			updated_at = NOW()
+			name                = COALESCE($2,  name),
+			phone               = COALESCE($3,  phone),
+			address             = COALESCE($4,  address),
+			logo_key            = COALESCE($5,  logo_key),
+			accent_color        = COALESCE($6,  accent_color),
+			pdf_header_text     = COALESCE($7,  pdf_header_text),
+			pdf_footer_text     = COALESCE($8,  pdf_footer_text),
+			pdf_primary_color   = COALESCE($9,  pdf_primary_color),
+			pdf_font            = COALESCE($10, pdf_font),
+			onboarding_step     = COALESCE($11, onboarding_step),
+			onboarding_complete = COALESCE($12, onboarding_complete),
+			updated_at          = NOW()
 		WHERE id = $1 AND archived_at IS NULL
-		RETURNING
-			id, name, slug, email, email_hash, phone, address,
-			vertical, status, trial_ends_at,
-			stripe_customer_id, stripe_subscription_id,
-			note_cap, note_count, note_count_reset_at,
-			data_region, scheduled_for_deletion_at,
-			created_at, updated_at, archived_at
-	`, id, p.Name, p.Phone, p.Address)
+		RETURNING `+clinicCols,
+		id,
+		p.Name, p.Phone, p.Address, p.LogoKey, p.AccentColor,
+		p.PDFHeaderText, p.PDFFooterText, p.PDFPrimaryColor, p.PDFFont,
+		p.OnboardingStep, p.OnboardingComplete,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrNotFound
@@ -181,6 +190,9 @@ func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*C
 		&c.StripeCustomerID, &c.StripeSubscriptionID,
 		&c.NoteCap, &c.NoteCount, &c.NoteCountResetAt,
 		&c.DataRegion, &c.ScheduledForDeletionAt,
+		&c.LogoKey, &c.AccentColor,
+		&c.PDFHeaderText, &c.PDFFooterText, &c.PDFPrimaryColor, &c.PDFFont,
+		&c.OnboardingStep, &c.OnboardingComplete,
 		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
 	); err != nil {
 		return nil, fmt.Errorf("clinic.repo.scanOne: %w", err)

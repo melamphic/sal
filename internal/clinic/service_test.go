@@ -24,7 +24,7 @@ func newTestClinicService(t *testing.T) (*Service, *fakeRepo) {
 	t.Helper()
 	r := newFakeClinicRepo()
 	c := testutil.TestCipher(t)
-	return NewService(r, c, nil), r
+	return NewService(r, c, nil, nil, nil), r
 }
 
 // ── generateSlug ──────────────────────────────────────────────────────────────

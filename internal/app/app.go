@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -101,10 +102,17 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	rlStore := mw.NewRateLimiterStore(10.0/60.0, 10)
 	authHandler := auth.NewHandler(authSvc, rlStore)
 
+	// ── Storage (S3-compatible) ────────────────────────────────────────────────
+	store, err := storage.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: storage: %w", err)
+	}
+	clinicLogos := &clinicLogoAdapter{store: store}
+
 	clinicRepo := clinic.NewRepository(db)
 	// adminBootstrapAdapter is set after authSvc and staffSvc are wired below.
 	clinicBootstrap := &adminBootstrapAdapter{}
-	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap)
+	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap, clinicLogos, clinicLogos)
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
 	inviteAdapter := &inviteCreatorAdapter{auth: authSvc, cipher: cipher}
@@ -121,12 +129,6 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
 	patientHandler := patient.NewHandler(patientSvc)
-
-	// ── Storage (S3-compatible) ────────────────────────────────────────────────
-	store, err := storage.New(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("app.Build: storage: %w", err)
-	}
 
 	// ── Transcription provider ─────────────────────────────────────────────────
 	transcriber, err := newTranscriberFromConfig(ctx, cfg)
@@ -415,6 +417,43 @@ func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUI
 		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
 	}
 	return nil
+}
+
+// clinicLogoAdapter implements clinic.LogoUploader and clinic.LogoSigner against
+// the platform/storage S3 client. Logos are stored under logos/{clinic_id}/.
+type clinicLogoAdapter struct {
+	store *storage.Store
+}
+
+func (a *clinicLogoAdapter) UploadLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error) {
+	ext := logoExtForContentType(contentType)
+	key := fmt.Sprintf("logos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", fmt.Errorf("app.clinicLogoAdapter.UploadLogo: %w", err)
+	}
+	return key, nil
+}
+
+func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicLogoAdapter.SignLogoURL: %w", err)
+	}
+	return url, nil
+}
+
+func logoExtForContentType(ct string) string {
+	switch ct {
+	case "image/png":
+		return ".png"
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	case "image/svg+xml":
+		return ".svg"
+	}
+	return ""
 }
 
 // lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.

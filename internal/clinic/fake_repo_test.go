@@ -86,6 +86,30 @@ func (f *fakeRepo) Update(_ context.Context, id uuid.UUID, p UpdateParams) (*Cli
 	if p.Address != nil {
 		c.Address = p.Address
 	}
+	if p.LogoKey != nil {
+		c.LogoKey = p.LogoKey
+	}
+	if p.AccentColor != nil {
+		c.AccentColor = p.AccentColor
+	}
+	if p.PDFHeaderText != nil {
+		c.PDFHeaderText = p.PDFHeaderText
+	}
+	if p.PDFFooterText != nil {
+		c.PDFFooterText = p.PDFFooterText
+	}
+	if p.PDFPrimaryColor != nil {
+		c.PDFPrimaryColor = p.PDFPrimaryColor
+	}
+	if p.PDFFont != nil {
+		c.PDFFont = p.PDFFont
+	}
+	if p.OnboardingStep != nil {
+		c.OnboardingStep = *p.OnboardingStep
+	}
+	if p.OnboardingComplete != nil {
+		c.OnboardingComplete = *p.OnboardingComplete
+	}
 	c.UpdatedAt = time.Now().UTC()
 	return c, nil
 }
