@@ -80,7 +80,6 @@ func (h *Handler) invite(ctx context.Context, input *inviteInput) (*struct{}, er
 		NoteTier:    input.Body.NoteTier,
 		Permissions: perms,
 		InviterName: caller.FullName,
-		ClinicName:  clinicID.String(), // TODO: pass clinic name through context in Phase 0 follow-up
 	}); err != nil {
 		return nil, mapStaffError(err)
 	}

@@ -18,12 +18,19 @@ func (f *fakeInviteCreator) CreateInvite(_ context.Context, _ CreateInviteTokenP
 	return "fake-invite-token", nil
 }
 
+// fakeClinicNameProvider satisfies ClinicNameProvider in tests.
+type fakeClinicNameProvider struct{}
+
+func (f *fakeClinicNameProvider) GetClinicName(_ context.Context, _ uuid.UUID) (string, error) {
+	return "Riverside Vets", nil
+}
+
 func newTestService(t *testing.T) (*Service, *fakeRepo, *testutil.FakeMailer) {
 	t.Helper()
 	r := newFakeRepo()
 	m := &testutil.FakeMailer{}
 	c := testutil.TestCipher(t)
-	svc := NewService(r, c, m, "https://app.salvia.test", &fakeInviteCreator{})
+	svc := NewService(r, c, m, "https://app.salvia.test", &fakeInviteCreator{}, &fakeClinicNameProvider{})
 	return svc, r, m
 }
 
@@ -147,7 +154,6 @@ func TestService_Invite_SendsEmail(t *testing.T) {
 		NoteTier:    domain.NoteTierStandard,
 		Permissions: domain.DefaultPermissions(domain.StaffRoleVet),
 		InviterName: "Dr. Admin",
-		ClinicName:  "Riverside Vets",
 	})
 
 	require.NoError(t, err)
@@ -172,7 +178,6 @@ func TestService_Invite_DuplicateEmail_ReturnsConflict(t *testing.T) {
 		FullName:    "Duplicate Staff",
 		Role:        domain.StaffRoleVet,
 		InviterName: "Dr. Admin",
-		ClinicName:  "Riverside Vets",
 	})
 
 	require.Error(t, err)
@@ -193,7 +198,6 @@ func TestService_Invite_SameEmailDifferentClinic_Allowed(t *testing.T) {
 		FullName:    "Clinic B Staff",
 		Role:        domain.StaffRoleVet,
 		InviterName: "Dr. Admin",
-		ClinicName:  "Other Clinic",
 	})
 
 	require.NoError(t, err, "same email must be allowed in a different clinic")

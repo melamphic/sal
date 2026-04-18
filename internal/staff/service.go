@@ -12,6 +12,12 @@ import (
 	"github.com/melamphic/sal/internal/platform/mailer"
 )
 
+// ClinicNameProvider resolves a clinic's display name from its ID.
+// Implemented by an adapter in app.go that bridges to clinic.Service.
+type ClinicNameProvider interface {
+	GetClinicName(ctx context.Context, clinicID uuid.UUID) (string, error)
+}
+
 // InviteCreator creates invite tokens for staff invitations.
 // Implemented by an adapter in app.go that bridges to auth.Repository.
 type InviteCreator interface {
@@ -34,12 +40,13 @@ type Service struct {
 	cipher  *crypto.Cipher
 	mailer  mailer.Mailer
 	appURL  string
-	invites InviteCreator // nil = invite tokens not created (test mode)
+	invites InviteCreator    // nil = invite tokens not created (test mode)
+	clinics ClinicNameProvider // nil = clinic name omitted from emails (test mode)
 }
 
 // NewService creates a new staff Service.
-func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string, invites InviteCreator) *Service {
-	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL, invites: invites}
+func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string, invites InviteCreator, clinics ClinicNameProvider) *Service {
+	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL, invites: invites, clinics: clinics}
 }
 
 // DTO is the decrypted service-layer representation of a staff member.
@@ -72,7 +79,6 @@ type InviteInput struct {
 	NoteTier    domain.NoteTier
 	Permissions domain.Permissions
 	InviterName string
-	ClinicName  string
 }
 
 // CreateStaffInput is used when a staff member accepts an invite and sets up their account.
@@ -98,6 +104,15 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 		return domain.ErrConflict
 	}
 
+	// Resolve clinic name for the invitation email.
+	var clinicName string
+	if s.clinics != nil {
+		clinicName, err = s.clinics.GetClinicName(ctx, clinicID)
+		if err != nil {
+			return fmt.Errorf("staff.service.Invite: get clinic name: %w", err)
+		}
+	}
+
 	// Create invite token so the invited person can verify and accept.
 	rawToken, err := s.invites.CreateInvite(ctx, CreateInviteTokenParams{
 		ClinicID:    clinicID,
@@ -113,7 +128,7 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 
 	inviteURL := fmt.Sprintf("%s/invite/accept?token=%s", s.appURL, rawToken)
 
-	if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, in.ClinicName, inviteURL); err != nil {
+	if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, clinicName, inviteURL); err != nil {
 		return fmt.Errorf("staff.service.Invite: send invite: %w", err)
 	}
 

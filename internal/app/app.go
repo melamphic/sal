@@ -106,8 +106,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
 	inviteAdapter := &inviteCreatorAdapter{auth: authSvc, cipher: cipher}
+	clinicNameAdapter := &clinicNameProviderAdapter{clinic: clinicSvc}
 	staffRepo := staff.NewRepository(db)
-	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL, inviteAdapter)
+	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL, inviteAdapter, clinicNameAdapter)
 	staffHandler := staff.NewHandler(staffSvc)
 
 	// Now both authSvc and staffSvc exist — set up lazy adapters.
@@ -527,6 +528,20 @@ func (a *inviteCreatorAdapter) CreateInvite(ctx context.Context, params staff.Cr
 		return "", fmt.Errorf("app.inviteCreatorAdapter: %w", err)
 	}
 	return token, nil
+}
+
+// clinicNameProviderAdapter implements staff.ClinicNameProvider.
+// Resolves a clinic's display name for invitation emails.
+type clinicNameProviderAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *clinicNameProviderAdapter) GetClinicName(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicNameProviderAdapter: %w", err)
+	}
+	return c.Name, nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
