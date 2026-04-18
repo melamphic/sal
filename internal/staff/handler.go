@@ -73,7 +73,7 @@ func (h *Handler) invite(ctx context.Context, input *inviteInput) (*struct{}, er
 	defaults := domain.DefaultPermissions(input.Body.Role)
 	perms := mergePerms(defaults, input.Body.Permissions)
 
-	if err := h.svc.Invite(ctx, clinicID, InviteInput{
+	if err := h.svc.Invite(ctx, clinicID, callerID, InviteInput{
 		Email:       input.Body.Email,
 		FullName:    input.Body.FullName,
 		Role:        input.Body.Role,
