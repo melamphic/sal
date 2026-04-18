@@ -12,17 +12,34 @@ import (
 	"github.com/melamphic/sal/internal/platform/mailer"
 )
 
+// InviteCreator creates invite tokens for staff invitations.
+// Implemented by an adapter in app.go that bridges to auth.Repository.
+type InviteCreator interface {
+	CreateInvite(ctx context.Context, params CreateInviteTokenParams) (rawToken string, err error)
+}
+
+// CreateInviteTokenParams holds the data for creating an invite token.
+type CreateInviteTokenParams struct {
+	ClinicID    uuid.UUID
+	Email       string // plaintext — will be encrypted by the adapter
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+	InvitedByID uuid.UUID
+}
+
 // Service handles all staff business logic.
 type Service struct {
-	repo   repo // interface — see repo.go
-	cipher *crypto.Cipher
-	mailer mailer.Mailer
-	appURL string
+	repo    repo // interface — see repo.go
+	cipher  *crypto.Cipher
+	mailer  mailer.Mailer
+	appURL  string
+	invites InviteCreator // nil = invite tokens not created (test mode)
 }
 
 // NewService creates a new staff Service.
-func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string) *Service {
-	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL}
+func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string, invites InviteCreator) *Service {
+	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL, invites: invites}
 }
 
 // DTO is the decrypted service-layer representation of a staff member.
@@ -68,9 +85,9 @@ type CreateStaffInput struct {
 	Permissions domain.Permissions
 }
 
-// Invite creates a pending invite and sends the invitation email.
+// Invite creates a pending invite token and sends the invitation email.
 // Returns domain.ErrConflict if an active staff member with that email already exists in this clinic.
-func (s *Service) Invite(ctx context.Context, clinicID uuid.UUID, in InviteInput) error {
+func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in InviteInput) error {
 	emailHash := s.cipher.Hash(in.Email)
 
 	exists, err := s.repo.ExistsByEmailHash(ctx, emailHash, clinicID)
@@ -81,10 +98,20 @@ func (s *Service) Invite(ctx context.Context, clinicID uuid.UUID, in InviteInput
 		return domain.ErrConflict
 	}
 
-	// The invite token itself is stored in auth_tokens (auth module manages this).
-	// The staff.service only sends the email — the auth module creates the token.
-	// This avoids a circular dependency: auth → staff (to create the user on accept).
-	inviteURL := fmt.Sprintf("%s/invite/accept", s.appURL)
+	// Create invite token so the invited person can verify and accept.
+	rawToken, err := s.invites.CreateInvite(ctx, CreateInviteTokenParams{
+		ClinicID:    clinicID,
+		Email:       in.Email,
+		Role:        in.Role,
+		NoteTier:    in.NoteTier,
+		Permissions: in.Permissions,
+		InvitedByID: callerID,
+	})
+	if err != nil {
+		return fmt.Errorf("staff.service.Invite: create invite token: %w", err)
+	}
+
+	inviteURL := fmt.Sprintf("%s/invite/accept?token=%s", s.appURL, rawToken)
 
 	if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, in.ClinicName, inviteURL); err != nil {
 		return fmt.Errorf("staff.service.Invite: send invite: %w", err)
