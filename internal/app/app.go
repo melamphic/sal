@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
@@ -40,6 +41,7 @@ import (
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/timeline"
+	"github.com/melamphic/sal/internal/verticals"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
@@ -126,9 +128,39 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicBootstrap.staff = staffSvc
 	staffCreator.staff = staffSvc
 
+	// /mel handoff wiring — only enabled when the shared JWT secret is set.
+	if cfg.MelHandoffJWTSecret != "" {
+		authSvc.SetMelHandoff(
+			[]byte(cfg.MelHandoffJWTSecret),
+			&melHandoffAdapter{clinic: clinicSvc, staff: staffSvc},
+		)
+	}
+
+	// ── Billing (Stripe webhook) ──────────────────────────────────────────
+	// Gated on STRIPE_WEBHOOK_SECRET — without it the route is not mounted.
+	var billingHandler *billing.Handler
+	if cfg.StripeWebhookSecret != "" {
+		priceMap, err := cfg.ParseStripePriceMap()
+		if err != nil {
+			return nil, fmt.Errorf("app.Build: %w", err)
+		}
+		billingRepo := billing.NewRepository(db)
+		billingSvc := billing.NewService(
+			billingRepo,
+			&billingClinicAdapter{clinic: clinicSvc},
+			staticPlanLookup(priceMap),
+			[]byte(cfg.StripeWebhookSecret),
+		)
+		billingHandler = billing.NewHandler(billingSvc, log)
+	}
+
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
 	patientHandler := patient.NewHandler(patientSvc)
+
+	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
+	verticalsSvc := verticals.NewService(verticalAdapter)
+	verticalsHandler := verticals.NewHandler(verticalsSvc)
 
 	// ── Transcription provider ─────────────────────────────────────────────────
 	transcriber, err := newTranscriberFromConfig(ctx, cfg)
@@ -275,6 +307,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicHandler.Mount(r, api, jwtSecret)
 	staffHandler.Mount(r, api, jwtSecret)
 	patientHandler.Mount(r, api, jwtSecret)
+	verticalsHandler.Mount(r, api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
 	notesHandler.Mount(r, api, jwtSecret)
@@ -282,6 +315,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notificationsHandler.Mount(r, jwtSecret)
 	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
+	if billingHandler != nil {
+		billingHandler.Mount(r)
+	}
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
@@ -417,6 +453,74 @@ func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUI
 		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
 	}
 	return nil
+}
+
+// billingClinicAdapter implements billing.ClinicUpdater by bridging to
+// clinic.Service. Billing never imports the clinic package directly.
+type billingClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *billingClinicAdapter) FindByStripeCustomerID(ctx context.Context, stripeCustomerID string) (uuid.UUID, error) {
+	id, err := a.clinic.GetIDByStripeCustomer(ctx, stripeCustomerID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.billingClinicAdapter.FindByStripeCustomerID: %w", err)
+	}
+	return id, nil
+}
+
+func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clinicID uuid.UUID, s billing.SubscriptionState) error {
+	if err := a.clinic.ApplyBillingState(ctx, clinicID, clinic.BillingState{
+		Status:               s.Status,
+		PlanCode:             s.PlanCode,
+		StripeCustomerID:     s.StripeCustomerID,
+		StripeSubscriptionID: s.StripeSubscriptionID,
+	}); err != nil {
+		return fmt.Errorf("app.billingClinicAdapter.ApplySubscriptionState: %w", err)
+	}
+	return nil
+}
+
+// staticPlanLookup implements billing.PlanLookup from a parsed env map.
+type staticPlanLookup map[string]domain.PlanCode
+
+func (m staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
+	pc, ok := m[id]
+	return pc, ok
+}
+
+// melHandoffAdapter implements auth.HandoffProvisioner by bridging to
+// clinic.HandoffProvision + staff.EnsureOwner. Both calls are idempotent on
+// email_hash so replaying the same email (with a fresh jti) returns the
+// existing rows.
+type melHandoffAdapter struct {
+	clinic *clinic.Service
+	staff  *staff.Service
+}
+
+func (a *melHandoffAdapter) ProvisionFromHandoff(ctx context.Context, in auth.HandoffProvisionInput) (uuid.UUID, uuid.UUID, error) {
+	c, err := a.clinic.HandoffProvision(ctx, clinic.HandoffProvisionInput{
+		Email:            in.Email,
+		ClinicName:       in.ClinicName,
+		Vertical:         in.Vertical,
+		PlanCode:         in.PlanCode,
+		StripeCustomerID: in.StripeCustomerID,
+	})
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: provision clinic: %w", err)
+	}
+	clinicID, err := uuid.Parse(c.ID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: parse clinic id: %w", err)
+	}
+
+	s, err := a.staff.EnsureOwner(ctx, clinicID, in.Email, in.FullName)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: ensure owner: %w", err)
+	}
+	staffID, err := uuid.Parse(s.ID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: parse staff id: %w", err)
+	}
+	return clinicID, staffID, nil
 }
 
 // clinicLogoAdapter implements clinic.LogoUploader and clinic.LogoSigner against
@@ -598,6 +702,21 @@ func (a *clinicNameProviderAdapter) GetClinicName(ctx context.Context, clinicID 
 		return "", fmt.Errorf("app.clinicNameProviderAdapter: %w", err)
 	}
 	return c.Name, nil
+}
+
+// clinicVerticalProviderAdapter implements verticals.ClinicVerticalProvider.
+// Resolves a clinic's vertical so the verticals service can return the
+// matching form schema.
+type clinicVerticalProviderAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (domain.Vertical, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
+	}
+	return c.Vertical, nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
