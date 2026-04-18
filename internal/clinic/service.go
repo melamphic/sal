@@ -64,6 +64,7 @@ type ClinicResponse struct {
 	Vertical           domain.Vertical     `json:"vertical"`
 	Status             domain.ClinicStatus `json:"status"`
 	TrialEndsAt        time.Time           `json:"trial_ends_at"`
+	PlanCode           *domain.PlanCode    `json:"plan_code,omitempty"`
 	NoteCount          int                 `json:"note_count"`
 	NoteCap            *int                `json:"note_cap,omitempty"`
 	DataRegion         string              `json:"data_region"`
@@ -75,6 +76,11 @@ type ClinicResponse struct {
 	PDFFont            *string             `json:"pdf_font,omitempty"`
 	OnboardingStep     int16               `json:"onboarding_step"`
 	OnboardingComplete bool                `json:"onboarding_complete"`
+	LegalName          *string             `json:"legal_name,omitempty"`
+	Country            string              `json:"country"`
+	Timezone           string              `json:"timezone"`
+	BusinessRegNo      *string             `json:"business_reg_no,omitempty"`
+	TermsAcceptedAt    *time.Time          `json:"terms_accepted_at,omitempty"`
 	CreatedAt          time.Time           `json:"created_at"`
 }
 
@@ -175,6 +181,106 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicRespon
 	return s.toDTO(row, in.Email, in.Phone, in.Address), nil
 }
 
+// HandoffProvisionInput holds the post-JWT-verify payload from /mel handoff.
+// The handoff path skips the AdminBootstrapper flow: staff creation + session
+// issuance are handled by auth.Service.HandoffFromMel once this returns.
+type HandoffProvisionInput struct {
+	Email            string // plaintext
+	ClinicName       string
+	Vertical         domain.Vertical
+	PlanCode         *domain.PlanCode // nil = trial signup
+	StripeCustomerID *string          // cus_… from /mel Checkout; nil on trial
+}
+
+// HandoffProvision finds-or-creates a clinic for a /mel handoff. Idempotent
+// on email_hash so replaying the same email (with a fresh jti) returns the
+// existing clinic. Plan code is only set on initial create — subsequent
+// updates come from the Stripe webhook, the canonical source of truth.
+func (s *Service) HandoffProvision(ctx context.Context, in HandoffProvisionInput) (*ClinicResponse, error) {
+	emailHash := s.cipher.Hash(in.Email)
+
+	existing, err := s.repo.GetByEmailHash(ctx, emailHash)
+	if err == nil {
+		return s.decryptAndBuild(ctx, existing)
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("clinic.service.HandoffProvision: lookup: %w", err)
+	}
+
+	encEmail, err := s.cipher.Encrypt(in.Email)
+	if err != nil {
+		return nil, fmt.Errorf("clinic.service.HandoffProvision: encrypt email: %w", err)
+	}
+
+	vertical := in.Vertical
+	if vertical == "" {
+		vertical = domain.VerticalVeterinary
+	}
+
+	slug := generateSlug(in.ClinicName)
+
+	var row *Clinic
+	for attempt := 0; attempt < 3; attempt++ {
+		p := CreateParams{
+			ID:               domain.NewID(),
+			Name:             in.ClinicName,
+			Slug:             slug,
+			Email:            encEmail,
+			EmailHash:        emailHash,
+			Vertical:         vertical,
+			TrialEndsAt:      domain.TimeNow().Add(14 * 24 * time.Hour),
+			DataRegion:       "ap-southeast-2",
+			PlanCode:         in.PlanCode,
+			StripeCustomerID: in.StripeCustomerID,
+		}
+		row, err = s.repo.Create(ctx, p)
+		if err == nil {
+			break
+		}
+		if !domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("clinic.service.HandoffProvision: create: %w", err)
+		}
+		slug = generateSlug(in.ClinicName) + "-" + domain.NewID().String()[:4]
+	}
+	if row == nil {
+		return nil, fmt.Errorf("clinic.service.HandoffProvision: slug collision after retries")
+	}
+
+	return s.toDTO(row, in.Email, nil, nil), nil
+}
+
+// BillingState is the authoritative subscription state written by the
+// billing module in response to a Stripe webhook. Status always writes;
+// the pointer fields are COALESCEd at the repo layer — nil means leave
+// unchanged.
+type BillingState struct {
+	Status               domain.ClinicStatus
+	PlanCode             *domain.PlanCode
+	StripeCustomerID     *string
+	StripeSubscriptionID *string
+}
+
+// GetIDByStripeCustomer returns the clinic id for a Stripe customer id.
+// Used by the billing webhook adapter. Returns domain.ErrNotFound when
+// no clinic has been provisioned for this customer yet — the adapter
+// records the event as `unmapped` and returns 200.
+func (s *Service) GetIDByStripeCustomer(ctx context.Context, stripeCustomerID string) (uuid.UUID, error) {
+	row, err := s.repo.GetByStripeCustomerID(ctx, stripeCustomerID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("clinic.service.GetIDByStripeCustomer: %w", err)
+	}
+	return row.ID, nil
+}
+
+// ApplyBillingState writes the authoritative subscription state for a
+// clinic. Billing-module-only entrypoint; never called from HTTP handlers.
+func (s *Service) ApplyBillingState(ctx context.Context, clinicID uuid.UUID, p BillingState) error {
+	if _, err := s.repo.ApplySubscriptionState(ctx, clinicID, ApplySubscriptionStateParams(p)); err != nil {
+		return fmt.Errorf("clinic.service.ApplyBillingState: %w", err)
+	}
+	return nil
+}
+
 // GetByID returns decrypted clinic details for the authenticated clinic.
 func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicResponse, error) {
 	row, err := s.repo.GetByID(ctx, clinicID)
@@ -197,6 +303,14 @@ type UpdateInput struct {
 	PDFFont            *string
 	OnboardingStep     *int16
 	OnboardingComplete *bool
+	LegalName          *string
+	Country            *string
+	Timezone           *string
+	BusinessRegNo      *string
+	// AcceptTerms, when true, stamps terms_accepted_at with the current
+	// time. Passing false (or leaving nil) does not clear an existing
+	// acceptance — terms can only be accepted, not unaccepted.
+	AcceptTerms *bool
 }
 
 // Update applies a partial update to the clinic settings.
@@ -210,6 +324,14 @@ func (s *Service) Update(ctx context.Context, clinicID uuid.UUID, in UpdateInput
 		PDFFont:            in.PDFFont,
 		OnboardingStep:     in.OnboardingStep,
 		OnboardingComplete: in.OnboardingComplete,
+		LegalName:          in.LegalName,
+		Country:            in.Country,
+		Timezone:           in.Timezone,
+		BusinessRegNo:      in.BusinessRegNo,
+	}
+	if in.AcceptTerms != nil && *in.AcceptTerms {
+		now := domain.TimeNow()
+		p.TermsAcceptedAt = &now
 	}
 
 	if in.Phone != nil {
@@ -300,6 +422,7 @@ func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *Clin
 		Vertical:           row.Vertical,
 		Status:             row.Status,
 		TrialEndsAt:        row.TrialEndsAt,
+		PlanCode:           row.PlanCode,
 		NoteCount:          row.NoteCount,
 		NoteCap:            row.NoteCap,
 		DataRegion:         row.DataRegion,
@@ -310,6 +433,11 @@ func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *Clin
 		PDFFont:            row.PDFFont,
 		OnboardingStep:     row.OnboardingStep,
 		OnboardingComplete: row.OnboardingComplete,
+		LegalName:          row.LegalName,
+		Country:            row.Country,
+		Timezone:           row.Timezone,
+		BusinessRegNo:      row.BusinessRegNo,
+		TermsAcceptedAt:    row.TermsAcceptedAt,
 		CreatedAt:          row.CreatedAt,
 	}
 }

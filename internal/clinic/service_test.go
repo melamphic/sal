@@ -263,3 +263,64 @@ func TestService_Update_NilFieldsLeaveDataUnchanged(t *testing.T) {
 	assert.Equal(t, phone, *dto.Phone)
 	assert.Equal(t, "Stable Clinic", dto.Name)
 }
+
+// ── HandoffProvision ──────────────────────────────────────────────────────────
+
+func TestService_HandoffProvision_CreatesNewClinic(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestClinicService(t)
+	plan := domain.PlanPawsPracticeMonthly
+
+	dto, err := svc.HandoffProvision(context.Background(), HandoffProvisionInput{
+		Email:      "owner@newvet.test",
+		ClinicName: "New Vet",
+		Vertical:   domain.VerticalVeterinary,
+		PlanCode:   &plan,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "New Vet", dto.Name)
+	assert.Equal(t, "owner@newvet.test", dto.Email)
+	require.NotNil(t, dto.PlanCode)
+	assert.Equal(t, plan, *dto.PlanCode)
+	assert.Equal(t, domain.ClinicStatusTrial, dto.Status)
+	assert.Len(t, r.byID, 1)
+}
+
+func TestService_HandoffProvision_Idempotent_ReturnsExistingClinic(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestClinicService(t)
+	plan := domain.PlanPawsPracticeMonthly
+
+	first, err := svc.HandoffProvision(context.Background(), HandoffProvisionInput{
+		Email:      "owner@newvet.test",
+		ClinicName: "New Vet",
+		Vertical:   domain.VerticalVeterinary,
+		PlanCode:   &plan,
+	})
+	require.NoError(t, err)
+
+	// Replay with same email — must return the same clinic, not a duplicate.
+	second, err := svc.HandoffProvision(context.Background(), HandoffProvisionInput{
+		Email:      "owner@newvet.test",
+		ClinicName: "Different Name This Time", // ignored on find path
+		Vertical:   domain.VerticalVeterinary,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, first.ID, second.ID, "same email must return same clinic")
+	assert.Equal(t, "New Vet", second.Name, "existing name must not be overwritten")
+	assert.Len(t, r.byID, 1, "no duplicate clinic row")
+}
+
+func TestService_HandoffProvision_TrialSignup_NoPlan(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestClinicService(t)
+
+	dto, err := svc.HandoffProvision(context.Background(), HandoffProvisionInput{
+		Email:      "trial@newvet.test",
+		ClinicName: "Trial Clinic",
+		Vertical:   domain.VerticalVeterinary,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, dto.PlanCode, "trial signup must leave plan_code nil")
+}

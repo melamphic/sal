@@ -30,7 +30,7 @@ type registerInput struct {
 		Email      string          `json:"email" format:"email" doc:"The clinic's primary contact email. Used for billing and admin notifications."`
 		Phone      *string         `json:"phone,omitempty" doc:"Clinic phone number."`
 		Address    *string         `json:"address,omitempty" doc:"Clinic physical address."`
-		Vertical   domain.Vertical `json:"vertical" enum:"veterinary,dental,aged_care" doc:"The clinical domain this clinic operates in."`
+		Vertical   domain.Vertical `json:"vertical" enum:"veterinary,dental,general_clinic,aged_care" doc:"The clinical domain this clinic operates in."`
 		DataRegion string          `json:"data_region" doc:"Where clinic data is stored (e.g. ap-southeast-2, eu-west-2)." default:"ap-southeast-2"`
 		AdminEmail string          `json:"admin_email" format:"email" doc:"Email of the first super admin. A magic link is sent here after registration."`
 		AdminName  string          `json:"admin_name" minLength:"1" maxLength:"200" doc:"Full name of the first super admin."`
@@ -49,6 +49,11 @@ type updateInput struct {
 		PDFFont            *string `json:"pdf_font,omitempty"            enum:"inter,plus_jakarta_sans,lora,jetbrains_mono" doc:"Font family used in generated PDFs."`
 		OnboardingStep     *int16  `json:"onboarding_step,omitempty"     minimum:"0" maximum:"4" doc:"Current onboarding step (0..3). Stops being meaningful once onboarding_complete is true."`
 		OnboardingComplete *bool   `json:"onboarding_complete,omitempty" doc:"Set to true to mark first-run setup finished."`
+		LegalName          *string `json:"legal_name,omitempty"          maxLength:"200" doc:"Registered legal / trading name (e.g. 'Greenwood Veterinary Ltd'). Appears on invoices."`
+		Country            *string `json:"country,omitempty"             enum:"NZ,AU,GB,IN" doc:"ISO 3166-1 alpha-2 country code. Drives the business-registration label (NZBN / ABN / CRN / GSTIN)."`
+		Timezone           *string `json:"timezone,omitempty"            doc:"IANA timezone (e.g. 'Pacific/Auckland')."`
+		BusinessRegNo      *string `json:"business_reg_no,omitempty"     maxLength:"64" doc:"Business registration identifier — NZBN, ABN, CRN, GSTIN, etc., depending on country."`
+		AcceptTerms        *bool   `json:"accept_terms,omitempty"        doc:"Set to true to accept the Salvia terms of service. Stamps terms_accepted_at. Cannot be unset."`
 	}
 }
 
@@ -103,6 +108,11 @@ func (h *Handler) update(ctx context.Context, input *updateInput) (*clinicRespon
 		PDFFont:            input.Body.PDFFont,
 		OnboardingStep:     input.Body.OnboardingStep,
 		OnboardingComplete: input.Body.OnboardingComplete,
+		LegalName:          input.Body.LegalName,
+		Country:            input.Body.Country,
+		Timezone:           input.Body.Timezone,
+		BusinessRegNo:      input.Body.BusinessRegNo,
+		AcceptTerms:        input.Body.AcceptTerms,
 	})
 	if err != nil {
 		return nil, mapClinicError(err)
