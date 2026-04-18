@@ -219,6 +219,28 @@ func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTP
 	return &noteHTTPResponse{Body: resp}, nil
 }
 
+// ── Policy check ─────────────────────────────────────────────────────────────
+
+type policyCheckHTTPResponse struct {
+	Body *NotePolicyCheckResponse
+}
+
+// checkPolicy handles POST /api/v1/notes/{note_id}/check-policy.
+func (h *Handler) checkPolicy(ctx context.Context, input *noteIDInput) (*policyCheckHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	resp, err := h.svc.CheckPolicy(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &policyCheckHTTPResponse{Body: resp}, nil
+}
+
 // ── Archive ───────────────────────────────────────────────────────────────────
 
 // archiveNote handles POST /api/v1/notes/{note_id}/archive.

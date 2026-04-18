@@ -22,6 +22,8 @@ type repo interface {
 
 	// UpdatePolicyAlignment persists the computed alignment score on a note.
 	UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error
+	// UpdatePolicyCheckResult persists per-clause check results as JSONB on a note.
+	UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error
 
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)

@@ -495,6 +495,63 @@ func TestService_SubmitNote_ValidationIgnoresOptionalFields(t *testing.T) {
 	}
 }
 
+func TestService_SubmitNote_PolicyCheckBlocksHighParityViolation(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// Simulate a stored policy check result with a high-parity violation.
+	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
+	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected validation error for high-parity violation, got %v", err)
+	}
+}
+
+func TestService_SubmitNote_PolicyCheckAllowsLowParityViolation(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	// Low-parity violation should not block.
+	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"low"}]`
+	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	if err != nil {
+		t.Fatalf("unexpected error for low-parity violation: %v", err)
+	}
+	if resp.Status != domain.NoteStatusSubmitted {
+		t.Errorf("expected submitted, got %s", resp.Status)
+	}
+}
+
 // ── ArchiveNote ───────────────────────────────────────────────────────────────
 
 func TestService_ArchiveNote_OK(t *testing.T) {

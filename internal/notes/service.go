@@ -2,12 +2,14 @@ package notes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/extraction"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -22,10 +24,12 @@ const maxNotesPerRecording = 3
 
 // Service handles business logic for the notes module.
 type Service struct {
-	repo    repo
-	enqueue jobEnqueuer
-	events  EventEmitter
-	fields  FormFieldProvider // nil = skip field validation on submit (test mode)
+	repo           repo
+	enqueue        jobEnqueuer
+	events         EventEmitter
+	fields         FormFieldProvider           // nil = skip field validation on submit
+	policyChecker  extraction.PolicyDetailedChecker // nil = skip policy check
+	policyClauses  PolicyClauseProvider        // nil = skip policy check
 }
 
 // NewService constructs a notes Service.
@@ -35,6 +39,13 @@ func NewService(r repo, riverClient jobEnqueuer, events EventEmitter, fields For
 		events = noopEmitter{}
 	}
 	return &Service{repo: r, enqueue: riverClient, events: events, fields: fields}
+}
+
+// SetPolicyChecker configures the detailed policy checker and clause provider.
+// Called from app.go after constructing the service — avoids bloating the NewService signature.
+func (s *Service) SetPolicyChecker(checker extraction.PolicyDetailedChecker, clauses PolicyClauseProvider) {
+	s.policyChecker = checker
+	s.policyClauses = clauses
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -262,13 +273,18 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 // Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
 // Returns domain.ErrValidation if any required fields are missing values.
 func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
-	// Validate required fields before allowing submission.
-	if s.fields != nil {
-		note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	// Pre-submit validation: required fields + policy check.
+	{
+		preNote, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 		if err != nil {
 			return nil, fmt.Errorf("notes.service.SubmitNote: get note: %w", err)
 		}
-		if err := s.validateForSubmission(ctx, note.FormVersionID, noteID); err != nil {
+		if s.fields != nil {
+			if err := s.validateForSubmission(ctx, preNote.FormVersionID, noteID); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.validatePolicyCheck(preNote); err != nil {
 			return nil, err
 		}
 	}
@@ -331,6 +347,142 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 	})
 
 	return toNoteResponse(archived, nil), nil
+}
+
+// ── Policy check ─────────────────────────────────────────────────────────────
+
+// NoteClauseCheckResponse is a single clause result in the policy check response.
+//
+//nolint:revive
+type NoteClauseCheckResponse struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"`    // "satisfied" | "violated"
+	Reasoning string `json:"reasoning"`
+	Parity    string `json:"parity"`    // "high" | "medium" | "low"
+}
+
+// NotePolicyCheckResponse is the full policy check response for a note.
+//
+//nolint:revive
+type NotePolicyCheckResponse struct {
+	NoteID  string                     `json:"note_id"`
+	Results []NoteClauseCheckResponse  `json:"results"`
+	Blocked bool                       `json:"blocked"` // true if any high-parity clause is violated
+}
+
+// CheckPolicy runs a per-clause policy compliance check on a note.
+// Stores results as JSONB on the note for later retrieval and submit-time validation.
+func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (*NotePolicyCheckResponse, error) {
+	if s.policyChecker == nil || s.policyClauses == nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: policy checker not configured: %w", domain.ErrConflict)
+	}
+
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get note: %w", err)
+	}
+
+	// Get policy clauses for this form version.
+	clauses, err := s.policyClauses.GetClausesForNote(ctx, note.FormVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get clauses: %w", err)
+	}
+	if len(clauses) == 0 {
+		return &NotePolicyCheckResponse{
+			NoteID:  noteID.String(),
+			Results: []NoteClauseCheckResponse{},
+		}, nil
+	}
+
+	// Build note content from field values.
+	fields, err := s.repo.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get fields: %w", err)
+	}
+	noteContent := buildNoteContent(fields)
+
+	// Convert to extraction types.
+	extClauses := make([]extraction.PolicyClause, len(clauses))
+	for i, c := range clauses {
+		extClauses[i] = extraction.PolicyClause{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		}
+	}
+
+	results, err := s.policyChecker.CheckPolicyClauses(ctx, noteContent, extClauses)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: check: %w", err)
+	}
+
+	// Store results as JSONB.
+	resultJSON, err := json.Marshal(results)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: marshal: %w", err)
+	}
+	if err := s.repo.UpdatePolicyCheckResult(ctx, noteID, string(resultJSON)); err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: store: %w", err)
+	}
+
+	// Build response.
+	resp := &NotePolicyCheckResponse{
+		NoteID:  noteID.String(),
+		Results: make([]NoteClauseCheckResponse, len(results)),
+	}
+	for i, r := range results {
+		resp.Results[i] = NoteClauseCheckResponse{
+			BlockID:   r.BlockID,
+			Status:    r.Status,
+			Reasoning: r.Reasoning,
+			Parity:    r.Parity,
+		}
+		if r.Parity == "high" && r.Status == "violated" {
+			resp.Blocked = true
+		}
+	}
+
+	return resp, nil
+}
+
+// buildNoteContent creates a plain-text summary of note field values for policy checking.
+func buildNoteContent(fields []*NoteFieldRecord) string {
+	var sb strings.Builder
+	for _, f := range fields {
+		if f.Value != nil && *f.Value != "" && *f.Value != "null" {
+			sb.WriteString(f.FieldID.String())
+			sb.WriteString(": ")
+			sb.WriteString(*f.Value)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+// validatePolicyCheck checks stored policy check results for high-parity violations.
+// Returns domain.ErrValidation if submission should be blocked.
+func (s *Service) validatePolicyCheck(note *NoteRecord) error {
+	if note.PolicyCheckResult == nil {
+		return nil // no check run yet — allow submit
+	}
+
+	var results []extraction.ClauseCheckResult
+	if err := json.Unmarshal([]byte(*note.PolicyCheckResult), &results); err != nil {
+		return nil // malformed results — don't block
+	}
+
+	var violations []string
+	for _, r := range results {
+		if r.Parity == "high" && r.Status == "violated" {
+			violations = append(violations, r.BlockID)
+		}
+	}
+
+	if len(violations) > 0 {
+		return fmt.Errorf("notes.service.SubmitNote: high-parity policy violations: %s: %w",
+			strings.Join(violations, ", "), domain.ErrValidation)
+	}
+	return nil
 }
 
 // validateForSubmission checks that every required form field has a non-null value.
