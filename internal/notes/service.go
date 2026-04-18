@@ -24,12 +24,12 @@ const maxNotesPerRecording = 3
 
 // Service handles business logic for the notes module.
 type Service struct {
-	repo           repo
-	enqueue        jobEnqueuer
-	events         EventEmitter
-	fields         FormFieldProvider           // nil = skip field validation on submit
-	policyChecker  extraction.PolicyDetailedChecker // nil = skip policy check
-	policyClauses  PolicyClauseProvider        // nil = skip policy check
+	repo          repo
+	enqueue       jobEnqueuer
+	events        EventEmitter
+	fields        FormFieldProvider                // nil = skip field validation on submit
+	policyChecker extraction.PolicyDetailedChecker // nil = skip policy check
+	policyClauses PolicyClauseProvider             // nil = skip policy check
 }
 
 // NewService constructs a notes Service.
@@ -80,6 +80,7 @@ type NoteResponse struct {
 	ArchivedAt         *string              `json:"archived_at,omitempty"`
 	FormVersionContext *string              `json:"form_version_context,omitempty"`
 	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
+	PDFStorageKey      *string              `json:"pdf_storage_key,omitempty"`
 	CreatedAt          string               `json:"created_at"`
 	UpdatedAt          string               `json:"updated_at"`
 	Fields             []*NoteFieldResponse `json:"fields,omitempty"`
@@ -314,6 +315,9 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 	// Best-effort: recompute alignment against submitted field values.
 	_, _ = s.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
 
+	// Best-effort: generate branded PDF asynchronously.
+	_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
+
 	return toNoteResponse(note, nil), nil
 }
 
@@ -349,6 +353,19 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 	return toNoteResponse(archived, nil), nil
 }
 
+// GetNotePDFKey returns the S3 storage key for the note's PDF, if generated.
+// The handler is responsible for creating a presigned download URL from this key.
+func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID) (string, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("notes.service.GetNotePDFKey: %w", err)
+	}
+	if note.PDFStorageKey == nil {
+		return "", fmt.Errorf("notes.service.GetNotePDFKey: pdf not ready: %w", domain.ErrNotFound)
+	}
+	return *note.PDFStorageKey, nil
+}
+
 // ── Policy check ─────────────────────────────────────────────────────────────
 
 // NoteClauseCheckResponse is a single clause result in the policy check response.
@@ -356,18 +373,18 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 //nolint:revive
 type NoteClauseCheckResponse struct {
 	BlockID   string `json:"block_id"`
-	Status    string `json:"status"`    // "satisfied" | "violated"
+	Status    string `json:"status"` // "satisfied" | "violated"
 	Reasoning string `json:"reasoning"`
-	Parity    string `json:"parity"`    // "high" | "medium" | "low"
+	Parity    string `json:"parity"` // "high" | "medium" | "low"
 }
 
 // NotePolicyCheckResponse is the full policy check response for a note.
 //
 //nolint:revive
 type NotePolicyCheckResponse struct {
-	NoteID  string                     `json:"note_id"`
-	Results []NoteClauseCheckResponse  `json:"results"`
-	Blocked bool                       `json:"blocked"` // true if any high-parity clause is violated
+	NoteID  string                    `json:"note_id"`
+	Results []NoteClauseCheckResponse `json:"results"`
+	Blocked bool                      `json:"blocked"` // true if any high-parity clause is violated
 }
 
 // CheckPolicy runs a per-clause policy compliance check on a note.
@@ -573,6 +590,7 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 	}
 	r.FormVersionContext = n.FormVersionContext
 	r.PolicyAlignmentPct = n.PolicyAlignmentPct
+	r.PDFStorageKey = n.PDFStorageKey
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))
 		for i, f := range fields {

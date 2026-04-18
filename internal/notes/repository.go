@@ -32,6 +32,7 @@ type NoteRecord struct {
 	FormVersionContext *string    // e.g. "before decommission" — set at submit time
 	PolicyAlignmentPct *float64   // 0.0–100.0; nil until alignment job runs
 	PolicyCheckResult  *string    // JSONB per-clause check results; nil until check runs
+	PDFStorageKey      *string    // S3 key; nil until PDF generated after submit
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -145,7 +146,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, created_by,
 	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
 	archived_at, form_version_context, policy_alignment_pct, policy_check_result::text,
-	created_at, updated_at`
+	pdf_storage_key, created_at, updated_at`
 
 // CreateNote inserts a new note with the given status.
 func (r *Repository) CreateNote(ctx context.Context, p CreateNoteParams) (*NoteRecord, error) {
@@ -336,6 +337,15 @@ func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID
 	return nil
 }
 
+// UpdatePDFKey sets the pdf_storage_key on a note after the PDF is generated.
+func (r *Repository) UpdatePDFKey(ctx context.Context, noteID uuid.UUID, key string) error {
+	const q = `UPDATE notes SET pdf_storage_key = $2 WHERE id = $1`
+	if _, err := r.db.Exec(ctx, q, noteID, key); err != nil {
+		return fmt.Errorf("notes.repo.UpdatePDFKey: %w", err)
+	}
+	return nil
+}
+
 // UpdatePolicyCheckResult sets the policy_check_result JSONB on a note.
 func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error {
 	const q = `UPDATE notes SET policy_check_result = $2::jsonb WHERE id = $1`
@@ -468,7 +478,7 @@ func scanNote(row scannable) (*NoteRecord, error) {
 		&n.ReviewedBy, &n.ReviewedAt,
 		&n.SubmittedAt, &n.SubmittedBy,
 		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct, &n.PolicyCheckResult,
-		&n.CreatedAt, &n.UpdatedAt,
+		&n.PDFStorageKey, &n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

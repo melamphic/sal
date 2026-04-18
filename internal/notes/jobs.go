@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
@@ -428,6 +430,147 @@ func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[
 	if err := w.notes.UpdatePolicyAlignment(ctx, noteID, pct); err != nil {
 		return fmt.Errorf("compute_policy_alignment: update: %w", err)
 	}
+	return nil
+}
+
+// ── GenerateNotePDFWorker ─────────────────────────────────────────────────────
+
+// GenerateNotePDFArgs is the River job payload for PDF generation after note submission.
+type GenerateNotePDFArgs struct {
+	NoteID uuid.UUID `json:"note_id"`
+}
+
+// Kind returns the unique job type string used by River.
+func (GenerateNotePDFArgs) Kind() string { return "generate_note_pdf" }
+
+// ClinicStyleProvider returns the clinic name and brand color for the PDF header.
+type ClinicStyleProvider interface {
+	GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (name, color string, err error)
+}
+
+// StaffNameProvider returns a staff member's full name for the PDF audit footer.
+type StaffNameProvider interface {
+	GetStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error)
+}
+
+// FormMetaProvider returns the form name and version string for the PDF header.
+type FormMetaProvider interface {
+	GetFormMeta(ctx context.Context, formVersionID, clinicID uuid.UUID) (formName string, version string, err error)
+}
+
+// GenerateNotePDFWorker builds a branded PDF after note submission, uploads to S3,
+// and stores the storage key on the note.
+type GenerateNotePDFWorker struct {
+	river.WorkerDefaults[GenerateNotePDFArgs]
+	notes   repo
+	forms   FormMetaProvider
+	clinics ClinicStyleProvider
+	staff   StaffNameProvider
+	store   pdfStore
+}
+
+// pdfStore is the subset of storage.Store used by the PDF worker.
+type pdfStore interface {
+	Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error
+}
+
+// NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker.
+func NewGenerateNotePDFWorker(
+	notes repo,
+	forms FormMetaProvider,
+	clinics ClinicStyleProvider,
+	staff StaffNameProvider,
+	store pdfStore,
+) *GenerateNotePDFWorker {
+	return &GenerateNotePDFWorker{
+		notes:   notes,
+		forms:   forms,
+		clinics: clinics,
+		staff:   staff,
+		store:   store,
+	}
+}
+
+// Work executes the PDF generation job.
+func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[GenerateNotePDFArgs]) error {
+	noteID := job.Args.NoteID
+
+	note, err := w.notes.GetNoteByID(ctx, noteID, uuid.Nil)
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: get note: %w", err)
+	}
+
+	// Fetch clinic style.
+	clinicName, clinicColor, err := w.clinics.GetClinicStyle(ctx, note.ClinicID)
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: get clinic style: %w", err)
+	}
+
+	// Fetch form name and version string.
+	formName, formVersion, err := w.forms.GetFormMeta(ctx, note.FormVersionID, note.ClinicID)
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: get form meta: %w", err)
+	}
+
+	// Fetch note fields with titles from form field definitions.
+	noteFields, err := w.notes.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: get note fields: %w", err)
+	}
+
+	// Resolve submitter name.
+	submittedBy := "Unknown"
+	if note.SubmittedBy != nil {
+		name, err := w.staff.GetStaffName(ctx, *note.SubmittedBy, note.ClinicID)
+		if err == nil {
+			submittedBy = name
+		}
+	}
+
+	// Build PDF field list.
+	pdfFields := make([]PDFField, 0, len(noteFields))
+	for _, f := range noteFields {
+		val := ""
+		if f.Value != nil && *f.Value != "null" {
+			val = *f.Value
+		}
+		pdfFields = append(pdfFields, PDFField{
+			Label: f.FieldID.String(), // default to field ID
+			Value: val,
+		})
+	}
+
+	var submittedAt time.Time
+	if note.SubmittedAt != nil {
+		submittedAt = *note.SubmittedAt
+	}
+
+	buf, err := BuildNotePDF(PDFInput{
+		ClinicName:  clinicName,
+		ClinicColor: clinicColor,
+		FormName:    formName,
+		FormVersion: formVersion,
+		Fields:      pdfFields,
+		SubmittedAt: submittedAt,
+		SubmittedBy: submittedBy,
+		NoteID:      noteID.String(),
+	})
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: build: %w", err)
+	}
+
+	// Upload to S3.
+	key := fmt.Sprintf("notes/%s/%s.pdf", note.ClinicID, noteID)
+	size := int64(buf.Len())
+	if err := w.store.Upload(ctx, key, "application/pdf", buf, size); err != nil {
+		return fmt.Errorf("generate_note_pdf: upload: %w", err)
+	}
+
+	// Store key on note record.
+	if err := w.notes.UpdatePDFKey(ctx, noteID, key); err != nil {
+		return fmt.Errorf("generate_note_pdf: update key: %w", err)
+	}
+
 	return nil
 }
 

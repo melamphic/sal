@@ -66,7 +66,7 @@ type ReportJobResponse struct {
 	ReportType  string  `json:"report_type"`
 	Format      string  `json:"format"`
 	Status      string  `json:"status"`
-	DownloadURL *string `json:"download_url,omitempty"`  // set when status=complete
+	DownloadURL *string `json:"download_url,omitempty"` // set when status=complete
 	ContentHash *string `json:"content_hash,omitempty"` // SHA-256 of exported file for integrity verification
 	ErrorMsg    *string `json:"error_msg,omitempty"`
 	CreatedAt   string  `json:"created_at"`

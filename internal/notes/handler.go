@@ -3,21 +3,24 @@ package notes
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
+	"github.com/melamphic/sal/internal/platform/storage"
 )
 
 // Handler wires notes HTTP endpoints to the Service.
 type Handler struct {
-	svc *Service
+	svc   *Service
+	store *storage.Store
 }
 
 // NewHandler creates a new notes Handler.
-func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(svc *Service, store *storage.Store) *Handler {
+	return &Handler{svc: svc, store: store}
 }
 
 // ── Shared input types ────────────────────────────────────────────────────────
@@ -259,6 +262,38 @@ func (h *Handler) archiveNote(ctx context.Context, input *noteIDInput) (*noteHTT
 		return nil, mapNoteError(err)
 	}
 	return &noteHTTPResponse{Body: resp}, nil
+}
+
+// ── PDF download ─────────────────────────────────────────────────────────────
+
+type notePDFHTTPResponse struct {
+	Body struct {
+		URL string `json:"url" doc:"Pre-signed download URL for the note PDF. Expires in 1 hour."`
+	}
+}
+
+// getNotePDF handles GET /api/v1/notes/{note_id}/pdf.
+func (h *Handler) getNotePDF(ctx context.Context, input *noteIDInput) (*notePDFHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	key, err := h.svc.GetNotePDFKey(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+
+	url, err := h.store.PresignDownload(ctx, key, 1*time.Hour)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to generate download URL")
+	}
+
+	resp := &notePDFHTTPResponse{}
+	resp.Body.URL = url
+	return resp, nil
 }
 
 // ── Error mapping ─────────────────────────────────────────────────────────────

@@ -24,6 +24,8 @@ type repo interface {
 	UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error
 	// UpdatePolicyCheckResult persists per-clause check results as JSONB on a note.
 	UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error
+	// UpdatePDFKey sets the pdf_storage_key on a note after PDF generation.
+	UpdatePDFKey(ctx context.Context, noteID uuid.UUID, key string) error
 
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
