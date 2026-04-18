@@ -30,15 +30,37 @@ type CreateStaffFromInviteInput struct {
 	Permissions domain.Permissions
 }
 
+// HandoffProvisioner finds-or-creates the clinic + super admin staff for a
+// /mel handoff JWT. Idempotent on email_hash so replaying the same email
+// (with a fresh jti) returns the existing rows. Implemented in app.go by
+// an adapter that bridges to clinic.Service + staff.Service.
+type HandoffProvisioner interface {
+	ProvisionFromHandoff(ctx context.Context, in HandoffProvisionInput) (clinicID, staffID uuid.UUID, err error)
+}
+
+// HandoffProvisionInput is the post-JWT-verify payload passed to the
+// adapter. The adapter is responsible for clinic creation, staff
+// creation, and idempotency.
+type HandoffProvisionInput struct {
+	Email            string // plaintext
+	FullName         string
+	ClinicName       string
+	Vertical         domain.Vertical
+	PlanCode         *domain.PlanCode // nil = trial signup, no plan yet
+	StripeCustomerID *string          // cus_… from /mel Checkout; nil on trial
+}
+
 // Service handles all authentication business logic.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
-	repo         repo // interface — see repo.go
-	cipher       *crypto.Cipher
-	mailer       mailer.Mailer
-	jwtSecret    []byte
-	cfg          ServiceConfig
-	staffCreator StaffCreator // nil = invite acceptance disabled
+	repo               repo // interface — see repo.go
+	cipher             *crypto.Cipher
+	mailer             mailer.Mailer
+	jwtSecret          []byte
+	cfg                ServiceConfig
+	staffCreator       StaffCreator       // nil = invite acceptance disabled
+	handoffSecret      []byte             // shared HS256 secret with /mel; nil = handoff disabled
+	handoffProvisioner HandoffProvisioner // nil = handoff disabled
 }
 
 // ServiceConfig holds auth-specific configuration values.
@@ -66,6 +88,14 @@ func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []b
 		cfg:          cfg,
 		staffCreator: staffCreator,
 	}
+}
+
+// SetMelHandoff wires the /mel JWT handoff dependencies. Pass nil secret
+// or nil provisioner to leave the feature disabled (the handoff endpoint
+// then returns 503 — useful for environments where /mel is offline).
+func (s *Service) SetMelHandoff(secret []byte, p HandoffProvisioner) {
+	s.handoffSecret = secret
+	s.handoffProvisioner = p
 }
 
 // SendMagicLink generates a one-time login link and emails it to the staff member.

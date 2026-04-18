@@ -62,6 +62,26 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: rl,
 	}, h.acceptInvite)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "mel-handoff",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/handoff",
+		Summary:     "Consume a /mel handoff token",
+		Description: "Verifies the single-use JWT minted by the /mel marketing site after Stripe checkout (or trial signup), provisions the clinic + super-admin (idempotent on email), and returns a Salvia session.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.melHandoff)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "start-signup",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/signup/start",
+		Summary:     "Mint a handoff URL for a new trial signup",
+		Description: "Public endpoint called by the /mel marketing site. Mints a single-use handoff JWT and returns an absolute URL the browser should redirect to. No clinic is created here — provisioning happens when /api/v1/auth/handoff consumes the token.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.startSignup)
+
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID: "logout",

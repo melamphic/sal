@@ -229,6 +229,22 @@ func (r *Repository) UpdateLastActive(ctx context.Context, staffID uuid.UUID) er
 	return nil
 }
 
+// ConsumeMelHandoffToken inserts a jti row to mark a handoff JWT as used.
+// On unique-constraint violation we surface domain.ErrTokenUsed so the
+// caller can reject the replayed token without leaking SQL details.
+func (r *Repository) ConsumeMelHandoffToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO mel_handoff_tokens (jti, expires_at) VALUES ($1, $2)
+	`, jti, expiresAt)
+	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return domain.ErrTokenUsed
+		}
+		return fmt.Errorf("auth.repo.ConsumeMelHandoffToken: %w", err)
+	}
+	return nil
+}
+
 // DeleteRefreshTokensForStaff invalidates all refresh tokens on logout.
 func (r *Repository) DeleteRefreshTokensForStaff(ctx context.Context, staffID uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `
