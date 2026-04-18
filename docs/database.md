@@ -81,7 +81,7 @@ email           TEXT NOT NULL          -- PII: encrypted
 email_hash      TEXT NOT NULL UNIQUE   -- for deduplication lookups
 phone           TEXT                   -- PII: encrypted, nullable
 address         TEXT                   -- PII: encrypted, nullable
-vertical        VARCHAR NOT NULL       -- 'veterinary' | 'dental' | 'aged_care'
+vertical        VARCHAR NOT NULL       -- 'veterinary' | 'dental' | 'general_clinic' | 'aged_care'
 status          VARCHAR NOT NULL       -- 'trial' | 'active' | 'suspended' | 'cancelled'
 trial_ends_at   TIMESTAMPTZ NOT NULL
 note_cap        INT                    -- NULL = unlimited
