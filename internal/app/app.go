@@ -87,13 +87,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	jwtSecret := []byte(cfg.JWTSecret)
 
 	// ── Modules ───────────────────────────────────────────────────────────────
+	// Auth and Staff have circular dependencies (auth creates staff on invite accept,
+	// staff creates invite tokens via auth). Lazy adapters break the cycle.
+	staffCreator := &staffCreatorAdapter{}
 	authRepo := auth.NewRepository(db)
 	authSvc := auth.NewService(authRepo, cipher, m, jwtSecret, auth.ServiceConfig{
 		JWTAccessTTL:  cfg.JWTAccessTTL,
 		JWTRefreshTTL: cfg.JWTRefreshTTL,
 		MagicLinkTTL:  cfg.MagicLinkTTL,
 		AppURL:        cfg.AppURL,
-	})
+	}, staffCreator)
 	authHandler := auth.NewHandler(authSvc)
 
 	clinicRepo := clinic.NewRepository(db)
@@ -102,13 +105,15 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap)
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
+	inviteAdapter := &inviteCreatorAdapter{auth: authSvc, cipher: cipher}
 	staffRepo := staff.NewRepository(db)
-	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL)
+	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL, inviteAdapter)
 	staffHandler := staff.NewHandler(staffSvc)
 
-	// Now both authSvc and staffSvc exist — set up the clinic bootstrap adapter.
+	// Now both authSvc and staffSvc exist — set up lazy adapters.
 	clinicBootstrap.auth = authSvc
 	clinicBootstrap.staff = staffSvc
+	staffCreator.staff = staffSvc
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
@@ -479,6 +484,49 @@ func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, 
 		})
 	}
 	return result, nil
+}
+
+// staffCreatorAdapter implements auth.StaffCreator.
+// When an invite is accepted, the auth module calls this to create the staff record.
+// The staff field is set lazily after staff.Service is constructed.
+type staffCreatorAdapter struct {
+	staff *staff.Service
+}
+
+func (a *staffCreatorAdapter) CreateFromInvite(ctx context.Context, in auth.CreateStaffFromInviteInput) (uuid.UUID, error) {
+	resp, err := a.staff.Create(ctx, staff.CreateStaffInput{
+		ClinicID:    in.ClinicID,
+		Email:       in.Email,
+		FullName:    in.FullName,
+		Role:        in.Role,
+		NoteTier:    in.NoteTier,
+		Permissions: in.Permissions,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.staffCreatorAdapter: %w", err)
+	}
+
+	id, err := uuid.Parse(resp.ID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.staffCreatorAdapter: parse id: %w", err)
+	}
+	return id, nil
+}
+
+// inviteCreatorAdapter implements staff.InviteCreator.
+// When an admin invites a staff member, the staff module calls this to create the invite token.
+type inviteCreatorAdapter struct {
+	auth   *auth.Service
+	cipher *crypto.Cipher
+}
+
+func (a *inviteCreatorAdapter) CreateInvite(ctx context.Context, params staff.CreateInviteTokenParams) (string, error) {
+	emailHash := a.cipher.Hash(params.Email)
+	token, err := a.auth.CreateInviteToken(ctx, params.ClinicID, params.Email, emailHash, params.Role, params.NoteTier, params.Permissions, params.InvitedByID)
+	if err != nil {
+		return "", fmt.Errorf("app.inviteCreatorAdapter: %w", err)
+	}
+	return token, nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
