@@ -12,9 +12,10 @@ import (
 type Vertical string
 
 const (
-	VerticalVeterinary Vertical = "veterinary"
-	VerticalDental     Vertical = "dental"
-	VerticalAgedCare   Vertical = "aged_care"
+	VerticalVeterinary    Vertical = "veterinary"
+	VerticalDental        Vertical = "dental"
+	VerticalGeneralClinic Vertical = "general_clinic"
+	VerticalAgedCare      Vertical = "aged_care"
 )
 
 // ClinicStatus represents the subscription lifecycle state of a clinic.
@@ -23,6 +24,7 @@ type ClinicStatus string
 const (
 	ClinicStatusTrial       ClinicStatus = "trial"
 	ClinicStatusActive      ClinicStatus = "active"
+	ClinicStatusPastDue     ClinicStatus = "past_due"
 	ClinicStatusGracePeriod ClinicStatus = "grace_period"
 	ClinicStatusCancelled   ClinicStatus = "cancelled"
 	ClinicStatusSuspended   ClinicStatus = "suspended"
@@ -91,6 +93,26 @@ const (
 	VetSexUnknown VetSex = "unknown"
 )
 
+// DentalSex represents the biological sex of a dental subject (human).
+type DentalSex string
+
+const (
+	DentalSexMale    DentalSex = "male"
+	DentalSexFemale  DentalSex = "female"
+	DentalSexOther   DentalSex = "other"
+	DentalSexUnknown DentalSex = "unknown"
+)
+
+// GeneralSex represents the biological sex of a general_clinic subject (human).
+type GeneralSex string
+
+const (
+	GeneralSexMale    GeneralSex = "male"
+	GeneralSexFemale  GeneralSex = "female"
+	GeneralSexOther   GeneralSex = "other"
+	GeneralSexUnknown GeneralSex = "unknown"
+)
+
 // FormVersionStatus represents the lifecycle state of a form version.
 type FormVersionStatus string
 
@@ -154,6 +176,19 @@ const (
 	RecordingStatusTranscribed RecordingStatus = "transcribed"
 	// RecordingStatusFailed means all transcription retries were exhausted.
 	RecordingStatusFailed RecordingStatus = "failed"
+)
+
+// SubjectAccessAction records the kind of access event written to
+// subject_access_log. `view` covers list/get; `unmask_pii` is the
+// tap-to-reveal event that surfaces encrypted PII to the caller.
+type SubjectAccessAction string
+
+const (
+	SubjectAccessActionView      SubjectAccessAction = "view"
+	SubjectAccessActionCreate    SubjectAccessAction = "create"
+	SubjectAccessActionUpdate    SubjectAccessAction = "update"
+	SubjectAccessActionArchive   SubjectAccessAction = "archive"
+	SubjectAccessActionUnmaskPII SubjectAccessAction = "unmask_pii"
 )
 
 // Permissions holds the full set of boolean capability flags for a staff member.
