@@ -64,9 +64,54 @@ See `salvia_specs.md` for requirements. No dependencies on current modules beyon
 
 ---
 
+## Pending: FCM Push Notifications
+
+**Spec:** Mobile users need background push when extraction completes, policy updates, etc.
+
+**What's needed:**
+
+- Firebase Cloud Messaging integration for iOS + Android.
+- Notification preferences per staff member (opt-in/out per event type).
+- Push triggers: extraction complete, policy published, note assigned for review.
+- SSE covers web clients already — FCM is mobile-only.
+
+**Dependencies:** Auth ✅, Staff ✅. Requires Firebase project + service account key.
+
+---
+
+## Pending: Weekly Email Digest
+
+**Spec:** Every Monday, super admin receives a compliance snapshot email.
+
+**What's needed:**
+
+- River periodic job or cron trigger (Monday 08:00 clinic timezone).
+- Digest builder: notes submitted this week vs last, completion rate, top policy violations, overdue reviews.
+- Configurable recipient list (super admin + additional admins).
+- New mailer template `SendWeeklyDigest`.
+
+**Dependencies:** Reports ✅, Mailer ✅.
+
+---
+
 ## Pending: Billing (Phase 3)
 
 - Stripe customer + subscription lifecycle
 - Usage caps per plan tier (note quota, staff seats)
 - Webhook handler for subscription events
 - `NoteTier` enforcement (standard / nurse / none) already modelled in `domain` — needs usage counting
+
+---
+
+## Pending: Multi-Vertical Support (Phase 2)
+
+**Spec:** Dental (Salvia Smile) and Aged Care (Salvia Care) patient types.
+
+**What's needed:**
+
+- Remove hardcoded `domain.VerticalVeterinary` in patient handler — pull from clinic context.
+- Dental/aged care metadata JSONB schemas alongside vet_subject_details.
+- Domain-specific form templates per vertical.
+- Schema already supports it (`vertical` on clinics + subjects). Code change only.
+
+**Dependencies:** Patient ✅, Forms ✅.

@@ -42,26 +42,101 @@ type SubjectRecord struct {
 }
 
 // VetDetailsRecord is the raw database representation of a vet_subject_details row.
+// Encrypted fields (Allergies, ChronicConditions, InsurancePolicyNumber) hold
+// ciphertext at this layer — service.go encrypts on write and decrypts on read.
 type VetDetailsRecord struct {
-	SubjectID   uuid.UUID
-	Species     domain.VetSpecies
-	Breed       *string
-	Sex         *domain.VetSex
-	Desexed     *bool
-	DateOfBirth *time.Time
-	Color       *string
-	Microchip   *string
-	WeightKg    *float64
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	SubjectID             uuid.UUID
+	Species               domain.VetSpecies
+	Breed                 *string
+	Sex                   *domain.VetSex
+	Desexed               *bool
+	DateOfBirth           *time.Time
+	Color                 *string
+	Microchip             *string
+	WeightKg              *float64
+	Allergies             *string // PHI: encrypted
+	ChronicConditions     *string // PHI: encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // PII: encrypted
+	ReferringVetName      *string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
-// SubjectRow is a fully joined subject — subject + contact + vet details.
+// DentalDetailsRecord is the raw database representation of a dental_subject_details row.
+// Encrypted fields (MedicalAlerts, Medications, Allergies, ChronicConditions,
+// InsurancePolicyNumber) hold ciphertext at this layer — service.go encrypts
+// on write and decrypts on read.
+type DentalDetailsRecord struct {
+	SubjectID             uuid.UUID
+	DateOfBirth           *time.Time
+	Sex                   *domain.DentalSex
+	MedicalAlerts         *string // PHI: encrypted
+	Medications           *string // PHI: encrypted
+	Allergies             *string // PHI: encrypted
+	ChronicConditions     *string // PHI: encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // PII: encrypted
+	ReferringDentistName  *string
+	PrimaryDentistName    *string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+// GeneralDetailsRecord is the raw database representation of a
+// general_subject_details row. Encrypted fields (MedicalAlerts, Medications,
+// Allergies, ChronicConditions, InsurancePolicyNumber) hold ciphertext at
+// this layer — service.go encrypts on write and decrypts on read.
+type GeneralDetailsRecord struct {
+	SubjectID             uuid.UUID
+	DateOfBirth           *time.Time
+	Sex                   *domain.GeneralSex
+	MedicalAlerts         *string // PHI: encrypted
+	Medications           *string // PHI: encrypted
+	Allergies             *string // PHI: encrypted
+	ChronicConditions     *string // PHI: encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // PII: encrypted
+	ReferringProviderName *string
+	PrimaryProviderName   *string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+}
+
+// SubjectAccessLogRecord is a row from subject_access_log. Used for
+// historical replay / compliance export; writes go through CreateSubjectAccessLog.
+type SubjectAccessLogRecord struct {
+	ID        uuid.UUID
+	SubjectID uuid.UUID
+	StaffID   uuid.UUID
+	ClinicID  uuid.UUID
+	Action    domain.SubjectAccessAction
+	Purpose   *string
+	At        time.Time
+}
+
+// CreateSubjectAccessLogParams holds values for a single access-log insert.
+type CreateSubjectAccessLogParams struct {
+	ID        uuid.UUID
+	SubjectID uuid.UUID
+	StaffID   uuid.UUID
+	ClinicID  uuid.UUID
+	Action    domain.SubjectAccessAction
+	Purpose   *string
+}
+
+// SubjectRow is a fully joined subject — subject + contact + per-vertical details.
 // This is what the service receives and decrypts before returning to handlers.
+// Only one of VetDetails / DentalDetails / GeneralDetails is non-nil for any given subject.
 type SubjectRow struct {
-	Subject    SubjectRecord
-	Contact    *ContactRecord    // nil if no contact linked
-	VetDetails *VetDetailsRecord // nil if not a vet vertical
+	Subject        SubjectRecord
+	Contact        *ContactRecord        // nil if no contact linked
+	VetDetails     *VetDetailsRecord     // nil if not a vet vertical
+	DentalDetails  *DentalDetailsRecord  // nil if not a dental vertical
+	GeneralDetails *GeneralDetailsRecord // nil if not a general_clinic vertical
 }
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -99,16 +174,23 @@ type CreateSubjectParams struct {
 }
 
 // CreateVetDetailsParams holds all values needed to insert a vet_subject_details row.
+// Encrypted fields are pre-encrypted by the service before this call.
 type CreateVetDetailsParams struct {
-	SubjectID   uuid.UUID
-	Species     domain.VetSpecies
-	Breed       *string
-	Sex         *domain.VetSex
-	Desexed     *bool
-	DateOfBirth *time.Time
-	Color       *string
-	Microchip   *string
-	WeightKg    *float64
+	SubjectID             uuid.UUID
+	Species               domain.VetSpecies
+	Breed                 *string
+	Sex                   *domain.VetSex
+	Desexed               *bool
+	DateOfBirth           *time.Time
+	Color                 *string
+	Microchip             *string
+	WeightKg              *float64
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringVetName      *string
 }
 
 // UpdateSubjectParams holds fields for a partial subject update.
@@ -119,14 +201,87 @@ type UpdateSubjectParams struct {
 }
 
 // UpdateVetDetailsParams holds fields for a partial vet details update.
+// Encrypted fields are pre-encrypted by the service before this call.
 type UpdateVetDetailsParams struct {
-	Breed       *string
-	Sex         *domain.VetSex
-	Desexed     *bool
-	DateOfBirth *time.Time
-	Color       *string
-	Microchip   *string
-	WeightKg    *float64
+	Breed                 *string
+	Sex                   *domain.VetSex
+	Desexed               *bool
+	DateOfBirth           *time.Time
+	Color                 *string
+	Microchip             *string
+	WeightKg              *float64
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringVetName      *string
+}
+
+// CreateDentalDetailsParams holds all values needed to insert a dental_subject_details row.
+// Encrypted fields are pre-encrypted by the service before this call.
+type CreateDentalDetailsParams struct {
+	SubjectID             uuid.UUID
+	DateOfBirth           *time.Time
+	Sex                   *domain.DentalSex
+	MedicalAlerts         *string // pre-encrypted
+	Medications           *string // pre-encrypted
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringDentistName  *string
+	PrimaryDentistName    *string
+}
+
+// UpdateDentalDetailsParams holds fields for a partial dental details update.
+// Encrypted fields are pre-encrypted by the service before this call.
+type UpdateDentalDetailsParams struct {
+	DateOfBirth           *time.Time
+	Sex                   *domain.DentalSex
+	MedicalAlerts         *string // pre-encrypted
+	Medications           *string // pre-encrypted
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringDentistName  *string
+	PrimaryDentistName    *string
+}
+
+// CreateGeneralDetailsParams holds all values needed to insert a general_subject_details row.
+// Encrypted fields are pre-encrypted by the service before this call.
+type CreateGeneralDetailsParams struct {
+	SubjectID             uuid.UUID
+	DateOfBirth           *time.Time
+	Sex                   *domain.GeneralSex
+	MedicalAlerts         *string // pre-encrypted
+	Medications           *string // pre-encrypted
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringProviderName *string
+	PrimaryProviderName   *string
+}
+
+// UpdateGeneralDetailsParams holds fields for a partial general details update.
+// Encrypted fields are pre-encrypted by the service before this call.
+type UpdateGeneralDetailsParams struct {
+	DateOfBirth           *time.Time
+	Sex                   *domain.GeneralSex
+	MedicalAlerts         *string // pre-encrypted
+	Medications           *string // pre-encrypted
+	Allergies             *string // pre-encrypted
+	ChronicConditions     *string // pre-encrypted
+	AdmissionWarnings     *string
+	InsuranceProviderName *string
+	InsurancePolicyNumber *string // pre-encrypted
+	ReferringProviderName *string
+	PrimaryProviderName   *string
 }
 
 // ListParams holds pagination parameters for contact listing.
@@ -285,13 +440,22 @@ func (r *Repository) CreateVetDetails(ctx context.Context, p CreateVetDetailsPar
 	d := &VetDetailsRecord{}
 	err := r.db.QueryRow(ctx, `
 		INSERT INTO vet_subject_details
-			(subject_id, species, breed, sex, desexed, date_of_birth, color, microchip, weight_kg)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			(subject_id, species, breed, sex, desexed, date_of_birth, color, microchip, weight_kg,
+			 allergies, chronic_conditions, admission_warnings,
+			 insurance_provider_name, insurance_policy_number, referring_vet_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING subject_id, species, breed, sex, desexed, date_of_birth, color,
-		          microchip, weight_kg, created_at, updated_at
-	`, p.SubjectID, p.Species, p.Breed, p.Sex, p.Desexed, p.DateOfBirth, p.Color, p.Microchip, p.WeightKg).Scan(
+		          microchip, weight_kg, allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number, referring_vet_name,
+		          created_at, updated_at
+	`, p.SubjectID, p.Species, p.Breed, p.Sex, p.Desexed, p.DateOfBirth, p.Color, p.Microchip, p.WeightKg,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber, p.ReferringVetName,
+	).Scan(
 		&d.SubjectID, &d.Species, &d.Breed, &d.Sex, &d.Desexed, &d.DateOfBirth, &d.Color,
-		&d.Microchip, &d.WeightKg, &d.CreatedAt, &d.UpdatedAt,
+		&d.Microchip, &d.WeightKg, &d.Allergies, &d.ChronicConditions, &d.AdmissionWarnings,
+		&d.InsuranceProviderName, &d.InsurancePolicyNumber, &d.ReferringVetName,
+		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("patient.repo.CreateVetDetails: %w", err)
@@ -299,12 +463,14 @@ func (r *Repository) CreateVetDetails(ctx context.Context, p CreateVetDetailsPar
 	return d, nil
 }
 
-// GetSubjectByID fetches a subject with its contact and vet details joined.
+// GetSubjectByID fetches a subject with its contact and per-vertical details joined.
 func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID) (*SubjectRow, error) {
 	row := &SubjectRow{}
 	s := &SubjectRecord{}
 	c := &ContactRecord{}
 	d := &VetDetailsRecord{}
+	dd := &DentalDetailsRecord{}
+	g := &GeneralDetailsRecord{}
 
 	var (
 		// Contact nullable columns.
@@ -318,17 +484,53 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		cCreatedAt *time.Time
 		cUpdatedAt *time.Time
 		// Vet details nullable columns.
-		dSubjectID *uuid.UUID
-		dSpecies   *domain.VetSpecies
-		dBreed     *string
-		dSex       *domain.VetSex
-		dDesexed   *bool
-		dDOB       *time.Time
-		dColor     *string
-		dMicrochip *string
-		dWeightKg  *float64
-		dCreatedAt *time.Time
-		dUpdatedAt *time.Time
+		dSubjectID         *uuid.UUID
+		dSpecies           *domain.VetSpecies
+		dBreed             *string
+		dSex               *domain.VetSex
+		dDesexed           *bool
+		dDOB               *time.Time
+		dColor             *string
+		dMicrochip         *string
+		dWeightKg          *float64
+		dAllergies         *string
+		dChronicConditions *string
+		dAdmissionWarn     *string
+		dInsProvider       *string
+		dInsPolicy         *string
+		dReferringVet      *string
+		dCreatedAt         *time.Time
+		dUpdatedAt         *time.Time
+		// Dental details nullable columns.
+		ddSubjectID         *uuid.UUID
+		ddDOB               *time.Time
+		ddSex               *domain.DentalSex
+		ddMedicalAlerts     *string
+		ddMedications       *string
+		ddAllergies         *string
+		ddChronicConditions *string
+		ddAdmissionWarn     *string
+		ddInsProvider       *string
+		ddInsPolicy         *string
+		ddReferringDentist  *string
+		ddPrimaryDentist    *string
+		ddCreatedAt         *time.Time
+		ddUpdatedAt         *time.Time
+		// General details nullable columns.
+		gSubjectID         *uuid.UUID
+		gDOB               *time.Time
+		gSex               *domain.GeneralSex
+		gMedicalAlerts     *string
+		gMedications       *string
+		gAllergies         *string
+		gChronicConditions *string
+		gAdmissionWarn     *string
+		gInsProvider       *string
+		gInsPolicy         *string
+		gReferringProvider *string
+		gPrimaryProvider   *string
+		gCreatedAt         *time.Time
+		gUpdatedAt         *time.Time
 	)
 
 	err := r.db.QueryRow(ctx, `
@@ -338,16 +540,40 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
 			v.subject_id, v.species, v.breed, v.sex, v.desexed, v.date_of_birth,
-			v.color, v.microchip, v.weight_kg, v.created_at, v.updated_at
+			v.color, v.microchip, v.weight_kg, v.allergies, v.chronic_conditions,
+			v.admission_warnings, v.insurance_provider_name, v.insurance_policy_number,
+			v.referring_vet_name, v.created_at, v.updated_at,
+			dd.subject_id, dd.date_of_birth, dd.sex, dd.medical_alerts, dd.medications,
+			dd.allergies, dd.chronic_conditions, dd.admission_warnings,
+			dd.insurance_provider_name, dd.insurance_policy_number,
+			dd.referring_dentist_name, dd.primary_dentist_name,
+			dd.created_at, dd.updated_at,
+			g.subject_id, g.date_of_birth, g.sex, g.medical_alerts, g.medications,
+			g.allergies, g.chronic_conditions, g.admission_warnings,
+			g.insurance_provider_name, g.insurance_policy_number,
+			g.referring_provider_name, g.primary_provider_name,
+			g.created_at, g.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
+		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
+		LEFT JOIN general_subject_details g ON g.subject_id = s.id
 		WHERE s.id = $1 AND s.clinic_id = $2 AND s.archived_at IS NULL
 	`, id, clinicID).Scan(
 		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
-		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg, &dCreatedAt, &dUpdatedAt,
+		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
+		&dAllergies, &dChronicConditions, &dAdmissionWarn, &dInsProvider, &dInsPolicy, &dReferringVet,
+		&dCreatedAt, &dUpdatedAt,
+		&ddSubjectID, &ddDOB, &ddSex, &ddMedicalAlerts, &ddMedications,
+		&ddAllergies, &ddChronicConditions, &ddAdmissionWarn,
+		&ddInsProvider, &ddInsPolicy, &ddReferringDentist, &ddPrimaryDentist,
+		&ddCreatedAt, &ddUpdatedAt,
+		&gSubjectID, &gDOB, &gSex, &gMedicalAlerts, &gMedications,
+		&gAllergies, &gChronicConditions, &gAdmissionWarn,
+		&gInsProvider, &gInsPolicy, &gReferringProvider, &gPrimaryProvider,
+		&gCreatedAt, &gUpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -381,9 +607,51 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		d.Color = dColor
 		d.Microchip = dMicrochip
 		d.WeightKg = dWeightKg
+		d.Allergies = dAllergies
+		d.ChronicConditions = dChronicConditions
+		d.AdmissionWarnings = dAdmissionWarn
+		d.InsuranceProviderName = dInsProvider
+		d.InsurancePolicyNumber = dInsPolicy
+		d.ReferringVetName = dReferringVet
 		d.CreatedAt = *dCreatedAt
 		d.UpdatedAt = *dUpdatedAt
 		row.VetDetails = d
+	}
+
+	if ddSubjectID != nil {
+		dd.SubjectID = *ddSubjectID
+		dd.DateOfBirth = ddDOB
+		dd.Sex = ddSex
+		dd.MedicalAlerts = ddMedicalAlerts
+		dd.Medications = ddMedications
+		dd.Allergies = ddAllergies
+		dd.ChronicConditions = ddChronicConditions
+		dd.AdmissionWarnings = ddAdmissionWarn
+		dd.InsuranceProviderName = ddInsProvider
+		dd.InsurancePolicyNumber = ddInsPolicy
+		dd.ReferringDentistName = ddReferringDentist
+		dd.PrimaryDentistName = ddPrimaryDentist
+		dd.CreatedAt = *ddCreatedAt
+		dd.UpdatedAt = *ddUpdatedAt
+		row.DentalDetails = dd
+	}
+
+	if gSubjectID != nil {
+		g.SubjectID = *gSubjectID
+		g.DateOfBirth = gDOB
+		g.Sex = gSex
+		g.MedicalAlerts = gMedicalAlerts
+		g.Medications = gMedications
+		g.Allergies = gAllergies
+		g.ChronicConditions = gChronicConditions
+		g.AdmissionWarnings = gAdmissionWarn
+		g.InsuranceProviderName = gInsProvider
+		g.InsurancePolicyNumber = gInsPolicy
+		g.ReferringProviderName = gReferringProvider
+		g.PrimaryProviderName = gPrimaryProvider
+		g.CreatedAt = *gCreatedAt
+		g.UpdatedAt = *gUpdatedAt
+		row.GeneralDetails = g
 	}
 
 	return row, nil
@@ -418,6 +686,8 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 		SELECT COUNT(*)
 		FROM subjects s
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
+		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
+		LEFT JOIN general_subject_details g ON g.subject_id = s.id
 		WHERE %s
 	`, where)
 	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
@@ -433,10 +703,24 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
 			v.subject_id, v.species, v.breed, v.sex, v.desexed, v.date_of_birth,
-			v.color, v.microchip, v.weight_kg, v.created_at, v.updated_at
+			v.color, v.microchip, v.weight_kg, v.allergies, v.chronic_conditions,
+			v.admission_warnings, v.insurance_provider_name, v.insurance_policy_number,
+			v.referring_vet_name, v.created_at, v.updated_at,
+			dd.subject_id, dd.date_of_birth, dd.sex, dd.medical_alerts, dd.medications,
+			dd.allergies, dd.chronic_conditions, dd.admission_warnings,
+			dd.insurance_provider_name, dd.insurance_policy_number,
+			dd.referring_dentist_name, dd.primary_dentist_name,
+			dd.created_at, dd.updated_at,
+			g.subject_id, g.date_of_birth, g.sex, g.medical_alerts, g.medications,
+			g.allergies, g.chronic_conditions, g.admission_warnings,
+			g.insurance_provider_name, g.insurance_policy_number,
+			g.referring_provider_name, g.primary_provider_name,
+			g.created_at, g.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
+		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
+		LEFT JOIN general_subject_details g ON g.subject_id = s.id
 		WHERE %s
 		ORDER BY s.created_at DESC
 		LIMIT $%d OFFSET $%d
@@ -493,20 +777,33 @@ func (r *Repository) UpdateVetDetails(ctx context.Context, subjectID uuid.UUID, 
 	d := &VetDetailsRecord{}
 	err := r.db.QueryRow(ctx, `
 		UPDATE vet_subject_details SET
-			breed        = COALESCE($2, breed),
-			sex          = COALESCE($3, sex),
-			desexed      = COALESCE($4, desexed),
-			date_of_birth = COALESCE($5, date_of_birth),
-			color        = COALESCE($6, color),
-			microchip    = COALESCE($7, microchip),
-			weight_kg    = COALESCE($8, weight_kg),
-			updated_at   = NOW()
+			breed                   = COALESCE($2, breed),
+			sex                     = COALESCE($3, sex),
+			desexed                 = COALESCE($4, desexed),
+			date_of_birth           = COALESCE($5, date_of_birth),
+			color                   = COALESCE($6, color),
+			microchip               = COALESCE($7, microchip),
+			weight_kg               = COALESCE($8, weight_kg),
+			allergies               = COALESCE($9, allergies),
+			chronic_conditions      = COALESCE($10, chronic_conditions),
+			admission_warnings      = COALESCE($11, admission_warnings),
+			insurance_provider_name = COALESCE($12, insurance_provider_name),
+			insurance_policy_number = COALESCE($13, insurance_policy_number),
+			referring_vet_name      = COALESCE($14, referring_vet_name),
+			updated_at              = NOW()
 		WHERE subject_id = $1
 		RETURNING subject_id, species, breed, sex, desexed, date_of_birth, color,
-		          microchip, weight_kg, created_at, updated_at
-	`, subjectID, p.Breed, p.Sex, p.Desexed, p.DateOfBirth, p.Color, p.Microchip, p.WeightKg).Scan(
+		          microchip, weight_kg, allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number, referring_vet_name,
+		          created_at, updated_at
+	`, subjectID, p.Breed, p.Sex, p.Desexed, p.DateOfBirth, p.Color, p.Microchip, p.WeightKg,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber, p.ReferringVetName,
+	).Scan(
 		&d.SubjectID, &d.Species, &d.Breed, &d.Sex, &d.Desexed, &d.DateOfBirth, &d.Color,
-		&d.Microchip, &d.WeightKg, &d.CreatedAt, &d.UpdatedAt,
+		&d.Microchip, &d.WeightKg, &d.Allergies, &d.ChronicConditions, &d.AdmissionWarnings,
+		&d.InsuranceProviderName, &d.InsurancePolicyNumber, &d.ReferringVetName,
+		&d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -515,6 +812,156 @@ func (r *Repository) UpdateVetDetails(ctx context.Context, subjectID uuid.UUID, 
 		return nil, fmt.Errorf("patient.repo.UpdateVetDetails: %w", err)
 	}
 	return d, nil
+}
+
+// CreateDentalDetails inserts a dental_subject_details row.
+func (r *Repository) CreateDentalDetails(ctx context.Context, p CreateDentalDetailsParams) (*DentalDetailsRecord, error) {
+	dd := &DentalDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO dental_subject_details
+			(subject_id, date_of_birth, sex, medical_alerts, medications,
+			 allergies, chronic_conditions, admission_warnings,
+			 insurance_provider_name, insurance_policy_number,
+			 referring_dentist_name, primary_dentist_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING subject_id, date_of_birth, sex, medical_alerts, medications,
+		          allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number,
+		          referring_dentist_name, primary_dentist_name,
+		          created_at, updated_at
+	`, p.SubjectID, p.DateOfBirth, p.Sex, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber,
+		p.ReferringDentistName, p.PrimaryDentistName,
+	).Scan(
+		&dd.SubjectID, &dd.DateOfBirth, &dd.Sex, &dd.MedicalAlerts, &dd.Medications,
+		&dd.Allergies, &dd.ChronicConditions, &dd.AdmissionWarnings,
+		&dd.InsuranceProviderName, &dd.InsurancePolicyNumber,
+		&dd.ReferringDentistName, &dd.PrimaryDentistName,
+		&dd.CreatedAt, &dd.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.CreateDentalDetails: %w", err)
+	}
+	return dd, nil
+}
+
+// UpdateDentalDetails applies a partial update to a dental_subject_details row.
+func (r *Repository) UpdateDentalDetails(ctx context.Context, subjectID uuid.UUID, p UpdateDentalDetailsParams) (*DentalDetailsRecord, error) {
+	dd := &DentalDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		UPDATE dental_subject_details SET
+			date_of_birth           = COALESCE($2, date_of_birth),
+			sex                     = COALESCE($3, sex),
+			medical_alerts          = COALESCE($4, medical_alerts),
+			medications             = COALESCE($5, medications),
+			allergies               = COALESCE($6, allergies),
+			chronic_conditions      = COALESCE($7, chronic_conditions),
+			admission_warnings      = COALESCE($8, admission_warnings),
+			insurance_provider_name = COALESCE($9, insurance_provider_name),
+			insurance_policy_number = COALESCE($10, insurance_policy_number),
+			referring_dentist_name  = COALESCE($11, referring_dentist_name),
+			primary_dentist_name    = COALESCE($12, primary_dentist_name),
+			updated_at              = NOW()
+		WHERE subject_id = $1
+		RETURNING subject_id, date_of_birth, sex, medical_alerts, medications,
+		          allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number,
+		          referring_dentist_name, primary_dentist_name,
+		          created_at, updated_at
+	`, subjectID, p.DateOfBirth, p.Sex, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber,
+		p.ReferringDentistName, p.PrimaryDentistName,
+	).Scan(
+		&dd.SubjectID, &dd.DateOfBirth, &dd.Sex, &dd.MedicalAlerts, &dd.Medications,
+		&dd.Allergies, &dd.ChronicConditions, &dd.AdmissionWarnings,
+		&dd.InsuranceProviderName, &dd.InsurancePolicyNumber,
+		&dd.ReferringDentistName, &dd.PrimaryDentistName,
+		&dd.CreatedAt, &dd.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.UpdateDentalDetails: %w", err)
+	}
+	return dd, nil
+}
+
+// CreateGeneralDetails inserts a general_subject_details row.
+func (r *Repository) CreateGeneralDetails(ctx context.Context, p CreateGeneralDetailsParams) (*GeneralDetailsRecord, error) {
+	g := &GeneralDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO general_subject_details
+			(subject_id, date_of_birth, sex, medical_alerts, medications,
+			 allergies, chronic_conditions, admission_warnings,
+			 insurance_provider_name, insurance_policy_number,
+			 referring_provider_name, primary_provider_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		RETURNING subject_id, date_of_birth, sex, medical_alerts, medications,
+		          allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number,
+		          referring_provider_name, primary_provider_name,
+		          created_at, updated_at
+	`, p.SubjectID, p.DateOfBirth, p.Sex, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber,
+		p.ReferringProviderName, p.PrimaryProviderName,
+	).Scan(
+		&g.SubjectID, &g.DateOfBirth, &g.Sex, &g.MedicalAlerts, &g.Medications,
+		&g.Allergies, &g.ChronicConditions, &g.AdmissionWarnings,
+		&g.InsuranceProviderName, &g.InsurancePolicyNumber,
+		&g.ReferringProviderName, &g.PrimaryProviderName,
+		&g.CreatedAt, &g.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.CreateGeneralDetails: %w", err)
+	}
+	return g, nil
+}
+
+// UpdateGeneralDetails applies a partial update to a general_subject_details row.
+func (r *Repository) UpdateGeneralDetails(ctx context.Context, subjectID uuid.UUID, p UpdateGeneralDetailsParams) (*GeneralDetailsRecord, error) {
+	g := &GeneralDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		UPDATE general_subject_details SET
+			date_of_birth           = COALESCE($2, date_of_birth),
+			sex                     = COALESCE($3, sex),
+			medical_alerts          = COALESCE($4, medical_alerts),
+			medications             = COALESCE($5, medications),
+			allergies               = COALESCE($6, allergies),
+			chronic_conditions      = COALESCE($7, chronic_conditions),
+			admission_warnings      = COALESCE($8, admission_warnings),
+			insurance_provider_name = COALESCE($9, insurance_provider_name),
+			insurance_policy_number = COALESCE($10, insurance_policy_number),
+			referring_provider_name = COALESCE($11, referring_provider_name),
+			primary_provider_name   = COALESCE($12, primary_provider_name),
+			updated_at              = NOW()
+		WHERE subject_id = $1
+		RETURNING subject_id, date_of_birth, sex, medical_alerts, medications,
+		          allergies, chronic_conditions, admission_warnings,
+		          insurance_provider_name, insurance_policy_number,
+		          referring_provider_name, primary_provider_name,
+		          created_at, updated_at
+	`, subjectID, p.DateOfBirth, p.Sex, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.AdmissionWarnings,
+		p.InsuranceProviderName, p.InsurancePolicyNumber,
+		p.ReferringProviderName, p.PrimaryProviderName,
+	).Scan(
+		&g.SubjectID, &g.DateOfBirth, &g.Sex, &g.MedicalAlerts, &g.Medications,
+		&g.Allergies, &g.ChronicConditions, &g.AdmissionWarnings,
+		&g.InsuranceProviderName, &g.InsurancePolicyNumber,
+		&g.ReferringProviderName, &g.PrimaryProviderName,
+		&g.CreatedAt, &g.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.UpdateGeneralDetails: %w", err)
+	}
+	return g, nil
 }
 
 // ArchiveSubject soft-deletes a subject.
@@ -570,10 +1017,24 @@ func (r *Repository) ListSubjectsByContact(ctx context.Context, contactID, clini
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
 			v.subject_id, v.species, v.breed, v.sex, v.desexed, v.date_of_birth,
-			v.color, v.microchip, v.weight_kg, v.created_at, v.updated_at
+			v.color, v.microchip, v.weight_kg, v.allergies, v.chronic_conditions,
+			v.admission_warnings, v.insurance_provider_name, v.insurance_policy_number,
+			v.referring_vet_name, v.created_at, v.updated_at,
+			dd.subject_id, dd.date_of_birth, dd.sex, dd.medical_alerts, dd.medications,
+			dd.allergies, dd.chronic_conditions, dd.admission_warnings,
+			dd.insurance_provider_name, dd.insurance_policy_number,
+			dd.referring_dentist_name, dd.primary_dentist_name,
+			dd.created_at, dd.updated_at,
+			g.subject_id, g.date_of_birth, g.sex, g.medical_alerts, g.medications,
+			g.allergies, g.chronic_conditions, g.admission_warnings,
+			g.insurance_provider_name, g.insurance_policy_number,
+			g.referring_provider_name, g.primary_provider_name,
+			g.created_at, g.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
+		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
+		LEFT JOIN general_subject_details g ON g.subject_id = s.id
 		WHERE s.contact_id = $1 AND s.clinic_id = $2 AND s.archived_at IS NULL
 		ORDER BY s.created_at DESC
 	`, contactID, clinicID)
@@ -618,6 +1079,8 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 	s := &SubjectRecord{}
 	c := &ContactRecord{}
 	d := &VetDetailsRecord{}
+	dd := &DentalDetailsRecord{}
+	g := &GeneralDetailsRecord{}
 
 	var (
 		cID        *uuid.UUID
@@ -630,24 +1093,70 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 		cCreatedAt *time.Time
 		cUpdatedAt *time.Time
 
-		dSubjectID *uuid.UUID
-		dSpecies   *domain.VetSpecies
-		dBreed     *string
-		dSex       *domain.VetSex
-		dDesexed   *bool
-		dDOB       *time.Time
-		dColor     *string
-		dMicrochip *string
-		dWeightKg  *float64
-		dCreatedAt *time.Time
-		dUpdatedAt *time.Time
+		dSubjectID         *uuid.UUID
+		dSpecies           *domain.VetSpecies
+		dBreed             *string
+		dSex               *domain.VetSex
+		dDesexed           *bool
+		dDOB               *time.Time
+		dColor             *string
+		dMicrochip         *string
+		dWeightKg          *float64
+		dAllergies         *string
+		dChronicConditions *string
+		dAdmissionWarn     *string
+		dInsProvider       *string
+		dInsPolicy         *string
+		dReferringVet      *string
+		dCreatedAt         *time.Time
+		dUpdatedAt         *time.Time
+
+		ddSubjectID         *uuid.UUID
+		ddDOB               *time.Time
+		ddSex               *domain.DentalSex
+		ddMedicalAlerts     *string
+		ddMedications       *string
+		ddAllergies         *string
+		ddChronicConditions *string
+		ddAdmissionWarn     *string
+		ddInsProvider       *string
+		ddInsPolicy         *string
+		ddReferringDentist  *string
+		ddPrimaryDentist    *string
+		ddCreatedAt         *time.Time
+		ddUpdatedAt         *time.Time
+
+		gSubjectID         *uuid.UUID
+		gDOB               *time.Time
+		gSex               *domain.GeneralSex
+		gMedicalAlerts     *string
+		gMedications       *string
+		gAllergies         *string
+		gChronicConditions *string
+		gAdmissionWarn     *string
+		gInsProvider       *string
+		gInsPolicy         *string
+		gReferringProvider *string
+		gPrimaryProvider   *string
+		gCreatedAt         *time.Time
+		gUpdatedAt         *time.Time
 	)
 
 	if err := rows.Scan(
 		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
-		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg, &dCreatedAt, &dUpdatedAt,
+		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
+		&dAllergies, &dChronicConditions, &dAdmissionWarn, &dInsProvider, &dInsPolicy, &dReferringVet,
+		&dCreatedAt, &dUpdatedAt,
+		&ddSubjectID, &ddDOB, &ddSex, &ddMedicalAlerts, &ddMedications,
+		&ddAllergies, &ddChronicConditions, &ddAdmissionWarn,
+		&ddInsProvider, &ddInsPolicy, &ddReferringDentist, &ddPrimaryDentist,
+		&ddCreatedAt, &ddUpdatedAt,
+		&gSubjectID, &gDOB, &gSex, &gMedicalAlerts, &gMedications,
+		&gAllergies, &gChronicConditions, &gAdmissionWarn,
+		&gInsProvider, &gInsPolicy, &gReferringProvider, &gPrimaryProvider,
+		&gCreatedAt, &gUpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("patient.repo.scanSubjectRow: %w", err)
 	}
@@ -677,10 +1186,72 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 		d.Color = dColor
 		d.Microchip = dMicrochip
 		d.WeightKg = dWeightKg
+		d.Allergies = dAllergies
+		d.ChronicConditions = dChronicConditions
+		d.AdmissionWarnings = dAdmissionWarn
+		d.InsuranceProviderName = dInsProvider
+		d.InsurancePolicyNumber = dInsPolicy
+		d.ReferringVetName = dReferringVet
 		d.CreatedAt = *dCreatedAt
 		d.UpdatedAt = *dUpdatedAt
 		row.VetDetails = d
 	}
 
+	if ddSubjectID != nil {
+		dd.SubjectID = *ddSubjectID
+		dd.DateOfBirth = ddDOB
+		dd.Sex = ddSex
+		dd.MedicalAlerts = ddMedicalAlerts
+		dd.Medications = ddMedications
+		dd.Allergies = ddAllergies
+		dd.ChronicConditions = ddChronicConditions
+		dd.AdmissionWarnings = ddAdmissionWarn
+		dd.InsuranceProviderName = ddInsProvider
+		dd.InsurancePolicyNumber = ddInsPolicy
+		dd.ReferringDentistName = ddReferringDentist
+		dd.PrimaryDentistName = ddPrimaryDentist
+		dd.CreatedAt = *ddCreatedAt
+		dd.UpdatedAt = *ddUpdatedAt
+		row.DentalDetails = dd
+	}
+
+	if gSubjectID != nil {
+		g.SubjectID = *gSubjectID
+		g.DateOfBirth = gDOB
+		g.Sex = gSex
+		g.MedicalAlerts = gMedicalAlerts
+		g.Medications = gMedications
+		g.Allergies = gAllergies
+		g.ChronicConditions = gChronicConditions
+		g.AdmissionWarnings = gAdmissionWarn
+		g.InsuranceProviderName = gInsProvider
+		g.InsurancePolicyNumber = gInsPolicy
+		g.ReferringProviderName = gReferringProvider
+		g.PrimaryProviderName = gPrimaryProvider
+		g.CreatedAt = *gCreatedAt
+		g.UpdatedAt = *gUpdatedAt
+		row.GeneralDetails = g
+	}
+
 	return row, nil
+}
+
+// CreateSubjectAccessLog writes a single subject access-log entry.
+// Access-log writes are append-only; there is no update or delete API.
+func (r *Repository) CreateSubjectAccessLog(ctx context.Context, p CreateSubjectAccessLogParams) (*SubjectAccessLogRecord, error) {
+	rec := &SubjectAccessLogRecord{}
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO subject_access_log
+			(id, subject_id, staff_id, clinic_id, action, purpose, at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, subject_id, staff_id, clinic_id, action, purpose, at
+	`, p.ID, p.SubjectID, p.StaffID, p.ClinicID, p.Action, p.Purpose, domain.TimeNow(),
+	).Scan(
+		&rec.ID, &rec.SubjectID, &rec.StaffID, &rec.ClinicID,
+		&rec.Action, &rec.Purpose, &rec.At,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.CreateSubjectAccessLog: %w", err)
+	}
+	return rec, nil
 }

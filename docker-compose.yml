@@ -42,6 +42,19 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot: creates the salvia-audio bucket (used for audio + clinic logos)
+  # so a fresh `make dev` doesn't hit S3 NoSuchBucket on first upload.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/salvia-audio
+      "
+
 volumes:
   postgres_data:
   minio_data:

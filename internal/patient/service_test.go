@@ -360,7 +360,7 @@ func TestService_UpdateSubject_UpdatesDisplayName(t *testing.T) {
 	require.NoError(t, err)
 
 	newName := "New Name"
-	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, UpdateSubjectInput{DisplayName: &newName})
+	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, callerID, UpdateSubjectInput{DisplayName: &newName})
 	require.NoError(t, err)
 	assert.Equal(t, "New Name", dto.DisplayName)
 }
@@ -376,7 +376,7 @@ func TestService_UpdateSubject_UpdatesStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	status := domain.SubjectStatusDeceased
-	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, UpdateSubjectInput{Status: &status})
+	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, callerID, UpdateSubjectInput{Status: &status})
 	require.NoError(t, err)
 	assert.Equal(t, domain.SubjectStatusDeceased, dto.Status)
 }
@@ -393,7 +393,7 @@ func TestService_UpdateSubject_UpdatesVetDetails(t *testing.T) {
 
 	newBreed := "Golden Retriever"
 	newWeight := 32.5
-	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, UpdateSubjectInput{
+	dto, err := svc.UpdateSubject(context.Background(), id, clinicID, callerID, UpdateSubjectInput{
 		VetDetails: &UpdateVetDetailsInput{
 			Breed:    &newBreed,
 			WeightKg: &newWeight,
@@ -417,7 +417,7 @@ func TestService_ArchiveSubject_SetsArchivedStatus(t *testing.T) {
 	id, err := uuid.Parse(created.ID)
 	require.NoError(t, err)
 
-	dto, err := svc.ArchiveSubject(context.Background(), id, clinicID)
+	dto, err := svc.ArchiveSubject(context.Background(), id, clinicID, callerID)
 	require.NoError(t, err)
 	assert.Equal(t, domain.SubjectStatusArchived, dto.Status)
 }
@@ -426,7 +426,7 @@ func TestService_ArchiveSubject_NotFound_ReturnsError(t *testing.T) {
 	t.Parallel()
 	svc, _ := newTestService(t)
 
-	_, err := svc.ArchiveSubject(context.Background(), uuid.New(), uuid.New())
+	_, err := svc.ArchiveSubject(context.Background(), uuid.New(), uuid.New(), uuid.New())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
@@ -449,7 +449,7 @@ func TestService_LinkContact_LinksContactToSubject(t *testing.T) {
 	contactID, err := uuid.Parse(contact.ID)
 	require.NoError(t, err)
 
-	dto, err := svc.LinkContact(context.Background(), subjectID, clinicID, contactID)
+	dto, err := svc.LinkContact(context.Background(), subjectID, clinicID, contactID, callerID)
 	require.NoError(t, err)
 	require.NotNil(t, dto.Contact)
 	assert.Equal(t, "John Smith", dto.Contact.FullName)
@@ -468,7 +468,7 @@ func TestService_LinkContact_ContactWrongClinic_ReturnsNotFound(t *testing.T) {
 	subjectID, _ := uuid.Parse(subject.ID)
 	contactID, _ := uuid.Parse(contact.ID)
 
-	_, err := svc.LinkContact(context.Background(), subjectID, clinicA, contactID)
+	_, err := svc.LinkContact(context.Background(), subjectID, clinicA, contactID, callerID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
@@ -510,4 +510,233 @@ func TestService_GetContactWithSubjects_ReturnsBothEntities(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Multi-Pet Owner", dto.FullName)
 	assert.Len(t, dto.Subjects, 2)
+}
+
+// ── Access log ────────────────────────────────────────────────────────────────
+
+func TestService_CreateSubject_WritesAccessLog(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+
+	dto := seedSubject(t, svc, clinicID, callerID, "Buddy")
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	require.Len(t, r.accessLog, 1)
+	entry := r.accessLog[0]
+	assert.Equal(t, dto.ID, entry.SubjectID.String())
+	assert.Equal(t, callerID, entry.StaffID)
+	assert.Equal(t, clinicID, entry.ClinicID)
+	assert.Equal(t, domain.SubjectAccessActionCreate, entry.Action)
+}
+
+func TestService_GetSubjectByID_WritesViewAccessLog(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+	created := seedSubject(t, svc, clinicID, callerID, "Buddy")
+	id, err := uuid.Parse(created.ID)
+	require.NoError(t, err)
+
+	_, err = svc.GetSubjectByID(context.Background(), id, clinicID, callerID, true)
+	require.NoError(t, err)
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	require.Len(t, r.accessLog, 2)
+	assert.Equal(t, domain.SubjectAccessActionView, r.accessLog[1].Action)
+}
+
+func TestService_UnmaskPII_DecryptsAndLogsAccess(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+
+	allergies := "peanuts"
+	policy := "POL-42"
+	species := domain.VetSpeciesDog
+	created, err := svc.CreateSubject(context.Background(), CreateSubjectInput{
+		ClinicID:    clinicID,
+		CallerID:    callerID,
+		Vertical:    domain.VerticalVeterinary,
+		DisplayName: "Buddy",
+		VetDetails: &VetDetailsInput{
+			Species:               species,
+			Allergies:             &allergies,
+			InsurancePolicyNumber: &policy,
+		},
+	})
+	require.NoError(t, err)
+
+	subjectID, err := uuid.Parse(created.ID)
+	require.NoError(t, err)
+
+	purpose := "owner requested"
+	got, err := svc.UnmaskPII(context.Background(), UnmaskPIIInput{
+		SubjectID: subjectID,
+		ClinicID:  clinicID,
+		CallerID:  callerID,
+		Field:     "insurance_policy_number",
+		Purpose:   &purpose,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "insurance_policy_number", got.Field)
+	assert.Equal(t, policy, got.Value)
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	require.Len(t, r.accessLog, 2)
+	last := r.accessLog[1]
+	assert.Equal(t, domain.SubjectAccessActionUnmaskPII, last.Action)
+	require.NotNil(t, last.Purpose)
+	assert.Equal(t, "owner requested", *last.Purpose)
+}
+
+func TestService_UnmaskPII_UnknownField_ReturnsValidation(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+	created := seedSubject(t, svc, clinicID, callerID, "Buddy")
+	subjectID, err := uuid.Parse(created.ID)
+	require.NoError(t, err)
+
+	_, err = svc.UnmaskPII(context.Background(), UnmaskPIIInput{
+		SubjectID: subjectID,
+		ClinicID:  clinicID,
+		CallerID:  callerID,
+		Field:     "display_name",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrValidation)
+}
+
+func TestService_UnmaskPII_FieldNotSet_ReturnsNotFound(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+	created := seedSubject(t, svc, clinicID, callerID, "Buddy")
+	subjectID, err := uuid.Parse(created.ID)
+	require.NoError(t, err)
+
+	_, err = svc.UnmaskPII(context.Background(), UnmaskPIIInput{
+		SubjectID: subjectID,
+		ClinicID:  clinicID,
+		CallerID:  callerID,
+		Field:     "allergies",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// ── Vertical routing: Dental ──────────────────────────────────────────────────
+
+func TestService_CreateSubject_Dental_EncryptsAndRoundTrips(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+
+	sex := domain.DentalSexFemale
+	alerts := "latex allergy"
+	meds := "lisinopril 10mg"
+	policy := "POL-777"
+	dto, err := svc.CreateSubject(context.Background(), CreateSubjectInput{
+		ClinicID:    clinicID,
+		CallerID:    callerID,
+		Vertical:    domain.VerticalDental,
+		DisplayName: "Jane Doe",
+		DentalDetails: &DentalDetailsInput{
+			Sex:                   &sex,
+			MedicalAlerts:         &alerts,
+			Medications:           &meds,
+			InsurancePolicyNumber: &policy,
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, dto.DentalDetails)
+	assert.Equal(t, &alerts, dto.DentalDetails.MedicalAlerts)
+	assert.Equal(t, &meds, dto.DentalDetails.Medications)
+	assert.Equal(t, &policy, dto.DentalDetails.InsurancePolicyNumber)
+
+	// Storage layer should hold ciphertext, not plaintext.
+	subjectID, err := uuid.Parse(dto.ID)
+	require.NoError(t, err)
+	r.mu.RLock()
+	stored := r.dentalDetails[subjectID]
+	r.mu.RUnlock()
+	require.NotNil(t, stored)
+	require.NotNil(t, stored.MedicalAlerts)
+	assert.NotEqual(t, alerts, *stored.MedicalAlerts)
+	assert.NotEqual(t, policy, *stored.InsurancePolicyNumber)
+}
+
+func TestService_CreateSubject_Dental_MissingDetails_ReturnsValidation(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+
+	_, err := svc.CreateSubject(context.Background(), CreateSubjectInput{
+		ClinicID:    uuid.New(),
+		CallerID:    uuid.New(),
+		Vertical:    domain.VerticalDental,
+		DisplayName: "Jane Doe",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrValidation)
+}
+
+// ── Vertical routing: General clinic ──────────────────────────────────────────
+
+func TestService_CreateSubject_GeneralClinic_EncryptsAndRoundTrips(t *testing.T) {
+	t.Parallel()
+	svc, r := newTestService(t)
+	clinicID := uuid.New()
+	callerID := uuid.New()
+
+	sex := domain.GeneralSexMale
+	alerts := "penicillin allergy"
+	conditions := "type 2 diabetes"
+	dto, err := svc.CreateSubject(context.Background(), CreateSubjectInput{
+		ClinicID:    clinicID,
+		CallerID:    callerID,
+		Vertical:    domain.VerticalGeneralClinic,
+		DisplayName: "John Doe",
+		GeneralDetails: &GeneralDetailsInput{
+			Sex:               &sex,
+			MedicalAlerts:     &alerts,
+			ChronicConditions: &conditions,
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, dto.GeneralDetails)
+	assert.Equal(t, &alerts, dto.GeneralDetails.MedicalAlerts)
+	assert.Equal(t, &conditions, dto.GeneralDetails.ChronicConditions)
+
+	subjectID, err := uuid.Parse(dto.ID)
+	require.NoError(t, err)
+	r.mu.RLock()
+	stored := r.generalDetails[subjectID]
+	r.mu.RUnlock()
+	require.NotNil(t, stored)
+	require.NotNil(t, stored.MedicalAlerts)
+	assert.NotEqual(t, alerts, *stored.MedicalAlerts)
+}
+
+func TestService_CreateSubject_GeneralClinic_MissingDetails_ReturnsValidation(t *testing.T) {
+	t.Parallel()
+	svc, _ := newTestService(t)
+
+	_, err := svc.CreateSubject(context.Background(), CreateSubjectInput{
+		ClinicID:    uuid.New(),
+		CallerID:    uuid.New(),
+		Vertical:    domain.VerticalGeneralClinic,
+		DisplayName: "John Doe",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrValidation)
 }

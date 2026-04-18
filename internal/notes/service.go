@@ -2,11 +2,14 @@ package notes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
+	"github.com/melamphic/sal/internal/extraction"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
 )
@@ -21,18 +24,28 @@ const maxNotesPerRecording = 3
 
 // Service handles business logic for the notes module.
 type Service struct {
-	repo    repo
-	enqueue jobEnqueuer
-	events  EventEmitter
+	repo          repo
+	enqueue       jobEnqueuer
+	events        EventEmitter
+	fields        FormFieldProvider                // nil = skip field validation on submit
+	policyChecker extraction.PolicyDetailedChecker // nil = skip policy check
+	policyClauses PolicyClauseProvider             // nil = skip policy check
 }
 
 // NewService constructs a notes Service.
 // Pass nil for events to discard all lifecycle events (tests, local dev without timeline).
-func NewService(r repo, riverClient jobEnqueuer, events EventEmitter) *Service {
+func NewService(r repo, riverClient jobEnqueuer, events EventEmitter, fields FormFieldProvider) *Service {
 	if events == nil {
 		events = noopEmitter{}
 	}
-	return &Service{repo: r, enqueue: riverClient, events: events}
+	return &Service{repo: r, enqueue: riverClient, events: events, fields: fields}
+}
+
+// SetPolicyChecker configures the detailed policy checker and clause provider.
+// Called from app.go after constructing the service — avoids bloating the NewService signature.
+func (s *Service) SetPolicyChecker(checker extraction.PolicyDetailedChecker, clauses PolicyClauseProvider) {
+	s.policyChecker = checker
+	s.policyClauses = clauses
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -67,6 +80,7 @@ type NoteResponse struct {
 	ArchivedAt         *string              `json:"archived_at,omitempty"`
 	FormVersionContext *string              `json:"form_version_context,omitempty"`
 	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
+	PDFStorageKey      *string              `json:"pdf_storage_key,omitempty"`
 	CreatedAt          string               `json:"created_at"`
 	UpdatedAt          string               `json:"updated_at"`
 	Fields             []*NoteFieldResponse `json:"fields,omitempty"`
@@ -258,7 +272,24 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 
 // SubmitNote transitions a note from draft → submitted.
 // Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
+// Returns domain.ErrValidation if any required fields are missing values.
 func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
+	// Pre-submit validation: required fields + policy check.
+	{
+		preNote, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.SubmitNote: get note: %w", err)
+		}
+		if s.fields != nil {
+			if err := s.validateForSubmission(ctx, preNote.FormVersionID, noteID); err != nil {
+				return nil, err
+			}
+		}
+		if err := s.validatePolicyCheck(preNote); err != nil {
+			return nil, err
+		}
+	}
+
 	now := domain.TimeNow()
 	note, err := s.repo.SubmitNote(ctx, SubmitNoteParams{
 		ID:          noteID,
@@ -283,6 +314,9 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 
 	// Best-effort: recompute alignment against submitted field values.
 	_, _ = s.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
+
+	// Best-effort: generate branded PDF asynchronously.
+	_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
 
 	return toNoteResponse(note, nil), nil
 }
@@ -317,6 +351,193 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 	})
 
 	return toNoteResponse(archived, nil), nil
+}
+
+// GetNotePDFKey returns the S3 storage key for the note's PDF, if generated.
+// The handler is responsible for creating a presigned download URL from this key.
+func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID) (string, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("notes.service.GetNotePDFKey: %w", err)
+	}
+	if note.PDFStorageKey == nil {
+		return "", fmt.Errorf("notes.service.GetNotePDFKey: pdf not ready: %w", domain.ErrNotFound)
+	}
+	return *note.PDFStorageKey, nil
+}
+
+// ── Policy check ─────────────────────────────────────────────────────────────
+
+// NoteClauseCheckResponse is a single clause result in the policy check response.
+//
+//nolint:revive
+type NoteClauseCheckResponse struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"` // "satisfied" | "violated"
+	Reasoning string `json:"reasoning"`
+	Parity    string `json:"parity"` // "high" | "medium" | "low"
+}
+
+// NotePolicyCheckResponse is the full policy check response for a note.
+//
+//nolint:revive
+type NotePolicyCheckResponse struct {
+	NoteID  string                    `json:"note_id"`
+	Results []NoteClauseCheckResponse `json:"results"`
+	Blocked bool                      `json:"blocked"` // true if any high-parity clause is violated
+}
+
+// CheckPolicy runs a per-clause policy compliance check on a note.
+// Stores results as JSONB on the note for later retrieval and submit-time validation.
+func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (*NotePolicyCheckResponse, error) {
+	if s.policyChecker == nil || s.policyClauses == nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: policy checker not configured: %w", domain.ErrConflict)
+	}
+
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get note: %w", err)
+	}
+
+	// Get policy clauses for this form version.
+	clauses, err := s.policyClauses.GetClausesForNote(ctx, note.FormVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get clauses: %w", err)
+	}
+	if len(clauses) == 0 {
+		return &NotePolicyCheckResponse{
+			NoteID:  noteID.String(),
+			Results: []NoteClauseCheckResponse{},
+		}, nil
+	}
+
+	// Build note content from field values.
+	fields, err := s.repo.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: get fields: %w", err)
+	}
+	noteContent := buildNoteContent(fields)
+
+	// Convert to extraction types.
+	extClauses := make([]extraction.PolicyClause, len(clauses))
+	for i, c := range clauses {
+		extClauses[i] = extraction.PolicyClause{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		}
+	}
+
+	results, err := s.policyChecker.CheckPolicyClauses(ctx, noteContent, extClauses)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: check: %w", err)
+	}
+
+	// Store results as JSONB.
+	resultJSON, err := json.Marshal(results)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: marshal: %w", err)
+	}
+	if err := s.repo.UpdatePolicyCheckResult(ctx, noteID, string(resultJSON)); err != nil {
+		return nil, fmt.Errorf("notes.service.CheckPolicy: store: %w", err)
+	}
+
+	// Build response.
+	resp := &NotePolicyCheckResponse{
+		NoteID:  noteID.String(),
+		Results: make([]NoteClauseCheckResponse, len(results)),
+	}
+	for i, r := range results {
+		resp.Results[i] = NoteClauseCheckResponse{
+			BlockID:   r.BlockID,
+			Status:    r.Status,
+			Reasoning: r.Reasoning,
+			Parity:    r.Parity,
+		}
+		if r.Parity == "high" && r.Status == "violated" {
+			resp.Blocked = true
+		}
+	}
+
+	return resp, nil
+}
+
+// buildNoteContent creates a plain-text summary of note field values for policy checking.
+func buildNoteContent(fields []*NoteFieldRecord) string {
+	var sb strings.Builder
+	for _, f := range fields {
+		if f.Value != nil && *f.Value != "" && *f.Value != "null" {
+			sb.WriteString(f.FieldID.String())
+			sb.WriteString(": ")
+			sb.WriteString(*f.Value)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+// validatePolicyCheck checks stored policy check results for high-parity violations.
+// Returns domain.ErrValidation if submission should be blocked.
+func (s *Service) validatePolicyCheck(note *NoteRecord) error {
+	if note.PolicyCheckResult == nil {
+		return nil // no check run yet — allow submit
+	}
+
+	var results []extraction.ClauseCheckResult
+	if err := json.Unmarshal([]byte(*note.PolicyCheckResult), &results); err != nil {
+		return nil // malformed results — don't block
+	}
+
+	var violations []string
+	for _, r := range results {
+		if r.Parity == "high" && r.Status == "violated" {
+			violations = append(violations, r.BlockID)
+		}
+	}
+
+	if len(violations) > 0 {
+		return fmt.Errorf("notes.service.SubmitNote: high-parity policy violations: %s: %w",
+			strings.Join(violations, ", "), domain.ErrValidation)
+	}
+	return nil
+}
+
+// validateForSubmission checks that every required form field has a non-null value.
+// Returns domain.ErrValidation listing the missing field titles on failure.
+func (s *Service) validateForSubmission(ctx context.Context, formVersionID uuid.UUID, noteID uuid.UUID) error {
+	formFields, err := s.fields.GetFieldsByVersionID(ctx, formVersionID)
+	if err != nil {
+		return fmt.Errorf("notes.service.validateForSubmission: get fields: %w", err)
+	}
+
+	noteFields, err := s.repo.GetNoteFields(ctx, noteID)
+	if err != nil {
+		return fmt.Errorf("notes.service.validateForSubmission: get note fields: %w", err)
+	}
+
+	// Index note field values by field ID.
+	valueByFieldID := make(map[uuid.UUID]*string, len(noteFields))
+	for _, nf := range noteFields {
+		valueByFieldID[nf.FieldID] = nf.Value
+	}
+
+	var missing []string
+	for _, ff := range formFields {
+		if !ff.Required {
+			continue
+		}
+		val, exists := valueByFieldID[ff.ID]
+		if !exists || val == nil || *val == "" || *val == "null" {
+			missing = append(missing, ff.Title)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("notes.service.SubmitNote: missing required fields: %s: %w",
+			strings.Join(missing, ", "), domain.ErrValidation)
+	}
+
+	return nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -369,6 +590,7 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 	}
 	r.FormVersionContext = n.FormVersionContext
 	r.PolicyAlignmentPct = n.PolicyAlignmentPct
+	r.PDFStorageKey = n.PDFStorageKey
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))
 		for i, f := range fields {

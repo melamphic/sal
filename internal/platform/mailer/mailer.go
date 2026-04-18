@@ -12,8 +12,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"html/template"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
 
 // Mailer sends transactional emails.
@@ -105,47 +107,111 @@ func (m *SMTPMailer) send(to, subject, htmlBody string) error {
 
 	// For Mailpit in dev (plain SMTP, no TLS). For production, use TLS.
 	if m.cfg.Port == 465 {
-		// TLS from the start (SMTPS).
-		tlsCfg := &tls.Config{ServerName: m.cfg.Host, MinVersion: tls.VersionTLS12}
-		conn, err := tls.Dial("tcp", addr, tlsCfg)
-		if err != nil {
-			return fmt.Errorf("mailer.send: tls dial: %w", err)
-		}
-		defer conn.Close()
-
-		client, err := smtp.NewClient(conn, m.cfg.Host)
-		if err != nil {
-			return fmt.Errorf("mailer.send: smtp client: %w", err)
-		}
-		defer client.Close()
-
-		if auth != nil {
-			if err := client.Auth(auth); err != nil {
-				return fmt.Errorf("mailer.send: auth: %w", err)
-			}
-		}
-		if err := client.Mail(m.cfg.From); err != nil {
-			return fmt.Errorf("mailer.send: mail from: %w", err)
-		}
-		if err := client.Rcpt(to); err != nil {
-			return fmt.Errorf("mailer.send: rcpt to: %w", err)
-		}
-		w, err := client.Data()
-		if err != nil {
-			return fmt.Errorf("mailer.send: data: %w", err)
-		}
-		if _, err := w.Write(msg); err != nil {
-			return fmt.Errorf("mailer.send: write: %w", err)
-		}
-		if err := w.Close(); err != nil {
-			return fmt.Errorf("mailer.send: close: %w", err)
-		}
-		return nil
+		return m.sendSMTPS(addr, auth, m.cfg.From, to, msg)
 	}
 
-	// Plain SMTP (dev/Mailpit) or STARTTLS (port 587).
+	if m.cfg.Port == 587 {
+		return m.sendSTARTTLS(addr, auth, m.cfg.From, to, msg)
+	}
+
+	// Plain SMTP (dev/Mailpit on port 1025).
 	if err := smtp.SendMail(addr, auth, m.cfg.From, []string{to}, msg); err != nil {
 		return fmt.Errorf("mailer.send: send mail: %w", err)
+	}
+	return nil
+}
+
+const smtpDialTimeout = 15 * time.Second
+
+// sendSMTPS handles port 465 (implicit TLS) with a dial timeout.
+func (m *SMTPMailer) sendSMTPS(addr string, auth smtp.Auth, from, to string, msg []byte) error {
+	tlsCfg := &tls.Config{ServerName: m.cfg.Host, MinVersion: tls.VersionTLS12}
+	rawConn, err := net.DialTimeout("tcp", addr, smtpDialTimeout)
+	if err != nil {
+		return fmt.Errorf("mailer.send: dial: %w", err)
+	}
+	conn := tls.Client(rawConn, tlsCfg)
+	if err := conn.Handshake(); err != nil {
+		rawConn.Close()
+		return fmt.Errorf("mailer.send: tls handshake: %w", err)
+	}
+
+	client, err := smtp.NewClient(conn, m.cfg.Host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("mailer.send: smtp client: %w", err)
+	}
+	defer client.Close()
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("mailer.send: auth: %w", err)
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("mailer.send: mail from: %w", err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("mailer.send: rcpt to: %w", err)
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("mailer.send: data: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("mailer.send: write: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("mailer.send: close: %w", err)
+	}
+	return nil
+}
+
+// sendSTARTTLS handles port 587 with mandatory STARTTLS.
+// Rejects the connection if the server does not support STARTTLS.
+func (m *SMTPMailer) sendSTARTTLS(addr string, auth smtp.Auth, from, to string, msg []byte) error {
+	conn, err := net.DialTimeout("tcp", addr, smtpDialTimeout)
+	if err != nil {
+		return fmt.Errorf("mailer.send: dial: %w", err)
+	}
+
+	client, err := smtp.NewClient(conn, m.cfg.Host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("mailer.send: smtp client: %w", err)
+	}
+	defer client.Close()
+
+	ok, _ := client.Extension("STARTTLS")
+	if !ok {
+		return fmt.Errorf("mailer.send: server does not support STARTTLS, refusing plaintext")
+	}
+
+	tlsCfg := &tls.Config{ServerName: m.cfg.Host, MinVersion: tls.VersionTLS12}
+	if err := client.StartTLS(tlsCfg); err != nil {
+		return fmt.Errorf("mailer.send: starttls: %w", err)
+	}
+
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("mailer.send: auth: %w", err)
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("mailer.send: mail from: %w", err)
+	}
+	if err := client.Rcpt(to); err != nil {
+		return fmt.Errorf("mailer.send: rcpt to: %w", err)
+	}
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("mailer.send: data: %w", err)
+	}
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("mailer.send: write: %w", err)
+	}
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("mailer.send: close: %w", err)
 	}
 	return nil
 }

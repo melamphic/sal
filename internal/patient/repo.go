@@ -43,6 +43,18 @@ type repo interface {
 	// UpdateVetDetails applies a partial update to a vet_subject_details row.
 	UpdateVetDetails(ctx context.Context, subjectID uuid.UUID, p UpdateVetDetailsParams) (*VetDetailsRecord, error)
 
+	// CreateDentalDetails inserts a dental_subject_details row for a subject.
+	CreateDentalDetails(ctx context.Context, p CreateDentalDetailsParams) (*DentalDetailsRecord, error)
+
+	// UpdateDentalDetails applies a partial update to a dental_subject_details row.
+	UpdateDentalDetails(ctx context.Context, subjectID uuid.UUID, p UpdateDentalDetailsParams) (*DentalDetailsRecord, error)
+
+	// CreateGeneralDetails inserts a general_subject_details row for a subject.
+	CreateGeneralDetails(ctx context.Context, p CreateGeneralDetailsParams) (*GeneralDetailsRecord, error)
+
+	// UpdateGeneralDetails applies a partial update to a general_subject_details row.
+	UpdateGeneralDetails(ctx context.Context, subjectID uuid.UUID, p UpdateGeneralDetailsParams) (*GeneralDetailsRecord, error)
+
 	// ArchiveSubject soft-deletes a subject by setting archived_at.
 	ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID) (*SubjectRecord, error)
 
@@ -51,4 +63,9 @@ type repo interface {
 
 	// ListSubjectsByContact returns all active subjects for a given contact.
 	ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error)
+
+	// ── Access log ────────────────────────────────────────────────────────────
+
+	// CreateSubjectAccessLog appends an audit entry for subject access.
+	CreateSubjectAccessLog(ctx context.Context, p CreateSubjectAccessLogParams) (*SubjectAccessLogRecord, error)
 }

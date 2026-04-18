@@ -10,6 +10,7 @@ import (
 type repo interface {
 	Create(ctx context.Context, p CreateParams) (*StaffRecord, error)
 	GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error)
+	GetByEmailHash(ctx context.Context, emailHash string, clinicID uuid.UUID) (*StaffRecord, error)
 	ExistsByEmailHash(ctx context.Context, emailHash string, clinicID uuid.UUID) (bool, error)
 	List(ctx context.Context, clinicID uuid.UUID, p ListParams) ([]*StaffRecord, int, error)
 	UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, p UpdatePermsParams) (*StaffRecord, error)

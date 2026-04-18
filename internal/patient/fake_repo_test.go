@@ -11,17 +11,22 @@ import (
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
 // It is not safe for concurrent write access from multiple goroutines.
 type fakeRepo struct {
-	mu         sync.RWMutex
-	contacts   map[uuid.UUID]*ContactRecord
-	subjects   map[uuid.UUID]*SubjectRecord
-	vetDetails map[uuid.UUID]*VetDetailsRecord
+	mu             sync.RWMutex
+	contacts       map[uuid.UUID]*ContactRecord
+	subjects       map[uuid.UUID]*SubjectRecord
+	vetDetails     map[uuid.UUID]*VetDetailsRecord
+	dentalDetails  map[uuid.UUID]*DentalDetailsRecord
+	generalDetails map[uuid.UUID]*GeneralDetailsRecord
+	accessLog      []*SubjectAccessLogRecord
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		contacts:   make(map[uuid.UUID]*ContactRecord),
-		subjects:   make(map[uuid.UUID]*SubjectRecord),
-		vetDetails: make(map[uuid.UUID]*VetDetailsRecord),
+		contacts:       make(map[uuid.UUID]*ContactRecord),
+		subjects:       make(map[uuid.UUID]*SubjectRecord),
+		vetDetails:     make(map[uuid.UUID]*VetDetailsRecord),
+		dentalDetails:  make(map[uuid.UUID]*DentalDetailsRecord),
+		generalDetails: make(map[uuid.UUID]*GeneralDetailsRecord),
 	}
 }
 
@@ -126,17 +131,23 @@ func (f *fakeRepo) CreateVetDetails(_ context.Context, p CreateVetDetailsParams)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	d := &VetDetailsRecord{
-		SubjectID:   p.SubjectID,
-		Species:     p.Species,
-		Breed:       p.Breed,
-		Sex:         p.Sex,
-		Desexed:     p.Desexed,
-		DateOfBirth: p.DateOfBirth,
-		Color:       p.Color,
-		Microchip:   p.Microchip,
-		WeightKg:    p.WeightKg,
-		CreatedAt:   domain.TimeNow(),
-		UpdatedAt:   domain.TimeNow(),
+		SubjectID:             p.SubjectID,
+		Species:               p.Species,
+		Breed:                 p.Breed,
+		Sex:                   p.Sex,
+		Desexed:               p.Desexed,
+		DateOfBirth:           p.DateOfBirth,
+		Color:                 p.Color,
+		Microchip:             p.Microchip,
+		WeightKg:              p.WeightKg,
+		Allergies:             p.Allergies,
+		ChronicConditions:     p.ChronicConditions,
+		AdmissionWarnings:     p.AdmissionWarnings,
+		InsuranceProviderName: p.InsuranceProviderName,
+		InsurancePolicyNumber: p.InsurancePolicyNumber,
+		ReferringVetName:      p.ReferringVetName,
+		CreatedAt:             domain.TimeNow(),
+		UpdatedAt:             domain.TimeNow(),
 	}
 	f.vetDetails[d.SubjectID] = d
 	return cloneVet(d), nil
@@ -157,6 +168,12 @@ func (f *fakeRepo) GetSubjectByID(_ context.Context, id, clinicID uuid.UUID) (*S
 	}
 	if d, ok := f.vetDetails[s.ID]; ok {
 		row.VetDetails = cloneVet(d)
+	}
+	if dd, ok := f.dentalDetails[s.ID]; ok {
+		row.DentalDetails = cloneDental(dd)
+	}
+	if g, ok := f.generalDetails[s.ID]; ok {
+		row.GeneralDetails = cloneGeneral(g)
 	}
 	return row, nil
 }
@@ -191,6 +208,12 @@ func (f *fakeRepo) ListSubjects(_ context.Context, clinicID uuid.UUID, p ListSub
 			row.VetDetails = cloneVet(d)
 		} else if p.Species != nil {
 			continue
+		}
+		if dd, ok := f.dentalDetails[s.ID]; ok {
+			row.DentalDetails = cloneDental(dd)
+		}
+		if g, ok := f.generalDetails[s.ID]; ok {
+			row.GeneralDetails = cloneGeneral(g)
 		}
 		all = append(all, row)
 	}
@@ -254,6 +277,24 @@ func (f *fakeRepo) UpdateVetDetails(_ context.Context, subjectID uuid.UUID, p Up
 	if p.WeightKg != nil {
 		d.WeightKg = p.WeightKg
 	}
+	if p.Allergies != nil {
+		d.Allergies = p.Allergies
+	}
+	if p.ChronicConditions != nil {
+		d.ChronicConditions = p.ChronicConditions
+	}
+	if p.AdmissionWarnings != nil {
+		d.AdmissionWarnings = p.AdmissionWarnings
+	}
+	if p.InsuranceProviderName != nil {
+		d.InsuranceProviderName = p.InsuranceProviderName
+	}
+	if p.InsurancePolicyNumber != nil {
+		d.InsurancePolicyNumber = p.InsurancePolicyNumber
+	}
+	if p.ReferringVetName != nil {
+		d.ReferringVetName = p.ReferringVetName
+	}
 	d.UpdatedAt = domain.TimeNow()
 	return cloneVet(d), nil
 }
@@ -302,9 +343,82 @@ func (f *fakeRepo) ListSubjectsByContact(_ context.Context, contactID, clinicID 
 		if d, ok := f.vetDetails[s.ID]; ok {
 			row.VetDetails = cloneVet(d)
 		}
+		if dd, ok := f.dentalDetails[s.ID]; ok {
+			row.DentalDetails = cloneDental(dd)
+		}
+		if g, ok := f.generalDetails[s.ID]; ok {
+			row.GeneralDetails = cloneGeneral(g)
+		}
 		rows = append(rows, row)
 	}
 	return rows, nil
+}
+
+func (f *fakeRepo) CreateDentalDetails(_ context.Context, p CreateDentalDetailsParams) (*DentalDetailsRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dd := &DentalDetailsRecord{
+		SubjectID:             p.SubjectID,
+		DateOfBirth:           p.DateOfBirth,
+		Sex:                   p.Sex,
+		MedicalAlerts:         p.MedicalAlerts,
+		Medications:           p.Medications,
+		Allergies:             p.Allergies,
+		ChronicConditions:     p.ChronicConditions,
+		AdmissionWarnings:     p.AdmissionWarnings,
+		InsuranceProviderName: p.InsuranceProviderName,
+		InsurancePolicyNumber: p.InsurancePolicyNumber,
+		ReferringDentistName:  p.ReferringDentistName,
+		PrimaryDentistName:    p.PrimaryDentistName,
+		CreatedAt:             domain.TimeNow(),
+		UpdatedAt:             domain.TimeNow(),
+	}
+	f.dentalDetails[dd.SubjectID] = dd
+	return cloneDental(dd), nil
+}
+
+func (f *fakeRepo) UpdateDentalDetails(_ context.Context, subjectID uuid.UUID, p UpdateDentalDetailsParams) (*DentalDetailsRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	dd, ok := f.dentalDetails[subjectID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	if p.DateOfBirth != nil {
+		dd.DateOfBirth = p.DateOfBirth
+	}
+	if p.Sex != nil {
+		dd.Sex = p.Sex
+	}
+	if p.MedicalAlerts != nil {
+		dd.MedicalAlerts = p.MedicalAlerts
+	}
+	if p.Medications != nil {
+		dd.Medications = p.Medications
+	}
+	if p.Allergies != nil {
+		dd.Allergies = p.Allergies
+	}
+	if p.ChronicConditions != nil {
+		dd.ChronicConditions = p.ChronicConditions
+	}
+	if p.AdmissionWarnings != nil {
+		dd.AdmissionWarnings = p.AdmissionWarnings
+	}
+	if p.InsuranceProviderName != nil {
+		dd.InsuranceProviderName = p.InsuranceProviderName
+	}
+	if p.InsurancePolicyNumber != nil {
+		dd.InsurancePolicyNumber = p.InsurancePolicyNumber
+	}
+	if p.ReferringDentistName != nil {
+		dd.ReferringDentistName = p.ReferringDentistName
+	}
+	if p.PrimaryDentistName != nil {
+		dd.PrimaryDentistName = p.PrimaryDentistName
+	}
+	dd.UpdatedAt = domain.TimeNow()
+	return cloneDental(dd), nil
 }
 
 // ── Clone helpers (prevent mutation of stored records) ────────────────────────
@@ -322,4 +436,99 @@ func cloneSubject(s *SubjectRecord) *SubjectRecord {
 func cloneVet(d *VetDetailsRecord) *VetDetailsRecord {
 	cp := *d
 	return &cp
+}
+
+func cloneDental(d *DentalDetailsRecord) *DentalDetailsRecord {
+	cp := *d
+	return &cp
+}
+
+func cloneGeneral(g *GeneralDetailsRecord) *GeneralDetailsRecord {
+	cp := *g
+	return &cp
+}
+
+func (f *fakeRepo) CreateGeneralDetails(_ context.Context, p CreateGeneralDetailsParams) (*GeneralDetailsRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g := &GeneralDetailsRecord{
+		SubjectID:             p.SubjectID,
+		DateOfBirth:           p.DateOfBirth,
+		Sex:                   p.Sex,
+		MedicalAlerts:         p.MedicalAlerts,
+		Medications:           p.Medications,
+		Allergies:             p.Allergies,
+		ChronicConditions:     p.ChronicConditions,
+		AdmissionWarnings:     p.AdmissionWarnings,
+		InsuranceProviderName: p.InsuranceProviderName,
+		InsurancePolicyNumber: p.InsurancePolicyNumber,
+		ReferringProviderName: p.ReferringProviderName,
+		PrimaryProviderName:   p.PrimaryProviderName,
+		CreatedAt:             domain.TimeNow(),
+		UpdatedAt:             domain.TimeNow(),
+	}
+	f.generalDetails[g.SubjectID] = g
+	return cloneGeneral(g), nil
+}
+
+func (f *fakeRepo) UpdateGeneralDetails(_ context.Context, subjectID uuid.UUID, p UpdateGeneralDetailsParams) (*GeneralDetailsRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.generalDetails[subjectID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	if p.DateOfBirth != nil {
+		g.DateOfBirth = p.DateOfBirth
+	}
+	if p.Sex != nil {
+		g.Sex = p.Sex
+	}
+	if p.MedicalAlerts != nil {
+		g.MedicalAlerts = p.MedicalAlerts
+	}
+	if p.Medications != nil {
+		g.Medications = p.Medications
+	}
+	if p.Allergies != nil {
+		g.Allergies = p.Allergies
+	}
+	if p.ChronicConditions != nil {
+		g.ChronicConditions = p.ChronicConditions
+	}
+	if p.AdmissionWarnings != nil {
+		g.AdmissionWarnings = p.AdmissionWarnings
+	}
+	if p.InsuranceProviderName != nil {
+		g.InsuranceProviderName = p.InsuranceProviderName
+	}
+	if p.InsurancePolicyNumber != nil {
+		g.InsurancePolicyNumber = p.InsurancePolicyNumber
+	}
+	if p.ReferringProviderName != nil {
+		g.ReferringProviderName = p.ReferringProviderName
+	}
+	if p.PrimaryProviderName != nil {
+		g.PrimaryProviderName = p.PrimaryProviderName
+	}
+	g.UpdatedAt = domain.TimeNow()
+	return cloneGeneral(g), nil
+}
+
+// ── Access log ────────────────────────────────────────────────────────────────
+
+func (f *fakeRepo) CreateSubjectAccessLog(_ context.Context, p CreateSubjectAccessLogParams) (*SubjectAccessLogRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rec := &SubjectAccessLogRecord{
+		ID:        p.ID,
+		SubjectID: p.SubjectID,
+		StaffID:   p.StaffID,
+		ClinicID:  p.ClinicID,
+		Action:    p.Action,
+		Purpose:   p.Purpose,
+		At:        domain.TimeNow(),
+	}
+	f.accessLog = append(f.accessLog, rec)
+	return rec, nil
 }

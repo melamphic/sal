@@ -685,6 +685,15 @@ func (r *Repository) UnlinkPolicy(ctx context.Context, formID, policyID uuid.UUI
 	return nil
 }
 
+// UnlinkPolicyFromAllForms removes all form_policies rows for the given policy in one query.
+func (r *Repository) UnlinkPolicyFromAllForms(ctx context.Context, policyID uuid.UUID) error {
+	const q = `DELETE FROM form_policies WHERE policy_id = $1`
+	if _, err := r.db.Exec(ctx, q, policyID); err != nil {
+		return fmt.Errorf("forms.repo.UnlinkPolicyFromAllForms: %w", err)
+	}
+	return nil
+}
+
 // ListLinkedPolicies returns all policy IDs linked to a form.
 func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) ([]uuid.UUID, error) {
 	const q = `SELECT policy_id FROM form_policies WHERE form_id = $1 ORDER BY linked_at`

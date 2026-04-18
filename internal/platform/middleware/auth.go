@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -74,6 +75,75 @@ func Authenticate(jwtSecret []byte) func(http.Handler) http.Handler {
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+// HumaContext is a type alias for huma.Context. Using an alias avoids a
+// field-name collision with the Context() method we override on the wrapper.
+type HumaContext = huma.Context
+
+// humaContextWrapper wraps a huma.Context and overrides its Context() method
+// to return a modified context.Context. This is necessary because huma.Context
+// is an interface without a SetContext method.
+type humaContextWrapper struct {
+	HumaContext
+	ctx context.Context
+}
+
+func (w *humaContextWrapper) Context() context.Context {
+	return w.ctx
+}
+
+// AuthenticateHuma returns a Huma-level middleware that validates a Bearer JWT.
+// Unlike the Chi-level Authenticate, this middleware injects auth context values
+// directly into a huma.Context wrapper, ensuring downstream Huma handlers
+// receive the correct context regardless of initialization order.
+//
+// Usage:
+//
+//	auth := mw.AuthenticateHuma(api, jwtSecret)
+//	huma.Register(api, huma.Operation{
+//	    Security:    []map[string][]string{{"bearerAuth": {}}},
+//	    Middlewares: huma.Middlewares{auth},
+//	}, handler)
+func AuthenticateHuma(api huma.API, jwtSecret []byte) func(huma.Context, func(huma.Context)) {
+	return func(hctx huma.Context, next func(huma.Context)) {
+		tokenStr := ""
+
+		authHeader := hctx.Header("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+
+		if tokenStr == "" {
+			tokenStr = hctx.Query("token")
+		}
+
+		if tokenStr == "" {
+			_ = huma.WriteErr(api, hctx, http.StatusUnauthorized, "missing or invalid authorization header or token query parameter")
+			return
+		}
+
+		claims := &Claims{}
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			_ = huma.WriteErr(api, hctx, http.StatusUnauthorized, "access token is invalid or expired")
+			return
+		}
+
+		ctx := hctx.Context()
+		ctx = WithClinicID(ctx, claims.ClinicID)
+		ctx = WithStaffID(ctx, claims.StaffID)
+		ctx = WithRole(ctx, claims.Role)
+		ctx = WithPermissions(ctx, claims.Perms)
+
+		next(&humaContextWrapper{HumaContext: hctx, ctx: ctx})
 	}
 }
 

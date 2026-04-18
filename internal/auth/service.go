@@ -14,14 +14,53 @@ import (
 	"github.com/melamphic/sal/internal/platform/mailer"
 )
 
+// StaffCreator creates a staff member record from an accepted invite.
+// Implemented by an adapter in app.go that bridges to staff.Service.
+type StaffCreator interface {
+	CreateFromInvite(ctx context.Context, in CreateStaffFromInviteInput) (staffID uuid.UUID, err error)
+}
+
+// CreateStaffFromInviteInput holds the data for creating a staff member from an invite.
+type CreateStaffFromInviteInput struct {
+	ClinicID    uuid.UUID
+	Email       string // plaintext
+	FullName    string // from acceptance request
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+}
+
+// HandoffProvisioner finds-or-creates the clinic + super admin staff for a
+// /mel handoff JWT. Idempotent on email_hash so replaying the same email
+// (with a fresh jti) returns the existing rows. Implemented in app.go by
+// an adapter that bridges to clinic.Service + staff.Service.
+type HandoffProvisioner interface {
+	ProvisionFromHandoff(ctx context.Context, in HandoffProvisionInput) (clinicID, staffID uuid.UUID, err error)
+}
+
+// HandoffProvisionInput is the post-JWT-verify payload passed to the
+// adapter. The adapter is responsible for clinic creation, staff
+// creation, and idempotency.
+type HandoffProvisionInput struct {
+	Email            string // plaintext
+	FullName         string
+	ClinicName       string
+	Vertical         domain.Vertical
+	PlanCode         *domain.PlanCode // nil = trial signup, no plan yet
+	StripeCustomerID *string          // cus_… from /mel Checkout; nil on trial
+}
+
 // Service handles all authentication business logic.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
-	repo      repo // interface — see repo.go
-	cipher    *crypto.Cipher
-	mailer    mailer.Mailer
-	jwtSecret []byte
-	cfg       ServiceConfig
+	repo               repo // interface — see repo.go
+	cipher             *crypto.Cipher
+	mailer             mailer.Mailer
+	jwtSecret          []byte
+	cfg                ServiceConfig
+	staffCreator       StaffCreator       // nil = invite acceptance disabled
+	handoffSecret      []byte             // shared HS256 secret with /mel; nil = handoff disabled
+	handoffProvisioner HandoffProvisioner // nil = handoff disabled
 }
 
 // ServiceConfig holds auth-specific configuration values.
@@ -40,14 +79,23 @@ type TokenPair struct {
 }
 
 // NewService creates a new auth Service.
-func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []byte, cfg ServiceConfig) *Service {
+func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []byte, cfg ServiceConfig, staffCreator StaffCreator) *Service {
 	return &Service{
-		repo:      repo,
-		cipher:    cipher,
-		mailer:    m,
-		jwtSecret: jwtSecret,
-		cfg:       cfg,
+		repo:         repo,
+		cipher:       cipher,
+		mailer:       m,
+		jwtSecret:    jwtSecret,
+		cfg:          cfg,
+		staffCreator: staffCreator,
 	}
+}
+
+// SetMelHandoff wires the /mel JWT handoff dependencies. Pass nil secret
+// or nil provisioner to leave the feature disabled (the handoff endpoint
+// then returns 503 — useful for environments where /mel is offline).
+func (s *Service) SetMelHandoff(secret []byte, p HandoffProvisioner) {
+	s.handoffSecret = secret
+	s.handoffProvisioner = p
 }
 
 // SendMagicLink generates a one-time login link and emails it to the staff member.
@@ -141,6 +189,82 @@ func (s *Service) RefreshTokens(ctx context.Context, rawRefreshToken string) (*T
 	staff, err := s.repo.GetStaffByID(ctx, tokenRow.StaffID)
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.RefreshTokens: get staff: %w", err)
+	}
+
+	return s.issueTokenPair(ctx, staff)
+}
+
+// CreateInviteToken generates an invite token, stores it, and returns the raw token.
+// Called by staff.Service via adapter when an admin invites a new staff member.
+func (s *Service) CreateInviteToken(ctx context.Context, clinicID uuid.UUID, email, emailHash string, role domain.StaffRole, noteTier domain.NoteTier, perms domain.Permissions, invitedByID uuid.UUID) (string, error) {
+	rawToken, tokenHash, err := generateOpaqueToken()
+	if err != nil {
+		return "", fmt.Errorf("auth.service.CreateInviteToken: %w", err)
+	}
+
+	encEmail, err := s.cipher.Encrypt(email)
+	if err != nil {
+		return "", fmt.Errorf("auth.service.CreateInviteToken: encrypt email: %w", err)
+	}
+
+	expiresAt := domain.TimeNow().Add(7 * 24 * time.Hour) // 7-day expiry
+
+	if err := s.repo.CreateInviteToken(ctx, CreateInviteParams{
+		ID:          domain.NewID(),
+		ClinicID:    clinicID,
+		Email:       encEmail,
+		EmailHash:   emailHash,
+		Role:        role,
+		NoteTier:    noteTier,
+		Permissions: perms,
+		TokenHash:   tokenHash,
+		ExpiresAt:   expiresAt,
+		InvitedByID: invitedByID,
+	}); err != nil {
+		return "", fmt.Errorf("auth.service.CreateInviteToken: %w", err)
+	}
+
+	return rawToken, nil
+}
+
+// AcceptInvite verifies an invite token, creates the staff record, and issues a JWT pair.
+// The invited person provides their full name at acceptance time.
+func (s *Service) AcceptInvite(ctx context.Context, rawToken, fullName string) (*TokenPair, error) {
+	tokenHash := hashToken(rawToken)
+
+	invite, err := s.repo.GetInviteByTokenHash(ctx, tokenHash)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: %w", err)
+	}
+
+	// Decrypt the email stored in the invite.
+	plainEmail, err := s.cipher.Decrypt(invite.Email)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: decrypt email: %w", err)
+	}
+
+	// Create the staff member via adapter.
+	staffID, err := s.staffCreator.CreateFromInvite(ctx, CreateStaffFromInviteInput{
+		ClinicID:    invite.ClinicID,
+		Email:       plainEmail,
+		FullName:    fullName,
+		Role:        invite.Role,
+		NoteTier:    invite.NoteTier,
+		Permissions: invite.Permissions,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: create staff: %w", err)
+	}
+
+	// Mark invite as accepted.
+	if err := s.repo.MarkInviteAccepted(ctx, tokenHash); err != nil {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: mark accepted: %w", err)
+	}
+
+	// Look up the new staff record so we can issue a JWT.
+	staff, err := s.repo.GetStaffByID(ctx, staffID)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: get staff: %w", err)
 	}
 
 	return s.issueTokenPair(ctx, staff)

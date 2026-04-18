@@ -98,6 +98,34 @@ cp .env.example .env
 | `SMTP_PORT` | `1025` | SMTP port |
 | `SMTP_FROM` | `noreply@salvia.io` | Sender address |
 
+### /mel handoff + billing
+
+Paid signups start on the static `/mel` marketing site. When a visitor completes
+Stripe Checkout, `/mel` POSTs to **`POST /api/v1/auth/signup/start`** which
+mints a short-lived HS256 JWT and returns `HandoffURL` — the browser is then
+redirected to `APP_URL/auth/handoff?token=…`. That second endpoint
+provisions the clinic + super-admin staff row and issues a real session.
+
+| Variable | Purpose |
+|---|---|
+| `MEL_HANDOFF_JWT_SECRET` | HS256 shared secret for the handoff JWT. When unset, `/api/v1/auth/signup/start` returns 401. |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for `POST /api/v1/billing/webhook`. When unset, the webhook route is not mounted. |
+| `STRIPE_API_KEY` | `sk_test_…` / `sk_live_…` key used to open Stripe customer-portal sessions from `POST /api/v1/billing/portal`. When unset, the portal endpoint returns 400. |
+| `STRIPE_PRICE_MAP` | Comma-separated `price_id=plan_code` pairs, e.g. `price_abc=paws_pro_monthly,price_def=paws_pro_annual`. Used by the webhook to resolve `plan_code` on subscription events. |
+
+To run the full 3-service stack locally:
+
+```bash
+# terminal 1 — backend
+cd sal && make dev
+
+# terminal 2 — /mel marketing site
+cd mel && npm install && npm run dev     # http://localhost:5173
+
+# terminal 3 — Salvia app (Flutter)
+cd salvia/apps && flutter pub get && flutter run -d chrome --web-port 3000
+```
+
 > **Never commit `.env`** — it is in `.gitignore`. Secrets are never stored in source control.
 
 ---

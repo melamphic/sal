@@ -38,6 +38,7 @@ type ReportJobRecord struct {
 	Status      string
 	Filters     *string // JSONB as text
 	StorageKey  *string
+	ContentHash *string
 	ErrorMsg    *string
 	CreatedBy   uuid.UUID
 	CreatedAt   time.Time
@@ -86,7 +87,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 // ── Report job CRUD ───────────────────────────────────────────────────────────
 
 const jobCols = `id, clinic_id, report_type, format, status,
-	filters::text, storage_key, error_msg, created_by, created_at, completed_at`
+	filters::text, storage_key, content_hash, error_msg, created_by, created_at, completed_at`
 
 // InsertReportJob creates a new pending report job row.
 func (r *Repository) InsertReportJob(ctx context.Context, p InsertReportJobParams) (*ReportJobRecord, error) {
@@ -129,13 +130,13 @@ func (r *Repository) GetReportJobInternal(ctx context.Context, jobID uuid.UUID) 
 	return rec, nil
 }
 
-// MarkComplete sets a job to complete with its S3 storage key.
-func (r *Repository) MarkComplete(ctx context.Context, jobID uuid.UUID, storageKey string) error {
+// MarkComplete sets a job to complete with its S3 storage key and content hash.
+func (r *Repository) MarkComplete(ctx context.Context, jobID uuid.UUID, storageKey, contentHash string) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE report_jobs
-		SET status = 'complete', storage_key = $2, completed_at = NOW()
+		SET status = 'complete', storage_key = $2, content_hash = $3, completed_at = NOW()
 		WHERE id = $1`,
-		jobID, storageKey,
+		jobID, storageKey, contentHash,
 	)
 	if err != nil {
 		return fmt.Errorf("reports.repo.MarkComplete: %w", err)
@@ -300,7 +301,7 @@ func scanJob(row scannable) (*ReportJobRecord, error) {
 	var j ReportJobRecord
 	err := row.Scan(
 		&j.ID, &j.ClinicID, &j.ReportType, &j.Format, &j.Status,
-		&j.Filters, &j.StorageKey, &j.ErrorMsg,
+		&j.Filters, &j.StorageKey, &j.ContentHash, &j.ErrorMsg,
 		&j.CreatedBy, &j.CreatedAt, &j.CompletedAt,
 	)
 	if err != nil {

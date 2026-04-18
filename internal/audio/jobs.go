@@ -11,7 +11,9 @@ import (
 )
 
 // downloadTTLForJob is how long the pre-signed URL given to Deepgram is valid.
-const downloadTTLForJob = 1 * time.Hour
+// River's exponential backoff reaches ~3h cumulative by retry 6, so 6h gives
+// safe margin for the URL to outlast all realistic retry attempts.
+const downloadTTLForJob = 6 * time.Hour
 
 // ── TranscribeAudio job ───────────────────────────────────────────────────────
 

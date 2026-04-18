@@ -66,6 +66,16 @@ func (f *fakeRepo) ExistsByEmailHash(_ context.Context, emailHash string, clinic
 	return ok && s.ArchivedAt == nil, nil
 }
 
+func (f *fakeRepo) GetByEmailHash(_ context.Context, emailHash string, clinicID uuid.UUID) (*StaffRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.byEmail[emailClinicKey(emailHash, clinicID)]
+	if !ok || s.ArchivedAt != nil {
+		return nil, domain.ErrNotFound
+	}
+	return s, nil
+}
+
 func (f *fakeRepo) List(_ context.Context, clinicID uuid.UUID, p ListParams) ([]*StaffRecord, int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

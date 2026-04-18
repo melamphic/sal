@@ -161,6 +161,32 @@ func (r *Repository) GetStaffByID(ctx context.Context, staffID uuid.UUID) (*staf
 	return s, nil
 }
 
+// CreateInviteToken inserts a new hashed invite token for a staff invitation.
+func (r *Repository) CreateInviteToken(ctx context.Context, p CreateInviteParams) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO invite_tokens (id, clinic_id, email, email_hash, role, note_tier, permissions, token_hash, expires_at, invited_by_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, p.ID, p.ClinicID, p.Email, p.EmailHash, p.Role, p.NoteTier, p.Permissions, p.TokenHash, p.ExpiresAt, p.InvitedByID)
+	if err != nil {
+		return fmt.Errorf("auth.repo.CreateInviteToken: %w", err)
+	}
+	return nil
+}
+
+// CreateInviteParams holds the data for inserting an invite token row.
+type CreateInviteParams struct {
+	ID          uuid.UUID
+	ClinicID    uuid.UUID
+	Email       string // encrypted
+	EmailHash   string
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+	TokenHash   string
+	ExpiresAt   time.Time
+	InvitedByID uuid.UUID
+}
+
 // GetInviteByTokenHash fetches a pending invite token.
 func (r *Repository) GetInviteByTokenHash(ctx context.Context, tokenHash string) (*inviteRow, error) {
 	var inv inviteRow
@@ -199,6 +225,22 @@ func (r *Repository) UpdateLastActive(ctx context.Context, staffID uuid.UUID) er
 	_, err := r.db.Exec(ctx, `UPDATE staff SET last_active_at = NOW(), status = 'active' WHERE id = $1`, staffID)
 	if err != nil {
 		return fmt.Errorf("auth.repo.UpdateLastActive: %w", err)
+	}
+	return nil
+}
+
+// ConsumeMelHandoffToken inserts a jti row to mark a handoff JWT as used.
+// On unique-constraint violation we surface domain.ErrTokenUsed so the
+// caller can reject the replayed token without leaking SQL details.
+func (r *Repository) ConsumeMelHandoffToken(ctx context.Context, jti string, expiresAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO mel_handoff_tokens (jti, expires_at) VALUES ($1, $2)
+	`, jti, expiresAt)
+	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return domain.ErrTokenUsed
+		}
+		return fmt.Errorf("auth.repo.ConsumeMelHandoffToken: %w", err)
 	}
 	return nil
 }

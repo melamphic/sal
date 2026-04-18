@@ -76,7 +76,7 @@ func (b *Broker) Stop() {
 // a channel that receives events. Call Unsubscribe when the client disconnects.
 func (b *Broker) Subscribe(clinicID uuid.UUID) (clientID string, ch chan Event) {
 	clientID = uuid.New().String()
-	ch = make(chan Event, 16)
+	ch = make(chan Event, 64)
 
 	b.mu.Lock()
 	if b.clients[clinicID] == nil {

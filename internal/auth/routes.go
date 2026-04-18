@@ -12,6 +12,14 @@ import (
 // Public routes (magic link, verify, refresh) require no authentication.
 // The logout route requires a valid access token.
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
+	auth := mw.AuthenticateHuma(api, jwtSecret)
+
+	// Rate limit middleware for public auth endpoints (nil-safe: skipped in tests).
+	var rl huma.Middlewares
+	if h.rateStore != nil {
+		rl = huma.Middlewares{mw.RateLimitHuma(api, h.rateStore)}
+	}
+
 	// ── Public routes (no JWT required) ──────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID:   "request-magic-link",
@@ -21,6 +29,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Description:   "Sends a one-time login link to the provided email. Always returns 200 — does not reveal whether the email exists.",
 		Tags:          []string{"Auth"},
 		DefaultStatus: http.StatusOK,
+		Middlewares:   rl,
 	}, h.requestMagicLink)
 
 	huma.Register(api, huma.Operation{
@@ -30,6 +39,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Summary:     "Verify a magic link token",
 		Description: "Exchanges a one-time magic link token for an access and refresh token pair.",
 		Tags:        []string{"Auth"},
+		Middlewares: rl,
 	}, h.verifyToken)
 
 	huma.Register(api, huma.Operation{
@@ -39,20 +49,48 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Summary:     "Refresh access token",
 		Description: "Exchanges a refresh token for a new access and refresh token pair. The old refresh token is invalidated.",
 		Tags:        []string{"Auth"},
+		Middlewares: rl,
 	}, h.refreshTokens)
 
-	// ── Authenticated routes ──────────────────────────────────────────────────
-	r.Group(func(r chi.Router) {
-		r.Use(mw.Authenticate(jwtSecret))
+	huma.Register(api, huma.Operation{
+		OperationID: "accept-invite",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/accept-invite",
+		Summary:     "Accept a staff invitation",
+		Description: "Verifies the invite token, creates the staff record, and returns an access and refresh token pair. The invited person provides their full name.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.acceptInvite)
 
-		huma.Register(api, huma.Operation{
-			OperationID: "logout",
-			Method:      http.MethodPost,
-			Path:        "/api/v1/auth/logout",
-			Summary:     "Logout",
-			Description: "Invalidates all refresh tokens for the current staff member.",
-			Tags:        []string{"Auth"},
-			Security:    []map[string][]string{{"bearerAuth": {}}},
-		}, h.logout)
-	})
+	huma.Register(api, huma.Operation{
+		OperationID: "mel-handoff",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/handoff",
+		Summary:     "Consume a /mel handoff token",
+		Description: "Verifies the single-use JWT minted by the /mel marketing site after Stripe checkout (or trial signup), provisions the clinic + super-admin (idempotent on email), and returns a Salvia session.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.melHandoff)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "start-signup",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/signup/start",
+		Summary:     "Mint a handoff URL for a new trial signup",
+		Description: "Public endpoint called by the /mel marketing site. Mints a single-use handoff JWT and returns an absolute URL the browser should redirect to. No clinic is created here — provisioning happens when /api/v1/auth/handoff consumes the token.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.startSignup)
+
+	// ── Authenticated routes ──────────────────────────────────────────────────
+	huma.Register(api, huma.Operation{
+		OperationID: "logout",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/auth/logout",
+		Summary:     "Logout",
+		Description: "Invalidates all refresh tokens for the current staff member.",
+		Tags:        []string{"Auth"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth},
+	}, h.logout)
 }

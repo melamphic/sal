@@ -26,7 +26,7 @@ func newTestService(t *testing.T) (*Service, *fakeRepo, *testutil.FakeMailer) {
 		JWTRefreshTTL: 720 * time.Hour,
 		MagicLinkTTL:  15 * time.Minute,
 		AppURL:        "https://app.salvia.test",
-	})
+	}, nil)
 	return svc, r, m
 }
 
