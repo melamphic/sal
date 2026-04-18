@@ -272,6 +272,17 @@ func (s *Service) GetIDByStripeCustomer(ctx context.Context, stripeCustomerID st
 	return row.ID, nil
 }
 
+// GetStripeCustomerID returns the cus_… id for a clinic, or nil when the
+// clinic has none yet (still on trial). Used by billing to open a Stripe
+// customer portal session.
+func (s *Service) GetStripeCustomerID(ctx context.Context, clinicID uuid.UUID) (*string, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("clinic.service.GetStripeCustomerID: %w", err)
+	}
+	return row.StripeCustomerID, nil
+}
+
 // ApplyBillingState writes the authoritative subscription state for a
 // clinic. Billing-module-only entrypoint; never called from HTTP handlers.
 func (s *Service) ApplyBillingState(ctx context.Context, clinicID uuid.UUID, p BillingState) error {
