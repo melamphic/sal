@@ -18,6 +18,7 @@ type repo interface {
 	CreateAuthToken(ctx context.Context, staffID uuid.UUID, tokenHash, tokenType, fromIP string, expiresAt time.Time) error
 	GetAndConsumeAuthToken(ctx context.Context, tokenHash string) (*tokenRow, error)
 	GetStaffByID(ctx context.Context, staffID uuid.UUID) (*staffRow, error)
+	CreateInviteToken(ctx context.Context, p CreateInviteParams) error
 	GetInviteByTokenHash(ctx context.Context, tokenHash string) (*inviteRow, error)
 	MarkInviteAccepted(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensForStaff(ctx context.Context, staffID uuid.UUID) error
