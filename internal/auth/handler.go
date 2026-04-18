@@ -51,6 +51,29 @@ type acceptInviteInput struct {
 	}
 }
 
+type melHandoffInput struct {
+	Body struct {
+		Token string `json:"token" minLength:"1" doc:"The single-use HS256 JWT minted by /mel after Stripe checkout or trial signup."`
+	}
+}
+
+type signupStartInput struct {
+	Body struct {
+		Email      string          `json:"email" format:"email" minLength:"3" maxLength:"254" doc:"Admin work email — becomes the clinic primary contact + first super admin."`
+		FullName   string          `json:"full_name" minLength:"2" maxLength:"200" doc:"Admin's display name."`
+		ClinicName string          `json:"clinic_name" minLength:"2" maxLength:"200" doc:"Clinic display name."`
+		Vertical   domain.Vertical `json:"vertical" enum:"veterinary,dental,general_clinic" doc:"Which product the customer signed up for."`
+		PlanCode   string          `json:"plan_code,omitempty" maxLength:"80" doc:"Optional billing SKU pre-selected on the pricing page. Empty = trial without plan."`
+	}
+}
+
+type signupStartOutput struct {
+	Body struct {
+		HandoffURL string `json:"handoff_url" doc:"Absolute Salvia URL to redirect the browser to."`
+		ExpiresAt  string `json:"expires_at" doc:"RFC3339 timestamp after which the URL is invalid."`
+	}
+}
+
 type emptyOutput = struct{}
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -94,6 +117,40 @@ func (h *Handler) acceptInvite(ctx context.Context, input *acceptInviteInput) (*
 		return nil, mapAuthError(err)
 	}
 	return &tokenResponse{Body: *pair}, nil
+}
+
+// melHandoff handles POST /api/v1/auth/handoff.
+// Verifies a single-use JWT minted by the /mel marketing site after
+// Stripe checkout, provisions the clinic + super-admin staff (idempotent
+// on email), and returns a Salvia session.
+func (h *Handler) melHandoff(ctx context.Context, input *melHandoffInput) (*tokenResponse, error) {
+	pair, err := h.svc.HandoffFromMel(ctx, input.Body.Token)
+	if err != nil {
+		return nil, mapAuthError(err)
+	}
+	return &tokenResponse{Body: *pair}, nil
+}
+
+// startSignup handles POST /api/v1/signup/start.
+// Public endpoint the static /mel marketing site calls after the trial
+// signup form. Mints a single-use handoff JWT and returns the absolute
+// URL the browser should redirect to. No clinic is created here — that
+// happens when /auth/handoff consumes the token.
+func (h *Handler) startSignup(ctx context.Context, input *signupStartInput) (*signupStartOutput, error) {
+	res, err := h.svc.StartSignup(ctx, StartSignupInput{
+		Email:      input.Body.Email,
+		FullName:   input.Body.FullName,
+		ClinicName: input.Body.ClinicName,
+		Vertical:   input.Body.Vertical,
+		PlanCode:   input.Body.PlanCode,
+	})
+	if err != nil {
+		return nil, mapAuthError(err)
+	}
+	out := &signupStartOutput{}
+	out.Body.HandoffURL = res.HandoffURL
+	out.Body.ExpiresAt = res.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	return out, nil
 }
 
 // logout handles POST /api/v1/auth/logout.
