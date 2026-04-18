@@ -11,12 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// fakeInviteCreator satisfies InviteCreator in tests.
+type fakeInviteCreator struct{}
+
+func (f *fakeInviteCreator) CreateInvite(_ context.Context, _ CreateInviteTokenParams) (string, error) {
+	return "fake-invite-token", nil
+}
+
 func newTestService(t *testing.T) (*Service, *fakeRepo, *testutil.FakeMailer) {
 	t.Helper()
 	r := newFakeRepo()
 	m := &testutil.FakeMailer{}
 	c := testutil.TestCipher(t)
-	svc := NewService(r, c, m, "https://app.salvia.test")
+	svc := NewService(r, c, m, "https://app.salvia.test", &fakeInviteCreator{})
 	return svc, r, m
 }
 
@@ -133,7 +140,7 @@ func TestService_Invite_SendsEmail(t *testing.T) {
 	svc, _, m := newTestService(t)
 	clinicID := uuid.New()
 
-	err := svc.Invite(context.Background(), clinicID, InviteInput{
+	err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
 		Email:       "newstaff@clinic.co.nz",
 		FullName:    "New Staff",
 		Role:        domain.StaffRoleVet,
@@ -160,7 +167,7 @@ func TestService_Invite_DuplicateEmail_ReturnsConflict(t *testing.T) {
 	seedStaff(t, svc, clinicID, email, "Existing Staff", domain.StaffRoleVet)
 
 	// Now try to invite the same email to the same clinic.
-	err := svc.Invite(context.Background(), clinicID, InviteInput{
+	err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
 		Email:       email,
 		FullName:    "Duplicate Staff",
 		Role:        domain.StaffRoleVet,
@@ -181,7 +188,7 @@ func TestService_Invite_SameEmailDifferentClinic_Allowed(t *testing.T) {
 
 	seedStaff(t, svc, clinicA, email, "Clinic A Staff", domain.StaffRoleVet)
 
-	err := svc.Invite(context.Background(), clinicB, InviteInput{
+	err := svc.Invite(context.Background(), clinicB, uuid.New(), InviteInput{
 		Email:       email,
 		FullName:    "Clinic B Staff",
 		Role:        domain.StaffRoleVet,
