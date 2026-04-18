@@ -1,13 +1,16 @@
 package billing
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/melamphic/sal/internal/domain"
+	mw "github.com/melamphic/sal/internal/platform/middleware"
 )
 
 // maxWebhookBody caps incoming Stripe payloads. Real webhooks are a few
@@ -58,4 +61,33 @@ func (h *Handler) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]bool{"received": true})
+}
+
+// ── Billing portal ────────────────────────────────────────────────────────
+
+type portalSessionInput struct{}
+
+type portalSessionResponse struct {
+	Body struct {
+		URL string `json:"url" doc:"One-shot hosted URL for the Stripe customer portal."`
+	}
+}
+
+// createPortalSession handles POST /api/v1/billing/portal. Returns 400 when
+// the clinic is still on trial (no stripe_customer_id) or when the portal
+// feature is disabled at startup (no STRIPE_API_KEY).
+func (h *Handler) createPortalSession(ctx context.Context, _ *portalSessionInput) (*portalSessionResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	url, err := h.svc.CreatePortalSession(ctx, clinicID)
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			return nil, huma.Error400BadRequest("billing portal unavailable — clinic has no active subscription")
+		}
+		h.log.ErrorContext(ctx, "billing portal session failed", "error", err)
+		return nil, huma.Error500InternalServerError("internal server error")
+	}
+
+	resp := &portalSessionResponse{}
+	resp.Body.URL = url
+	return resp, nil
 }

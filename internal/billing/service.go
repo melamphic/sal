@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/stripe/stripe-go/v78"
+	portalsession "github.com/stripe/stripe-go/v78/billingportal/session"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
 
@@ -25,6 +26,9 @@ type ClinicUpdater interface {
 	// ApplySubscriptionState writes the authoritative billing state for
 	// a clinic — status always, plan_code + stripe ids COALESCEd.
 	ApplySubscriptionState(ctx context.Context, clinicID uuid.UUID, s SubscriptionState) error
+	// GetStripeCustomerID returns the cus_… id for a clinic, or nil if
+	// the clinic is still on trial and has no Stripe customer yet.
+	GetStripeCustomerID(ctx context.Context, clinicID uuid.UUID) (*string, error)
 }
 
 // SubscriptionState is the target state billing asks clinic to write.
@@ -41,17 +45,83 @@ type PlanLookup interface {
 	PlanCodeForStripePriceID(priceID string) (domain.PlanCode, bool)
 }
 
+// PortalSessionCreator creates a Stripe billing portal session and returns
+// its hosted URL. Abstracted so tests can swap in a fake without hitting
+// Stripe. Production uses stripePortalClient.
+type PortalSessionCreator interface {
+	Create(customerID, returnURL string) (string, error)
+}
+
 // Service orchestrates Stripe webhook processing.
 type Service struct {
 	repo       repo
 	clinics    ClinicUpdater
 	plans      PlanLookup
 	webhookSec []byte
+
+	// Portal config — set via EnablePortal. Nil when STRIPE_API_KEY isn't
+	// configured; CreatePortalSession returns domain.ErrValidation in that
+	// case so callers know the feature is off.
+	portal    PortalSessionCreator
+	returnURL string
 }
 
 // NewService creates a new billing Service.
 func NewService(repo repo, clinics ClinicUpdater, plans PlanLookup, webhookSecret []byte) *Service {
 	return &Service{repo: repo, clinics: clinics, plans: plans, webhookSec: webhookSecret}
+}
+
+// EnablePortal wires the Stripe customer portal — pass nil / empty to
+// leave it disabled.
+func (s *Service) EnablePortal(portal PortalSessionCreator, returnURL string) {
+	s.portal = portal
+	s.returnURL = returnURL
+}
+
+// CreatePortalSession returns a one-shot Stripe customer portal URL for the
+// given clinic. The clinic must have a stripe_customer_id — trial clinics
+// get domain.ErrValidation back so the handler can return 400.
+func (s *Service) CreatePortalSession(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	if s.portal == nil {
+		return "", fmt.Errorf("billing.service.CreatePortalSession: %w", domain.ErrValidation)
+	}
+	custID, err := s.clinics.GetStripeCustomerID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("billing.service.CreatePortalSession: %w", err)
+	}
+	if custID == nil || *custID == "" {
+		return "", fmt.Errorf("billing.service.CreatePortalSession: no stripe customer: %w", domain.ErrValidation)
+	}
+	url, err := s.portal.Create(*custID, s.returnURL)
+	if err != nil {
+		return "", fmt.Errorf("billing.service.CreatePortalSession: %w", err)
+	}
+	return url, nil
+}
+
+// stripePortalClient is the production PortalSessionCreator backed by
+// stripe-go's /v1/billing_portal/sessions endpoint.
+type stripePortalClient struct {
+	key string
+}
+
+// NewStripePortalClient builds a PortalSessionCreator using the given secret
+// key. Safe to construct at startup with cfg.StripeAPIKey.
+func NewStripePortalClient(stripeSecretKey string) PortalSessionCreator {
+	return &stripePortalClient{key: stripeSecretKey}
+}
+
+func (c *stripePortalClient) Create(customerID, returnURL string) (string, error) {
+	client := portalsession.Client{B: stripe.GetBackend(stripe.APIBackend), Key: c.key}
+	params := &stripe.BillingPortalSessionParams{
+		Customer:  stripe.String(customerID),
+		ReturnURL: stripe.String(returnURL),
+	}
+	sess, err := client.New(params)
+	if err != nil {
+		return "", fmt.Errorf("billing.stripePortalClient.Create: %w", err)
+	}
+	return sess.URL, nil
 }
 
 // HandleWebhook verifies the Stripe signature, records the event for
