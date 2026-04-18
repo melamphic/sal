@@ -43,6 +43,13 @@ type tokenResponse struct {
 	Body TokenPair
 }
 
+type acceptInviteInput struct {
+	Body struct {
+		Token    string `json:"token" minLength:"1" doc:"The raw invite token from the invitation email."`
+		FullName string `json:"full_name" minLength:"2" maxLength:"200" doc:"Full name of the new staff member."`
+	}
+}
+
 type emptyOutput = struct{}
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -72,6 +79,16 @@ func (h *Handler) verifyToken(ctx context.Context, input *verifyInput) (*tokenRe
 // refreshTokens handles POST /api/v1/auth/refresh.
 func (h *Handler) refreshTokens(ctx context.Context, input *refreshInput) (*tokenResponse, error) {
 	pair, err := h.svc.RefreshTokens(ctx, input.Body.RefreshToken)
+	if err != nil {
+		return nil, mapAuthError(err)
+	}
+	return &tokenResponse{Body: *pair}, nil
+}
+
+// acceptInvite handles POST /api/v1/auth/accept-invite.
+// Creates the staff record and returns a JWT pair so the invited person is logged in immediately.
+func (h *Handler) acceptInvite(ctx context.Context, input *acceptInviteInput) (*tokenResponse, error) {
+	pair, err := h.svc.AcceptInvite(ctx, input.Body.Token, input.Body.FullName)
 	if err != nil {
 		return nil, mapAuthError(err)
 	}
