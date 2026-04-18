@@ -136,8 +136,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		)
 	}
 
-	// ── Billing (Stripe webhook) ──────────────────────────────────────────
-	// Gated on STRIPE_WEBHOOK_SECRET — without it the route is not mounted.
+	// ── Billing (Stripe webhook + portal) ────────────────────────────────
+	// Gated on STRIPE_WEBHOOK_SECRET — without it neither route is mounted.
+	// Portal additionally requires STRIPE_API_KEY; when it's missing the
+	// portal endpoint 400s with a clear message.
 	var billingHandler *billing.Handler
 	if cfg.StripeWebhookSecret != "" {
 		priceMap, err := cfg.ParseStripePriceMap()
@@ -151,6 +153,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 			staticPlanLookup(priceMap),
 			[]byte(cfg.StripeWebhookSecret),
 		)
+		if cfg.StripeAPIKey != "" {
+			billingSvc.EnablePortal(
+				billing.NewStripePortalClient(cfg.StripeAPIKey),
+				cfg.AppURL+"/settings/billing",
+			)
+		}
 		billingHandler = billing.NewHandler(billingSvc, log)
 	}
 
@@ -316,7 +324,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
-		billingHandler.Mount(r)
+		billingHandler.Mount(r, api, jwtSecret)
 	}
 
 	// Health check — no auth, no logging overhead.
@@ -463,6 +471,14 @@ func (a *billingClinicAdapter) FindByStripeCustomerID(ctx context.Context, strip
 	id, err := a.clinic.GetIDByStripeCustomer(ctx, stripeCustomerID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("app.billingClinicAdapter.FindByStripeCustomerID: %w", err)
+	}
+	return id, nil
+}
+
+func (a *billingClinicAdapter) GetStripeCustomerID(ctx context.Context, clinicID uuid.UUID) (*string, error) {
+	id, err := a.clinic.GetStripeCustomerID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.billingClinicAdapter.GetStripeCustomerID: %w", err)
 	}
 	return id, nil
 }
