@@ -237,6 +237,107 @@ Respond with ONLY the JSON array. No markdown fences.
 	return (earned / total) * 100.0, nil
 }
 
+// ── Per-clause policy check ───────────────────────────────────────────────────
+
+// detailedClauseSchema is the ResponseSchema for per-clause compliance results.
+var detailedClauseSchema = &genai.Schema{
+	Type: genai.TypeArray,
+	Items: &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"block_id":  {Type: genai.TypeString},
+			"status":    {Type: genai.TypeString, Enum: []string{"satisfied", "violated"}},
+			"reasoning": {Type: genai.TypeString},
+		},
+		Required: []string{"block_id", "status", "reasoning"},
+	},
+}
+
+// geminiDetailedClauseResult is the JSON structure returned by the policy check prompt.
+type geminiDetailedClauseResult struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"`    // "satisfied" | "violated"
+	Reasoning string `json:"reasoning"` // one-sentence explanation
+}
+
+// CheckPolicyClauses calls Gemini to assess each policy clause individually against note content.
+// Returns per-clause results with reasoning. Parity is copied from the input clause.
+func (e *GeminiExtractor) CheckPolicyClauses(ctx context.Context, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error) {
+	if len(clauses) == 0 {
+		return nil, nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause individually.\n\n")
+	sb.WriteString("## Note content\n")
+	sb.WriteString(noteContent)
+	sb.WriteString("\n\n## Policy clauses\n")
+	for _, c := range clauses {
+		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
+	}
+	sb.WriteString(`
+## Instructions
+Return a JSON array with one object per clause in the same order.
+Each object: { "block_id": "<id>", "status": "satisfied"|"violated", "reasoning": "<one sentence>" }
+status=satisfied if the note content clearly addresses the clause requirement.
+status=violated if the clause is not addressed or cannot be determined from the note.
+reasoning: a brief one-sentence explanation of why the clause is satisfied or violated.
+Respond with ONLY the JSON array. No markdown fences.
+`)
+
+	resp, err := e.client.Models.GenerateContent(
+		ctx,
+		geminiModel,
+		genai.Text(sb.String()),
+		&genai.GenerateContentConfig{
+			ResponseMIMEType: "application/json",
+			ResponseSchema:   detailedClauseSchema,
+			Temperature:      genai.Ptr[float32](0),
+			ThinkingConfig:   noThinking,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("extraction.gemini.CheckPolicyClauses: generate: %w", err)
+	}
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("extraction.gemini.CheckPolicyClauses: empty response from model")
+	}
+
+	raw := resp.Candidates[0].Content.Parts[0].Text
+	var rawResults []geminiDetailedClauseResult
+	if err := json.Unmarshal([]byte(raw), &rawResults); err != nil {
+		return nil, fmt.Errorf("extraction.gemini.CheckPolicyClauses: parse response: %w (raw: %.200s)", err, raw)
+	}
+
+	// Index raw results by block_id.
+	byBlockID := make(map[string]geminiDetailedClauseResult, len(rawResults))
+	for _, r := range rawResults {
+		byBlockID[r.BlockID] = r
+	}
+
+	// Build result slice matching input clause order, enriched with parity.
+	results := make([]ClauseCheckResult, len(clauses))
+	for i, c := range clauses {
+		if r, ok := byBlockID[c.BlockID]; ok {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    r.Status,
+				Reasoning: r.Reasoning,
+				Parity:    c.Parity,
+			}
+		} else {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    "violated",
+				Reasoning: "clause not assessed by model",
+				Parity:    c.Parity,
+			}
+		}
+	}
+
+	return results, nil
+}
+
 // ── Form coverage check ───────────────────────────────────────────────────────
 
 // CheckFormCoverage calls Gemini to assess whether the form's fields cover the

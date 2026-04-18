@@ -49,6 +49,21 @@ type PolicyAligner interface {
 	AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error)
 }
 
+// ClauseCheckResult is a per-clause compliance result from a detailed policy check.
+type ClauseCheckResult struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"`    // "satisfied" | "violated"
+	Reasoning string `json:"reasoning"` // one-sentence explanation
+	Parity    string `json:"parity"`    // "high" | "medium" | "low" — copied from clause
+}
+
+// PolicyDetailedChecker assesses each policy clause individually against a note's content.
+// Unlike PolicyAligner (which returns a single %) this returns per-clause pass/fail with reasoning.
+// Used for the user-triggered check-policy endpoint and submit-time blocking.
+type PolicyDetailedChecker interface {
+	CheckPolicyClauses(ctx context.Context, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error)
+}
+
 // FormCoverageChecker assesses whether a form's field design covers the requirements
 // of the policy clauses linked to that form. Used at form-design time (not runtime).
 // Returns a qualitative text report the user can read and act on before publishing.

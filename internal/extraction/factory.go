@@ -54,6 +54,17 @@ func NewPolicyAlignerFromConfig(ctx context.Context, cfg *config.Config) (Policy
 	}
 }
 
+// NewPolicyDetailedCheckerFromConfig creates a PolicyDetailedChecker from config.
+// Returns nil (no error) when the provider's API key is not set.
+func NewPolicyDetailedCheckerFromConfig(ctx context.Context, cfg *config.Config) (PolicyDetailedChecker, error) {
+	switch cfg.ExtractionProvider {
+	case "gemini":
+		return newGemini(ctx, cfg)
+	default:
+		return nil, nil
+	}
+}
+
 // NewFormCheckerFromConfig creates a FormCoverageChecker from config.
 // Both Gemini and OpenAI support form coverage checking.
 // Returns nil (no error) when the provider's API key is not set.
