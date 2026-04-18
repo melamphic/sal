@@ -314,11 +314,13 @@ Be specific. Reference actual field names and clause titles. Keep each point to 
 
 func parseExtractionResponse(raw string, fields []FieldSpec) ([]FieldResult, error) {
 	// Strip markdown fences if model adds them despite instructions.
+	// Find the first '[' and last ']' to handle preamble text or fences.
 	raw = strings.TrimSpace(raw)
-	raw = strings.TrimPrefix(raw, "```json")
-	raw = strings.TrimPrefix(raw, "```")
-	raw = strings.TrimSuffix(raw, "```")
-	raw = strings.TrimSpace(raw)
+	if start := strings.Index(raw, "["); start != -1 {
+		if end := strings.LastIndex(raw, "]"); end > start {
+			raw = raw[start : end+1]
+		}
+	}
 
 	var parsed []geminiResponseField
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
