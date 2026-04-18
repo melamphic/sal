@@ -184,6 +184,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo},
 		aligner,
 	))
+	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
+		notesRepo,
+		&formMetaAdapter{repo: formsRepo},
+		&clinicStyleAdapter{clinic: clinicSvc},
+		&staffNameAdapter{staff: staffSvc},
+		store,
+	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
 		Queues: map[string]river.QueueConfig{
@@ -214,7 +221,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if detailedChecker != nil {
 		notesSvc.SetPolicyChecker(detailedChecker, &policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo})
 	}
-	notesHandler := notes.NewHandler(notesSvc)
+	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
 	timelineSvc := timeline.NewService(timelineRepo)
@@ -563,6 +570,55 @@ func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, pol
 		return fmt.Errorf("app.policyFormLinkerAdapter: %w", err)
 	}
 	return nil
+}
+
+// clinicStyleAdapter implements notes.ClinicStyleProvider.
+// Returns the clinic name and an empty brand color (uses PDF default blue).
+type clinicStyleAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.clinicStyleAdapter: %w", err)
+	}
+	return c.Name, "", nil // empty color → PDF default blue
+}
+
+// staffNameAdapter implements notes.StaffNameProvider.
+type staffNameAdapter struct {
+	staff *staff.Service
+}
+
+func (a *staffNameAdapter) GetStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error) {
+	s, err := a.staff.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.staffNameAdapter: %w", err)
+	}
+	return s.FullName, nil
+}
+
+// formMetaAdapter implements notes.FormMetaProvider.
+// Returns the form name and a human-readable version string (e.g. "1.0").
+type formMetaAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *formMetaAdapter) GetFormMeta(ctx context.Context, formVersionID, clinicID uuid.UUID) (string, string, error) {
+	version, err := a.repo.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.formMetaAdapter: get version: %w", err)
+	}
+	form, err := a.repo.GetFormByID(ctx, version.FormID, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.formMetaAdapter: get form: %w", err)
+	}
+	versionStr := "draft"
+	if version.VersionMajor != nil && version.VersionMinor != nil {
+		versionStr = fmt.Sprintf("%d.%d", *version.VersionMajor, *version.VersionMinor)
+	}
+	return form.Name, versionStr, nil
 }
 
 // newTranscriberFromConfig builds the correct Transcriber based on TRANSCRIPTION_PROVIDER.
