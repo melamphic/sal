@@ -206,6 +206,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// ── Notes module ──────────────────────────────────────────────────────────
 	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
+	// Wire per-clause policy checker if available (Gemini only for now).
+	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: policy detailed checker: %w", err)
+	}
+	if detailedChecker != nil {
+		notesSvc.SetPolicyChecker(detailedChecker, &policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo})
+	}
 	notesHandler := notes.NewHandler(notesSvc)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
