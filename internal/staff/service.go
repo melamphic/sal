@@ -40,7 +40,7 @@ type Service struct {
 	cipher  *crypto.Cipher
 	mailer  mailer.Mailer
 	appURL  string
-	invites InviteCreator    // nil = invite tokens not created (test mode)
+	invites InviteCreator      // nil = invite tokens not created (test mode)
 	clinics ClinicNameProvider // nil = clinic name omitted from emails (test mode)
 }
 
