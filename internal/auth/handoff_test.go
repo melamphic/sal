@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -226,6 +227,100 @@ func TestService_HandoffFromMel_DisabledWhenSecretUnset(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrUnauthorized)
+}
+
+// ── StartSignup — mints the handoff JWT from /mel ────────────────────────────
+
+func TestService_StartSignup_Happy_ReturnsHandoffURL(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newHandoffService(t)
+
+	res, err := svc.StartSignup(context.Background(), StartSignupInput{
+		Email:      "newadmin@example.test",
+		FullName:   "Pat Founder",
+		ClinicName: "Riverside Vets",
+		Vertical:   domain.VerticalVeterinary,
+		PlanCode:   string(domain.PlanPawsPracticeMonthly),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Contains(t, res.HandoffURL, "/auth/handoff?token=")
+	assert.True(t, res.ExpiresAt.After(time.Now()), "expiresAt must be in the future")
+
+	// The minted token must round-trip: HandoffFromMel should accept it.
+	u, err := url.Parse(res.HandoffURL)
+	require.NoError(t, err)
+	raw := u.Query().Get("token")
+	require.NotEmpty(t, raw)
+
+	pair, err := svc.HandoffFromMel(context.Background(), raw)
+	require.NoError(t, err)
+	assert.NotEmpty(t, pair.AccessToken)
+}
+
+func TestService_StartSignup_TrialSignup_OmitsPlanCode(t *testing.T) {
+	t.Parallel()
+	svc, prov, _ := newHandoffService(t)
+
+	res, err := svc.StartSignup(context.Background(), StartSignupInput{
+		Email:      "trial@example.test",
+		FullName:   "Trial Admin",
+		ClinicName: "Trial Co",
+		Vertical:   domain.VerticalGeneralClinic,
+		PlanCode:   "",
+	})
+	require.NoError(t, err)
+
+	u, err := url.Parse(res.HandoffURL)
+	require.NoError(t, err)
+
+	_, err = svc.HandoffFromMel(context.Background(), u.Query().Get("token"))
+	require.NoError(t, err)
+	assert.Nil(t, prov.lastInput.PlanCode, "empty plan_code must flow through as nil")
+}
+
+func TestService_StartSignup_DisabledWhenSecretUnset(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newTestService(t) // handoff secret never configured
+
+	_, err := svc.StartSignup(context.Background(), StartSignupInput{
+		Email:      "x@example.test",
+		FullName:   "X",
+		ClinicName: "X",
+		Vertical:   domain.VerticalVeterinary,
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrUnauthorized)
+}
+
+func TestService_StartSignup_UnsupportedVertical_Rejected(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newHandoffService(t)
+
+	_, err := svc.StartSignup(context.Background(), StartSignupInput{
+		Email:      "x@example.test",
+		FullName:   "X",
+		ClinicName: "X",
+		Vertical:   domain.VerticalAgedCare,
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrTokenInvalid)
+}
+
+func TestService_StartSignup_UnknownPlan_Rejected(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newHandoffService(t)
+
+	_, err := svc.StartSignup(context.Background(), StartSignupInput{
+		Email:      "x@example.test",
+		FullName:   "X",
+		ClinicName: "X",
+		Vertical:   domain.VerticalVeterinary,
+		PlanCode:   "phantom_plan_yearly",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, domain.ErrTokenInvalid)
 }
 
 // ── Provisioner failure ───────────────────────────────────────────────────────
