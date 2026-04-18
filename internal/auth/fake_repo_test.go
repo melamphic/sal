@@ -95,6 +95,10 @@ func (f *fakeRepo) GetStaffByID(_ context.Context, staffID uuid.UUID) (*staffRow
 	return s, nil
 }
 
+func (f *fakeRepo) CreateInviteToken(_ context.Context, _ CreateInviteParams) error {
+	return nil
+}
+
 func (f *fakeRepo) GetInviteByTokenHash(_ context.Context, _ string) (*inviteRow, error) {
 	return nil, domain.ErrNotFound
 }
