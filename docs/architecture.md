@@ -82,7 +82,7 @@ Every tenant table has `clinic_id UUID NOT NULL REFERENCES clinics(id)`. All rep
 
 ## Domain agnosticism
 
-The `vertical` field on the `clinics` table (`veterinary`, `dental`, `aged_care`) drives vertical-specific behaviour. Core modules (`timeline`, `forms`, `compliance`) contain no vertical-specific code. Vertical-specific logic satisfies interfaces defined in `internal/domain/`. Adding a new vertical never requires modifying existing packages.
+The `vertical` field on the `clinics` table (`veterinary`, `dental`, `general_clinic`, `aged_care`) drives vertical-specific behaviour. Core modules (`timeline`, `forms`, `compliance`) contain no vertical-specific code. Vertical-specific logic satisfies interfaces defined in `internal/domain/`. Adding a new vertical never requires modifying existing packages.
 
 The `subjects` table is intentionally generic. Vertical-specific fields live in extension tables (`vet_subject_details`, etc.) joined at the service layer.
 
