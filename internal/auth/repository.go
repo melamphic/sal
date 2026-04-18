@@ -161,6 +161,32 @@ func (r *Repository) GetStaffByID(ctx context.Context, staffID uuid.UUID) (*staf
 	return s, nil
 }
 
+// CreateInviteToken inserts a new hashed invite token for a staff invitation.
+func (r *Repository) CreateInviteToken(ctx context.Context, p CreateInviteParams) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO invite_tokens (id, clinic_id, email, email_hash, role, note_tier, permissions, token_hash, expires_at, invited_by_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, p.ID, p.ClinicID, p.Email, p.EmailHash, p.Role, p.NoteTier, p.Permissions, p.TokenHash, p.ExpiresAt, p.InvitedByID)
+	if err != nil {
+		return fmt.Errorf("auth.repo.CreateInviteToken: %w", err)
+	}
+	return nil
+}
+
+// CreateInviteParams holds the data for inserting an invite token row.
+type CreateInviteParams struct {
+	ID          uuid.UUID
+	ClinicID    uuid.UUID
+	Email       string // encrypted
+	EmailHash   string
+	Role        domain.StaffRole
+	NoteTier    domain.NoteTier
+	Permissions domain.Permissions
+	TokenHash   string
+	ExpiresAt   time.Time
+	InvitedByID uuid.UUID
+}
+
 // GetInviteByTokenHash fetches a pending invite token.
 func (r *Repository) GetInviteByTokenHash(ctx context.Context, tokenHash string) (*inviteRow, error) {
 	var inv inviteRow
