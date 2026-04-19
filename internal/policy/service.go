@@ -560,6 +560,75 @@ func (s *Service) ListClauses(ctx context.Context, policyID, clinicID, versionID
 	return toClauseListResponse(recs), nil
 }
 
+// ── Marketplace import ───────────────────────────────────────────────────────
+
+// ImportFromMarketplaceInput is the input for creating a tenant policy from
+// a marketplace package. The content JSONB and clause block_ids are preserved
+// verbatim so form extraction alignment continues to work post-import.
+type ImportFromMarketplaceInput struct {
+	ClinicID                   uuid.UUID
+	StaffID                    uuid.UUID
+	SourceMarketplaceVersionID uuid.UUID
+	Name                       string
+	Description                *string
+	Content                    json.RawMessage
+	Clauses                    []ClauseInput
+	ChangeSummary              string
+}
+
+// ImportFromMarketplace materialises a marketplace policy snapshot into the
+// tenant: creates the policy row stamped with source_marketplace_version_id,
+// creates a draft version with the content + clauses, then publishes it as v1.0.
+// Returns the new policy ID.
+func (s *Service) ImportFromMarketplace(ctx context.Context, input ImportFromMarketplaceInput) (uuid.UUID, error) {
+	policyID := domain.NewID()
+	_, err := s.repo.CreatePolicy(ctx, CreatePolicyParams{
+		ID:                         policyID,
+		ClinicID:                   input.ClinicID,
+		Name:                       input.Name,
+		Description:                input.Description,
+		CreatedBy:                  input.StaffID,
+		SourceMarketplaceVersionID: &input.SourceMarketplaceVersionID,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: create: %w", err)
+	}
+
+	content := input.Content
+	if content == nil {
+		content = json.RawMessage(`[]`)
+	}
+	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
+		ID:        domain.NewID(),
+		PolicyID:  policyID,
+		Content:   content,
+		CreatedBy: input.StaffID,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: draft: %w", err)
+	}
+
+	if _, err := s.repo.ReplaceClauses(ctx, draft.ID, input.Clauses); err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: clauses: %w", err)
+	}
+
+	summary := input.ChangeSummary
+	summaryPtr := &summary
+	if _, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
+		PolicyID:      policyID,
+		VersionMajor:  1,
+		VersionMinor:  0,
+		ChangeType:    "major",
+		ChangeSummary: summaryPtr,
+		PublishedBy:   input.StaffID,
+		PublishedAt:   domain.TimeNow(),
+	}); err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: publish: %w", err)
+	}
+
+	return policyID, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func nextVersion(changeType string, prevMajor, prevMinor *int) (major, minor int) {

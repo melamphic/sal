@@ -72,6 +72,15 @@ type Config struct {
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`
 
+	// Marketplace — Phase 1.5 onwards.
+	// Platform fee charged on paid listings from regular clinics. Authority
+	// bodies (authority_type IN 'salvia','authority') always pay 0%.
+	MarketplacePlatformFeePct    int    `env:"MARKETPLACE_PLATFORM_FEE_PCT,default=30"`
+	MarketplacePolicyAttribution string `env:"MARKETPLACE_POLICY_ATTRIBUTION,default="`
+
+	// Stripe Connect (required for paid marketplace listings; empty = disabled).
+	StripeSecretKey     string `env:"STRIPE_SECRET_KEY"`
+	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
 	// /mel handoff — shared HS256 secret with the /mel marketing site.
 	// Empty disables the POST /api/v1/auth/handoff endpoint (503).
 	MelHandoffJWTSecret string `env:"MEL_HANDOFF_JWT_SECRET"`
