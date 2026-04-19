@@ -284,7 +284,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	// ── Marketplace module ───────────────────────────────────────────────────
 	marketplaceRepo := marketplace.NewRepository(db)
-	stripeClient := marketplace.NewStripeSDKClient(cfg.StripeSecretKey, cfg.StripeWebhookSecret)
+	stripeClient := marketplace.NewStripeSDKClient(cfg.StripeAPIKey, cfg.StripeWebhookSecret)
 	marketplaceSvc := marketplace.NewService(
 		marketplaceRepo,
 		&marketplaceSnapshotAdapter{formsRepo: formsRepo},
@@ -1007,6 +1007,8 @@ func (a *marketplacePolicyNamerAdapter) GetPolicyNames(ctx context.Context, clin
 		out[id] = p.Name
 	}
 	return out, nil
+}
+
 // clinicStyleAdapter implements notes.ClinicStyleProvider.
 // Returns the clinic name and an empty brand color (uses PDF default blue).
 type clinicStyleAdapter struct {
