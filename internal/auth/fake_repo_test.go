@@ -16,11 +16,12 @@ import (
 )
 
 type fakeRepo struct {
-	mu     sync.Mutex
-	staff  map[string]*staffRow // keyed by emailHash
-	byID   map[uuid.UUID]*staffRow
-	tokens map[string]*tokenRow // keyed by tokenHash
-	last   struct {
+	mu      sync.Mutex
+	staff   map[string]*staffRow // keyed by emailHash
+	byID    map[uuid.UUID]*staffRow
+	tokens  map[string]*tokenRow // keyed by tokenHash
+	melJTIs map[string]time.Time // jti → expires_at
+	last    struct {
 		updatedLastActiveID uuid.UUID
 		deletedRefreshID    uuid.UUID
 		createdTokenHash    string
@@ -29,9 +30,10 @@ type fakeRepo struct {
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		staff:  make(map[string]*staffRow),
-		byID:   make(map[uuid.UUID]*staffRow),
-		tokens: make(map[string]*tokenRow),
+		staff:   make(map[string]*staffRow),
+		byID:    make(map[uuid.UUID]*staffRow),
+		tokens:  make(map[string]*tokenRow),
+		melJTIs: make(map[string]time.Time),
 	}
 }
 
@@ -123,5 +125,15 @@ func (f *fakeRepo) UpdateLastActive(_ context.Context, staffID uuid.UUID) error 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.last.updatedLastActiveID = staffID
+	return nil
+}
+
+func (f *fakeRepo) ConsumeMelHandoffToken(_ context.Context, jti string, expiresAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, exists := f.melJTIs[jti]; exists {
+		return domain.ErrTokenUsed
+	}
+	f.melJTIs[jti] = expiresAt
 	return nil
 }

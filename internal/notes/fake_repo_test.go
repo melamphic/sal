@@ -217,6 +217,17 @@ func (f *fakeRepo) UpdatePolicyAlignment(_ context.Context, id uuid.UUID, pct fl
 	return nil
 }
 
+func (f *fakeRepo) UpdatePolicyCheckResult(_ context.Context, id uuid.UUID, resultJSON string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n.PolicyCheckResult = &resultJSON
+	return nil
+}
+
 func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -231,6 +242,17 @@ func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRepo) UpdatePDFKey(_ context.Context, id uuid.UUID, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	n.PDFStorageKey = &key
+	return nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

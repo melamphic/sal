@@ -23,4 +23,9 @@ type repo interface {
 	MarkInviteAccepted(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensForStaff(ctx context.Context, staffID uuid.UUID) error
 	UpdateLastActive(ctx context.Context, staffID uuid.UUID) error
+
+	// ConsumeMelHandoffToken records the jti of a /mel handoff JWT so it
+	// cannot be replayed. Returns domain.ErrTokenUsed if jti is already
+	// present (single-use enforcement).
+	ConsumeMelHandoffToken(ctx context.Context, jti string, expiresAt time.Time) error
 }

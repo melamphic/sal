@@ -40,7 +40,7 @@ type Service struct {
 	cipher  *crypto.Cipher
 	mailer  mailer.Mailer
 	appURL  string
-	invites InviteCreator    // nil = invite tokens not created (test mode)
+	invites InviteCreator      // nil = invite tokens not created (test mode)
 	clinics ClinicNameProvider // nil = clinic name omitted from emails (test mode)
 }
 
@@ -79,6 +79,10 @@ type InviteInput struct {
 	NoteTier    domain.NoteTier
 	Permissions domain.Permissions
 	InviterName string
+	// SendEmail controls whether the invite email is dispatched.
+	// When false the invite is created but no email is sent — the caller is
+	// expected to share the returned invite URL out-of-band.
+	SendEmail bool
 }
 
 // CreateStaffInput is used when a staff member accepts an invite and sets up their account.
@@ -91,17 +95,18 @@ type CreateStaffInput struct {
 	Permissions domain.Permissions
 }
 
-// Invite creates a pending invite token and sends the invitation email.
+// Invite creates a pending invite token and (optionally) sends the invitation email.
+// Always returns the invite URL so callers can display or share it directly.
 // Returns domain.ErrConflict if an active staff member with that email already exists in this clinic.
-func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in InviteInput) error {
+func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in InviteInput) (string, error) {
 	emailHash := s.cipher.Hash(in.Email)
 
 	exists, err := s.repo.ExistsByEmailHash(ctx, emailHash, clinicID)
 	if err != nil {
-		return fmt.Errorf("staff.service.Invite: check duplicate: %w", err)
+		return "", fmt.Errorf("staff.service.Invite: check duplicate: %w", err)
 	}
 	if exists {
-		return domain.ErrConflict
+		return "", domain.ErrConflict
 	}
 
 	// Resolve clinic name for the invitation email.
@@ -109,7 +114,7 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 	if s.clinics != nil {
 		clinicName, err = s.clinics.GetClinicName(ctx, clinicID)
 		if err != nil {
-			return fmt.Errorf("staff.service.Invite: get clinic name: %w", err)
+			return "", fmt.Errorf("staff.service.Invite: get clinic name: %w", err)
 		}
 	}
 
@@ -123,16 +128,18 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 		InvitedByID: callerID,
 	})
 	if err != nil {
-		return fmt.Errorf("staff.service.Invite: create invite token: %w", err)
+		return "", fmt.Errorf("staff.service.Invite: create invite token: %w", err)
 	}
 
 	inviteURL := fmt.Sprintf("%s/invite/accept?token=%s", s.appURL, rawToken)
 
-	if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, clinicName, inviteURL); err != nil {
-		return fmt.Errorf("staff.service.Invite: send invite: %w", err)
+	if in.SendEmail {
+		if err := s.mailer.SendInvite(ctx, in.Email, in.InviterName, clinicName, inviteURL); err != nil {
+			return "", fmt.Errorf("staff.service.Invite: send invite: %w", err)
+		}
 	}
 
-	return nil
+	return inviteURL, nil
 }
 
 // Create inserts a new staff member from an accepted invite.
@@ -166,6 +173,31 @@ func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffRespon
 	}
 
 	return s.toDTO(row, in.Email, in.FullName), nil
+}
+
+// EnsureOwner finds-or-creates the super-admin staff for a clinic during /mel
+// handoff provisioning. Idempotent on (email_hash, clinic_id) — replaying the
+// same email returns the existing row. Bypasses the invite flow: no token,
+// no email, staff is active immediately so the handoff can mint a session.
+func (s *Service) EnsureOwner(ctx context.Context, clinicID uuid.UUID, email, fullName string) (*StaffResponse, error) {
+	emailHash := s.cipher.Hash(email)
+
+	existing, err := s.repo.GetByEmailHash(ctx, emailHash, clinicID)
+	if err == nil {
+		return s.decryptAndBuild(existing)
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("staff.service.EnsureOwner: lookup: %w", err)
+	}
+
+	return s.Create(ctx, CreateStaffInput{
+		ClinicID:    clinicID,
+		Email:       email,
+		FullName:    fullName,
+		Role:        domain.StaffRoleSuperAdmin,
+		NoteTier:    domain.NoteTierStandard,
+		Permissions: domain.DefaultPermissions(domain.StaffRoleSuperAdmin),
+	})
 }
 
 // GetByID returns decrypted staff details.

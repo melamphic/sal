@@ -3,7 +3,9 @@ package reports
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -57,6 +59,10 @@ func (w *GenerateReportWorker) Work(ctx context.Context, job *river.Job[Generate
 		return fmt.Errorf("generate_report: %w", err)
 	}
 
+	// Compute SHA-256 of the CSV content for integrity verification.
+	hash := sha256.Sum256(buf.Bytes())
+	contentHash := "sha256:" + hex.EncodeToString(hash[:])
+
 	// Upload to S3.
 	key := fmt.Sprintf("reports/%s/%s.csv", args.ClinicID, args.JobID)
 	size := int64(buf.Len())
@@ -67,7 +73,7 @@ func (w *GenerateReportWorker) Work(ctx context.Context, job *river.Job[Generate
 	}
 
 	// Mark complete — handler generates presigned URL on demand from the key.
-	if err := w.repo.MarkComplete(ctx, args.JobID, key); err != nil {
+	if err := w.repo.MarkComplete(ctx, args.JobID, key, contentHash); err != nil {
 		return fmt.Errorf("generate_report: mark complete: %w", err)
 	}
 

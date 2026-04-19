@@ -29,6 +29,13 @@ type inviteInput struct {
 		Role        domain.StaffRole   `json:"role" enum:"admin,vet,vet_nurse,receptionist" doc:"The role determines default permission set and UI access."`
 		NoteTier    domain.NoteTier    `json:"note_tier" enum:"standard,nurse,none" doc:"Billing tier. standard = counts toward clinic tier. nurse = 50% quota, no tier impact."`
 		Permissions domain.Permissions `json:"permissions" doc:"Permission flags. Role defaults are pre-applied — override here as needed."`
+		SendEmail   *bool              `json:"send_email,omitempty" doc:"When false the invite email is not sent — caller is expected to share the returned invite_url out-of-band. Defaults to true."`
+	}
+}
+
+type inviteResponse struct {
+	Body struct {
+		InviteURL string `json:"invite_url" doc:"URL the invited person opens to accept and set up their account."`
 	}
 }
 
@@ -59,7 +66,7 @@ type staffListResponse struct {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 // invite handles POST /api/v1/staff/invite.
-func (h *Handler) invite(ctx context.Context, input *inviteInput) (*struct{}, error) {
+func (h *Handler) invite(ctx context.Context, input *inviteInput) (*inviteResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	callerID := mw.StaffIDFromContext(ctx)
 
@@ -73,18 +80,27 @@ func (h *Handler) invite(ctx context.Context, input *inviteInput) (*struct{}, er
 	defaults := domain.DefaultPermissions(input.Body.Role)
 	perms := mergePerms(defaults, input.Body.Permissions)
 
-	if err := h.svc.Invite(ctx, clinicID, callerID, InviteInput{
+	sendEmail := true
+	if input.Body.SendEmail != nil {
+		sendEmail = *input.Body.SendEmail
+	}
+
+	url, err := h.svc.Invite(ctx, clinicID, callerID, InviteInput{
 		Email:       input.Body.Email,
 		FullName:    input.Body.FullName,
 		Role:        input.Body.Role,
 		NoteTier:    input.Body.NoteTier,
 		Permissions: perms,
 		InviterName: caller.FullName,
-	}); err != nil {
+		SendEmail:   sendEmail,
+	})
+	if err != nil {
 		return nil, mapStaffError(err)
 	}
 
-	return nil, nil
+	resp := &inviteResponse{}
+	resp.Body.InviteURL = url
+	return resp, nil
 }
 
 // list handles GET /api/v1/staff.
@@ -97,6 +113,19 @@ func (h *Handler) list(ctx context.Context, input *listStaffInput) (*staffListRe
 	}
 
 	return &staffListResponse{Body: page}, nil
+}
+
+// getMe handles GET /api/v1/staff/me — returns the authenticated staff member's profile.
+func (h *Handler) getMe(ctx context.Context, _ *struct{}) (*staffResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	dto, err := h.svc.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
+
+	return &staffResponse{Body: dto}, nil
 }
 
 // get handles GET /api/v1/staff/{staff_id}.
@@ -169,6 +198,7 @@ func mergePerms(defaults, explicit domain.Permissions) domain.Permissions {
 		ViewOwnPatients:     defaults.ViewOwnPatients || explicit.ViewOwnPatients,
 		Dispense:            defaults.Dispense || explicit.Dispense,
 		GenerateAuditExport: defaults.GenerateAuditExport || explicit.GenerateAuditExport,
+		ManagePatients:      defaults.ManagePatients || explicit.ManagePatients,
 	}
 }
 

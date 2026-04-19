@@ -11,5 +11,7 @@ type repo interface {
 	Create(ctx context.Context, p CreateParams) (*Clinic, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*Clinic, error)
 	GetByEmailHash(ctx context.Context, emailHash string) (*Clinic, error)
+	GetByStripeCustomerID(ctx context.Context, stripeCustomerID string) (*Clinic, error)
 	Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Clinic, error)
+	ApplySubscriptionState(ctx context.Context, id uuid.UUID, p ApplySubscriptionStateParams) (*Clinic, error)
 }

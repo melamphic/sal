@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/melamphic/sal/internal/domain"
 	"github.com/sethvargo/go-envconfig"
 )
 
@@ -80,6 +81,19 @@ type Config struct {
 	// Stripe Connect (required for paid marketplace listings; empty = disabled).
 	StripeSecretKey     string `env:"STRIPE_SECRET_KEY"`
 	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
+	// /mel handoff — shared HS256 secret with the /mel marketing site.
+	// Empty disables the POST /api/v1/auth/handoff endpoint (503).
+	MelHandoffJWTSecret string `env:"MEL_HANDOFF_JWT_SECRET"`
+
+	// Stripe — webhook receiver. Empty disables the webhook endpoint.
+	// STRIPE_API_KEY is reserved for B4 (billing portal); B3 only needs
+	// the webhook secret.
+	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
+	StripeAPIKey        string `env:"STRIPE_API_KEY"`
+	// StripePriceMap is "price_xxx=paws_practice_monthly,price_yyy=..."
+	// — a static mapping of Stripe price ids to Salvia plan codes.
+	// Parsed at startup via ParseStripePriceMap; invalid codes abort boot.
+	StripePriceMap string `env:"STRIPE_PRICE_MAP"`
 }
 
 // Load reads configuration from the environment and validates it.
@@ -116,6 +130,35 @@ func (c *Config) AllowedOrigins() []string {
 		}
 	}
 	return out
+}
+
+// ParseStripePriceMap parses STRIPE_PRICE_MAP into price_id → PlanCode.
+// Format: "price_xxx=paws_practice_monthly,price_yyy=paws_pro_monthly".
+// Whitespace is ignored around each entry. Returns an error if any
+// plan code is not registered in domain.Plans — prevents typos from
+// silently mis-billing customers.
+func (c *Config) ParseStripePriceMap() (map[string]domain.PlanCode, error) {
+	out := make(map[string]domain.PlanCode)
+	if c.StripePriceMap == "" {
+		return out, nil
+	}
+	for _, pair := range strings.Split(c.StripePriceMap, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		eq := strings.IndexByte(pair, '=')
+		if eq <= 0 || eq == len(pair)-1 {
+			return nil, fmt.Errorf("STRIPE_PRICE_MAP: bad entry %q (want price_id=plan_code)", pair)
+		}
+		priceID := strings.TrimSpace(pair[:eq])
+		planCode := domain.PlanCode(strings.TrimSpace(pair[eq+1:]))
+		if _, ok := domain.PlanFor(planCode); !ok {
+			return nil, fmt.Errorf("STRIPE_PRICE_MAP: unknown plan_code %q for price %q", planCode, priceID)
+		}
+		out[priceID] = planCode
+	}
+	return out, nil
 }
 
 // IsDevelopment returns true when running in the development environment.

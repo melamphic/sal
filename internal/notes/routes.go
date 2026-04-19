@@ -72,6 +72,28 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.submitNote)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "check-note-policy",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/check-policy",
+		Summary:     "Check policy compliance",
+		Description: "Runs a per-clause policy compliance check on the note. Returns pass/fail status and reasoning for each linked policy clause. High-parity violations block submission. Results are stored on the note for submit-time validation.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.checkPolicy)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-note-pdf",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/notes/{note_id}/pdf",
+		Summary:     "Get note PDF",
+		Description: "Returns a pre-signed download URL for the note's branded PDF. The PDF is generated asynchronously after submission. Returns 404 if the PDF is not yet ready.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.getNotePDF)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "archive-note",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/notes/{note_id}/archive",

@@ -147,20 +147,43 @@ func TestService_Invite_SendsEmail(t *testing.T) {
 	svc, _, m := newTestService(t)
 	clinicID := uuid.New()
 
-	err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
+	url, err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
 		Email:       "newstaff@clinic.co.nz",
 		FullName:    "New Staff",
 		Role:        domain.StaffRoleVet,
 		NoteTier:    domain.NoteTierStandard,
 		Permissions: domain.DefaultPermissions(domain.StaffRoleVet),
 		InviterName: "Dr. Admin",
+		SendEmail:   true,
 	})
 
 	require.NoError(t, err)
+	assert.NotEmpty(t, url, "Invite must always return the invite URL")
+	assert.Contains(t, url, "/invite/accept?token=")
 	assert.Equal(t, 1, m.Count("invite"), "should send exactly one invite email")
 	last := m.Last()
 	require.NotNil(t, last)
 	assert.Equal(t, "newstaff@clinic.co.nz", last.To)
+}
+
+func TestService_Invite_SendEmailFalse_SkipsMailer(t *testing.T) {
+	t.Parallel()
+	svc, _, m := newTestService(t)
+	clinicID := uuid.New()
+
+	url, err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
+		Email:       "linkonly@clinic.co.nz",
+		FullName:    "Link-only Staff",
+		Role:        domain.StaffRoleVet,
+		NoteTier:    domain.NoteTierStandard,
+		Permissions: domain.DefaultPermissions(domain.StaffRoleVet),
+		InviterName: "Dr. Admin",
+		SendEmail:   false,
+	})
+
+	require.NoError(t, err)
+	assert.NotEmpty(t, url)
+	assert.Equal(t, 0, m.Count("invite"), "must not send email when SendEmail=false")
 }
 
 func TestService_Invite_DuplicateEmail_ReturnsConflict(t *testing.T) {
@@ -173,11 +196,12 @@ func TestService_Invite_DuplicateEmail_ReturnsConflict(t *testing.T) {
 	seedStaff(t, svc, clinicID, email, "Existing Staff", domain.StaffRoleVet)
 
 	// Now try to invite the same email to the same clinic.
-	err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
+	_, err := svc.Invite(context.Background(), clinicID, uuid.New(), InviteInput{
 		Email:       email,
 		FullName:    "Duplicate Staff",
 		Role:        domain.StaffRoleVet,
 		InviterName: "Dr. Admin",
+		SendEmail:   true,
 	})
 
 	require.Error(t, err)
@@ -193,11 +217,12 @@ func TestService_Invite_SameEmailDifferentClinic_Allowed(t *testing.T) {
 
 	seedStaff(t, svc, clinicA, email, "Clinic A Staff", domain.StaffRoleVet)
 
-	err := svc.Invite(context.Background(), clinicB, uuid.New(), InviteInput{
+	_, err := svc.Invite(context.Background(), clinicB, uuid.New(), InviteInput{
 		Email:       email,
 		FullName:    "Clinic B Staff",
 		Role:        domain.StaffRoleVet,
 		InviterName: "Dr. Admin",
+		SendEmail:   true,
 	})
 
 	require.NoError(t, err, "same email must be allowed in a different clinic")
@@ -346,4 +371,37 @@ func TestService_Deactivate_NotFound_ReturnsError(t *testing.T) {
 	_, err := svc.Deactivate(context.Background(), uuid.New(), uuid.New(), uuid.New())
 	require.Error(t, err)
 	assert.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+// ── EnsureOwner ───────────────────────────────────────────────────────────────
+
+func TestService_EnsureOwner_CreatesNewSuperAdmin(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newTestService(t)
+	clinicID := uuid.New()
+
+	dto, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Jane Founder")
+	require.NoError(t, err)
+
+	assert.Equal(t, "founder@clinic.test", dto.Email)
+	assert.Equal(t, "Jane Founder", dto.FullName)
+	assert.Equal(t, domain.StaffRoleSuperAdmin, dto.Role)
+	assert.Equal(t, domain.NoteTierStandard, dto.NoteTier)
+	assert.Equal(t, domain.StaffStatusActive, dto.Status)
+}
+
+func TestService_EnsureOwner_Idempotent_ReturnsExisting(t *testing.T) {
+	t.Parallel()
+	svc, _, _ := newTestService(t)
+	clinicID := uuid.New()
+
+	first, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Jane Founder")
+	require.NoError(t, err)
+
+	// Replay — must return the same staff row.
+	second, err := svc.EnsureOwner(context.Background(), clinicID, "founder@clinic.test", "Different Name")
+	require.NoError(t, err)
+
+	assert.Equal(t, first.ID, second.ID, "same email must return same staff")
+	assert.Equal(t, "Jane Founder", second.FullName, "existing name must not be overwritten")
 }

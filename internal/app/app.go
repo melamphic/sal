@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
@@ -40,6 +42,7 @@ import (
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/timeline"
+	"github.com/melamphic/sal/internal/verticals"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
@@ -98,12 +101,21 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		MagicLinkTTL:  cfg.MagicLinkTTL,
 		AppURL:        cfg.AppURL,
 	}, staffCreator)
-	authHandler := auth.NewHandler(authSvc)
+	// 10 requests per minute per IP on public auth endpoints.
+	rlStore := mw.NewRateLimiterStore(10.0/60.0, 10)
+	authHandler := auth.NewHandler(authSvc, rlStore)
+
+	// ── Storage (S3-compatible) ────────────────────────────────────────────────
+	store, err := storage.New(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: storage: %w", err)
+	}
+	clinicLogos := &clinicLogoAdapter{store: store}
 
 	clinicRepo := clinic.NewRepository(db)
 	// adminBootstrapAdapter is set after authSvc and staffSvc are wired below.
 	clinicBootstrap := &adminBootstrapAdapter{}
-	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap)
+	clinicSvc := clinic.NewService(clinicRepo, cipher, clinicBootstrap, clinicLogos, clinicLogos)
 	clinicHandler := clinic.NewHandler(clinicSvc)
 
 	inviteAdapter := &inviteCreatorAdapter{auth: authSvc, cipher: cipher}
@@ -117,15 +129,47 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicBootstrap.staff = staffSvc
 	staffCreator.staff = staffSvc
 
+	// /mel handoff wiring — only enabled when the shared JWT secret is set.
+	if cfg.MelHandoffJWTSecret != "" {
+		authSvc.SetMelHandoff(
+			[]byte(cfg.MelHandoffJWTSecret),
+			&melHandoffAdapter{clinic: clinicSvc, staff: staffSvc},
+		)
+	}
+
+	// ── Billing (Stripe webhook + portal) ────────────────────────────────
+	// Gated on STRIPE_WEBHOOK_SECRET — without it neither route is mounted.
+	// Portal additionally requires STRIPE_API_KEY; when it's missing the
+	// portal endpoint 400s with a clear message.
+	var billingHandler *billing.Handler
+	if cfg.StripeWebhookSecret != "" {
+		priceMap, err := cfg.ParseStripePriceMap()
+		if err != nil {
+			return nil, fmt.Errorf("app.Build: %w", err)
+		}
+		billingRepo := billing.NewRepository(db)
+		billingSvc := billing.NewService(
+			billingRepo,
+			&billingClinicAdapter{clinic: clinicSvc},
+			staticPlanLookup(priceMap),
+			[]byte(cfg.StripeWebhookSecret),
+		)
+		if cfg.StripeAPIKey != "" {
+			billingSvc.EnablePortal(
+				billing.NewStripePortalClient(cfg.StripeAPIKey),
+				cfg.AppURL+"/settings/billing",
+			)
+		}
+		billingHandler = billing.NewHandler(billingSvc, log)
+	}
+
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
 	patientHandler := patient.NewHandler(patientSvc)
 
-	// ── Storage (S3-compatible) ────────────────────────────────────────────────
-	store, err := storage.New(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("app.Build: storage: %w", err)
-	}
+	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
+	verticalsSvc := verticals.NewService(verticalAdapter)
+	verticalsHandler := verticals.NewHandler(verticalsSvc)
 
 	// ── Transcription provider ─────────────────────────────────────────────────
 	transcriber, err := newTranscriberFromConfig(ctx, cfg)
@@ -183,6 +227,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo},
 		aligner,
 	))
+	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
+		notesRepo,
+		&formMetaAdapter{repo: formsRepo},
+		&clinicStyleAdapter{clinic: clinicSvc},
+		&staffNameAdapter{staff: staffSvc},
+		store,
+	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
 		Queues: map[string]river.QueueConfig{
@@ -204,8 +255,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
-	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter)
-	notesHandler := notes.NewHandler(notesSvc)
+	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
+	// Wire per-clause policy checker if available (Gemini only for now).
+	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: policy detailed checker: %w", err)
+	}
+	if detailedChecker != nil {
+		notesSvc.SetPolicyChecker(detailedChecker, &policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo})
+	}
+	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
 	timelineSvc := timeline.NewService(timelineRepo)
@@ -276,6 +335,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicHandler.Mount(r, api, jwtSecret)
 	staffHandler.Mount(r, api, jwtSecret)
 	patientHandler.Mount(r, api, jwtSecret)
+	verticalsHandler.Mount(r, api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
 	notesHandler.Mount(r, api, jwtSecret)
@@ -284,6 +344,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
+	if billingHandler != nil {
+		billingHandler.Mount(r, api, jwtSecret)
+	}
 
 	// Health check — no auth, no logging overhead.
 	r.Get("/health", func(w http.ResponseWriter, req *http.Request) {
@@ -419,6 +482,119 @@ func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUI
 		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
 	}
 	return nil
+}
+
+// billingClinicAdapter implements billing.ClinicUpdater by bridging to
+// clinic.Service. Billing never imports the clinic package directly.
+type billingClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *billingClinicAdapter) FindByStripeCustomerID(ctx context.Context, stripeCustomerID string) (uuid.UUID, error) {
+	id, err := a.clinic.GetIDByStripeCustomer(ctx, stripeCustomerID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.billingClinicAdapter.FindByStripeCustomerID: %w", err)
+	}
+	return id, nil
+}
+
+func (a *billingClinicAdapter) GetStripeCustomerID(ctx context.Context, clinicID uuid.UUID) (*string, error) {
+	id, err := a.clinic.GetStripeCustomerID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.billingClinicAdapter.GetStripeCustomerID: %w", err)
+	}
+	return id, nil
+}
+
+func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clinicID uuid.UUID, s billing.SubscriptionState) error {
+	if err := a.clinic.ApplyBillingState(ctx, clinicID, clinic.BillingState{
+		Status:               s.Status,
+		PlanCode:             s.PlanCode,
+		StripeCustomerID:     s.StripeCustomerID,
+		StripeSubscriptionID: s.StripeSubscriptionID,
+	}); err != nil {
+		return fmt.Errorf("app.billingClinicAdapter.ApplySubscriptionState: %w", err)
+	}
+	return nil
+}
+
+// staticPlanLookup implements billing.PlanLookup from a parsed env map.
+type staticPlanLookup map[string]domain.PlanCode
+
+func (m staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
+	pc, ok := m[id]
+	return pc, ok
+}
+
+// melHandoffAdapter implements auth.HandoffProvisioner by bridging to
+// clinic.HandoffProvision + staff.EnsureOwner. Both calls are idempotent on
+// email_hash so replaying the same email (with a fresh jti) returns the
+// existing rows.
+type melHandoffAdapter struct {
+	clinic *clinic.Service
+	staff  *staff.Service
+}
+
+func (a *melHandoffAdapter) ProvisionFromHandoff(ctx context.Context, in auth.HandoffProvisionInput) (uuid.UUID, uuid.UUID, error) {
+	c, err := a.clinic.HandoffProvision(ctx, clinic.HandoffProvisionInput{
+		Email:            in.Email,
+		ClinicName:       in.ClinicName,
+		Vertical:         in.Vertical,
+		PlanCode:         in.PlanCode,
+		StripeCustomerID: in.StripeCustomerID,
+	})
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: provision clinic: %w", err)
+	}
+	clinicID, err := uuid.Parse(c.ID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: parse clinic id: %w", err)
+	}
+
+	s, err := a.staff.EnsureOwner(ctx, clinicID, in.Email, in.FullName)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: ensure owner: %w", err)
+	}
+	staffID, err := uuid.Parse(s.ID)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, fmt.Errorf("app.melHandoffAdapter: parse staff id: %w", err)
+	}
+	return clinicID, staffID, nil
+}
+
+// clinicLogoAdapter implements clinic.LogoUploader and clinic.LogoSigner against
+// the platform/storage S3 client. Logos are stored under logos/{clinic_id}/.
+type clinicLogoAdapter struct {
+	store *storage.Store
+}
+
+func (a *clinicLogoAdapter) UploadLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error) {
+	ext := logoExtForContentType(contentType)
+	key := fmt.Sprintf("logos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", fmt.Errorf("app.clinicLogoAdapter.UploadLogo: %w", err)
+	}
+	return key, nil
+}
+
+func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicLogoAdapter.SignLogoURL: %w", err)
+	}
+	return url, nil
+}
+
+func logoExtForContentType(ct string) string {
+	switch ct {
+	case "image/png":
+		return ".png"
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	case "image/svg+xml":
+		return ".svg"
+	}
+	return ""
 }
 
 // lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.
@@ -563,6 +739,21 @@ func (a *clinicNameProviderAdapter) GetClinicName(ctx context.Context, clinicID 
 		return "", fmt.Errorf("app.clinicNameProviderAdapter: %w", err)
 	}
 	return c.Name, nil
+}
+
+// clinicVerticalProviderAdapter implements verticals.ClinicVerticalProvider.
+// Resolves a clinic's vertical so the verticals service can return the
+// matching form schema.
+type clinicVerticalProviderAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (domain.Vertical, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
+	}
+	return c.Vertical, nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
@@ -816,6 +1007,53 @@ func (a *marketplacePolicyNamerAdapter) GetPolicyNames(ctx context.Context, clin
 		out[id] = p.Name
 	}
 	return out, nil
+// clinicStyleAdapter implements notes.ClinicStyleProvider.
+// Returns the clinic name and an empty brand color (uses PDF default blue).
+type clinicStyleAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.clinicStyleAdapter: %w", err)
+	}
+	return c.Name, "", nil // empty color → PDF default blue
+}
+
+// staffNameAdapter implements notes.StaffNameProvider.
+type staffNameAdapter struct {
+	staff *staff.Service
+}
+
+func (a *staffNameAdapter) GetStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error) {
+	s, err := a.staff.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.staffNameAdapter: %w", err)
+	}
+	return s.FullName, nil
+}
+
+// formMetaAdapter implements notes.FormMetaProvider.
+// Returns the form name and a human-readable version string (e.g. "1.0").
+type formMetaAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *formMetaAdapter) GetFormMeta(ctx context.Context, formVersionID, clinicID uuid.UUID) (string, string, error) {
+	version, err := a.repo.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.formMetaAdapter: get version: %w", err)
+	}
+	form, err := a.repo.GetFormByID(ctx, version.FormID, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.formMetaAdapter: get form: %w", err)
+	}
+	versionStr := "draft"
+	if version.VersionMajor != nil && version.VersionMinor != nil {
+		versionStr = fmt.Sprintf("%d.%d", *version.VersionMajor, *version.VersionMinor)
+	}
+	return form.Name, versionStr, nil
 }
 
 // newTranscriberFromConfig builds the correct Transcriber based on TRANSCRIPTION_PROVIDER.

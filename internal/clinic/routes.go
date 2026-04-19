@@ -48,4 +48,15 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 		Middlewares: huma.Middlewares{auth, manageStaff},
 	}, h.update)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-clinic-logo",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/clinic/logo",
+		Summary:     "Upload clinic logo",
+		Description: "Multipart upload (field \"file\"). Stores the logo in object storage and returns the updated clinic with a freshly-signed logo_url. Requires manage_staff permission.",
+		Tags:        []string{"Clinic"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.uploadLogo)
 }

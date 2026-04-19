@@ -123,6 +123,28 @@ func (r *Repository) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (
 	return row, nil
 }
 
+// GetByEmailHash fetches a staff member by their hashed email within a clinic.
+// Returns domain.ErrNotFound if no active staff member matches.
+func (r *Repository) GetByEmailHash(ctx context.Context, emailHash string, clinicID uuid.UUID) (*StaffRecord, error) {
+	row, err := r.scanOne(ctx, `
+		SELECT id, clinic_id, email, email_hash, full_name, role, note_tier,
+		       perm_manage_staff, perm_manage_forms, perm_manage_policies,
+		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
+		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
+		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
+		       status, last_active_at, created_at, updated_at, archived_at
+		FROM staff
+		WHERE email_hash = $1 AND clinic_id = $2 AND archived_at IS NULL
+	`, emailHash, clinicID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("staff.repo.GetByEmailHash: %w", err)
+	}
+	return row, nil
+}
+
 // ExistsByEmailHash checks if a staff member with the given email hash already exists in the clinic.
 func (r *Repository) ExistsByEmailHash(ctx context.Context, emailHash string, clinicID uuid.UUID) (bool, error) {
 	var count int
