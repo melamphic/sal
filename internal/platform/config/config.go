@@ -70,6 +70,16 @@ type Config struct {
 	// Frontend
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`
+
+	// Marketplace — Phase 1.5 onwards.
+	// Platform fee charged on paid listings from regular clinics. Authority
+	// bodies (authority_type IN 'salvia','authority') always pay 0%.
+	MarketplacePlatformFeePct    int    `env:"MARKETPLACE_PLATFORM_FEE_PCT,default=30"`
+	MarketplacePolicyAttribution string `env:"MARKETPLACE_POLICY_ATTRIBUTION,default="`
+
+	// Stripe Connect (required for paid marketplace listings; empty = disabled).
+	StripeSecretKey     string `env:"STRIPE_SECRET_KEY"`
+	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
 }
 
 // Load reads configuration from the environment and validates it.

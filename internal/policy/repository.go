@@ -83,13 +83,16 @@ type UpdateFolderParams struct {
 }
 
 // CreatePolicyParams holds values needed to insert a new policy row.
+// SourceMarketplaceVersionID is non-nil only when the policy is materialised
+// from a marketplace acquisition — enables soft edit warnings later.
 type CreatePolicyParams struct {
-	ID          uuid.UUID
-	ClinicID    uuid.UUID
-	FolderID    *uuid.UUID
-	Name        string
-	Description *string
-	CreatedBy   uuid.UUID
+	ID                         uuid.UUID
+	ClinicID                   uuid.UUID
+	FolderID                   *uuid.UUID
+	Name                       string
+	Description                *string
+	CreatedBy                  uuid.UUID
+	SourceMarketplaceVersionID *uuid.UUID
 }
 
 // UpdatePolicyMetaParams holds values needed to update policy metadata.
@@ -227,12 +230,12 @@ func (r *Repository) ListFolders(ctx context.Context, clinicID uuid.UUID) ([]*Po
 // CreatePolicy inserts a new policy row.
 func (r *Repository) CreatePolicy(ctx context.Context, p CreatePolicyParams) (*PolicyRecord, error) {
 	const q = `
-		INSERT INTO policies (id, clinic_id, folder_id, name, description, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO policies (id, clinic_id, folder_id, name, description, created_by, source_marketplace_version_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, clinic_id, folder_id, name, description,
 		          created_by, created_at, updated_at, archived_at, retire_reason`
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.FolderID, p.Name, p.Description, p.CreatedBy)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.FolderID, p.Name, p.Description, p.CreatedBy, p.SourceMarketplaceVersionID)
 	rec, err := scanPolicy(row)
 	if err != nil {
 		return nil, fmt.Errorf("policy.repo.CreatePolicy: %w", err)
