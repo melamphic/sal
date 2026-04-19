@@ -27,6 +27,7 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
+	"github.com/melamphic/sal/internal/marketplace"
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
@@ -281,6 +282,25 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	reportsSvc := reports.NewService(reportsRepo, riverClient)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
 
+	// ── Marketplace module ───────────────────────────────────────────────────
+	marketplaceRepo := marketplace.NewRepository(db)
+	stripeClient := marketplace.NewStripeSDKClient(cfg.StripeAPIKey, cfg.StripeWebhookSecret)
+	marketplaceSvc := marketplace.NewService(
+		marketplaceRepo,
+		&marketplaceSnapshotAdapter{formsRepo: formsRepo},
+		&marketplacePolicySnapshotAdapter{policyRepo: policyRepo},
+		&marketplaceImporterAdapter{formsSvc: formsSvc},
+		&marketplacePolicyImporterAdapter{policySvc: policySvc},
+		&marketplacePolicyNamerAdapter{policyRepo: policyRepo},
+		&marketplaceClinicInfoAdapter{clinicSvc: clinicSvc},
+		stripeClient,
+		marketplace.ServiceConfig{
+			PlatformFeeRegularPct: cfg.MarketplacePlatformFeePct,
+			PolicyAttribution:     cfg.MarketplacePolicyAttribution,
+		},
+	)
+	marketplaceHandler := marketplace.NewHandler(marketplaceSvc)
+
 	// ── Router ────────────────────────────────────────────────────────────────
 	r := chi.NewRouter()
 
@@ -323,6 +343,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notificationsHandler.Mount(r, jwtSecret)
 	policyHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
+	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
 		billingHandler.Mount(r, api, jwtSecret)
 	}
@@ -744,6 +765,248 @@ func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, pol
 		return fmt.Errorf("app.policyFormLinkerAdapter: %w", err)
 	}
 	return nil
+}
+
+// ── Marketplace adapters ──────────────────────────────────────────────────────
+
+// marketplaceSnapshotAdapter implements marketplace.FormSnapshotter by reading
+// directly from the forms repository.
+type marketplaceSnapshotAdapter struct {
+	formsRepo *forms.Repository
+}
+
+func (a *marketplaceSnapshotAdapter) SnapshotForm(ctx context.Context, formID, clinicID uuid.UUID) (*marketplace.FormSnapshot, error) {
+	form, err := a.formsRepo.GetFormByID(ctx, formID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplaceSnapshotAdapter: %w", err)
+	}
+	version, err := a.formsRepo.GetLatestPublishedVersion(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplaceSnapshotAdapter: latest version: %w", err)
+	}
+	fields, err := a.formsRepo.GetFieldsByVersionID(ctx, version.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplaceSnapshotAdapter: fields: %w", err)
+	}
+
+	out := &marketplace.FormSnapshot{
+		FormVersionID: version.ID,
+		Name:          form.Name,
+		Description:   form.Description,
+		OverallPrompt: form.OverallPrompt,
+		Tags:          form.Tags,
+		Fields:        make([]marketplace.FormSnapshotField, len(fields)),
+	}
+	for i, f := range fields {
+		// Copy the *float64 into a fresh variable so the slice carries
+		// independent pointers rather than aliasing the repository scan target.
+		var minConf *float64
+		if f.MinConfidence != nil {
+			v := *f.MinConfidence
+			minConf = &v
+		}
+		out.Fields[i] = marketplace.FormSnapshotField{
+			Position:       f.Position,
+			Title:          f.Title,
+			Type:           f.Type,
+			Config:         f.Config,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  minConf,
+		}
+	}
+	return out, nil
+}
+
+func (a *marketplaceSnapshotAdapter) LinkedPolicyIDs(ctx context.Context, formID, clinicID uuid.UUID) ([]uuid.UUID, error) {
+	// Ownership check first so cross-tenant probes fail.
+	if _, err := a.formsRepo.GetFormByID(ctx, formID, clinicID); err != nil {
+		return nil, fmt.Errorf("app.marketplaceSnapshotAdapter: %w", err)
+	}
+	ids, err := a.formsRepo.ListLinkedPolicies(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplaceSnapshotAdapter: %w", err)
+	}
+	return ids, nil
+}
+
+// marketplacePolicySnapshotAdapter implements marketplace.PolicySnapshotter
+// by reading directly from the policy repository.
+type marketplacePolicySnapshotAdapter struct {
+	policyRepo *policy.Repository
+}
+
+func (a *marketplacePolicySnapshotAdapter) SnapshotPolicy(ctx context.Context, policyID, clinicID uuid.UUID) (*marketplace.PolicySnapshot, error) {
+	p, err := a.policyRepo.GetPolicyByID(ctx, policyID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter: %w", err)
+	}
+	version, err := a.policyRepo.GetLatestPublishedVersion(ctx, policyID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter: version: %w", err)
+	}
+	clauses, err := a.policyRepo.ListClauses(ctx, version.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter: clauses: %w", err)
+	}
+	out := &marketplace.PolicySnapshot{
+		PolicyID:    p.ID,
+		Name:        p.Name,
+		Description: p.Description,
+		Content:     version.Content,
+		Clauses:     make([]marketplace.PolicySnapshotClause, len(clauses)),
+	}
+	for i, c := range clauses {
+		out.Clauses[i] = marketplace.PolicySnapshotClause{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		}
+	}
+	return out, nil
+}
+
+// marketplaceClinicInfoAdapter implements marketplace.ClinicInfoProvider.
+type marketplaceClinicInfoAdapter struct {
+	clinicSvc *clinic.Service
+}
+
+func (a *marketplaceClinicInfoAdapter) GetClinicInfo(ctx context.Context, clinicID uuid.UUID) (*marketplace.ClinicInfo, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplaceClinicInfoAdapter: %w", err)
+	}
+	return &marketplace.ClinicInfo{
+		Status:   string(c.Status),
+		Vertical: string(c.Vertical),
+	}, nil
+}
+
+// marketplacePolicyImporterAdapter implements marketplace.PolicyImporter by
+// creating a tenant policy + published version + clauses via the policy service.
+// Preserves block_ids verbatim so form extraction alignment keeps working.
+type marketplacePolicyImporterAdapter struct {
+	policySvc *policy.Service
+}
+
+func (a *marketplacePolicyImporterAdapter) ImportPolicy(ctx context.Context, in marketplace.PolicyImportInput) (uuid.UUID, error) {
+	clauses := make([]policy.ClauseInput, len(in.Clauses))
+	for i, c := range in.Clauses {
+		clauses[i] = policy.ClauseInput{
+			BlockID: c.BlockID,
+			Title:   c.Title,
+			Parity:  c.Parity,
+		}
+	}
+	id, err := a.policySvc.ImportFromMarketplace(ctx, policy.ImportFromMarketplaceInput{
+		ClinicID:                   in.ClinicID,
+		StaffID:                    in.StaffID,
+		SourceMarketplaceVersionID: in.SourceMarketplaceVersionID,
+		Name:                       in.Name,
+		Description:                in.Description,
+		Content:                    in.Content,
+		Clauses:                    clauses,
+		ChangeSummary:              in.ChangeSummary,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.marketplacePolicyImporterAdapter: %w", err)
+	}
+	return id, nil
+}
+
+// marketplaceImporterAdapter implements marketplace.FormImporter by
+// materialising a package into a new tenant form via the forms service.
+// Follows the forms invariant: create form (with draft) → replace fields →
+// publish draft → v1.0.
+type marketplaceImporterAdapter struct {
+	formsSvc *forms.Service
+}
+
+// LinkFormToPolicy satisfies marketplace.FormImporter.
+func (a *marketplaceImporterAdapter) LinkFormToPolicy(ctx context.Context, formID, clinicID, policyID, staffID uuid.UUID) error {
+	if err := a.formsSvc.LinkPolicy(ctx, formID, clinicID, policyID, staffID); err != nil {
+		return fmt.Errorf("app.marketplaceImporterAdapter: link: %w", err)
+	}
+	return nil
+}
+
+func (a *marketplaceImporterAdapter) ImportForm(ctx context.Context, in marketplace.FormImportInput) (uuid.UUID, error) {
+	created, err := a.formsSvc.CreateForm(ctx, forms.CreateFormInput{
+		ClinicID:      in.ClinicID,
+		StaffID:       in.StaffID,
+		Name:          in.Name,
+		Description:   in.Description,
+		OverallPrompt: in.OverallPrompt,
+		Tags:          in.Tags,
+	})
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.marketplaceImporterAdapter: create: %w", err)
+	}
+	formID, err := uuid.Parse(created.ID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("app.marketplaceImporterAdapter: parse id: %w", err)
+	}
+
+	fieldInputs := make([]forms.FieldInput, len(in.Fields))
+	for i, f := range in.Fields {
+		fieldInputs[i] = forms.FieldInput{
+			Position:       f.Position,
+			Title:          f.Title,
+			Type:           f.Type,
+			Config:         f.Config,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
+		}
+	}
+
+	if _, err := a.formsSvc.UpdateDraft(ctx, forms.UpdateDraftInput{
+		FormID:        formID,
+		ClinicID:      in.ClinicID,
+		StaffID:       in.StaffID,
+		Name:          in.Name,
+		Description:   in.Description,
+		OverallPrompt: in.OverallPrompt,
+		Tags:          in.Tags,
+		Fields:        fieldInputs,
+	}); err != nil {
+		return uuid.Nil, fmt.Errorf("app.marketplaceImporterAdapter: update draft: %w", err)
+	}
+
+	changeSummary := in.ChangeSummary
+	if _, err := a.formsSvc.PublishForm(ctx, forms.PublishFormInput{
+		FormID:        formID,
+		ClinicID:      in.ClinicID,
+		StaffID:       in.StaffID,
+		ChangeType:    domain.ChangeTypeMajor,
+		ChangeSummary: &changeSummary,
+	}); err != nil {
+		return uuid.Nil, fmt.Errorf("app.marketplaceImporterAdapter: publish: %w", err)
+	}
+	return formID, nil
+}
+
+// marketplacePolicyNamerAdapter implements marketplace.PolicyNamer by resolving
+// policy IDs to their display names via the policy repository.
+type marketplacePolicyNamerAdapter struct {
+	policyRepo *policy.Repository
+}
+
+func (a *marketplacePolicyNamerAdapter) GetPolicyNames(ctx context.Context, clinicID uuid.UUID, policyIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(policyIDs))
+	for _, id := range policyIDs {
+		p, err := a.policyRepo.GetPolicyByID(ctx, id, clinicID)
+		if err != nil {
+			// Missing policies are skipped, not failed — policies can be retired.
+			continue
+		}
+		out[id] = p.Name
+	}
+	return out, nil
 }
 
 // clinicStyleAdapter implements notes.ClinicStyleProvider.

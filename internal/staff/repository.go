@@ -72,24 +72,28 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRecord, 
 			perm_manage_staff, perm_manage_forms, perm_manage_policies,
 			perm_manage_billing, perm_rollback_policies, perm_record_audio,
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
-			perm_dispense, perm_generate_audit_export, perm_manage_patients, status
+			perm_dispense, perm_generate_audit_export, perm_manage_patients,
+			perm_marketplace_manage, perm_marketplace_download, status
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
-			$14, $15, $16, $17, $18, $19, $20
+			$14, $15, $16, $17, $18, $19,
+			$20, $21, $22
 		) RETURNING
 			id, clinic_id, email, email_hash, full_name, role, note_tier,
 			perm_manage_staff, perm_manage_forms, perm_manage_policies,
 			perm_manage_billing, perm_rollback_policies, perm_record_audio,
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
+			perm_marketplace_manage, perm_marketplace_download,
 			status, last_active_at, created_at, updated_at, archived_at
 	`,
 		p.ID, p.ClinicID, p.Email, p.EmailHash, p.FullName, p.Role, p.NoteTier,
 		p.Perms.ManageStaff, p.Perms.ManageForms, p.Perms.ManagePolicies,
 		p.Perms.ManageBilling, p.Perms.RollbackPolicies, p.Perms.RecordAudio,
 		p.Perms.SubmitForms, p.Perms.ViewAllPatients, p.Perms.ViewOwnPatients,
-		p.Perms.Dispense, p.Perms.GenerateAuditExport, p.Perms.ManagePatients, p.Status,
+		p.Perms.Dispense, p.Perms.GenerateAuditExport, p.Perms.ManagePatients,
+		p.Perms.MarketplaceManage, p.Perms.MarketplaceDownload, p.Status,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("staff.repo.Create: %w", err)
@@ -105,6 +109,7 @@ func (r *Repository) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (
 		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
+		       perm_marketplace_manage, perm_marketplace_download,
 		       status, last_active_at, created_at, updated_at, archived_at
 		FROM staff
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
@@ -161,6 +166,7 @@ func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams)
 		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
+		       perm_marketplace_manage, perm_marketplace_download,
 		       status, last_active_at, created_at, updated_at, archived_at
 		FROM staff
 		WHERE clinic_id = $1 AND archived_at IS NULL
@@ -208,6 +214,8 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 			perm_dispense              = $12,
 			perm_generate_audit_export = $13,
 			perm_manage_patients       = $14,
+			perm_marketplace_manage    = $15,
+			perm_marketplace_download  = $16,
 			updated_at                 = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING
@@ -216,6 +224,7 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 			perm_manage_billing, perm_rollback_policies, perm_record_audio,
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
+			perm_marketplace_manage, perm_marketplace_download,
 			status, last_active_at, created_at, updated_at, archived_at
 	`,
 		staffID, clinicID,
@@ -223,6 +232,7 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 		p.Perms.ManageBilling, p.Perms.RollbackPolicies, p.Perms.RecordAudio,
 		p.Perms.SubmitForms, p.Perms.ViewAllPatients, p.Perms.ViewOwnPatients,
 		p.Perms.Dispense, p.Perms.GenerateAuditExport, p.Perms.ManagePatients,
+		p.Perms.MarketplaceManage, p.Perms.MarketplaceDownload,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -244,6 +254,7 @@ func (r *Repository) Deactivate(ctx context.Context, staffID, clinicID uuid.UUID
 			perm_manage_billing, perm_rollback_policies, perm_record_audio,
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
+			perm_marketplace_manage, perm_marketplace_download,
 			status, last_active_at, created_at, updated_at, archived_at
 	`, staffID, clinicID)
 	if err != nil {
@@ -274,6 +285,7 @@ func scanRow(row pgxRows, s *StaffRecord) error {
 		&s.Perms.ManageBilling, &s.Perms.RollbackPolicies, &s.Perms.RecordAudio,
 		&s.Perms.SubmitForms, &s.Perms.ViewAllPatients, &s.Perms.ViewOwnPatients,
 		&s.Perms.Dispense, &s.Perms.GenerateAuditExport, &s.Perms.ManagePatients,
+		&s.Perms.MarketplaceManage, &s.Perms.MarketplaceDownload,
 		&s.Status, &s.LastActiveAt, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	); err != nil {
 		return fmt.Errorf("staff.repo.scanRow: %w", err)

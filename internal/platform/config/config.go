@@ -72,15 +72,21 @@ type Config struct {
 	AppURL      string `env:"APP_URL,default=http://localhost:3000"`
 	CORSOrigins string `env:"CORS_ORIGINS,default=http://localhost:3000"`
 
+	// Marketplace — Phase 1.5 onwards.
+	// Platform fee charged on paid listings from regular clinics. Authority
+	// bodies (authority_type IN 'salvia','authority') always pay 0%.
+	MarketplacePlatformFeePct    int    `env:"MARKETPLACE_PLATFORM_FEE_PCT,default=30"`
+	MarketplacePolicyAttribution string `env:"MARKETPLACE_POLICY_ATTRIBUTION,default="`
+
 	// /mel handoff — shared HS256 secret with the /mel marketing site.
 	// Empty disables the POST /api/v1/auth/handoff endpoint (503).
 	MelHandoffJWTSecret string `env:"MEL_HANDOFF_JWT_SECRET"`
 
-	// Stripe — webhook receiver. Empty disables the webhook endpoint.
-	// STRIPE_API_KEY is reserved for B4 (billing portal); B3 only needs
-	// the webhook secret.
-	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
+	// Stripe — shared across billing (v78 portal/webhook) and marketplace
+	// (v82 Connect). STRIPE_API_KEY is the secret key (sk_…) used by both
+	// modules; STRIPE_WEBHOOK_SECRET signs incoming webhooks.
 	StripeAPIKey        string `env:"STRIPE_API_KEY"`
+	StripeWebhookSecret string `env:"STRIPE_WEBHOOK_SECRET"`
 	// StripePriceMap is "price_xxx=paws_practice_monthly,price_yyy=..."
 	// — a static mapping of Stripe price ids to Salvia plan codes.
 	// Parsed at startup via ParseStripePriceMap; invalid codes abort boot.

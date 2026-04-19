@@ -426,13 +426,13 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 	}
 
 	// Compute next version number.
-	major, minor := nextVersion(input.ChangeType, nil, nil)
+	major, minor := NextVersion(input.ChangeType, nil, nil)
 	prev, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, fmt.Errorf("forms.service.PublishForm: prev version: %w", err)
 	}
 	if prev != nil {
-		major, minor = nextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+		major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
 	}
 
 	published, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
@@ -775,9 +775,10 @@ func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*For
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// nextVersion computes the next semver numbers based on the change type and
-// the most recently published version numbers.
-func nextVersion(ct domain.ChangeType, prevMajor, prevMinor *int) (major, minor int) {
+// NextVersion computes the next semver numbers based on the change type and
+// the most recently published version numbers. Exported so other modules
+// (e.g. marketplace) can reuse the same semver bump logic.
+func NextVersion(ct domain.ChangeType, prevMajor, prevMinor *int) (major, minor int) {
 	if prevMajor == nil || prevMinor == nil {
 		return 1, 0 // first publish
 	}

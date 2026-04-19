@@ -206,6 +206,8 @@ type Permissions struct {
 	Dispense            bool `json:"dispense"`
 	GenerateAuditExport bool `json:"generate_audit_export"`
 	ManagePatients      bool `json:"manage_patients"`
+	MarketplaceManage   bool `json:"marketplace_manage"`
+	MarketplaceDownload bool `json:"marketplace_download"`
 }
 
 // DefaultPermissions returns the minimum permissions for the given role.
@@ -218,22 +220,26 @@ func DefaultPermissions(role StaffRole) Permissions {
 			ManageBilling: true, RollbackPolicies: true, RecordAudio: true,
 			SubmitForms: true, ViewAllPatients: true, GenerateAuditExport: true,
 			ManagePatients: true,
+			MarketplaceManage: true, MarketplaceDownload: true,
 		}
 	case StaffRoleAdmin:
 		return Permissions{
 			ManageStaff: true, ManageForms: true, ManagePolicies: true,
 			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
 			GenerateAuditExport: true, ManagePatients: true,
+			MarketplaceDownload: true,
 		}
 	case StaffRoleVet:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
 			ManagePatients: true,
+			MarketplaceDownload: true,
 		}
 	case StaffRoleVetNurse:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
 			ManagePatients: true,
+			MarketplaceDownload: true,
 		}
 	case StaffRoleReceptionist:
 		return Permissions{
