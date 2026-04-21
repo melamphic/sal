@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,10 +14,20 @@ import (
 	"github.com/melamphic/sal/internal/extraction"
 )
 
-// PolicyClauseFetcher retrieves enforceable clauses for all policies linked to a form.
+// LinkedPolicyClauses is the set of enforceable clauses that belong to a single
+// published policy version linked to a form. Grouping by policy_version lets the
+// service persist per-policy check evidence with a stable version pointer.
+type LinkedPolicyClauses struct {
+	PolicyID        uuid.UUID
+	PolicyVersionID uuid.UUID
+	Clauses         []extraction.PolicyClause
+}
+
+// PolicyClauseFetcher retrieves enforceable clauses for all policies linked to a form,
+// grouped by the policy version they came from.
 // Implemented by an adapter in app.go that bridges to the policy repository.
 type PolicyClauseFetcher interface {
-	GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error)
+	GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]LinkedPolicyClauses, error)
 }
 
 // StyleLogoSigner produces a short-lived signed GET URL for a doc-theme logo key.
@@ -109,7 +120,10 @@ type FormVersionResponse struct {
 	// op kinds.
 	Changes           json.RawMessage          `json:"changes,omitempty"`
 	RollbackOf        *string                  `json:"rollback_of,omitempty"`
-	PolicyCheckResult *string                  `json:"policy_check_result,omitempty"`
+	// PolicyCheckResult is a JSON array of PolicyCheckResultEntry — one entry
+	// per linked policy at check time. Stored opaque so the shape can evolve
+	// without migrations; nil until a check has run on the draft.
+	PolicyCheckResult json.RawMessage          `json:"policy_check_result,omitempty"`
 	PolicyCheckAt     *string                  `json:"policy_check_at,omitempty"`
 	PublishedAt       *string                  `json:"published_at,omitempty"`
 	PublishedBy       *string                  `json:"published_by,omitempty"`
@@ -232,6 +246,33 @@ type FormStylePresetsResponse struct {
 type FormStyleLogoUploadResponse struct {
 	Key string `json:"key"`
 	URL string `json:"url"`
+}
+
+// PolicyCheckClauseEntry is a single clause's pass/fail result inside a policy
+// check. BlockID is stable across policy versions so clients can key by it to
+// render diffs, and parity lets the UI colour-code results.
+//
+//nolint:revive
+type PolicyCheckClauseEntry struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"`    // "satisfied" | "violated"
+	Reasoning string `json:"reasoning"` // one-sentence explanation
+	Parity    string `json:"parity"`    // "high" | "medium" | "low"
+}
+
+// PolicyCheckResultEntry is one linked policy's contribution to a form's policy
+// check. ResultPct is parity-weighted coverage (high=3, medium=2, low=1).
+// Narrative is included once per group (duplicated when the model produces a
+// single overall analysis). Stored inside form_versions.policy_check_result as
+// one element of a JSONB array.
+//
+//nolint:revive
+type PolicyCheckResultEntry struct {
+	PolicyID        string                   `json:"policy_id"`
+	PolicyVersionID string                   `json:"policy_version_id"`
+	ResultPct       float64                  `json:"result_pct"`
+	Narrative       string                   `json:"narrative,omitempty"`
+	Clauses         []PolicyCheckClauseEntry `json:"clauses"`
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -637,11 +678,17 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: policy checker not configured: %w", domain.ErrConflict)
 	}
 
-	clauses, err := s.clauses.GetClausesForForm(ctx, formID)
+	groups, err := s.clauses.GetClausesForForm(ctx, formID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: get clauses: %w", err)
 	}
-	if len(clauses) == 0 {
+	// Flatten for the checker — the group shape is preserved on `groups` and
+	// regrouped after the AI call.
+	var flatClauses []extraction.PolicyClause
+	for _, g := range groups {
+		flatClauses = append(flatClauses, g.Clauses...)
+	}
+	if len(flatClauses) == 0 {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: no policy clauses found — link policies with clauses first: %w", domain.ErrConflict)
 	}
 
@@ -675,14 +722,20 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		overallPrompt = *form.OverallPrompt
 	}
 
-	result, err := s.checker.CheckFormCoverage(ctx, overallPrompt, specs, clauses)
+	coverage, err := s.checker.CheckFormCoverage(ctx, overallPrompt, specs, flatClauses)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: checker: %w", err)
 	}
 
+	entries := buildPolicyCheckEntries(groups, coverage)
+	payload, err := json.Marshal(entries)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.RunPolicyCheck: marshal result: %w", err)
+	}
+
 	version, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
 		VersionID: draft.ID,
-		Result:    result,
+		Result:    string(payload),
 		CheckedBy: staffID,
 		CheckedAt: domain.TimeNow(),
 	})
@@ -691,6 +744,69 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 	}
 
 	return toVersionResponse(version, nil), nil
+}
+
+// buildPolicyCheckEntries regroups a flat list of clause results back into one
+// entry per linked policy, computing a parity-weighted result_pct per policy.
+// Weights: high=3, medium=2, low=1. An entry with no clauses scores 100 (the
+// policy has nothing to violate).
+func buildPolicyCheckEntries(groups []LinkedPolicyClauses, coverage *extraction.FormCoverageResult) []PolicyCheckResultEntry {
+	// Index clause results by block_id for regrouping.
+	resultByBlock := make(map[string]extraction.ClauseCheckResult, len(coverage.Clauses))
+	for _, cr := range coverage.Clauses {
+		resultByBlock[cr.BlockID] = cr
+	}
+
+	parityWeight := func(p string) float64 {
+		switch p {
+		case "high":
+			return 3
+		case "medium":
+			return 2
+		case "low":
+			return 1
+		default:
+			return 1
+		}
+	}
+
+	entries := make([]PolicyCheckResultEntry, 0, len(groups))
+	for _, g := range groups {
+		clauses := make([]PolicyCheckClauseEntry, 0, len(g.Clauses))
+		var total, earned float64
+		for _, c := range g.Clauses {
+			w := parityWeight(c.Parity)
+			total += w
+			res, ok := resultByBlock[c.BlockID]
+			status := "violated"
+			reasoning := "clause not assessed"
+			if ok {
+				status = res.Status
+				reasoning = res.Reasoning
+			}
+			if status == "satisfied" {
+				earned += w
+			}
+			clauses = append(clauses, PolicyCheckClauseEntry{
+				BlockID:   c.BlockID,
+				Status:    status,
+				Reasoning: reasoning,
+				Parity:    c.Parity,
+			})
+		}
+		pct := 100.0
+		if total > 0 {
+			pct = (earned / total) * 100.0
+		}
+		entries = append(entries, PolicyCheckResultEntry{
+			PolicyID:        g.PolicyID.String(),
+			PolicyVersionID: g.PolicyVersionID.String(),
+			ResultPct:       pct,
+			Narrative:       coverage.Narrative,
+			Clauses:         clauses,
+		})
+	}
+	return entries
 }
 
 // RollbackForm publishes a new immutable version whose fields are copied from
@@ -868,8 +984,10 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 }
 
 // ListVersions returns the compliance trail for a form: every published
-// version (newest first) plus a synthetic "retire" entry at the top when the
-// form is archived, so the timeline shows who retired it, when, and why.
+// version (newest first), a synthetic "retire" entry when the form itself is
+// archived, and one synthetic "policy_unlinked" entry per policy that was
+// retired while linked to this form. The trail is a single flat list keyed
+// by timestamp so the UI can render it top-to-bottom.
 func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) (*FormVersionListResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
 	if err != nil {
@@ -881,15 +999,70 @@ func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) 
 		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
 	}
 
-	items := make([]*FormVersionResponse, 0, len(versions)+1)
+	unlinks, err := s.repo.ListPolicyUnlinkEvents(ctx, formID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
+	}
+
+	items := make([]*FormVersionResponse, 0, len(versions)+len(unlinks)+1)
 	if form.ArchivedAt != nil {
 		items = append(items, buildRetireEntry(form))
+	}
+	for _, u := range unlinks {
+		items = append(items, buildPolicyUnlinkEntry(form.ID, u))
 	}
 	for _, v := range versions {
 		items = append(items, toVersionResponse(v, nil))
 	}
+	// Synthetic entries carry their own timestamps; keep the list newest-first
+	// so the drawer renders chronologically without bespoke UI sort logic.
+	sortVersionsDesc(items)
 	s.resolvePublisherNames(ctx, clinicID, items)
 	return &FormVersionListResponse{Items: items}, nil
+}
+
+// buildPolicyUnlinkEntry fabricates a timeline row for "policy X was unlinked
+// because the policy was retired." Not a real form_versions row — no semver,
+// no publishedBy (the retire is a policy-side action by a staff member whose
+// identity belongs in the policy trail, not the form trail).
+func buildPolicyUnlinkEntry(formID uuid.UUID, e *PolicyUnlinkEventRecord) *FormVersionResponse {
+	name := "Linked policy"
+	if e.PolicyNameSnapshot != nil && *e.PolicyNameSnapshot != "" {
+		name = *e.PolicyNameSnapshot
+	}
+	summary := fmt.Sprintf("%s retired — unlinked from form", name)
+	if e.UnlinkedReason != nil && *e.UnlinkedReason != "" {
+		summary = fmt.Sprintf("%s retired — unlinked (%s)", name, *e.UnlinkedReason)
+	}
+	ts := e.UnlinkedAt.Format(time.RFC3339)
+	return &FormVersionResponse{
+		// Deterministic ID so the front-end can key on it without colliding
+		// with real version UUIDs or other synthetic entries.
+		ID:            formID.String() + "-unlink-" + e.PolicyID.String(),
+		FormID:        formID.String(),
+		Status:        domain.FormVersionStatusPublished,
+		Kind:          "policy_unlinked",
+		ChangeSummary: &summary,
+		PublishedAt:   &ts,
+		CreatedAt:     ts,
+	}
+}
+
+// sortVersionsDesc sorts trail entries newest-first by their CreatedAt timestamp.
+// Entries without a timestamp (defensive — shouldn't happen in practice) sink
+// to the bottom rather than breaking the sort.
+func sortVersionsDesc(items []*FormVersionResponse) {
+	sort.SliceStable(items, func(i, j int) bool {
+		a := items[i].CreatedAt
+		b := items[j].CreatedAt
+		if a == "" {
+			return false
+		}
+		if b == "" {
+			return true
+		}
+		return a > b
+	})
 }
 
 // buildRetireEntry fabricates a timeline row representing the form's retire
@@ -1250,16 +1423,18 @@ func (s *Service) resolvePublisherNames(ctx context.Context, clinicID uuid.UUID,
 
 func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersionResponse {
 	r := &FormVersionResponse{
-		ID:                v.ID.String(),
-		FormID:            v.FormID.String(),
-		Status:            v.Status,
-		VersionMajor:      v.VersionMajor,
-		VersionMinor:      v.VersionMinor,
-		ChangeType:        v.ChangeType,
-		ChangeSummary:     v.ChangeSummary,
-		Changes:           v.Changes,
-		PolicyCheckResult: v.PolicyCheckResult,
-		CreatedAt:         v.CreatedAt.Format(time.RFC3339),
+		ID:            v.ID.String(),
+		FormID:        v.FormID.String(),
+		Status:        v.Status,
+		VersionMajor:  v.VersionMajor,
+		VersionMinor:  v.VersionMinor,
+		ChangeType:    v.ChangeType,
+		ChangeSummary: v.ChangeSummary,
+		Changes:       v.Changes,
+		CreatedAt:     v.CreatedAt.Format(time.RFC3339),
+	}
+	if v.PolicyCheckResult != nil {
+		r.PolicyCheckResult = json.RawMessage(*v.PolicyCheckResult)
 	}
 	if v.RollbackOf != nil {
 		s := v.RollbackOf.String()
