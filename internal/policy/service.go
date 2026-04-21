@@ -59,6 +59,7 @@ type PolicyClauseResponse struct {
 	ID      string `json:"id"`
 	BlockID string `json:"block_id"`
 	Title   string `json:"title"`
+	Body    string `json:"body"`
 	Parity  string `json:"parity"`
 }
 
@@ -205,6 +206,7 @@ type UpsertClausesInput struct {
 type ClauseItemInput struct {
 	BlockID string
 	Title   string
+	Body    string
 	Parity  string
 }
 
@@ -717,6 +719,7 @@ func toClauseListResponse(recs []*PolicyClauseRecord) *PolicyClauseListResponse 
 			ID:      r.ID.String(),
 			BlockID: r.BlockID,
 			Title:   r.Title,
+			Body:    r.Body,
 			Parity:  r.Parity,
 		}
 	}

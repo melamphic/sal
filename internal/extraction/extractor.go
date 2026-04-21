@@ -31,7 +31,12 @@ type Extractor interface {
 	// form, and a slice of field specs. It returns one FieldResult per spec.
 	// The caller must pass exactly the non-skippable fields; skippable fields
 	// should be excluded from specs before calling.
-	Extract(ctx context.Context, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error)
+	//
+	// `vertical` is the clinic's configured vertical (e.g. "veterinary",
+	// "dental", "aged_care", "general_clinic"); pass "" if unknown. It is
+	// injected into the system prompt so the model frames its extraction for
+	// the correct discipline.
+	Extract(ctx context.Context, vertical, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error)
 }
 
 // PolicyClause describes a single enforceable policy clause for alignment checking.
@@ -46,7 +51,8 @@ type PolicyClause struct {
 type PolicyAligner interface {
 	// AlignPolicy takes a plain-text summary of note field values and a list of
 	// enforceable policy clauses. Returns an alignment percentage 0.0–100.0.
-	AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error)
+	// `vertical` matches Extractor.Extract (may be "").
+	AlignPolicy(ctx context.Context, vertical, noteContent string, clauses []PolicyClause) (float64, error)
 }
 
 // ClauseCheckResult is a per-clause compliance result from a detailed policy check.
@@ -61,7 +67,8 @@ type ClauseCheckResult struct {
 // Unlike PolicyAligner (which returns a single %) this returns per-clause pass/fail with reasoning.
 // Used for the user-triggered check-policy endpoint and submit-time blocking.
 type PolicyDetailedChecker interface {
-	CheckPolicyClauses(ctx context.Context, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error)
+	// `vertical` matches Extractor.Extract (may be "").
+	CheckPolicyClauses(ctx context.Context, vertical, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error)
 }
 
 // FormCoverageResult is the combined output of a form-level coverage check:
@@ -79,5 +86,6 @@ type FormCoverageChecker interface {
 	// and the enforceable clauses from all linked policies. Returns a narrative
 	// plus per-clause pass/fail so the service can compute a result percentage
 	// and persist structured evidence on the form version.
-	CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error)
+	// `vertical` matches Extractor.Extract (may be "").
+	CheckFormCoverage(ctx context.Context, vertical, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error)
 }

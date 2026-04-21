@@ -62,6 +62,13 @@ type PolicyOwnershipVerifier interface {
 	VerifyPolicyOwnership(ctx context.Context, policyID, clinicID uuid.UUID) error
 }
 
+// VerticalProvider returns the configured clinical vertical for a clinic
+// ("veterinary", "dental", "aged_care", "general_clinic"). Used to frame the
+// form-coverage prompt so it targets the right discipline. Adapter in app.go.
+type VerticalProvider interface {
+	GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (string, error)
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
 	repo           repo
@@ -71,6 +78,7 @@ type Service struct {
 	logoUploader   StyleLogoUploader
 	staffNames     StaffNameResolver
 	policyVerifier PolicyOwnershipVerifier
+	verticals      VerticalProvider
 }
 
 // NewService constructs a forms Service.
@@ -81,6 +89,13 @@ type Service struct {
 // tests); in production this MUST be wired to prevent clause-text leakage.
 func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader, staffNames StaffNameResolver, policyVerifier PolicyOwnershipVerifier) *Service {
 	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader, staffNames: staffNames, policyVerifier: policyVerifier}
+}
+
+// SetVerticalProvider wires the clinic-vertical resolver so the form-coverage
+// AI prompt can be framed for the right discipline. Optional — without it,
+// the coverage check runs with a generic "clinic type not specified" preamble.
+func (s *Service) SetVerticalProvider(v VerticalProvider) {
+	s.verticals = v
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -722,7 +737,15 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		overallPrompt = *form.OverallPrompt
 	}
 
-	coverage, err := s.checker.CheckFormCoverage(ctx, overallPrompt, specs, flatClauses)
+	vertical := ""
+	if s.verticals != nil {
+		v, vErr := s.verticals.GetClinicVertical(ctx, clinicID)
+		if vErr == nil {
+			vertical = v
+		}
+	}
+
+	coverage, err := s.checker.CheckFormCoverage(ctx, vertical, overallPrompt, specs, flatClauses)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: checker: %w", err)
 	}

@@ -65,12 +65,12 @@ var noThinking = &genai.ThinkingConfig{ThinkingBudget: genai.Ptr[int32](0)}
 
 // Extract calls Gemini to fill form fields from a transcript.
 // Returns one FieldResult per non-skippable field spec in order.
-func (e *GeminiExtractor) Extract(ctx context.Context, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error) {
+func (e *GeminiExtractor) Extract(ctx context.Context, vertical, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error) {
 	if len(fields) == 0 {
 		return nil, nil
 	}
 
-	prompt := buildPrompt(transcript, overallPrompt, fields)
+	prompt := buildPrompt(vertical, transcript, overallPrompt, fields)
 
 	resp, err := e.client.Models.GenerateContent(
 		ctx,
@@ -106,10 +106,12 @@ type geminiResponseField struct {
 	TransformationType *string  `json:"transformation_type"` // "direct" or "inference"
 }
 
-func buildPrompt(transcript, overallPrompt string, fields []FieldSpec) string {
+func buildPrompt(vertical, transcript, overallPrompt string, fields []FieldSpec) string {
 	var sb strings.Builder
 
-	sb.WriteString("You are a clinical documentation AI. Extract structured data from the veterinary consultation transcript below.\n\n")
+	sb.WriteString("You are a clinical documentation AI. Extract structured data from the clinical consultation transcript below.\n")
+	sb.WriteString(verticalContextLine(vertical))
+	sb.WriteString("\n\n")
 
 	if overallPrompt != "" {
 		sb.WriteString("## Form context\n")
@@ -165,13 +167,15 @@ type geminiClauseResult struct {
 // AlignPolicy calls Gemini to assess how well the note content satisfies each policy clause.
 // Returns a weighted alignment percentage (0.0–100.0).
 // Weights: high=3, medium=2, low=1.
-func (e *GeminiExtractor) AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error) {
+func (e *GeminiExtractor) AlignPolicy(ctx context.Context, vertical, noteContent string, clauses []PolicyClause) (float64, error) {
 	if len(clauses) == 0 {
 		return 100.0, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause.\n\n")
+	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause.\n")
+	sb.WriteString(verticalContextLine(vertical))
+	sb.WriteString("\n\n")
 	sb.WriteString("## Note content\n")
 	sb.WriteString(noteContent)
 	sb.WriteString("\n\n## Policy clauses\n")
@@ -262,13 +266,15 @@ type geminiDetailedClauseResult struct {
 
 // CheckPolicyClauses calls Gemini to assess each policy clause individually against note content.
 // Returns per-clause results with reasoning. Parity is copied from the input clause.
-func (e *GeminiExtractor) CheckPolicyClauses(ctx context.Context, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error) {
+func (e *GeminiExtractor) CheckPolicyClauses(ctx context.Context, vertical, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error) {
 	if len(clauses) == 0 {
 		return nil, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause individually.\n\n")
+	sb.WriteString("You are a clinical compliance AI. Assess whether the following note satisfies each policy clause individually.\n")
+	sb.WriteString(verticalContextLine(vertical))
+	sb.WriteString("\n\n")
 	sb.WriteString("## Note content\n")
 	sb.WriteString(noteContent)
 	sb.WriteString("\n\n## Policy clauses\n")
@@ -371,7 +377,7 @@ type geminiFormCoverageResult struct {
 // CheckFormCoverage calls Gemini to assess whether the form's fields cover the
 // requirements of the linked policy clauses. Returns a narrative + per-clause
 // structured results in a single call.
-func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
+func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, vertical, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
 	if len(clauses) == 0 {
 		return &FormCoverageResult{
 			Narrative: "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.",
@@ -379,7 +385,9 @@ func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt s
 	}
 
 	var sb strings.Builder
-	sb.WriteString("You are a clinical compliance analyst. Assess whether the following form design adequately captures the data required by the linked policy clauses.\n\n")
+	sb.WriteString("You are a clinical compliance analyst. Assess whether the following form design adequately captures the data required by the linked policy clauses.\n")
+	sb.WriteString(verticalContextLineForm(vertical))
+	sb.WriteString("\n\n")
 
 	if overallPrompt != "" {
 		sb.WriteString("## Form purpose\n")

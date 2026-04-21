@@ -61,6 +61,7 @@ type PolicyClauseRecord struct {
 	PolicyVersionID uuid.UUID
 	BlockID         string
 	Title           string
+	Body            string
 	Parity          string
 	CreatedAt       time.Time
 }
@@ -150,6 +151,7 @@ type PublishDraftVersionParams struct {
 type ClauseInput struct {
 	BlockID string
 	Title   string
+	Body    string
 	Parity  string
 }
 
@@ -496,15 +498,15 @@ func (r *Repository) ReplaceClauses(ctx context.Context, versionID uuid.UUID, cl
 	}
 
 	const insertQ = `
-		INSERT INTO policy_clauses (id, policy_version_id, block_id, title, parity)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, policy_version_id, block_id, title, parity, created_at`
+		INSERT INTO policy_clauses (id, policy_version_id, block_id, title, body, parity)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, policy_version_id, block_id, title, body, parity, created_at`
 
 	batch := &pgx.Batch{}
 	ids := make([]uuid.UUID, len(clauses))
 	for i, c := range clauses {
 		ids[i] = domain.NewID()
-		batch.Queue(insertQ, ids[i], versionID, c.BlockID, c.Title, c.Parity)
+		batch.Queue(insertQ, ids[i], versionID, c.BlockID, c.Title, c.Body, c.Parity)
 	}
 
 	br := tx.SendBatch(ctx, batch)
@@ -549,7 +551,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 			WHERE policy_id = ANY($1) AND status = 'published'
 			ORDER BY policy_id, published_at DESC
 		)
-		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.parity, pc.created_at
+		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.body, pc.parity, pc.created_at
 		FROM latest l
 		JOIN policy_clauses pc ON pc.policy_version_id = l.version_id
 		ORDER BY l.policy_id, pc.created_at`
@@ -563,7 +565,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 	var list []*ClauseWithPolicyID
 	for rows.Next() {
 		var c ClauseWithPolicyID
-		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Parity, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Body, &c.Parity, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: scan: %w", err)
 		}
 		list = append(list, &c)
@@ -577,7 +579,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 // ListClauses returns all clauses for a policy version ordered by creation time.
 func (r *Repository) ListClauses(ctx context.Context, versionID uuid.UUID) ([]*PolicyClauseRecord, error) {
 	const q = `
-		SELECT id, policy_version_id, block_id, title, parity, created_at
+		SELECT id, policy_version_id, block_id, title, body, parity, created_at
 		FROM policy_clauses
 		WHERE policy_version_id = $1
 		ORDER BY created_at`
@@ -653,7 +655,7 @@ func scanVersion(row scannable) (*PolicyVersionRecord, error) {
 
 func scanClause(row scannable) (*PolicyClauseRecord, error) {
 	var r PolicyClauseRecord
-	err := row.Scan(&r.ID, &r.PolicyVersionID, &r.BlockID, &r.Title, &r.Parity, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.PolicyVersionID, &r.BlockID, &r.Title, &r.Body, &r.Parity, &r.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound
