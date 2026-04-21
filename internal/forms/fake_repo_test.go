@@ -255,6 +255,33 @@ func (f *fakeRepo) CreateDraftVersion(_ context.Context, p CreateDraftVersionPar
 	return cloneVersion(v), nil
 }
 
+func (f *fakeRepo) CreatePublishedVersion(_ context.Context, p CreatePublishedVersionParams) (*FormVersionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ct := p.ChangeType
+	pubAt := p.PublishedAt
+	pubBy := p.PublishedBy
+	major := p.VersionMajor
+	minor := p.VersionMinor
+	v := &FormVersionRecord{
+		ID:            p.ID,
+		FormID:        p.FormID,
+		Status:        domain.FormVersionStatusPublished,
+		VersionMajor:  &major,
+		VersionMinor:  &minor,
+		ChangeType:    &ct,
+		ChangeSummary: p.ChangeSummary,
+		Changes:       p.Changes,
+		RollbackOf:    p.RollbackOf,
+		PublishedBy:   &pubBy,
+		PublishedAt:   &pubAt,
+		CreatedBy:     p.PublishedBy,
+		CreatedAt:     domain.TimeNow(),
+	}
+	f.versions[v.ID] = v
+	return cloneVersion(v), nil
+}
+
 func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -128,7 +128,9 @@ func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formLi
 		Limit:           input.Limit,
 		Offset:          input.Offset,
 		IncludeArchived: input.IncludeArchived,
-		Tag:             &input.Tag,
+	}
+	if input.Tag != "" {
+		svcInput.Tag = &input.Tag
 	}
 	if input.GroupID != "" {
 		id, err := uuid.Parse(input.GroupID)
@@ -209,13 +211,16 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 type publishFormBodyInput struct {
 	FormID string `path:"form_id"`
 	Body   struct {
-		ChangeType    string  `json:"change_type" enum:"minor,major" doc:"Semver bump type."`
-		ChangeSummary *string `json:"change_summary,omitempty" doc:"Human-readable summary of what changed."`
+		ChangeType    string          `json:"change_type" enum:"minor,major" doc:"Semver bump type."`
+		ChangeSummary *string         `json:"change_summary,omitempty" doc:"Human-readable summary of what changed."`
+		Changes       json.RawMessage `json:"changes,omitempty" doc:"Array of typed change ops the editor diffed from the previous published version. Display-only: rollback still targets whole versions."`
 	}
 }
 
 // publishForm handles POST /api/v1/forms/{form_id}/publish.
-func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) (*versionHTTPResponse, error) {
+// Returns the full form resource so the editor can refresh its draft and
+// latest_published in a single call.
+func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -230,11 +235,12 @@ func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) 
 		StaffID:       staffID,
 		ChangeType:    domain.ChangeType(input.Body.ChangeType),
 		ChangeSummary: input.Body.ChangeSummary,
+		Changes:       input.Body.Changes,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Policy check ──────────────────────────────────────────────────────────────
@@ -267,7 +273,9 @@ type rollbackFormBodyInput struct {
 }
 
 // rollbackForm handles POST /api/v1/forms/{form_id}/rollback.
-func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput) (*versionHTTPResponse, error) {
+// Returns the full form resource so the editor can rehydrate the new draft
+// in a single call.
+func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -290,7 +298,7 @@ func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Retire ────────────────────────────────────────────────────────────────────

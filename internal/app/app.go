@@ -258,6 +258,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		formChecker,
 		docThemeLogos,
 		docThemeLogos,
+		&formsStaffNameAdapter{staff: staffSvc},
 	)
 	formsHandler := forms.NewHandler(formsSvc)
 
@@ -1064,6 +1065,20 @@ func (a *staffNameAdapter) GetStaffName(ctx context.Context, staffID, clinicID u
 	s, err := a.staff.GetByID(ctx, staffID, clinicID)
 	if err != nil {
 		return "", fmt.Errorf("app.staffNameAdapter: %w", err)
+	}
+	return s.FullName, nil
+}
+
+// formsStaffNameAdapter implements forms.StaffNameResolver. Separate from
+// staffNameAdapter because the notes module uses a different method name.
+type formsStaffNameAdapter struct {
+	staff *staff.Service
+}
+
+func (a *formsStaffNameAdapter) ResolveStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error) {
+	s, err := a.staff.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.formsStaffNameAdapter: %w", err)
 	}
 	return s.FullName, nil
 }

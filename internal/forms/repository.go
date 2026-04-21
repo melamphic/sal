@@ -50,6 +50,10 @@ type FormVersionRecord struct {
 	VersionMinor      *int
 	ChangeType        *domain.ChangeType
 	ChangeSummary     *string
+	// Changes is a JSONB array of typed ops ({op: "add_field", title: "...", ...})
+	// computed client-side by diffing draft vs previous published. Stored opaque
+	// so new op types can ship without a migration.
+	Changes           json.RawMessage
 	RollbackOf        *uuid.UUID
 	PolicyCheckResult *string
 	PolicyCheckBy     *uuid.UUID
@@ -176,6 +180,24 @@ type PublishDraftVersionParams struct {
 	VersionMinor  int
 	ChangeType    domain.ChangeType
 	ChangeSummary *string
+	// Changes is the JSONB-serialised array of typed ops. Empty array when nil.
+	Changes     json.RawMessage
+	PublishedBy uuid.UUID
+	PublishedAt time.Time
+}
+
+// CreatePublishedVersionParams inserts a brand-new row already in the
+// published state. Used by rollback — the rollback result is itself a new
+// immutable version, so we skip the draft stage entirely.
+type CreatePublishedVersionParams struct {
+	ID            uuid.UUID
+	FormID        uuid.UUID
+	VersionMajor  int
+	VersionMinor  int
+	ChangeType    domain.ChangeType
+	ChangeSummary *string
+	Changes       json.RawMessage
+	RollbackOf    *uuid.UUID
 	PublishedBy   uuid.UUID
 	PublishedAt   time.Time
 }
@@ -435,7 +457,7 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
-	rollback_of, policy_check_result, policy_check_by, policy_check_at,
+	changes, rollback_of, policy_check_result, policy_check_by, policy_check_at,
 	published_at, published_by, created_by, created_at`
 
 // GetDraftVersion returns the single mutable draft version for a form.
@@ -521,6 +543,7 @@ func (r *Repository) GetLatestPublishedVersion(ctx context.Context, formID uuid.
 	return rec, nil
 }
 
+
 // CreateDraftVersion inserts a new draft version for a form.
 func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersionParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
@@ -536,8 +559,43 @@ func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersio
 	return rec, nil
 }
 
+// CreatePublishedVersion inserts a version row that is already published.
+// Caller is responsible for inserting fields against the returned ID.
+func (r *Repository) CreatePublishedVersion(ctx context.Context, p CreatePublishedVersionParams) (*FormVersionRecord, error) {
+	changes := p.Changes
+	if len(changes) == 0 {
+		changes = json.RawMessage("[]")
+	}
+	q := fmt.Sprintf(`
+		INSERT INTO form_versions (
+			id, form_id, status, version_major, version_minor,
+			change_type, change_summary, changes, rollback_of,
+			published_by, published_at, created_by
+		) VALUES (
+			$1, $2, 'published', $3, $4,
+			$5, $6, $7, $8,
+			$9, $10, $9
+		)
+		RETURNING %s`, versionCols)
+
+	row := r.db.QueryRow(ctx, q,
+		p.ID, p.FormID, p.VersionMajor, p.VersionMinor,
+		string(p.ChangeType), p.ChangeSummary, changes, p.RollbackOf,
+		p.PublishedBy, p.PublishedAt,
+	)
+	rec, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.CreatePublishedVersion: %w", err)
+	}
+	return rec, nil
+}
+
 // PublishDraftVersion transitions a draft to published status.
 func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
+	changes := p.Changes
+	if len(changes) == 0 {
+		changes = json.RawMessage("[]")
+	}
 	q := fmt.Sprintf(`
 		UPDATE form_versions
 		SET status        = 'published',
@@ -545,14 +603,15 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		    version_minor = $3,
 		    change_type   = $4,
 		    change_summary = $5,
-		    published_by  = $6,
-		    published_at  = $7
+		    changes       = $6,
+		    published_by  = $7,
+		    published_at  = $8
 		WHERE id = $1 AND status = 'draft'
 		RETURNING %s`, versionCols)
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.VersionMajor, p.VersionMinor,
-		string(p.ChangeType), p.ChangeSummary,
+		string(p.ChangeType), p.ChangeSummary, changes,
 		p.PublishedBy, p.PublishedAt,
 	)
 	rec, err := scanVersion(row)
@@ -856,7 +915,7 @@ func scanVersion(row scannable) (*FormVersionRecord, error) {
 	var changeType *string
 	err := row.Scan(
 		&v.ID, &v.FormID, &v.Status, &v.VersionMajor, &v.VersionMinor,
-		&changeType, &v.ChangeSummary, &v.RollbackOf,
+		&changeType, &v.ChangeSummary, &v.Changes, &v.RollbackOf,
 		&v.PolicyCheckResult, &v.PolicyCheckBy, &v.PolicyCheckAt,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedBy, &v.CreatedAt,
 	)

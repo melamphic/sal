@@ -15,7 +15,7 @@ var (
 )
 
 func newTestService() *Service {
-	return NewService(newFakeRepo(), nil, nil, nil, nil)
+	return NewService(newFakeRepo(), nil, nil, nil, nil, nil)
 }
 
 // ── CreateForm ────────────────────────────────────────────────────────────────
@@ -203,8 +203,8 @@ func TestService_PublishForm_FirstPublishIsV1_0(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if *v.VersionMajor != 1 || *v.VersionMinor != 0 {
-		t.Errorf("expected 1.0, got %d.%d", *v.VersionMajor, *v.VersionMinor)
+	if *v.LatestPublished.VersionMajor != 1 || *v.LatestPublished.VersionMinor != 0 {
+		t.Errorf("expected 1.0, got %d.%d", *v.LatestPublished.VersionMajor, *v.LatestPublished.VersionMinor)
 	}
 }
 
@@ -244,8 +244,8 @@ func TestService_PublishForm_MinorBumpIncreasesMinor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if *v.VersionMajor != 1 || *v.VersionMinor != 1 {
-		t.Errorf("expected 1.1, got %d.%d", *v.VersionMajor, *v.VersionMinor)
+	if *v.LatestPublished.VersionMajor != 1 || *v.LatestPublished.VersionMinor != 1 {
+		t.Errorf("expected 1.1, got %d.%d", *v.LatestPublished.VersionMajor, *v.LatestPublished.VersionMinor)
 	}
 }
 
@@ -276,8 +276,8 @@ func TestService_PublishForm_MajorBumpResetMinor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if *v.VersionMajor != 2 || *v.VersionMinor != 0 {
-		t.Errorf("expected 2.0, got %d.%d", *v.VersionMajor, *v.VersionMinor)
+	if *v.LatestPublished.VersionMajor != 2 || *v.LatestPublished.VersionMinor != 0 {
+		t.Errorf("expected 2.0, got %d.%d", *v.LatestPublished.VersionMajor, *v.LatestPublished.VersionMinor)
 	}
 }
 
@@ -317,10 +317,17 @@ func TestService_RollbackForm_CopiesFieldsFromTarget(t *testing.T) {
 		Fields: []FieldInput{{Position: 1, Title: "Old Field", Type: "text", Config: json.RawMessage(`{}`)}},
 	})
 	v1, _ := svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
-	v1ID := uuid.MustParse(v1.ID)
+	v1ID := uuid.MustParse(v1.LatestPublished.ID)
+
+	// Change fields and publish v2.0 so rollback has somewhere to go back from.
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "New Field", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
+	_, _ = svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
 
 	// Rollback to v1.
-	draft, err := svc.RollbackForm(ctx, RollbackFormInput{
+	form, err := svc.RollbackForm(ctx, RollbackFormInput{
 		FormID:          formID,
 		ClinicID:        testClinicID,
 		StaffID:         testStaffID,
@@ -329,37 +336,70 @@ func TestService_RollbackForm_CopiesFieldsFromTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(draft.Fields) != 1 || draft.Fields[0].Title != "Old Field" {
-		t.Errorf("expected 1 field 'Old Field', got %v", draft.Fields)
+	if form.LatestPublished == nil {
+		t.Fatalf("expected rollback to produce a new published version")
 	}
-	if draft.RollbackOf == nil || *draft.RollbackOf != v1.ID {
+	if form.LatestPublished.Status != domain.FormVersionStatusPublished {
+		t.Errorf("expected new version to be published, got %v", form.LatestPublished.Status)
+	}
+	if len(form.LatestPublished.Fields) != 1 || form.LatestPublished.Fields[0].Title != "Old Field" {
+		t.Errorf("expected 1 field 'Old Field' copied from target, got %v", form.LatestPublished.Fields)
+	}
+	if form.LatestPublished.RollbackOf == nil || *form.LatestPublished.RollbackOf != v1.LatestPublished.ID {
 		t.Errorf("rollback_of not set correctly")
+	}
+	// A rollback must not bump the major version — it's a corrective action.
+	if form.LatestPublished.VersionMajor == nil || *form.LatestPublished.VersionMajor != 2 {
+		t.Errorf("expected major=2, got %v", form.LatestPublished.VersionMajor)
+	}
+	if form.LatestPublished.VersionMinor == nil || *form.LatestPublished.VersionMinor != 1 {
+		t.Errorf("expected minor=1, got %v", form.LatestPublished.VersionMinor)
 	}
 }
 
-func TestService_RollbackForm_ExistingDraftBlocksRollback(t *testing.T) {
+func TestService_RollbackForm_PreservesExistingDraft(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
 	created, _ := svc.CreateForm(ctx, CreateFormInput{ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
 	formID := uuid.MustParse(created.ID)
 
-	// Publish v1.0.
+	// Publish v1.0 with a field.
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "Published Field", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
 	v1, _ := svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
-	v1ID := uuid.MustParse(v1.ID)
+	v1ID := uuid.MustParse(v1.LatestPublished.ID)
 
-	// New draft auto-created.
-	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
+	// Write some in-flight scratch edits. A rollback should leave these alone —
+	// rolling back to an earlier version is independent of any WIP the user
+	// happens to have open.
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "Scratch Field", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
 
-	// Rollback blocked by existing draft.
-	_, err := svc.RollbackForm(ctx, RollbackFormInput{
+	form, err := svc.RollbackForm(ctx, RollbackFormInput{
 		FormID:          formID,
 		ClinicID:        testClinicID,
 		StaffID:         testStaffID,
 		TargetVersionID: v1ID,
 	})
-	if !isConflict(err) {
-		t.Errorf("expected ErrConflict, got %v", err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if form.Draft == nil {
+		t.Fatalf("expected pre-existing draft to survive the rollback")
+	}
+	if len(form.Draft.Fields) != 1 || form.Draft.Fields[0].Title != "Scratch Field" {
+		t.Errorf("expected draft to still contain scratch field, got %v", form.Draft.Fields)
+	}
+	if form.LatestPublished == nil || form.LatestPublished.RollbackOf == nil {
+		t.Fatalf("expected a new rollback version to be the latest published")
+	}
+	if *form.LatestPublished.RollbackOf != v1.LatestPublished.ID {
+		t.Errorf("rollback_of not set correctly")
 	}
 }
 

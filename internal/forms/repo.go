@@ -41,6 +41,10 @@ type repo interface {
 	// PublishDraftVersion freezes the draft: sets status=published, assigns
 	// version_major/minor, and records who published it and when.
 	PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error)
+	// CreatePublishedVersion inserts a new version already in published state.
+	// Used by rollback, which produces a fresh immutable version rather than
+	// mutating or discarding any existing draft.
+	CreatePublishedVersion(ctx context.Context, p CreatePublishedVersionParams) (*FormVersionRecord, error)
 	// SavePolicyCheckResult stores the raw AI policy-check output on the draft.
 	SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error)
 

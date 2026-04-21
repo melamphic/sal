@@ -33,6 +33,14 @@ type StyleLogoUploader interface {
 	UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error)
 }
 
+// StaffNameResolver turns a staff UUID into a displayable full name so the
+// version history can read "by Dr. Nadine Patel" instead of a raw ID. Adapter
+// lives in app.go and delegates to the staff service; nil implementations are
+// tolerated (we fall back to the UUID string).
+type StaffNameResolver interface {
+	ResolveStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error)
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
 	repo         repo
@@ -40,13 +48,15 @@ type Service struct {
 	checker      extraction.FormCoverageChecker
 	logoSigner   StyleLogoSigner
 	logoUploader StyleLogoUploader
+	staffNames   StaffNameResolver
 }
 
 // NewService constructs a forms Service.
 // Pass nil for clauses/checker to disable policy checking (tests, local dev).
 // Pass nil for signer/uploader to disable the doc-theme logo upload endpoint.
-func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader) *Service {
-	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader}
+// Pass nil for staffNames to skip name resolution (API will return raw UUIDs).
+func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader, staffNames StaffNameResolver) *Service {
+	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader, staffNames: staffNames}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -76,11 +86,16 @@ type FormVersionResponse struct {
 	VersionMinor      *int                     `json:"version_minor,omitempty"`
 	ChangeType        *domain.ChangeType       `json:"change_type,omitempty"`
 	ChangeSummary     *string                  `json:"change_summary,omitempty"`
+	// Changes is a raw JSON array of typed ops ({op, ...}) computed by the editor
+	// at publish time. Shape evolves over time; consumers should tolerate unknown
+	// op kinds.
+	Changes           json.RawMessage          `json:"changes,omitempty"`
 	RollbackOf        *string                  `json:"rollback_of,omitempty"`
 	PolicyCheckResult *string                  `json:"policy_check_result,omitempty"`
 	PolicyCheckAt     *string                  `json:"policy_check_at,omitempty"`
 	PublishedAt       *string                  `json:"published_at,omitempty"`
 	PublishedBy       *string                  `json:"published_by,omitempty"`
+	PublishedByName   *string                  `json:"published_by_name,omitempty"`
 	CreatedAt         string                   `json:"created_at"`
 	Fields            []*FieldResponse         `json:"fields,omitempty"`
 }
@@ -245,6 +260,9 @@ type PublishFormInput struct {
 	StaffID       uuid.UUID
 	ChangeType    domain.ChangeType
 	ChangeSummary *string
+	// Changes is the JSONB array of typed ops the editor diffed from the
+	// previous published version. Empty when absent; shape is opaque to server.
+	Changes json.RawMessage
 }
 
 // RollbackFormInput holds input for rolling a form back to a prior version.
@@ -374,6 +392,9 @@ func (s *Service) GetForm(ctx context.Context, formID, clinicID uuid.UUID) (*For
 		resp.LatestPublished = toVersionResponse(latest, fields)
 	}
 
+	s.resolvePublisherName(ctx, clinicID, resp.Draft)
+	s.resolvePublisherName(ctx, clinicID, resp.LatestPublished)
+
 	return resp, nil
 }
 
@@ -388,8 +409,43 @@ func (s *Service) ListForms(ctx context.Context, clinicID uuid.UUID, input ListF
 
 	items := make([]*FormResponse, len(forms))
 	for i, f := range forms {
-		items[i] = toFormResponse(f)
+		resp := toFormResponse(f)
+
+		// Attach draft + latest published metadata so the list UI can render
+		// the correct status pill without a per-form GetForm round-trip.
+		// Fields are omitted to keep the list endpoint light.
+		draft, err := s.repo.GetDraftVersion(ctx, f.ID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.ListForms: draft: %w", err)
+		}
+		if draft != nil {
+			resp.Draft = toVersionResponse(draft, nil)
+		}
+
+		latest, err := s.repo.GetLatestPublishedVersion(ctx, f.ID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.ListForms: latest published: %w", err)
+		}
+		if latest != nil {
+			resp.LatestPublished = toVersionResponse(latest, nil)
+		}
+
+		items[i] = resp
 	}
+
+	// Batch-resolve publisher names across every version we're returning so
+	// a clinic with dozens of forms doesn't fan out into dozens of staff
+	// lookups — the cache in resolvePublisherNames dedupes by UUID.
+	toEnrich := make([]*FormVersionResponse, 0, len(items)*2)
+	for _, it := range items {
+		if it.Draft != nil {
+			toEnrich = append(toEnrich, it.Draft)
+		}
+		if it.LatestPublished != nil {
+			toEnrich = append(toEnrich, it.LatestPublished)
+		}
+	}
+	s.resolvePublisherNames(ctx, clinicID, toEnrich)
 
 	return &FormListResponse{
 		Items:  items,
@@ -474,8 +530,10 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 }
 
 // PublishForm freezes the current draft, assigns a semver number, and makes the
-// form available for use in audio processing.
-func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*FormVersionResponse, error) {
+// form available for use in audio processing. Returns the full form resource
+// (with the new latest_published attached) so the editor can refresh without
+// a follow-up GET.
+func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
@@ -499,25 +557,20 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 		major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
 	}
 
-	published, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
+	if _, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
 		ID:            draft.ID,
 		VersionMajor:  major,
 		VersionMinor:  minor,
 		ChangeType:    input.ChangeType,
 		ChangeSummary: input.ChangeSummary,
+		Changes:       input.Changes,
 		PublishedBy:   input.StaffID,
 		PublishedAt:   domain.TimeNow(),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
 
-	fields, err := s.repo.GetFieldsByVersionID(ctx, published.ID)
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: fields: %w", err)
-	}
-
-	return toVersionResponse(published, fields), nil
+	return s.GetForm(ctx, input.FormID, input.ClinicID)
 }
 
 // RunPolicyCheck calls the AI to assess whether the form's fields cover the
@@ -597,9 +650,12 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 	return toVersionResponse(version, nil), nil
 }
 
-// RollbackForm creates a new draft that copies all fields from a prior published version.
-// Any existing draft is discarded.
-func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*FormVersionResponse, error) {
+// RollbackForm publishes a new immutable version whose fields are copied from
+// a prior published version. The new version gets its own semver number
+// (minor bump over the current latest) and records rollback_of so the history
+// shows the provenance. Any in-flight draft is left alone — rolling back is
+// independent of the user's WIP and never destroys it.
+func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
@@ -619,33 +675,56 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 		return nil, fmt.Errorf("forms.service.RollbackForm: can only rollback to published version: %w", domain.ErrConflict)
 	}
 
-	// Copy fields from the target version.
 	sourceFields, err := s.repo.GetFieldsByVersionID(ctx, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: source fields: %w", err)
 	}
 
-	newDraftID := domain.NewID()
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:         newDraftID,
-		FormID:     input.FormID,
-		RollbackOf: &input.TargetVersionID,
-		CreatedBy:  input.StaffID,
-	})
-	if err != nil {
-		// If a draft already exists, it blocks the rollback.
-		if errors.Is(err, domain.ErrConflict) {
-			return nil, fmt.Errorf("forms.service.RollbackForm: discard existing draft before rollback: %w", domain.ErrConflict)
-		}
-		return nil, fmt.Errorf("forms.service.RollbackForm: create draft: %w", err)
+	// Compute next version. Minor bump over the current latest — rollback is
+	// conceptually "a small course correction", not a breaking re-architecture.
+	// Fall back to 1.0 when there is somehow no latest (shouldn't happen since
+	// the target itself is published).
+	latest, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("forms.service.RollbackForm: latest: %w", err)
+	}
+	major, minor := NextVersion(domain.ChangeTypeMinor, nil, nil)
+	if latest != nil {
+		major, minor = NextVersion(domain.ChangeTypeMinor, latest.VersionMajor, latest.VersionMinor)
 	}
 
-	// Copy fields into the new draft.
+	// Build a human-readable summary. If the caller supplied one, keep it as
+	// the user's note and prepend the canonical rollback prefix so the history
+	// entry reads well at a glance.
+	targetLabel := "earlier version"
+	if target.VersionMajor != nil && target.VersionMinor != nil {
+		targetLabel = fmt.Sprintf("v%d.%d", *target.VersionMajor, *target.VersionMinor)
+	}
+	summary := "Rolled back to " + targetLabel
+	if input.Reason != nil && *input.Reason != "" {
+		summary = fmt.Sprintf("%s — %s", summary, *input.Reason)
+	}
+
+	newID := domain.NewID()
+	if _, err := s.repo.CreatePublishedVersion(ctx, CreatePublishedVersionParams{
+		ID:            newID,
+		FormID:        input.FormID,
+		VersionMajor:  major,
+		VersionMinor:  minor,
+		ChangeType:    domain.ChangeTypeMinor,
+		ChangeSummary: &summary,
+		RollbackOf:    &input.TargetVersionID,
+		PublishedBy:   input.StaffID,
+		PublishedAt:   domain.TimeNow(),
+	}); err != nil {
+		return nil, fmt.Errorf("forms.service.RollbackForm: create version: %w", err)
+	}
+
 	fieldParams := make([]CreateFieldParams, len(sourceFields))
 	for i, f := range sourceFields {
 		fieldParams[i] = CreateFieldParams{
 			ID:             domain.NewID(),
-			FormVersionID:  newDraftID,
+			FormVersionID:  newID,
 			Position:       f.Position,
 			Title:          f.Title,
 			Type:           f.Type,
@@ -657,12 +736,11 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 			MinConfidence:  f.MinConfidence,
 		}
 	}
-	fields, err := s.repo.ReplaceFields(ctx, newDraftID, fieldParams)
-	if err != nil {
+	if _, err := s.repo.ReplaceFields(ctx, newID, fieldParams); err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: fields: %w", err)
 	}
 
-	return toVersionResponse(draft, fields), nil
+	return s.GetForm(ctx, input.FormID, input.ClinicID)
 }
 
 // RetireForm archives a form so it can no longer be used for new notes.
@@ -705,6 +783,7 @@ func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) 
 	for i, v := range versions {
 		items[i] = toVersionResponse(v, nil)
 	}
+	s.resolvePublisherNames(ctx, clinicID, items)
 	return &FormVersionListResponse{Items: items}, nil
 }
 
@@ -957,6 +1036,63 @@ func toFormResponse(f *FormRecord) *FormResponse {
 	return r
 }
 
+// resolvePublisherName looks up the staff display name for a version's
+// published_by UUID so the API returns "Dr. Nadine Patel" instead of a raw
+// ID. No-op when the resolver is nil (tests, local dev), when the version
+// isn't published yet, or when the lookup fails — a missing name is not
+// worth failing the whole request, since PublishedBy still round-trips.
+func (s *Service) resolvePublisherName(ctx context.Context, clinicID uuid.UUID, v *FormVersionResponse) {
+	if v == nil || v.PublishedBy == nil || s.staffNames == nil {
+		return
+	}
+	staffID, err := uuid.Parse(*v.PublishedBy)
+	if err != nil {
+		return
+	}
+	name, err := s.staffNames.ResolveStaffName(ctx, staffID, clinicID)
+	if err != nil || name == "" {
+		return
+	}
+	v.PublishedByName = &name
+}
+
+// resolvePublisherNames enriches a batch of version responses. Uses a
+// per-call cache so listing many versions by the same author only hits the
+// staff service once.
+func (s *Service) resolvePublisherNames(ctx context.Context, clinicID uuid.UUID, versions []*FormVersionResponse) {
+	if s.staffNames == nil {
+		return
+	}
+	cache := make(map[string]string)
+	for _, v := range versions {
+		if v == nil || v.PublishedBy == nil {
+			continue
+		}
+		if cached, ok := cache[*v.PublishedBy]; ok {
+			if cached != "" {
+				n := cached
+				v.PublishedByName = &n
+			}
+			continue
+		}
+		staffID, err := uuid.Parse(*v.PublishedBy)
+		if err != nil {
+			cache[*v.PublishedBy] = ""
+			continue
+		}
+		name, err := s.staffNames.ResolveStaffName(ctx, staffID, clinicID)
+		if err != nil {
+			cache[*v.PublishedBy] = ""
+			continue
+		}
+		cache[*v.PublishedBy] = name
+		if name != "" {
+			n := name
+			v.PublishedByName = &n
+		}
+	}
+}
+
 func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersionResponse {
 	r := &FormVersionResponse{
 		ID:                v.ID.String(),
@@ -966,6 +1102,7 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 		VersionMinor:      v.VersionMinor,
 		ChangeType:        v.ChangeType,
 		ChangeSummary:     v.ChangeSummary,
+		Changes:           v.Changes,
 		PolicyCheckResult: v.PolicyCheckResult,
 		CreatedAt:         v.CreatedAt.Format(time.RFC3339),
 	}
