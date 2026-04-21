@@ -933,6 +933,7 @@ func (a *marketplacePolicySnapshotAdapter) SnapshotPolicy(ctx context.Context, p
 		out.Clauses[i] = marketplace.PolicySnapshotClause{
 			BlockID: c.BlockID,
 			Title:   c.Title,
+			Body:    c.Body,
 			Parity:  c.Parity,
 		}
 	}
@@ -968,6 +969,7 @@ func (a *marketplacePolicyImporterAdapter) ImportPolicy(ctx context.Context, in 
 		clauses[i] = policy.ClauseInput{
 			BlockID: c.BlockID,
 			Title:   c.Title,
+			Body:    c.Body,
 			Parity:  c.Parity,
 		}
 	}

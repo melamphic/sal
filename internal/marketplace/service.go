@@ -74,6 +74,7 @@ type PolicySnapshot struct {
 type PolicySnapshotClause struct {
 	BlockID string
 	Title   string
+	Body    string
 	Parity  string
 }
 
@@ -493,6 +494,7 @@ type PackagePolicy struct {
 type PackagePolicyClause struct {
 	BlockID string `json:"block_id"`
 	Title   string `json:"title"`
+	Body    string `json:"body,omitempty"`
 	Parity  string `json:"parity"`
 }
 
