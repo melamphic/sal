@@ -15,8 +15,9 @@ type fakeRepo struct {
 	forms    map[uuid.UUID]*FormRecord
 	versions map[uuid.UUID]*FormVersionRecord
 	fields   map[uuid.UUID][]*FieldRecord // keyed by version ID
-	policies map[uuid.UUID][]uuid.UUID    // form_id → policy IDs
-	styles   []*StyleVersionRecord        // ordered by version asc
+	policies     map[uuid.UUID][]uuid.UUID                // form_id → policy IDs
+	unlinkEvents map[uuid.UUID][]*PolicyUnlinkEventRecord // form_id → soft-unlink history
+	styles       []*StyleVersionRecord                    // ordered by version asc
 }
 
 func newFakeRepo() *fakeRepo {
@@ -452,6 +453,21 @@ func (f *fakeRepo) ListFormIDsByPolicyID(_ context.Context, policyID uuid.UUID) 
 				break
 			}
 		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) ListPolicyUnlinkEvents(_ context.Context, formID uuid.UUID) ([]*PolicyUnlinkEventRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if f.unlinkEvents == nil {
+		return nil, nil
+	}
+	events := f.unlinkEvents[formID]
+	out := make([]*PolicyUnlinkEventRecord, len(events))
+	for i, e := range events {
+		cp := *e
+		out[i] = &cp
 	}
 	return out, nil
 }

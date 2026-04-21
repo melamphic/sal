@@ -14,8 +14,12 @@ import (
 // FormLinker is the cross-module interface used to detach a policy from all
 // forms that reference it when the policy is retired. The concrete adapter
 // is wired in app.go using the forms repository.
+//
+// policyName and reason are stamped on each unlinked row so the form's
+// compliance trail can surface "Policy X retired — unlinked" entries even
+// after the archived policy is later renamed.
 type FormLinker interface {
-	DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID) error
+	DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID, policyName string, reason *string) error
 }
 
 // Service handles business logic for the policy module.
@@ -474,7 +478,7 @@ func (s *Service) RetirePolicy(ctx context.Context, input RetirePolicyInput) (*P
 	}
 
 	// Detach from all linked forms. Best-effort: log but don't fail the retire.
-	if err := s.formLinker.DetachPolicyFromForms(ctx, input.PolicyID); err != nil {
+	if err := s.formLinker.DetachPolicyFromForms(ctx, input.PolicyID, retired.Name, input.Reason); err != nil {
 		// Non-fatal — the policy is already retired. Forms will surface stale
 		// links on next load; cleanup can be retried manually.
 		_ = err

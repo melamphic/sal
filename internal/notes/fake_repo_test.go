@@ -120,6 +120,14 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 	n.SubmittedBy = &p.SubmittedBy
 	t := p.SubmittedAt
 	n.SubmittedAt = &t
+	if p.OverrideReason != nil {
+		reason := *p.OverrideReason
+		by := p.SubmittedBy
+		at := p.SubmittedAt
+		n.OverrideReason = &reason
+		n.OverrideBy = &by
+		n.OverrideAt = &at
+	}
 	n.UpdatedAt = domain.TimeNow()
 	return cloneNote(n), nil
 }

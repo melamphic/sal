@@ -64,12 +64,20 @@ type PolicyDetailedChecker interface {
 	CheckPolicyClauses(ctx context.Context, noteContent string, clauses []PolicyClause) ([]ClauseCheckResult, error)
 }
 
+// FormCoverageResult is the combined output of a form-level coverage check:
+// a plain-text narrative the user reads, plus per-clause structured results
+// the service uses to compute a result percentage and persist evidence.
+type FormCoverageResult struct {
+	Narrative string              // free-form analysis (OVERALL / COVERED / GAPS / SUGGESTIONS)
+	Clauses   []ClauseCheckResult // per-clause status; BlockID matches input clause IDs
+}
+
 // FormCoverageChecker assesses whether a form's field design covers the requirements
 // of the policy clauses linked to that form. Used at form-design time (not runtime).
-// Returns a qualitative text report the user can read and act on before publishing.
 type FormCoverageChecker interface {
 	// CheckFormCoverage takes the form's overall context prompt, its field definitions,
-	// and the enforceable clauses from all linked policies. Returns a plain-text
-	// compliance analysis with gaps and suggestions.
-	CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (string, error)
+	// and the enforceable clauses from all linked policies. Returns a narrative
+	// plus per-clause pass/fail so the service can compute a result percentage
+	// and persist structured evidence on the form version.
+	CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error)
 }

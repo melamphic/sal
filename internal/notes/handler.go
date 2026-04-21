@@ -204,8 +204,18 @@ func (h *Handler) updateField(ctx context.Context, input *updateFieldBodyInput) 
 
 // ── Submit ────────────────────────────────────────────────────────────────────
 
+// submitNoteInput carries the note ID in the path and an optional override
+// justification in the body. When override_reason is present and non-blank the
+// server skips the high-parity policy gate and persists the justification.
+type submitNoteInput struct {
+	NoteID string `path:"note_id" doc:"The note's UUID."`
+	Body   struct {
+		OverrideReason *string `json:"override_reason,omitempty" doc:"Written justification for submitting despite a high-parity policy violation. Persisted on the note when present."`
+	}
+}
+
 // submitNote handles POST /api/v1/notes/{note_id}/submit.
-func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
+func (h *Handler) submitNote(ctx context.Context, input *submitNoteInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 	role := string(mw.RoleFromContext(ctx))
@@ -215,7 +225,7 @@ func (h *Handler) submitNote(ctx context.Context, input *noteIDInput) (*noteHTTP
 		return nil, huma.Error400BadRequest("invalid note_id")
 	}
 
-	resp, err := h.svc.SubmitNote(ctx, noteID, clinicID, staffID, role)
+	resp, err := h.svc.SubmitNote(ctx, noteID, clinicID, staffID, role, input.Body.OverrideReason)
 	if err != nil {
 		return nil, mapNoteError(err)
 	}

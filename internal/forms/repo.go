@@ -66,6 +66,9 @@ type repo interface {
 	// ListFormIDsByPolicyID returns all form IDs that have the given policy linked.
 	// Used by the policy engine when retiring a policy to remove all links.
 	ListFormIDsByPolicyID(ctx context.Context, policyID uuid.UUID) ([]uuid.UUID, error)
+	// ListPolicyUnlinkEvents returns soft-unlinked form_policies rows for a form.
+	// Used by ListVersions to inject synthetic "Policy X unlinked" trail entries.
+	ListPolicyUnlinkEvents(ctx context.Context, formID uuid.UUID) ([]*PolicyUnlinkEventRecord, error)
 
 	// ── Style ─────────────────────────────────────────────────────────────────
 

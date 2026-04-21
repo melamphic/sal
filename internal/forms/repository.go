@@ -205,6 +205,8 @@ type CreatePublishedVersionParams struct {
 }
 
 // SavePolicyCheckParams holds the result of a policy compliance check.
+// Result is a JSON-encoded array of entries (one per linked policy); the
+// policy_check_result column stores it as JSONB.
 type SavePolicyCheckParams struct {
 	VersionID uuid.UUID
 	Result    string
@@ -459,7 +461,7 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
-	changes, rollback_of, policy_check_result, policy_check_by, policy_check_at,
+	changes, rollback_of, policy_check_result::text, policy_check_by, policy_check_at,
 	published_at, published_by, created_by, created_at`
 
 // GetDraftVersion returns the single mutable draft version for a form.
@@ -673,10 +675,11 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 }
 
 // SavePolicyCheckResult records the AI policy-check result on the draft version.
+// p.Result is a JSON-encoded array of PolicyCheckResultEntry; the column is JSONB.
 func (r *Repository) SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
 		UPDATE form_versions
-		SET policy_check_result = $2,
+		SET policy_check_result = $2::jsonb,
 		    policy_check_by     = $3,
 		    policy_check_at     = $4
 		WHERE id = $1 AND status = 'draft'
@@ -761,12 +764,14 @@ func (r *Repository) ReplaceFields(ctx context.Context, versionID uuid.UUID, fie
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-// LinkPolicy inserts a form_policies row.
+// LinkPolicy inserts a form_policies row. If an inactive (unlinked) row
+// already exists for this pair, it is reactivated in place rather than
+// inserting a duplicate, preserving the audit trail.
 func (r *Repository) LinkPolicy(ctx context.Context, formID, policyID, linkedBy uuid.UUID) error {
 	const q = `
 		INSERT INTO form_policies (form_id, policy_id, linked_by)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (form_id, policy_id) DO NOTHING`
+		ON CONFLICT (form_id, policy_id) WHERE unlinked_at IS NULL DO NOTHING`
 
 	if _, err := r.db.Exec(ctx, q, formID, policyID, linkedBy); err != nil {
 		return fmt.Errorf("forms.repo.LinkPolicy: %w", err)
@@ -774,9 +779,10 @@ func (r *Repository) LinkPolicy(ctx context.Context, formID, policyID, linkedBy 
 	return nil
 }
 
-// ListFormIDsByPolicyID returns all form IDs that have the given policy linked.
+// ListFormIDsByPolicyID returns all form IDs that actively link the given policy.
+// Soft-unlinked rows are excluded.
 func (r *Repository) ListFormIDsByPolicyID(ctx context.Context, policyID uuid.UUID) ([]uuid.UUID, error) {
-	const q = `SELECT form_id FROM form_policies WHERE policy_id = $1`
+	const q = `SELECT form_id FROM form_policies WHERE policy_id = $1 AND unlinked_at IS NULL`
 
 	rows, err := r.db.Query(ctx, q, policyID)
 	if err != nil {
@@ -798,27 +804,48 @@ func (r *Repository) ListFormIDsByPolicyID(ctx context.Context, policyID uuid.UU
 	return ids, nil
 }
 
-// UnlinkPolicy removes a form_policies row.
+// UnlinkPolicy soft-unlinks a form_policies row, preserving audit history.
 func (r *Repository) UnlinkPolicy(ctx context.Context, formID, policyID uuid.UUID) error {
-	const q = `DELETE FROM form_policies WHERE form_id = $1 AND policy_id = $2`
+	const q = `
+		UPDATE form_policies
+		SET unlinked_at = NOW()
+		WHERE form_id = $1 AND policy_id = $2 AND unlinked_at IS NULL`
 	if _, err := r.db.Exec(ctx, q, formID, policyID); err != nil {
 		return fmt.Errorf("forms.repo.UnlinkPolicy: %w", err)
 	}
 	return nil
 }
 
-// UnlinkPolicyFromAllForms removes all form_policies rows for the given policy in one query.
-func (r *Repository) UnlinkPolicyFromAllForms(ctx context.Context, policyID uuid.UUID) error {
-	const q = `DELETE FROM form_policies WHERE policy_id = $1`
-	if _, err := r.db.Exec(ctx, q, policyID); err != nil {
+// UnlinkPolicyFromAllFormsParams carries the context recorded on each
+// soft-unlinked row when a policy is retired, so the form's trail can surface
+// which policy unlinked and why even after the policy itself is renamed later.
+type UnlinkPolicyFromAllFormsParams struct {
+	PolicyID           uuid.UUID
+	PolicyNameSnapshot string
+	Reason             *string
+}
+
+// UnlinkPolicyFromAllForms soft-unlinks every active row for the given policy,
+// stamping the policy name (as of retire) and an optional reason on each row.
+func (r *Repository) UnlinkPolicyFromAllForms(ctx context.Context, p UnlinkPolicyFromAllFormsParams) error {
+	const q = `
+		UPDATE form_policies
+		SET unlinked_at          = NOW(),
+		    unlinked_reason      = $2,
+		    policy_name_snapshot = $3
+		WHERE policy_id = $1 AND unlinked_at IS NULL`
+	if _, err := r.db.Exec(ctx, q, p.PolicyID, p.Reason, p.PolicyNameSnapshot); err != nil {
 		return fmt.Errorf("forms.repo.UnlinkPolicyFromAllForms: %w", err)
 	}
 	return nil
 }
 
-// ListLinkedPolicies returns all policy IDs linked to a form.
+// ListLinkedPolicies returns all active policy IDs linked to a form.
 func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) ([]uuid.UUID, error) {
-	const q = `SELECT policy_id FROM form_policies WHERE form_id = $1 ORDER BY linked_at`
+	const q = `
+		SELECT policy_id FROM form_policies
+		WHERE form_id = $1 AND unlinked_at IS NULL
+		ORDER BY linked_at`
 
 	rows, err := r.db.Query(ctx, q, formID)
 	if err != nil {
@@ -838,6 +865,45 @@ func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) (
 		return nil, fmt.Errorf("forms.repo.ListLinkedPolicies: rows: %w", err)
 	}
 	return ids, nil
+}
+
+// PolicyUnlinkEventRecord is a soft-unlinked form_policies row, used to
+// inject synthetic "Policy X unlinked" entries into a form's version trail.
+type PolicyUnlinkEventRecord struct {
+	FormID             uuid.UUID
+	PolicyID           uuid.UUID
+	PolicyNameSnapshot *string
+	UnlinkedAt         time.Time
+	UnlinkedReason     *string
+}
+
+// ListPolicyUnlinkEvents returns every soft-unlinked policy for a form,
+// newest first. Used by ListVersions to inject synthetic trail entries.
+func (r *Repository) ListPolicyUnlinkEvents(ctx context.Context, formID uuid.UUID) ([]*PolicyUnlinkEventRecord, error) {
+	const q = `
+		SELECT form_id, policy_id, policy_name_snapshot, unlinked_at, unlinked_reason
+		FROM form_policies
+		WHERE form_id = $1 AND unlinked_at IS NOT NULL
+		ORDER BY unlinked_at DESC`
+
+	rows, err := r.db.Query(ctx, q, formID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListPolicyUnlinkEvents: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*PolicyUnlinkEventRecord
+	for rows.Next() {
+		var e PolicyUnlinkEventRecord
+		if err := rows.Scan(&e.FormID, &e.PolicyID, &e.PolicyNameSnapshot, &e.UnlinkedAt, &e.UnlinkedReason); err != nil {
+			return nil, fmt.Errorf("forms.repo.ListPolicyUnlinkEvents: scan: %w", err)
+		}
+		list = append(list, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListPolicyUnlinkEvents: rows: %w", err)
+	}
+	return list, nil
 }
 
 // ── Style ─────────────────────────────────────────────────────────────────────

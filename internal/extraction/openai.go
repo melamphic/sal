@@ -187,11 +187,27 @@ func (e *OpenAIExtractor) AlignPolicy(ctx context.Context, noteContent string, c
 
 // ── FormCoverageChecker ───────────────────────────────────────────────────────
 
+// openAIFormCoverageClause is the per-clause entry of the structured form-coverage response.
+type openAIFormCoverageClause struct {
+	BlockID   string `json:"block_id"`
+	Status    string `json:"status"`
+	Reasoning string `json:"reasoning"`
+}
+
+// openAIFormCoverageResponse is the strict-JSON shape returned by CheckFormCoverage.
+type openAIFormCoverageResponse struct {
+	Narrative string                     `json:"narrative"`
+	Clauses   []openAIFormCoverageClause `json:"clauses"`
+}
+
 // CheckFormCoverage calls GPT-4.1-mini to assess whether the form's fields cover
-// the requirements of the linked policy clauses. Returns a plain-text report.
-func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (string, error) {
+// the requirements of the linked policy clauses. Returns a narrative plus
+// per-clause pass/fail so the service can compute a result percentage.
+func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
 	if len(clauses) == 0 {
-		return "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.", nil
+		return &FormCoverageResult{
+			Narrative: "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.",
+		}, nil
 	}
 
 	var sb strings.Builder
@@ -220,24 +236,48 @@ func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, overallPrompt s
 
 	sb.WriteString("\n## Policy clauses to satisfy\n")
 	for _, c := range clauses {
-		sb.WriteString(fmt.Sprintf("- [%s parity] %s\n", c.Parity, c.Title))
+		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
 	}
 
 	sb.WriteString(`
-Write a plain-text compliance analysis. Structure as:
+Return a JSON object with two keys:
 
-OVERALL: One sentence summary.
+- "narrative": a plain-text analysis structured as:
+    OVERALL: One sentence summary.
+    COVERED:
+    List each clause that is addressed by one or more fields. One line per clause.
+    GAPS:
+    List each clause with no capturing field, plus a concrete suggestion for what field to add.
+    SUGGESTIONS:
+    Up to 3 actionable improvements, if any.
+    Be specific. Reference actual field names and clause titles.
 
-COVERED:
-List each clause that is addressed by one or more fields. One line per clause.
+- "clauses": an array with one object per input clause (same block_id). Each object:
+    { "block_id": "<id>", "status": "satisfied"|"violated", "reasoning": "<one sentence>" }
+    status=satisfied if at least one form field captures the data needed to satisfy the clause;
+    status=violated otherwise.`)
 
-GAPS:
-List each clause with no capturing field, plus a concrete suggestion for what field to add.
-
-SUGGESTIONS:
-Up to 3 actionable improvements, if any.
-
-Be specific. Reference actual field names and clause titles.`)
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"narrative": map[string]any{"type": "string"},
+			"clauses": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"block_id":  map[string]any{"type": "string"},
+						"status":    map[string]any{"type": "string", "enum": []string{"satisfied", "violated"}},
+						"reasoning": map[string]any{"type": "string"},
+					},
+					"required":             []string{"block_id", "status", "reasoning"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"required":             []string{"narrative", "clauses"},
+		"additionalProperties": false,
+	}
 
 	resp, err := e.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openAIModel,
@@ -246,15 +286,56 @@ Be specific. Reference actual field names and clause titles.`)
 			openai.UserMessage(sb.String()),
 		},
 		Temperature: openai.Float(0.2),
+		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
+			OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+				Type: "json_schema",
+				JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+					Name:   "form_coverage",
+					Schema: schema,
+					Strict: openai.Bool(true),
+				},
+			},
+		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("extraction.openai.CheckFormCoverage: %w", err)
+		return nil, fmt.Errorf("extraction.openai.CheckFormCoverage: %w", err)
 	}
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("extraction.openai.CheckFormCoverage: empty response from model")
+		return nil, fmt.Errorf("extraction.openai.CheckFormCoverage: empty response from model")
 	}
 
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	var parsed openAIFormCoverageResponse
+	if err := json.Unmarshal([]byte(resp.Choices[0].Message.Content), &parsed); err != nil {
+		return nil, fmt.Errorf("extraction.openai.CheckFormCoverage: parse: %w", err)
+	}
+
+	byBlockID := make(map[string]openAIFormCoverageClause, len(parsed.Clauses))
+	for _, r := range parsed.Clauses {
+		byBlockID[r.BlockID] = r
+	}
+	results := make([]ClauseCheckResult, len(clauses))
+	for i, c := range clauses {
+		if r, ok := byBlockID[c.BlockID]; ok {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    r.Status,
+				Reasoning: r.Reasoning,
+				Parity:    c.Parity,
+			}
+		} else {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    "violated",
+				Reasoning: "clause not assessed by model",
+				Parity:    c.Parity,
+			}
+		}
+	}
+
+	return &FormCoverageResult{
+		Narrative: strings.TrimSpace(parsed.Narrative),
+		Clauses:   results,
+	}, nil
 }
 
 // ── Schema helper ─────────────────────────────────────────────────────────────
