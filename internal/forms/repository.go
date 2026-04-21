@@ -78,6 +78,13 @@ type FieldRecord struct {
 }
 
 // StyleVersionRecord is the raw database representation of a clinic_form_style_versions row.
+//
+// Config is the rich doc-theme JSON blob produced by the designer (header shape,
+// gradient stops, watermark, per-slot content, typography, etc.). The flat
+// fields (LogoKey/PrimaryColor/FontFamily/HeaderExtra/FooterText) are kept as a
+// legacy mirror of the top-level values for the old onboarding UI and simple
+// renderers. PresetID tracks which vertical-specific preset the clinic is
+// currently based on (e.g. "dental.clean_clinical").
 type StyleVersionRecord struct {
 	ID           uuid.UUID
 	ClinicID     uuid.UUID
@@ -87,6 +94,9 @@ type StyleVersionRecord struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
+	IsActive     bool
 	CreatedBy    uuid.UUID
 	CreatedAt    time.Time
 }
@@ -203,6 +213,8 @@ type CreateStyleVersionParams struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
 	CreatedBy    uuid.UUID
 }
 
@@ -720,14 +732,15 @@ func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) (
 
 // ── Style ─────────────────────────────────────────────────────────────────────
 
-const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, created_by, created_at`
+const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by, created_at`
 
-// GetCurrentStyle returns the highest-version style record for the clinic.
+// GetCurrentStyle returns the active style record for the clinic.
+// Falls back to the highest-version row when no row is marked active (legacy rows).
 func (r *Repository) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*StyleVersionRecord, error) {
 	q := fmt.Sprintf(`
 		SELECT %s FROM clinic_form_style_versions
 		WHERE clinic_id = $1
-		ORDER BY version DESC
+		ORDER BY is_active DESC, version DESC
 		LIMIT 1`, styleCols)
 
 	row := r.db.QueryRow(ctx, q, clinicID)
@@ -738,21 +751,65 @@ func (r *Repository) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*
 	return rec, nil
 }
 
-// CreateStyleVersion inserts a new style version row.
+// ListStyleVersions returns every style version for a clinic, newest first.
+func (r *Repository) ListStyleVersions(ctx context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error) {
+	q := fmt.Sprintf(`
+		SELECT %s FROM clinic_form_style_versions
+		WHERE clinic_id = $1
+		ORDER BY version DESC`, styleCols)
+
+	rows, err := r.db.Query(ctx, q, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListStyleVersions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*StyleVersionRecord
+	for rows.Next() {
+		rec, scanErr := scanStyle(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("forms.repo.ListStyleVersions: %w", scanErr)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListStyleVersions: rows: %w", err)
+	}
+	return out, nil
+}
+
+// CreateStyleVersion inserts a new style version row and marks it active,
+// demoting any previously-active row for the clinic inside the same tx.
 func (r *Repository) CreateStyleVersion(ctx context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE clinic_form_style_versions SET is_active = FALSE
+		WHERE clinic_id = $1 AND is_active`, p.ClinicID); err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: deactivate: %w", err)
+	}
+
 	q := fmt.Sprintf(`
 		INSERT INTO clinic_form_style_versions
-		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11)
 		RETURNING %s`, styleCols)
 
-	row := r.db.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.Version, p.LogoKey, p.PrimaryColor,
-		p.FontFamily, p.HeaderExtra, p.FooterText, p.CreatedBy,
+		p.FontFamily, p.HeaderExtra, p.FooterText, p.Config, p.PresetID, p.CreatedBy,
 	)
 	rec, err := scanStyle(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: commit: %w", err)
 	}
 	return rec, nil
 }
@@ -838,6 +895,7 @@ func scanStyle(row scannable) (*StyleVersionRecord, error) {
 	err := row.Scan(
 		&s.ID, &s.ClinicID, &s.Version, &s.LogoKey, &s.PrimaryColor,
 		&s.FontFamily, &s.HeaderExtra, &s.FooterText,
+		&s.Config, &s.PresetID, &s.IsActive,
 		&s.CreatedBy, &s.CreatedAt,
 	)
 	if err != nil {
