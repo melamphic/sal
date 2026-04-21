@@ -95,6 +95,11 @@ type FormVersionResponse struct {
 	ID                string                   `json:"id"`
 	FormID            string                   `json:"form_id"`
 	Status            domain.FormVersionStatus `json:"status"`
+	// Kind distinguishes real version rows from synthetic timeline entries
+	// the service injects for compliance (e.g. "retire"). Empty/absent means
+	// a regular version row — front-ends should default to "version" in that
+	// case. Values: "version" (default) · "retire".
+	Kind              string                   `json:"kind,omitempty"`
 	VersionMajor      *int                     `json:"version_major,omitempty"`
 	VersionMinor      *int                     `json:"version_minor,omitempty"`
 	ChangeType        *domain.ChangeType       `json:"change_type,omitempty"`
@@ -136,6 +141,8 @@ type FormResponse struct {
 	UpdatedAt     string   `json:"updated_at"`
 	ArchivedAt    *string  `json:"archived_at,omitempty"`
 	RetireReason  *string  `json:"retire_reason,omitempty"`
+	RetiredBy     *string  `json:"retired_by,omitempty"`
+	RetiredByName *string  `json:"retired_by_name,omitempty"`
 	// Draft is non-nil when an editable draft version exists.
 	Draft *FormVersionResponse `json:"draft,omitempty"`
 	// LatestPublished is the most recent frozen version; nil on a brand-new form.
@@ -689,8 +696,10 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 // RollbackForm publishes a new immutable version whose fields are copied from
 // a prior published version. The new version gets its own semver number
 // (minor bump over the current latest) and records rollback_of so the history
-// shows the provenance. Any in-flight draft is left alone — rolling back is
-// independent of the user's WIP and never destroys it.
+// shows the provenance. The draft is also overwritten with the target's
+// fields so the editor reflects the restored state — users expect clicking
+// "Rollback to v1" to bring back those fields in the editor, not preserve
+// orphan WIP from the discarded version.
 //
 // Version insert + field copy happen in a single transaction in the repo
 // layer, so a partial failure can't leave a zero-field published version in
@@ -778,6 +787,14 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 			PublishedAt:   domain.TimeNow(),
 		}, fieldParams)
 		if err == nil {
+			// Also restore the draft to mirror the target so the editor
+			// reopens on the rolled-back fields instead of leftover WIP.
+			// Best-effort: a sync failure here doesn't invalidate the
+			// published rollback — the user can re-run it if the draft
+			// looks stale.
+			if draftErr := s.resetDraftToFields(ctx, input.FormID, input.StaffID, sourceFields); draftErr != nil {
+				return nil, fmt.Errorf("forms.service.RollbackForm: %w", draftErr)
+			}
 			return s.GetForm(ctx, input.FormID, input.ClinicID)
 		}
 		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
@@ -786,6 +803,43 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
 	}
 	return nil, fmt.Errorf("forms.service.RollbackForm: could not assign version number: %w", domain.ErrConflict)
+}
+
+// resetDraftToFields replaces (or creates) the form's draft so it carries an
+// independent copy of the supplied source fields. Used by rollback to keep
+// the editor aligned with the just-published rolled-back version.
+func (s *Service) resetDraftToFields(ctx context.Context, formID, staffID uuid.UUID, sourceFields []*FieldRecord) error {
+	draft, err := s.repo.GetDraftVersion(ctx, formID)
+	if errors.Is(err, domain.ErrNotFound) {
+		draft, err = s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
+			ID:        domain.NewID(),
+			FormID:    formID,
+			CreatedBy: staffID,
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("resetDraftToFields: draft: %w", err)
+	}
+	fieldParams := make([]CreateFieldParams, len(sourceFields))
+	for i, f := range sourceFields {
+		fieldParams[i] = CreateFieldParams{
+			ID:             domain.NewID(),
+			FormVersionID:  draft.ID,
+			Position:       f.Position,
+			Title:          f.Title,
+			Type:           f.Type,
+			Config:         f.Config,
+			AIPrompt:       f.AIPrompt,
+			Required:       f.Required,
+			Skippable:      f.Skippable,
+			AllowInference: f.AllowInference,
+			MinConfidence:  f.MinConfidence,
+		}
+	}
+	if _, err := s.repo.ReplaceFields(ctx, draft.ID, fieldParams); err != nil {
+		return fmt.Errorf("resetDraftToFields: replace: %w", err)
+	}
+	return nil
 }
 
 // RetireForm archives a form so it can no longer be used for new notes.
@@ -804,6 +858,7 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 		ClinicID:     input.ClinicID,
 		RetireReason: input.Reason,
 		ArchivedAt:   domain.TimeNow(),
+		RetiredBy:    input.StaffID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RetireForm: %w", err)
@@ -812,10 +867,12 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 	return toFormResponse(retired), nil
 }
 
-// ListVersions returns the full version history (published only) for a form.
+// ListVersions returns the compliance trail for a form: every published
+// version (newest first) plus a synthetic "retire" entry at the top when the
+// form is archived, so the timeline shows who retired it, when, and why.
 func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) (*FormVersionListResponse, error) {
-	// Verify clinic ownership.
-	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
+	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
+	if err != nil {
 		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
 	}
 
@@ -824,12 +881,51 @@ func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) 
 		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
 	}
 
-	items := make([]*FormVersionResponse, len(versions))
-	for i, v := range versions {
-		items[i] = toVersionResponse(v, nil)
+	items := make([]*FormVersionResponse, 0, len(versions)+1)
+	if form.ArchivedAt != nil {
+		items = append(items, buildRetireEntry(form))
+	}
+	for _, v := range versions {
+		items = append(items, toVersionResponse(v, nil))
 	}
 	s.resolvePublisherNames(ctx, clinicID, items)
 	return &FormVersionListResponse{Items: items}, nil
+}
+
+// buildRetireEntry fabricates a timeline row representing the form's retire
+// event. It isn't a real form_versions row — retirement is a form-level
+// state change — but the UI renders the trail from a single list, so we
+// synthesise one here. ID is deterministic (formID suffixed with "-retire")
+// so the front-end can key on it without colliding with real version UUIDs.
+func buildRetireEntry(f *FormRecord) *FormVersionResponse {
+	summary := "Form retired"
+	if f.RetireReason != nil && *f.RetireReason != "" {
+		summary = fmt.Sprintf("Form retired — %s", *f.RetireReason)
+	}
+	var publishedAt *string
+	if f.ArchivedAt != nil {
+		s := f.ArchivedAt.Format(time.RFC3339)
+		publishedAt = &s
+	}
+	var publishedBy *string
+	if f.RetiredBy != nil {
+		s := f.RetiredBy.String()
+		publishedBy = &s
+	}
+	createdAt := ""
+	if f.ArchivedAt != nil {
+		createdAt = f.ArchivedAt.Format(time.RFC3339)
+	}
+	return &FormVersionResponse{
+		ID:            f.ID.String() + "-retire",
+		FormID:        f.ID.String(),
+		Status:        domain.FormVersionStatusArchived,
+		Kind:          "retire",
+		ChangeSummary: &summary,
+		PublishedAt:   publishedAt,
+		PublishedBy:   publishedBy,
+		CreatedAt:     createdAt,
+	}
 }
 
 // ── Groups ────────────────────────────────────────────────────────────────────
@@ -1087,6 +1183,10 @@ func toFormResponse(f *FormRecord) *FormResponse {
 	if f.ArchivedAt != nil {
 		s := f.ArchivedAt.Format(time.RFC3339)
 		r.ArchivedAt = &s
+	}
+	if f.RetiredBy != nil {
+		s := f.RetiredBy.String()
+		r.RetiredBy = &s
 	}
 	return r
 }

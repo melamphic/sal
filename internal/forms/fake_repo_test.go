@@ -177,6 +177,8 @@ func (f *fakeRepo) RetireForm(_ context.Context, p RetireFormParams) (*FormRecor
 	t := p.ArchivedAt
 	form.ArchivedAt = &t
 	form.RetireReason = p.RetireReason
+	rb := p.RetiredBy
+	form.RetiredBy = &rb
 	return cloneForm(form), nil
 }
 

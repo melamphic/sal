@@ -39,6 +39,7 @@ type FormRecord struct {
 	UpdatedAt     time.Time
 	ArchivedAt    *time.Time
 	RetireReason  *string
+	RetiredBy     *uuid.UUID
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
@@ -154,6 +155,7 @@ type RetireFormParams struct {
 	ClinicID     uuid.UUID
 	RetireReason *string
 	ArchivedAt   time.Time
+	RetiredBy    uuid.UUID
 }
 
 // ListFormsParams holds filter and pagination parameters for listing forms.
@@ -336,7 +338,7 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description,
@@ -353,7 +355,7 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
 	const q = `
 		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
 		FROM forms
 		WHERE id = $1 AND clinic_id = $2`
 
@@ -391,7 +393,7 @@ func (r *Repository) ListForms(ctx context.Context, clinicID uuid.UUID, p ListFo
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
 		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
 		FROM forms
 		WHERE %s
 		ORDER BY created_at DESC
@@ -424,7 +426,7 @@ func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams)
 		SET group_id = $3, name = $4, description = $5, overall_prompt = $6, tags = $7
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description, p.OverallPrompt, p.Tags,
@@ -436,16 +438,16 @@ func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams)
 	return rec, nil
 }
 
-// RetireForm sets archived_at and retire_reason on the form.
+// RetireForm sets archived_at, retire_reason, and retired_by on the form.
 func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormRecord, error) {
 	const q = `
 		UPDATE forms
-		SET archived_at = $3, retire_reason = $4
+		SET archived_at = $3, retire_reason = $4, retired_by = $5
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason, p.RetiredBy)
 	rec, err := scanForm(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.RetireForm: %w", err)
@@ -948,7 +950,7 @@ func scanForm(row scannable) (*FormRecord, error) {
 	err := row.Scan(
 		&f.ID, &f.ClinicID, &f.GroupID, &f.Name, &f.Description,
 		&f.OverallPrompt, &f.Tags, &f.CreatedBy,
-		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason,
+		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason, &f.RetiredBy,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

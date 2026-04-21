@@ -27,8 +27,10 @@ Forms are the template engine of Salvia. Clinic administrators build structured 
                        │ publish (assigns vX.Y)
                        ▼
                 ┌──────────────┐
-                │  Published   │──── rollback ──► new Draft
-                └──────┬───────┘
+                │  Published   │──── rollback ──► new Published
+                └──────┬───────┘        (copies fields from target,
+                       │                 bumps minor, records
+                       │                 rollback_of)
                        │ (optional) retire
                        ▼
                 ┌──────────────┐
@@ -38,7 +40,7 @@ Forms are the template engine of Salvia. Clinic administrators build structured 
 
 ### One living draft
 
-Only one draft per form is allowed (enforced by a `UNIQUE(form_id) WHERE status = 'draft'` partial index). Publishing consumes the draft. A new draft is created automatically on the next edit — or explicitly via rollback.
+Only one draft per form is allowed (enforced by a `UNIQUE(form_id) WHERE status = 'draft'` partial index, migration 00009). Publishing consumes the draft. A new draft is created automatically on the next edit.
 
 ### Semver versioning
 
@@ -47,10 +49,23 @@ Only one draft per form is allowed (enforced by a `UNIQUE(form_id) WHERE status 
 | First publish (any) | — | **1.0** |
 | `change_type=major` (field structure changed) | 1.2 | **2.0** |
 | `change_type=minor` (metadata/prompts only) | 1.2 | **1.3** |
+| Rollback to any prior version | 2.0 | **2.1** |
+
+Version numbers (`form_id`, `version_major`, `version_minor`) are protected by a partial unique index on `status = 'published'` (migration 00036). A concurrent publish + rollback racing on the same pair fails fast rather than landing two "v2.1" rows; the service retries once with a recomputed number.
+
+### Publish preconditions
+
+- Form must not be retired (`archived_at IS NULL`).
+- Draft must exist (a fresh form has one; re-publishing after publish requires an `UpdateDraft` first).
+- **Draft must have ≥ 1 field.** Publishing an empty draft is rejected with `ErrConflict`: the extraction pipeline would have nothing to populate and the PDF renderer nothing to render, and the version history would carry a useless row.
 
 ### Rollback
 
-Creates a new draft by copying all fields from a previously published version. Any existing draft must be discarded first. Publish the resulting draft (as a major version) to make the rollback live. The draft carries a `rollback_of` pointer to the source version for audit purposes.
+Publishes a **new immutable version** whose fields are copied from the target published version. The new row carries `rollback_of = <target_version_id>` so the history shows provenance. Rollback does **not** touch the existing draft — any WIP the user has open survives untouched, because rolling back is a corrective action against the published history, not an editing operation.
+
+Semver: rollback bumps the **minor** over the current latest (a rollback is "a small course correction", not a breaking re-architecture). So if the latest published is 2.0 and the user rolls back to 1.0, the new live version is 2.1 with the fields of 1.0.
+
+The repository writes the new version row and all its field rows in a single transaction (`CreatePublishedVersionWithFields`). A partial failure can't leave a zero-field published version in the history. A collision on the semver pair (two concurrent rollbacks, or a rollback racing a publish) returns `ErrConflict`; the service retries once with a recomputed number.
 
 ### Retire / decommission
 
@@ -102,6 +117,10 @@ Before publishing, staff can run **Check policy alignment**:
 
 The form must have at least one policy linked before the check can run.
 
+### Cross-tenant protection on policy links
+
+`POST /api/v1/forms/{form_id}/policies` verifies that the supplied `policy_id` belongs to the caller's clinic before creating the link. Without this check, a tenant could enumerate policy UUIDs and attach another clinic's policy to their own form; the subsequent `policy-check` response would then leak that clinic's clause text. The verifier is wired in `app.go` (`formsPolicyOwnershipAdapter`) and returns `ErrNotFound` for both missing and foreign policies so the failure modes are indistinguishable from the outside.
+
 ---
 
 ## PDF style settings
@@ -115,6 +134,15 @@ Each clinic has a single set of PDF export settings, versioned independently:
 - **Footer text** — custom text; form version and approver appended automatically
 
 Every `PUT /api/v1/clinic/form-style` creates a new immutable version row (version N+1). The latest version is always used for PDF generation. Previous versions are retained for audit.
+
+### Logo upload validation
+
+`POST /api/v1/clinic/form-style/logo` (multipart, field `file`, max 4 MiB) validates uploads in two phases:
+
+1. The client-declared `Content-Type` header is checked against the allowlist: `image/png`, `image/jpeg` (`image/jpg` is accepted as an alias), `image/webp`. SVG is rejected — scriptable XML doesn't belong in a doc-theme logo when the signed-URL flow serves it back to browsers.
+2. The file's first bytes are sniffed for a magic signature and must match the declared type. This defeats a caller who uploads HTML or executables under a forged `Content-Type: image/png`, which would otherwise turn a later signed URL into an XSS vector.
+
+Mismatch returns `415 Unsupported Media Type`. The canonicalised MIME string (with aliases collapsed) is what gets persisted, so storage and the signed URL are always consistent.
 
 ---
 
@@ -138,9 +166,9 @@ All endpoints require `ManageForms` permission.
 | `GET` | `/api/v1/forms` | List forms (pagination, group/tag filters) |
 | `GET` | `/api/v1/forms/{form_id}` | Get form with draft + latest published + fields |
 | `PUT` | `/api/v1/forms/{form_id}/draft` | Replace draft fields and metadata (full replacement) |
-| `POST` | `/api/v1/forms/{form_id}/publish` | Publish draft; assigns semver |
+| `POST` | `/api/v1/forms/{form_id}/publish` | Publish draft; assigns semver (rejects empty drafts with 409) |
 | `POST` | `/api/v1/forms/{form_id}/policy-check` | Run policy compliance check on draft |
-| `POST` | `/api/v1/forms/{form_id}/rollback` | Create draft from prior published version |
+| `POST` | `/api/v1/forms/{form_id}/rollback` | Publish a new version with fields copied from a prior published version |
 | `POST` | `/api/v1/forms/{form_id}/retire` | Retire/decommission form |
 | `GET` | `/api/v1/forms/{form_id}/versions` | Published version history (newest first) |
 
@@ -148,8 +176,8 @@ All endpoints require `ManageForms` permission.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/v1/forms/{form_id}/policies` | List linked policy IDs |
-| `POST` | `/api/v1/forms/{form_id}/policies` | Link a policy |
+| `GET` | `/api/v1/forms/{form_id}/policies` | List linked policy IDs (response shape: `{"policy_ids": ["..."]}`) |
+| `POST` | `/api/v1/forms/{form_id}/policies` | Link a policy (verifies policy belongs to caller's clinic) |
 | `DELETE` | `/api/v1/forms/{form_id}/policies/{policy_id}` | Unlink a policy |
 
 ### PDF style
@@ -158,6 +186,7 @@ All endpoints require `ManageForms` permission.
 |---|---|---|
 | `GET` | `/api/v1/clinic/form-style` | Get current style (null body if none set) |
 | `PUT` | `/api/v1/clinic/form-style` | Update style (creates new version) |
+| `POST` | `/api/v1/clinic/form-style/logo` | Upload a doc-theme logo (multipart; ≤ 4 MiB; png/jpeg/webp with matching magic bytes) |
 
 ---
 
@@ -172,7 +201,9 @@ form_policies            — many-to-many form↔policy pointers
 clinic_form_style_versions — versioned PDF style settings per clinic
 ```
 
-Migration: `00009_create_forms.sql`
+Migrations:
+- `00009_create_forms.sql` — initial schema, including `UNIQUE(form_id) WHERE status = 'draft'`
+- `00036_form_version_unique_published_semver.sql` — partial unique index on `(form_id, version_major, version_minor) WHERE status = 'published'` to prevent a publish + rollback race from producing two rows with the same semver
 
 ### Tags
 
@@ -182,7 +213,13 @@ Migration: `00009_create_forms.sql`
 
 ## Testing
 
-Unit tests: `internal/forms/service_test.go` — 18 tests using `fakeRepo`, no database.
+Unit tests: `internal/forms/service_test.go` uses an in-memory `fakeRepo` (no database). Notable cases:
+
+- `TestService_PublishForm_*` — semver bump rules, empty-draft rejection, partial-unique retry
+- `TestService_RollbackForm_CopiesFieldsFromTarget` — rollback produces a new published version with `rollback_of` set and the target's fields copied
+- `TestService_RollbackForm_PreservesExistingDraft` — rolling back never destroys WIP
+- `TestService_LinkPolicy_RejectsCrossTenantPolicy` — `PolicyOwnershipVerifier` rejects foreign policy UUIDs
+- `TestSniffImageType` / `TestCanonicalStyleLogoType` — logo upload magic-byte + MIME allowlist
 
 ```bash
 make test                       # all unit tests

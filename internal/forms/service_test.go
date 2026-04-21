@@ -385,24 +385,28 @@ func TestService_RollbackForm_CopiesFieldsFromTarget(t *testing.T) {
 	}
 }
 
-func TestService_RollbackForm_PreservesExistingDraft(t *testing.T) {
+func TestService_RollbackForm_OverwritesDraftWithTargetFields(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
 	created, _ := svc.CreateForm(ctx, CreateFormInput{ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
 	formID := uuid.MustParse(created.ID)
 
-	// Publish v1.0 with a field.
+	// Publish v1.0 with two fields.
 	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
-		Fields: []FieldInput{{Position: 1, Title: "Published Field", Type: "text", Config: json.RawMessage(`{}`)}},
+		Fields: []FieldInput{
+			{Position: 1, Title: "Published A", Type: "text", Config: json.RawMessage(`{}`)},
+			{Position: 2, Title: "Published B", Type: "text", Config: json.RawMessage(`{}`)},
+		},
 	})
 	v1, _ := svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
 	v1ID := uuid.MustParse(v1.LatestPublished.ID)
 
-	// Write some in-flight scratch edits. A rollback should leave these alone —
-	// rolling back to an earlier version is independent of any WIP the user
-	// happens to have open.
+	// Write some post-publish scratch edits — e.g. the user started drafting
+	// an unrelated change. Rolling back should restore the draft to match the
+	// rolled-back target, because the user's mental model is "bring it back to
+	// how it was", not "append a rollback beside my WIP".
 	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
 		Fields: []FieldInput{{Position: 1, Title: "Scratch Field", Type: "text", Config: json.RawMessage(`{}`)}},
@@ -418,10 +422,13 @@ func TestService_RollbackForm_PreservesExistingDraft(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if form.Draft == nil {
-		t.Fatalf("expected pre-existing draft to survive the rollback")
+		t.Fatalf("expected a draft after rollback")
 	}
-	if len(form.Draft.Fields) != 1 || form.Draft.Fields[0].Title != "Scratch Field" {
-		t.Errorf("expected draft to still contain scratch field, got %v", form.Draft.Fields)
+	if len(form.Draft.Fields) != 2 {
+		t.Fatalf("expected draft to mirror the target's 2 fields, got %d", len(form.Draft.Fields))
+	}
+	if form.Draft.Fields[0].Title != "Published A" || form.Draft.Fields[1].Title != "Published B" {
+		t.Errorf("draft fields did not match target: %+v", form.Draft.Fields)
 	}
 	if form.LatestPublished == nil || form.LatestPublished.RollbackOf == nil {
 		t.Fatalf("expected a new rollback version to be the latest published")
@@ -455,6 +462,49 @@ func TestService_RetireForm_SetsArchivedAt(t *testing.T) {
 	}
 	if resp.RetireReason == nil || *resp.RetireReason != reason {
 		t.Errorf("retire_reason: got %v", resp.RetireReason)
+	}
+}
+
+func TestService_ListVersions_IncludesRetireEntryAtTop(t *testing.T) {
+	svc := newTestService()
+	ctx := context.Background()
+
+	created, _ := svc.CreateForm(ctx, CreateFormInput{ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
+	formID := uuid.MustParse(created.ID)
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "F", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
+	_, _ = svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
+
+	// Without retirement, the trail is just the published versions.
+	before, err := svc.ListVersions(ctx, formID, testClinicID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, v := range before.Items {
+		if v.Kind == "retire" {
+			t.Fatalf("unexpected retire entry before retiring: %+v", v)
+		}
+	}
+
+	reason := "decommissioned"
+	if _, err := svc.RetireForm(ctx, RetireFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Reason: &reason}); err != nil {
+		t.Fatalf("retire failed: %v", err)
+	}
+
+	after, err := svc.ListVersions(ctx, formID, testClinicID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(after.Items) == 0 || after.Items[0].Kind != "retire" {
+		t.Fatalf("expected retire entry at head, got %+v", after.Items)
+	}
+	if after.Items[0].PublishedBy == nil {
+		t.Errorf("expected retire entry to record publisher (retired_by)")
+	}
+	if after.Items[0].ChangeSummary == nil || *after.Items[0].ChangeSummary == "" {
+		t.Errorf("expected retire entry to carry reason summary")
 	}
 }
 
