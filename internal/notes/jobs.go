@@ -86,6 +86,14 @@ type RecordingProvider interface {
 	GetWordConfidences(ctx context.Context, recordingID uuid.UUID) ([]confidence.WordConfidence, error)
 }
 
+// VerticalProvider returns the configured clinical vertical for a clinic
+// ("veterinary", "dental", "aged_care", "general_clinic"). Used to frame the
+// AI prompt so extraction and compliance checks target the right discipline.
+// Implemented by an adapter in app.go.
+type VerticalProvider interface {
+	GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (string, error)
+}
+
 // ── Worker ────────────────────────────────────────────────────────────────────
 
 // ExtractNoteWorker is the River worker that fills note fields using the AI extractor.
@@ -95,6 +103,7 @@ type ExtractNoteWorker struct {
 	forms     FormFieldProvider
 	recording RecordingProvider
 	extractor extraction.Extractor // nil = skip extraction (no API key configured)
+	verticals VerticalProvider     // nil = skip vertical context (generic prompt)
 	events    EventEmitter
 	enqueue   noteJobEnqueuer // nil = skip downstream job enqueue
 }
@@ -105,6 +114,7 @@ func NewExtractNoteWorker(
 	forms FormFieldProvider,
 	recording RecordingProvider,
 	extractor extraction.Extractor,
+	verticals VerticalProvider,
 	events EventEmitter,
 	enqueue noteJobEnqueuer,
 ) *ExtractNoteWorker {
@@ -116,6 +126,7 @@ func NewExtractNoteWorker(
 		forms:     forms,
 		recording: recording,
 		extractor: extractor,
+		verticals: verticals,
 		events:    events,
 		enqueue:   enqueue,
 	}
@@ -223,9 +234,17 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	if overallPrompt != nil {
 		formPrompt = *overallPrompt
 	}
+	vertical := ""
+	if w.verticals != nil {
+		v, vErr := w.verticals.GetClinicVertical(ctx, note.ClinicID)
+		if vErr == nil {
+			vertical = v
+		}
+	}
+
 	var results []extraction.FieldResult
 	if len(specs) > 0 {
-		results, err = w.extractor.Extract(ctx, *transcript, formPrompt, specs)
+		results, err = w.extractor.Extract(ctx, vertical, *transcript, formPrompt, specs)
 		if err != nil {
 			errMsg := fmt.Sprintf("extraction failed: %v", err)
 			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusFailed, &errMsg)
@@ -337,10 +356,11 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 // The score is weighted by clause parity: high=3, medium=2, low=1.
 type ComputePolicyAlignmentWorker struct {
 	river.WorkerDefaults[ComputePolicyAlignmentArgs]
-	notes   repo
-	forms   FormFieldProvider
-	clauses PolicyClauseProvider
-	aligner extraction.PolicyAligner // nil = skip (no AI key configured)
+	notes     repo
+	forms     FormFieldProvider
+	clauses   PolicyClauseProvider
+	aligner   extraction.PolicyAligner // nil = skip (no AI key configured)
+	verticals VerticalProvider         // nil = skip vertical context (generic prompt)
 }
 
 // NewComputePolicyAlignmentWorker constructs a ComputePolicyAlignmentWorker.
@@ -349,12 +369,14 @@ func NewComputePolicyAlignmentWorker(
 	forms FormFieldProvider,
 	clauses PolicyClauseProvider,
 	aligner extraction.PolicyAligner,
+	verticals VerticalProvider,
 ) *ComputePolicyAlignmentWorker {
 	return &ComputePolicyAlignmentWorker{
-		notes:   notes,
-		forms:   forms,
-		clauses: clauses,
-		aligner: aligner,
+		notes:     notes,
+		forms:     forms,
+		clauses:   clauses,
+		aligner:   aligner,
+		verticals: verticals,
 	}
 }
 
@@ -422,7 +444,15 @@ func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[
 		}
 	}
 
-	pct, err := w.aligner.AlignPolicy(ctx, sb.String(), extClauses)
+	vertical := ""
+	if w.verticals != nil {
+		v, vErr := w.verticals.GetClinicVertical(ctx, note.ClinicID)
+		if vErr == nil {
+			vertical = v
+		}
+	}
+
+	pct, err := w.aligner.AlignPolicy(ctx, vertical, sb.String(), extClauses)
 	if err != nil {
 		return fmt.Errorf("compute_policy_alignment: align: %w", err)
 	}

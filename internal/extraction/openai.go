@@ -47,19 +47,19 @@ type openAIClauseResult struct {
 
 // Extract calls GPT-4.1-mini to fill form fields from a clinical transcript.
 // Uses strict JSON schema mode — response is guaranteed to match the schema.
-func (e *OpenAIExtractor) Extract(ctx context.Context, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error) {
+func (e *OpenAIExtractor) Extract(ctx context.Context, vertical, transcript, overallPrompt string, fields []FieldSpec) ([]FieldResult, error) {
 	if len(fields) == 0 {
 		return nil, nil
 	}
 
-	prompt := buildPrompt(transcript, overallPrompt, fields)
+	prompt := buildPrompt(vertical, transcript, overallPrompt, fields)
 
 	schema := buildArraySchema(openAIExtractionField{})
 
 	resp, err := e.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: openAIModel,
 		Messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage("You are a clinical documentation AI. Extract structured data from veterinary consultation transcripts."),
+			openai.SystemMessage("You are a clinical documentation AI. Extract structured data from clinical consultation transcripts. " + verticalContextLine(vertical)),
 			openai.UserMessage(prompt),
 		},
 		ResponseFormat: openai.ChatCompletionNewParamsResponseFormatUnion{
@@ -115,13 +115,15 @@ func (e *OpenAIExtractor) Extract(ctx context.Context, transcript, overallPrompt
 // AlignPolicy calls GPT-4.1-mini to assess how well the note content satisfies
 // each policy clause. Returns a weighted alignment percentage (0.0–100.0).
 // Weights: high=3, medium=2, low=1.
-func (e *OpenAIExtractor) AlignPolicy(ctx context.Context, noteContent string, clauses []PolicyClause) (float64, error) {
+func (e *OpenAIExtractor) AlignPolicy(ctx context.Context, vertical, noteContent string, clauses []PolicyClause) (float64, error) {
 	if len(clauses) == 0 {
 		return 100.0, nil
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Assess whether the following clinical note satisfies each policy clause.\n\n")
+	sb.WriteString("Assess whether the following clinical note satisfies each policy clause.\n")
+	sb.WriteString(verticalContextLine(vertical))
+	sb.WriteString("\n\n")
 	sb.WriteString("## Note content\n")
 	sb.WriteString(noteContent)
 	sb.WriteString("\n\n## Policy clauses\n")
@@ -203,7 +205,7 @@ type openAIFormCoverageResponse struct {
 // CheckFormCoverage calls GPT-4.1-mini to assess whether the form's fields cover
 // the requirements of the linked policy clauses. Returns a narrative plus
 // per-clause pass/fail so the service can compute a result percentage.
-func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
+func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, vertical, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
 	if len(clauses) == 0 {
 		return &FormCoverageResult{
 			Narrative: "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.",
@@ -211,7 +213,9 @@ func (e *OpenAIExtractor) CheckFormCoverage(ctx context.Context, overallPrompt s
 	}
 
 	var sb strings.Builder
-	sb.WriteString("Assess whether the following form design adequately captures the data required by the linked policy clauses.\n\n")
+	sb.WriteString("Assess whether the following form design adequately captures the data required by the linked policy clauses.\n")
+	sb.WriteString(verticalContextLineForm(vertical))
+	sb.WriteString("\n\n")
 
 	if overallPrompt != "" {
 		sb.WriteString("## Form purpose\n")

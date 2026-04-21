@@ -170,6 +170,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
 	verticalsSvc := verticals.NewService(verticalAdapter)
 	verticalsHandler := verticals.NewHandler(verticalsSvc)
+	verticalStrings := &verticalStringAdapter{clinic: clinicSvc}
 
 	// ── Transcription provider ─────────────────────────────────────────────────
 	transcriber, err := newTranscriberFromConfig(ctx, cfg)
@@ -218,6 +219,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&formsFieldAdapter{repo: formsRepo},
 		&audioTranscriptAdapter{repo: audioRepo},
 		extractor,
+		verticalStrings,
 		eventAdapter,
 		lazy,
 	))
@@ -226,6 +228,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&formsFieldAdapter{repo: formsRepo},
 		&policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo},
 		aligner,
+		verticalStrings,
 	))
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
 		notesRepo,
@@ -261,10 +264,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&formsStaffNameAdapter{staff: staffSvc},
 		&formsPolicyOwnershipAdapter{policy: policyRepo},
 	)
+	formsSvc.SetVerticalProvider(verticalStrings)
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
 	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
+	notesSvc.SetVerticalProvider(verticalStrings)
 	// Wire per-clause policy checker if available (Gemini only for now).
 	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
 	if err != nil {
@@ -819,6 +824,21 @@ func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, c
 		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
 	}
 	return c.Vertical, nil
+}
+
+// verticalStringAdapter satisfies notes.VerticalProvider / forms.VerticalProvider,
+// which expect a plain string rather than the typed domain.Vertical — the AI
+// prompt helpers only need the string discriminator.
+type verticalStringAdapter struct {
+	clinic *clinic.Service
+}
+
+func (a *verticalStringAdapter) GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.verticalStringAdapter: %w", err)
+	}
+	return string(c.Vertical), nil
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.

@@ -30,6 +30,7 @@ type Service struct {
 	fields        FormFieldProvider                // nil = skip field validation on submit
 	policyChecker extraction.PolicyDetailedChecker // nil = skip policy check
 	policyClauses PolicyClauseProvider             // nil = skip policy check
+	verticals     VerticalProvider                 // nil = generic (vertical-neutral) prompts
 }
 
 // NewService constructs a notes Service.
@@ -46,6 +47,13 @@ func NewService(r repo, riverClient jobEnqueuer, events EventEmitter, fields For
 func (s *Service) SetPolicyChecker(checker extraction.PolicyDetailedChecker, clauses PolicyClauseProvider) {
 	s.policyChecker = checker
 	s.policyClauses = clauses
+}
+
+// SetVerticalProvider wires the clinic-vertical resolver so the policy check
+// prompt can be framed for the right discipline. Optional — without it, the
+// check still runs with a generic "clinic type not specified" preamble.
+func (s *Service) SetVerticalProvider(v VerticalProvider) {
+	s.verticals = v
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -445,7 +453,15 @@ func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (
 		}
 	}
 
-	results, err := s.policyChecker.CheckPolicyClauses(ctx, noteContent, extClauses)
+	vertical := ""
+	if s.verticals != nil {
+		v, vErr := s.verticals.GetClinicVertical(ctx, clinicID)
+		if vErr == nil {
+			vertical = v
+		}
+	}
+
+	results, err := s.policyChecker.CheckPolicyClauses(ctx, vertical, noteContent, extClauses)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.CheckPolicy: check: %w", err)
 	}
