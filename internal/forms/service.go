@@ -41,22 +41,35 @@ type StaffNameResolver interface {
 	ResolveStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error)
 }
 
+// PolicyOwnershipVerifier confirms that a policy belongs to the given clinic.
+// Used by LinkPolicy to reject cross-tenant links — without this, a malicious
+// clinic could enumerate policy UUIDs and attach another tenant's policy to
+// their own form, leaking the clause text through the policy-check endpoint.
+// Implementations must return domain.ErrNotFound when the policy doesn't
+// exist or belongs to a different clinic. Adapter lives in app.go.
+type PolicyOwnershipVerifier interface {
+	VerifyPolicyOwnership(ctx context.Context, policyID, clinicID uuid.UUID) error
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
-	repo         repo
-	clauses      PolicyClauseFetcher
-	checker      extraction.FormCoverageChecker
-	logoSigner   StyleLogoSigner
-	logoUploader StyleLogoUploader
-	staffNames   StaffNameResolver
+	repo           repo
+	clauses        PolicyClauseFetcher
+	checker        extraction.FormCoverageChecker
+	logoSigner     StyleLogoSigner
+	logoUploader   StyleLogoUploader
+	staffNames     StaffNameResolver
+	policyVerifier PolicyOwnershipVerifier
 }
 
 // NewService constructs a forms Service.
 // Pass nil for clauses/checker to disable policy checking (tests, local dev).
 // Pass nil for signer/uploader to disable the doc-theme logo upload endpoint.
 // Pass nil for staffNames to skip name resolution (API will return raw UUIDs).
-func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader, staffNames StaffNameResolver) *Service {
-	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader, staffNames: staffNames}
+// Pass nil for policyVerifier to skip cross-tenant policy link checks (unit
+// tests); in production this MUST be wired to prevent clause-text leakage.
+func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader, staffNames StaffNameResolver, policyVerifier PolicyOwnershipVerifier) *Service {
+	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader, staffNames: staffNames, policyVerifier: policyVerifier}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -463,7 +476,7 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateDraft: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.UpdateDraft: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.UpdateDraft: form is retired: %w", domain.ErrConflict)
 	}
 
 	// Update form-level metadata.
@@ -533,13 +546,23 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 // form available for use in audio processing. Returns the full form resource
 // (with the new latest_published attached) so the editor can refresh without
 // a follow-up GET.
+//
+// Rejects an empty draft: publishing a zero-field form would produce a
+// template that AI extraction can't populate and the PDF renderer has
+// nothing to render. The client gates on this too but a direct API call
+// would otherwise poison the version history.
+//
+// Tolerates a concurrent publish racing the same version number by
+// recomputing and retrying once when the DB's partial unique index rejects
+// the insert — simpler than a SELECT FOR UPDATE and good enough for the
+// two-tab case that triggers it in practice.
 func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.PublishForm: form is retired: %w", domain.ErrConflict)
 	}
 
 	draft, err := s.repo.GetDraftVersion(ctx, input.FormID)
@@ -547,30 +570,43 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 		return nil, fmt.Errorf("forms.service.PublishForm: no draft: %w", err)
 	}
 
-	// Compute next version number.
-	major, minor := NextVersion(input.ChangeType, nil, nil)
-	prev, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, fmt.Errorf("forms.service.PublishForm: prev version: %w", err)
+	fields, err := s.repo.GetFieldsByVersionID(ctx, draft.ID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.PublishForm: draft fields: %w", err)
 	}
-	if prev != nil {
-		major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("forms.service.PublishForm: draft has no fields: %w", domain.ErrConflict)
 	}
 
-	if _, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
-		ID:            draft.ID,
-		VersionMajor:  major,
-		VersionMinor:  minor,
-		ChangeType:    input.ChangeType,
-		ChangeSummary: input.ChangeSummary,
-		Changes:       input.Changes,
-		PublishedBy:   input.StaffID,
-		PublishedAt:   domain.TimeNow(),
-	}); err != nil {
+	for attempt := 0; attempt < 2; attempt++ {
+		major, minor := NextVersion(input.ChangeType, nil, nil)
+		prev, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.PublishForm: prev version: %w", err)
+		}
+		if prev != nil {
+			major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+		}
+
+		_, err = s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
+			ID:            draft.ID,
+			VersionMajor:  major,
+			VersionMinor:  minor,
+			ChangeType:    input.ChangeType,
+			ChangeSummary: input.ChangeSummary,
+			Changes:       input.Changes,
+			PublishedBy:   input.StaffID,
+			PublishedAt:   domain.TimeNow(),
+		})
+		if err == nil {
+			return s.GetForm(ctx, input.FormID, input.ClinicID)
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
-
-	return s.GetForm(ctx, input.FormID, input.ClinicID)
+	return nil, fmt.Errorf("forms.service.PublishForm: could not assign version number: %w", domain.ErrConflict)
 }
 
 // RunPolicyCheck calls the AI to assess whether the form's fields cover the
@@ -655,13 +691,19 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 // (minor bump over the current latest) and records rollback_of so the history
 // shows the provenance. Any in-flight draft is left alone — rolling back is
 // independent of the user's WIP and never destroys it.
+//
+// Version insert + field copy happen in a single transaction in the repo
+// layer, so a partial failure can't leave a zero-field published version in
+// the history. A unique-index collision on the semver pair (two concurrent
+// rollbacks, or a rollback racing a publish) is retried once with a
+// recomputed version number.
 func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.RollbackForm: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.RollbackForm: form is retired: %w", domain.ErrConflict)
 	}
 
 	target, err := s.repo.GetVersionByID(ctx, input.TargetVersionID)
@@ -680,19 +722,6 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 		return nil, fmt.Errorf("forms.service.RollbackForm: source fields: %w", err)
 	}
 
-	// Compute next version. Minor bump over the current latest — rollback is
-	// conceptually "a small course correction", not a breaking re-architecture.
-	// Fall back to 1.0 when there is somehow no latest (shouldn't happen since
-	// the target itself is published).
-	latest, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, fmt.Errorf("forms.service.RollbackForm: latest: %w", err)
-	}
-	major, minor := NextVersion(domain.ChangeTypeMinor, nil, nil)
-	if latest != nil {
-		major, minor = NextVersion(domain.ChangeTypeMinor, latest.VersionMajor, latest.VersionMinor)
-	}
-
 	// Build a human-readable summary. If the caller supplied one, keep it as
 	// the user's note and prepend the canonical rollback prefix so the history
 	// entry reads well at a glance.
@@ -705,42 +734,58 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 		summary = fmt.Sprintf("%s — %s", summary, *input.Reason)
 	}
 
-	newID := domain.NewID()
-	if _, err := s.repo.CreatePublishedVersion(ctx, CreatePublishedVersionParams{
-		ID:            newID,
-		FormID:        input.FormID,
-		VersionMajor:  major,
-		VersionMinor:  minor,
-		ChangeType:    domain.ChangeTypeMinor,
-		ChangeSummary: &summary,
-		RollbackOf:    &input.TargetVersionID,
-		PublishedBy:   input.StaffID,
-		PublishedAt:   domain.TimeNow(),
-	}); err != nil {
-		return nil, fmt.Errorf("forms.service.RollbackForm: create version: %w", err)
-	}
-
-	fieldParams := make([]CreateFieldParams, len(sourceFields))
-	for i, f := range sourceFields {
-		fieldParams[i] = CreateFieldParams{
-			ID:             domain.NewID(),
-			FormVersionID:  newID,
-			Position:       f.Position,
-			Title:          f.Title,
-			Type:           f.Type,
-			Config:         f.Config,
-			AIPrompt:       f.AIPrompt,
-			Required:       f.Required,
-			Skippable:      f.Skippable,
-			AllowInference: f.AllowInference,
-			MinConfidence:  f.MinConfidence,
+	for attempt := 0; attempt < 2; attempt++ {
+		// Compute next version. Minor bump over the current latest — rollback
+		// is conceptually "a small course correction", not a breaking
+		// re-architecture. Fall back to 1.0 when there is somehow no latest
+		// (shouldn't happen since the target itself is published).
+		latest, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.RollbackForm: latest: %w", err)
 		}
-	}
-	if _, err := s.repo.ReplaceFields(ctx, newID, fieldParams); err != nil {
-		return nil, fmt.Errorf("forms.service.RollbackForm: fields: %w", err)
-	}
+		major, minor := NextVersion(domain.ChangeTypeMinor, nil, nil)
+		if latest != nil {
+			major, minor = NextVersion(domain.ChangeTypeMinor, latest.VersionMajor, latest.VersionMinor)
+		}
 
-	return s.GetForm(ctx, input.FormID, input.ClinicID)
+		newID := domain.NewID()
+		fieldParams := make([]CreateFieldParams, len(sourceFields))
+		for i, f := range sourceFields {
+			fieldParams[i] = CreateFieldParams{
+				ID:             domain.NewID(),
+				FormVersionID:  newID,
+				Position:       f.Position,
+				Title:          f.Title,
+				Type:           f.Type,
+				Config:         f.Config,
+				AIPrompt:       f.AIPrompt,
+				Required:       f.Required,
+				Skippable:      f.Skippable,
+				AllowInference: f.AllowInference,
+				MinConfidence:  f.MinConfidence,
+			}
+		}
+
+		_, _, err = s.repo.CreatePublishedVersionWithFields(ctx, CreatePublishedVersionParams{
+			ID:            newID,
+			FormID:        input.FormID,
+			VersionMajor:  major,
+			VersionMinor:  minor,
+			ChangeType:    domain.ChangeTypeMinor,
+			ChangeSummary: &summary,
+			RollbackOf:    &input.TargetVersionID,
+			PublishedBy:   input.StaffID,
+			PublishedAt:   domain.TimeNow(),
+		}, fieldParams)
+		if err == nil {
+			return s.GetForm(ctx, input.FormID, input.ClinicID)
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
+		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
+	}
+	return nil, fmt.Errorf("forms.service.RollbackForm: could not assign version number: %w", domain.ErrConflict)
 }
 
 // RetireForm archives a form so it can no longer be used for new notes.
@@ -835,10 +880,20 @@ func (s *Service) UpdateGroup(ctx context.Context, input UpdateGroupInput) (*For
 // ── Policies ──────────────────────────────────────────────────────────────────
 
 // LinkPolicy attaches a policy to a form.
+//
+// Verifies both sides belong to the caller's clinic: the form is fetched
+// scoped to clinicID, and the policy is verified via PolicyOwnershipVerifier.
+// Without the second check, a caller with permission to edit their own forms
+// could attach any policy UUID they can guess and then exfiltrate its clause
+// text through the policy-check endpoint.
 func (s *Service) LinkPolicy(ctx context.Context, formID, clinicID, policyID, staffID uuid.UUID) error {
-	// Verify clinic ownership.
 	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
 		return fmt.Errorf("forms.service.LinkPolicy: %w", err)
+	}
+	if s.policyVerifier != nil {
+		if err := s.policyVerifier.VerifyPolicyOwnership(ctx, policyID, clinicID); err != nil {
+			return fmt.Errorf("forms.service.LinkPolicy: verify policy: %w", err)
+		}
 	}
 	if err := s.repo.LinkPolicy(ctx, formID, policyID, staffID); err != nil {
 		return fmt.Errorf("forms.service.LinkPolicy: %w", err)

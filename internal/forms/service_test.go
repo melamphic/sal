@@ -15,7 +15,7 @@ var (
 )
 
 func newTestService() *Service {
-	return NewService(newFakeRepo(), nil, nil, nil, nil, nil)
+	return NewService(newFakeRepo(), nil, nil, nil, nil, nil, nil)
 }
 
 // ── CreateForm ────────────────────────────────────────────────────────────────
@@ -84,6 +84,17 @@ func TestService_GetForm_ReturnsDraftAndPublished(t *testing.T) {
 	})
 	formID := uuid.MustParse(created.ID)
 
+	// Add fields so publish has something to freeze.
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID:   formID,
+		ClinicID: testClinicID,
+		StaffID:  testStaffID,
+		Name:     "Test Form",
+		Fields: []FieldInput{
+			{Position: 1, Title: "Notes", Type: "long_text", Config: json.RawMessage(`{}`)},
+		},
+	})
+
 	// Publish draft.
 	_, _ = svc.PublishForm(ctx, PublishFormInput{
 		FormID:     formID,
@@ -92,7 +103,7 @@ func TestService_GetForm_ReturnsDraftAndPublished(t *testing.T) {
 		ChangeType: domain.ChangeTypeMajor,
 	})
 
-	// Add fields to new draft (auto-created by UpdateDraft).
+	// Add fields to the freshly auto-created next draft.
 	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID:   formID,
 		ClinicID: testClinicID,
@@ -194,6 +205,11 @@ func TestService_PublishForm_FirstPublishIsV1_0(t *testing.T) {
 	})
 	formID := uuid.MustParse(created.ID)
 
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
+
 	v, err := svc.PublishForm(ctx, PublishFormInput{
 		FormID:     formID,
 		ClinicID:   testClinicID,
@@ -219,7 +235,11 @@ func TestService_PublishForm_MinorBumpIncreasesMinor(t *testing.T) {
 	})
 	formID := uuid.MustParse(created.ID)
 
-	// First publish: 1.0
+	// First publish: 1.0 (draft must have a field).
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
 	_, _ = svc.PublishForm(ctx, PublishFormInput{
 		FormID:     formID,
 		ClinicID:   testClinicID,
@@ -227,12 +247,13 @@ func TestService_PublishForm_MinorBumpIncreasesMinor(t *testing.T) {
 		ChangeType: domain.ChangeTypeMajor,
 	})
 
-	// Auto-create draft for next publish.
+	// Next draft must also have a field.
 	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID:   formID,
 		ClinicID: testClinicID,
 		StaffID:  testStaffID,
 		Name:     "Form",
+		Fields:   []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}},
 	})
 
 	v, err := svc.PublishForm(ctx, PublishFormInput{
@@ -260,7 +281,10 @@ func TestService_PublishForm_MajorBumpResetMinor(t *testing.T) {
 	})
 	formID := uuid.MustParse(created.ID)
 
+	withField := []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}}
+
 	// v1.0
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form", Fields: withField})
 	_, _ = svc.PublishForm(ctx, PublishFormInput{
 		FormID:     formID,
 		ClinicID:   testClinicID,
@@ -268,10 +292,10 @@ func TestService_PublishForm_MajorBumpResetMinor(t *testing.T) {
 		ChangeType: domain.ChangeTypeMajor,
 	})
 	// v1.1
-	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form", Fields: withField})
 	_, _ = svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMinor})
 	// v2.0
-	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form", Fields: withField})
 	v, err := svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -293,6 +317,10 @@ func TestService_PublishForm_NoDraftReturnsNotFound(t *testing.T) {
 	formID := uuid.MustParse(created.ID)
 
 	// Publish once (consumes draft).
+	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
+		Fields: []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}},
+	})
 	_, _ = svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
 
 	// Second publish with no new draft → not found.
@@ -475,6 +503,45 @@ func TestService_CreateGroup_And_ListGroups(t *testing.T) {
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
+// fakePolicyVerifier implements PolicyOwnershipVerifier for tests.
+// errForID lets a test simulate a specific policy being cross-tenant.
+type fakePolicyVerifier struct {
+	errForID uuid.UUID
+	err      error
+	calls    int
+}
+
+func (f *fakePolicyVerifier) VerifyPolicyOwnership(_ context.Context, policyID, _ uuid.UUID) error {
+	f.calls++
+	if policyID == f.errForID {
+		return f.err
+	}
+	return nil
+}
+
+func TestService_LinkPolicy_RejectsCrossTenantPolicy(t *testing.T) {
+	foreignPolicyID := uuid.New()
+	verifier := &fakePolicyVerifier{errForID: foreignPolicyID, err: domain.ErrNotFound}
+	svc := NewService(newFakeRepo(), nil, nil, nil, nil, nil, verifier)
+	ctx := context.Background()
+
+	created, _ := svc.CreateForm(ctx, CreateFormInput{ClinicID: testClinicID, StaffID: testStaffID, Name: "Form"})
+	formID := uuid.MustParse(created.ID)
+
+	err := svc.LinkPolicy(ctx, formID, testClinicID, foreignPolicyID, testStaffID)
+	if !isNotFound(err) {
+		t.Fatalf("expected ErrNotFound for cross-tenant policy, got %v", err)
+	}
+	if verifier.calls != 1 {
+		t.Errorf("expected verifier to be called once, got %d", verifier.calls)
+	}
+
+	ids, _ := svc.ListLinkedPolicies(ctx, formID, testClinicID)
+	if len(ids) != 0 {
+		t.Errorf("rejected link should not have persisted, got %v", ids)
+	}
+}
+
 func TestService_LinkUnlinkPolicy(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
@@ -547,6 +614,48 @@ func TestService_GetCurrentStyle_NoStyleReturnsNil(t *testing.T) {
 	}
 	if resp != nil {
 		t.Errorf("expected nil response, got %v", resp)
+	}
+}
+
+// ── Style logo sniff ──────────────────────────────────────────────────────────
+
+func TestSniffImageType(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+		want string
+	}{
+		{"png", []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0}, "image/png"},
+		{"jpeg", []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0}, "image/jpeg"},
+		{"webp", append([]byte("RIFF\x00\x00\x00\x00WEBP"), 0), "image/webp"},
+		{"html", []byte("<html><body>h"), ""},
+		{"svg", []byte("<svg xmlns=\""), ""},
+		{"short", []byte{0x89, 0x50}, ""},
+		{"empty", []byte{}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := sniffImageType(c.in); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestCanonicalStyleLogoType(t *testing.T) {
+	cases := map[string]string{
+		"image/png":     "image/png",
+		"image/jpeg":    "image/jpeg",
+		"image/jpg":     "image/jpeg",
+		"image/webp":    "image/webp",
+		"image/svg+xml": "",
+		"text/html":     "",
+		"":              "",
+	}
+	for in, want := range cases {
+		if got := canonicalStyleLogoType(in); got != want {
+			t.Errorf("canonicalStyleLogoType(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

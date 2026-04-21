@@ -1,10 +1,12 @@
 package forms
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -610,6 +612,14 @@ type styleLogoUploadHTTPResponse struct {
 
 // uploadStyleLogo handles POST /api/v1/clinic/form-style/logo
 // (multipart/form-data, field "file").
+//
+// Validates in two phases: first the client-declared Content-Type, then the
+// file's magic bytes. The header alone isn't trustworthy — a caller can claim
+// "image/png" while uploading an HTML/SVG/executable — and the downstream
+// signed-URL flow serves whatever we stored with whatever content-type we
+// persisted, so an unverified upload becomes an XSS/SSRF vector when the
+// browser fetches it back. Also: SVG is rejected outright (scriptable XML);
+// the designer only needs raster logos for PDF rendering.
 func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInput) (*styleLogoUploadHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
@@ -622,9 +632,9 @@ func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInp
 		return nil, huma.Error400BadRequest(fmt.Sprintf("logo too large (max %d bytes)", maxStyleLogoBytes))
 	}
 
-	contentType := hdr.Header.Get("Content-Type")
-	if !isAllowedStyleLogoType(contentType) {
-		return nil, huma.Error415UnsupportedMediaType("logo must be png, jpeg, svg or webp")
+	declared := hdr.Header.Get("Content-Type")
+	if !isAllowedStyleLogoType(declared) {
+		return nil, huma.Error415UnsupportedMediaType("logo must be png, jpeg, or webp")
 	}
 
 	f, err := hdr.Open()
@@ -633,7 +643,23 @@ func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInp
 	}
 	defer func() { _ = f.Close() }()
 
-	resp, err := h.svc.UploadStyleLogo(ctx, clinicID, contentType, f, hdr.Size)
+	// Peek enough bytes to cover every supported format's magic sequence
+	// (WEBP needs 12: "RIFF????WEBP"). Putting them back in front of the
+	// reader via io.MultiReader means the storage layer still sees the
+	// whole file.
+	head := make([]byte, 12)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	head = head[:n]
+	detected := sniffImageType(head)
+	if detected == "" || detected != canonicalStyleLogoType(declared) {
+		return nil, huma.Error415UnsupportedMediaType("logo content does not match its declared type — must be a real png, jpeg, or webp image")
+	}
+
+	body := io.MultiReader(bytes.NewReader(head), f)
+	resp, err := h.svc.UploadStyleLogo(ctx, clinicID, detected, body, hdr.Size)
 	if err != nil {
 		return nil, mapFormError(err)
 	}
@@ -641,11 +667,38 @@ func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInp
 }
 
 func isAllowedStyleLogoType(ct string) bool {
+	return canonicalStyleLogoType(ct) != ""
+}
+
+// canonicalStyleLogoType collapses the aliases browsers send (e.g. "image/jpg"
+// from old Windows apps) into the one MIME string we store and return. Empty
+// means "not on the allowlist".
+func canonicalStyleLogoType(ct string) string {
 	switch ct {
-	case "image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml":
-		return true
+	case "image/png":
+		return "image/png"
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/webp":
+		return "image/webp"
 	}
-	return false
+	return ""
+}
+
+// sniffImageType returns the canonical MIME type that matches the file's
+// magic bytes, or "" if the bytes don't match any supported format. Callers
+// compare the result to canonicalStyleLogoType(declared) so a spoofed
+// Content-Type on a real image of a different kind still rejects.
+func sniffImageType(head []byte) string {
+	switch {
+	case len(head) >= 8 && bytes.Equal(head[:8], []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}):
+		return "image/png"
+	case len(head) >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF:
+		return "image/jpeg"
+	case len(head) >= 12 && bytes.Equal(head[:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
 }
 
 // ── Error mapping ─────────────────────────────────────────────────────────────

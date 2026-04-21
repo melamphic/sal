@@ -259,6 +259,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		docThemeLogos,
 		docThemeLogos,
 		&formsStaffNameAdapter{staff: staffSvc},
+		&formsPolicyOwnershipAdapter{policy: policyRepo},
 	)
 	formsHandler := forms.NewHandler(formsSvc)
 
@@ -683,6 +684,22 @@ func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, for
 		})
 	}
 	return result, nil
+}
+
+// formsPolicyOwnershipAdapter implements forms.PolicyOwnershipVerifier by
+// round-tripping through the policy repository's clinic-scoped lookup. A
+// mismatch surfaces as domain.ErrNotFound, which LinkPolicy then wraps into
+// its own error chain — the caller sees a 404, never a 403, so cross-tenant
+// IDs aren't distinguishable from non-existent ones.
+type formsPolicyOwnershipAdapter struct {
+	policy *policy.Repository
+}
+
+func (a *formsPolicyOwnershipAdapter) VerifyPolicyOwnership(ctx context.Context, policyID, clinicID uuid.UUID) error {
+	if _, err := a.policy.GetPolicyByID(ctx, policyID, clinicID); err != nil {
+		return fmt.Errorf("app.formsPolicyOwnershipAdapter: %w", err)
+	}
+	return nil
 }
 
 // formPolicyClauseFetcherAdapter implements forms.PolicyClauseFetcher.

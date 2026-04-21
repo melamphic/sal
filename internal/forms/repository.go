@@ -559,14 +559,30 @@ func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersio
 	return rec, nil
 }
 
-// CreatePublishedVersion inserts a version row that is already published.
-// Caller is responsible for inserting fields against the returned ID.
-func (r *Repository) CreatePublishedVersion(ctx context.Context, p CreatePublishedVersionParams) (*FormVersionRecord, error) {
+// CreatePublishedVersionWithFields inserts a brand-new version already in
+// the published state AND its fields, all inside a single transaction. Used
+// by rollback — a partial failure (version row inserted but field insert
+// fails) would otherwise leave a published version with zero fields in the
+// history, unusable but also undeletable since published versions are
+// immutable.
+//
+// A collision on the partial unique index
+// form_versions_published_semver_uniq (form_id, version_major, version_minor)
+// WHERE status='published' maps to domain.ErrConflict so the caller can
+// recompute the next version and retry.
+func (r *Repository) CreatePublishedVersionWithFields(ctx context.Context, p CreatePublishedVersionParams, fields []CreateFieldParams) (*FormVersionRecord, []*FieldRecord, error) {
 	changes := p.Changes
 	if len(changes) == 0 {
 		changes = json.RawMessage("[]")
 	}
-	q := fmt.Sprintf(`
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	versionQ := fmt.Sprintf(`
 		INSERT INTO form_versions (
 			id, form_id, status, version_major, version_minor,
 			change_type, change_summary, changes, rollback_of,
@@ -578,19 +594,49 @@ func (r *Repository) CreatePublishedVersion(ctx context.Context, p CreatePublish
 		)
 		RETURNING %s`, versionCols)
 
-	row := r.db.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, versionQ,
 		p.ID, p.FormID, p.VersionMajor, p.VersionMinor,
 		string(p.ChangeType), p.ChangeSummary, changes, p.RollbackOf,
 		p.PublishedBy, p.PublishedAt,
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
-		return nil, fmt.Errorf("forms.repo.CreatePublishedVersion: %w", err)
+		if domain.IsUniqueViolation(err) {
+			return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: %w", domain.ErrConflict)
+		}
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: %w", err)
 	}
-	return rec, nil
+
+	fieldQ := fmt.Sprintf(`
+		INSERT INTO form_fields (id, form_version_id, position, title, type, config, ai_prompt, required, skippable, allow_inference, min_confidence)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING %s`, fieldCols)
+
+	inserted := make([]*FieldRecord, 0, len(fields))
+	for _, fp := range fields {
+		frow := tx.QueryRow(ctx, fieldQ,
+			fp.ID, fp.FormVersionID, fp.Position, fp.Title, fp.Type,
+			fp.Config, fp.AIPrompt, fp.Required, fp.Skippable,
+			fp.AllowInference, fp.MinConfidence,
+		)
+		f, err := scanField(frow)
+		if err != nil {
+			return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: field: %w", err)
+		}
+		inserted = append(inserted, f)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: commit: %w", err)
+	}
+	return rec, inserted, nil
 }
 
-// PublishDraftVersion transitions a draft to published status.
+// PublishDraftVersion transitions a draft to published status. A unique
+// violation on the partial index
+// form_versions_published_semver_uniq (form_id, version_major, version_minor)
+// WHERE status='published' maps to domain.ErrConflict so the service can
+// recompute the next version and retry once.
 func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
 	changes := p.Changes
 	if len(changes) == 0 {
@@ -616,6 +662,9 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", err)
 	}
 	return rec, nil

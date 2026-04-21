@@ -255,9 +255,22 @@ func (f *fakeRepo) CreateDraftVersion(_ context.Context, p CreateDraftVersionPar
 	return cloneVersion(v), nil
 }
 
-func (f *fakeRepo) CreatePublishedVersion(_ context.Context, p CreatePublishedVersionParams) (*FormVersionRecord, error) {
+func (f *fakeRepo) CreatePublishedVersionWithFields(_ context.Context, p CreatePublishedVersionParams, fields []CreateFieldParams) (*FormVersionRecord, []*FieldRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	// Enforce the partial unique index on (form_id, major, minor) for
+	// published rows. The real DB enforces this via
+	// form_versions_published_semver_uniq.
+	for _, existing := range f.versions {
+		if existing.FormID != p.FormID || existing.Status != domain.FormVersionStatusPublished {
+			continue
+		}
+		if existing.VersionMajor != nil && existing.VersionMinor != nil &&
+			*existing.VersionMajor == p.VersionMajor && *existing.VersionMinor == p.VersionMinor {
+			return nil, nil, domain.ErrConflict
+		}
+	}
+
 	ct := p.ChangeType
 	pubAt := p.PublishedAt
 	pubBy := p.PublishedBy
@@ -279,7 +292,32 @@ func (f *fakeRepo) CreatePublishedVersion(_ context.Context, p CreatePublishedVe
 		CreatedAt:     domain.TimeNow(),
 	}
 	f.versions[v.ID] = v
-	return cloneVersion(v), nil
+
+	now := domain.TimeNow()
+	inserted := make([]*FieldRecord, len(fields))
+	stored := make([]*FieldRecord, len(fields))
+	for i, fp := range fields {
+		rec := &FieldRecord{
+			ID:             fp.ID,
+			FormVersionID:  v.ID,
+			Position:       fp.Position,
+			Title:          fp.Title,
+			Type:           fp.Type,
+			Config:         fp.Config,
+			AIPrompt:       fp.AIPrompt,
+			Required:       fp.Required,
+			Skippable:      fp.Skippable,
+			AllowInference: fp.AllowInference,
+			MinConfidence:  fp.MinConfidence,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		stored[i] = rec
+		cp := *rec
+		inserted[i] = &cp
+	}
+	f.fields[v.ID] = stored
+	return cloneVersion(v), inserted, nil
 }
 
 func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
@@ -289,12 +327,22 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	if !ok || v.Status != domain.FormVersionStatusDraft {
 		return nil, domain.ErrNotFound
 	}
+	for _, existing := range f.versions {
+		if existing.ID == v.ID || existing.FormID != v.FormID || existing.Status != domain.FormVersionStatusPublished {
+			continue
+		}
+		if existing.VersionMajor != nil && existing.VersionMinor != nil &&
+			*existing.VersionMajor == p.VersionMajor && *existing.VersionMinor == p.VersionMinor {
+			return nil, domain.ErrConflict
+		}
+	}
 	v.Status = domain.FormVersionStatusPublished
 	v.VersionMajor = &p.VersionMajor
 	v.VersionMinor = &p.VersionMinor
 	ct := p.ChangeType
 	v.ChangeType = &ct
 	v.ChangeSummary = p.ChangeSummary
+	v.Changes = p.Changes
 	v.PublishedBy = &p.PublishedBy
 	v.PublishedAt = &p.PublishedAt
 	return cloneVersion(v), nil
@@ -334,17 +382,19 @@ func (f *fakeRepo) ReplaceFields(_ context.Context, versionID uuid.UUID, params 
 	newFields := make([]*FieldRecord, len(params))
 	for i, p := range params {
 		newFields[i] = &FieldRecord{
-			ID:            p.ID,
-			FormVersionID: versionID,
-			Position:      p.Position,
-			Title:         p.Title,
-			Type:          p.Type,
-			Config:        p.Config,
-			AIPrompt:      p.AIPrompt,
-			Required:      p.Required,
-			Skippable:     p.Skippable,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:             p.ID,
+			FormVersionID:  versionID,
+			Position:       p.Position,
+			Title:          p.Title,
+			Type:           p.Type,
+			Config:         p.Config,
+			AIPrompt:       p.AIPrompt,
+			Required:       p.Required,
+			Skippable:      p.Skippable,
+			AllowInference: p.AllowInference,
+			MinConfidence:  p.MinConfidence,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 	}
 	f.fields[versionID] = newFields
