@@ -80,6 +80,11 @@ type NoteResponse struct {
 	ArchivedAt         *string              `json:"archived_at,omitempty"`
 	FormVersionContext *string              `json:"form_version_context,omitempty"`
 	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
+	// OverrideReason/By/At are populated when the submitter overrode a
+	// high-parity policy violation at submit time.
+	OverrideReason     *string              `json:"override_reason,omitempty"`
+	OverrideBy         *string              `json:"override_by,omitempty"`
+	OverrideAt         *string              `json:"override_at,omitempty"`
 	PDFStorageKey      *string              `json:"pdf_storage_key,omitempty"`
 	CreatedAt          string               `json:"created_at"`
 	UpdatedAt          string               `json:"updated_at"`
@@ -273,8 +278,17 @@ func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*Not
 // SubmitNote transitions a note from draft → submitted.
 // Sets reviewed_by and submitted_by to staffID (same person acknowledges and submits).
 // Returns domain.ErrValidation if any required fields are missing values.
-func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string) (*NoteResponse, error) {
-	// Pre-submit validation: required fields + policy check.
+// When overrideReason is non-nil (and non-empty) the submitter is asserting
+// an override of the high-parity policy check — the reason is persisted on
+// the note and the policy gate is skipped. A nil/empty reason with failing
+// high-parity clauses still blocks submit.
+func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole string, overrideReason *string) (*NoteResponse, error) {
+	// Normalize empty string to nil so we don't write blank justifications.
+	if overrideReason != nil && strings.TrimSpace(*overrideReason) == "" {
+		overrideReason = nil
+	}
+
+	// Pre-submit validation: required fields + policy check (unless overridden).
 	{
 		preNote, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 		if err != nil {
@@ -285,19 +299,22 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 				return nil, err
 			}
 		}
-		if err := s.validatePolicyCheck(preNote); err != nil {
-			return nil, err
+		if overrideReason == nil {
+			if err := s.validatePolicyCheck(preNote); err != nil {
+				return nil, err
+			}
 		}
 	}
 
 	now := domain.TimeNow()
 	note, err := s.repo.SubmitNote(ctx, SubmitNoteParams{
-		ID:          noteID,
-		ClinicID:    clinicID,
-		ReviewedBy:  staffID,
-		ReviewedAt:  now,
-		SubmittedBy: staffID,
-		SubmittedAt: now,
+		ID:             noteID,
+		ClinicID:       clinicID,
+		ReviewedBy:     staffID,
+		ReviewedAt:     now,
+		SubmittedBy:    staffID,
+		SubmittedAt:    now,
+		OverrideReason: overrideReason,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
@@ -590,6 +607,15 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 	}
 	r.FormVersionContext = n.FormVersionContext
 	r.PolicyAlignmentPct = n.PolicyAlignmentPct
+	r.OverrideReason = n.OverrideReason
+	if n.OverrideBy != nil {
+		s := n.OverrideBy.String()
+		r.OverrideBy = &s
+	}
+	if n.OverrideAt != nil {
+		s := n.OverrideAt.Format(time.RFC3339)
+		r.OverrideAt = &s
+	}
 	r.PDFStorageKey = n.PDFStorageKey
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))
