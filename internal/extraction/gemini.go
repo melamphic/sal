@@ -340,11 +340,42 @@ Respond with ONLY the JSON array. No markdown fences.
 
 // ── Form coverage check ───────────────────────────────────────────────────────
 
+// formCoverageSchema is the ResponseSchema for the structured form-coverage check:
+// a narrative string plus a per-clause array so the service can persist evidence.
+var formCoverageSchema = &genai.Schema{
+	Type: genai.TypeObject,
+	Properties: map[string]*genai.Schema{
+		"narrative": {Type: genai.TypeString},
+		"clauses": {
+			Type: genai.TypeArray,
+			Items: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"block_id":  {Type: genai.TypeString},
+					"status":    {Type: genai.TypeString, Enum: []string{"satisfied", "violated"}},
+					"reasoning": {Type: genai.TypeString},
+				},
+				Required: []string{"block_id", "status", "reasoning"},
+			},
+		},
+	},
+	Required: []string{"narrative", "clauses"},
+}
+
+// geminiFormCoverageResult mirrors the schema above for JSON unmarshalling.
+type geminiFormCoverageResult struct {
+	Narrative string                       `json:"narrative"`
+	Clauses   []geminiDetailedClauseResult `json:"clauses"`
+}
+
 // CheckFormCoverage calls Gemini to assess whether the form's fields cover the
-// requirements of the linked policy clauses. Returns a qualitative text report.
-func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (string, error) {
+// requirements of the linked policy clauses. Returns a narrative + per-clause
+// structured results in a single call.
+func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt string, fields []FieldSpec, clauses []PolicyClause) (*FormCoverageResult, error) {
 	if len(clauses) == 0 {
-		return "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.", nil
+		return &FormCoverageResult{
+			Narrative: "No policy clauses found on linked policies. Add clauses to your policies to enable compliance analysis.",
+		}, nil
 	}
 
 	var sb strings.Builder
@@ -373,25 +404,29 @@ func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, overallPrompt s
 
 	sb.WriteString("\n## Policy clauses to satisfy\n")
 	for _, c := range clauses {
-		sb.WriteString(fmt.Sprintf("- [%s parity] %s\n", c.Parity, c.Title))
+		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
 	}
 
 	sb.WriteString(`
 ## Instructions
-Write a plain-text compliance analysis (no markdown, no JSON). Structure your response as:
+Return a JSON object with two keys:
 
-OVERALL: One sentence summary of how well the form covers the policy.
+- "narrative": a plain-text analysis (no markdown) structured as:
+    OVERALL: One sentence summary of how well the form covers the policy.
+    COVERED:
+    List each policy clause that is adequately addressed by one or more fields. One line per clause.
+    GAPS:
+    List each policy clause that has no field capturing the required data. One line per clause, with a concrete suggestion for what field to add.
+    SUGGESTIONS:
+    Up to 3 actionable improvements to strengthen policy coverage, if any.
+    Be specific. Reference actual field names and clause titles.
 
-COVERED:
-List each policy clause that is adequately addressed by one or more fields. One line per clause.
+- "clauses": an array with one object per input clause (same block_id). Each object:
+    { "block_id": "<id>", "status": "satisfied"|"violated", "reasoning": "<one sentence>" }
+    status=satisfied if at least one form field captures the data needed to satisfy the clause.
+    status=violated if no field covers it.
 
-GAPS:
-List each policy clause that has no field capturing the required data. One line per clause, with a concrete suggestion for what field to add.
-
-SUGGESTIONS:
-Up to 3 actionable improvements to strengthen policy coverage, if any.
-
-Be specific. Reference actual field names and clause titles. Keep each point to one line.
+Respond with ONLY the JSON object. No markdown fences.
 `)
 
 	resp, err := e.client.Models.GenerateContent(
@@ -399,18 +434,52 @@ Be specific. Reference actual field names and clause titles. Keep each point to 
 		geminiModel,
 		genai.Text(sb.String()),
 		&genai.GenerateContentConfig{
-			Temperature:    genai.Ptr[float32](0.2),
-			ThinkingConfig: noThinking,
+			ResponseMIMEType: "application/json",
+			ResponseSchema:   formCoverageSchema,
+			Temperature:      genai.Ptr[float32](0.2),
+			ThinkingConfig:   noThinking,
 		},
 	)
 	if err != nil {
-		return "", fmt.Errorf("extraction.gemini.CheckFormCoverage: generate: %w", err)
+		return nil, fmt.Errorf("extraction.gemini.CheckFormCoverage: generate: %w", err)
 	}
 	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("extraction.gemini.CheckFormCoverage: empty response from model")
+		return nil, fmt.Errorf("extraction.gemini.CheckFormCoverage: empty response from model")
 	}
 
-	return strings.TrimSpace(resp.Candidates[0].Content.Parts[0].Text), nil
+	raw := resp.Candidates[0].Content.Parts[0].Text
+	var parsed geminiFormCoverageResult
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("extraction.gemini.CheckFormCoverage: parse response: %w (raw: %.200s)", err, raw)
+	}
+
+	byBlockID := make(map[string]geminiDetailedClauseResult, len(parsed.Clauses))
+	for _, r := range parsed.Clauses {
+		byBlockID[r.BlockID] = r
+	}
+	results := make([]ClauseCheckResult, len(clauses))
+	for i, c := range clauses {
+		if r, ok := byBlockID[c.BlockID]; ok {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    r.Status,
+				Reasoning: r.Reasoning,
+				Parity:    c.Parity,
+			}
+		} else {
+			results[i] = ClauseCheckResult{
+				BlockID:   c.BlockID,
+				Status:    "violated",
+				Reasoning: "clause not assessed by model",
+				Parity:    c.Parity,
+			}
+		}
+	}
+
+	return &FormCoverageResult{
+		Narrative: strings.TrimSpace(parsed.Narrative),
+		Clauses:   results,
+	}, nil
 }
 
 func parseExtractionResponse(raw string, fields []FieldSpec) ([]FieldResult, error) {
