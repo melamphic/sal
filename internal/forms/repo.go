@@ -62,9 +62,12 @@ type repo interface {
 
 	// ── Style ─────────────────────────────────────────────────────────────────
 
-	// GetCurrentStyle returns the latest style version for the clinic.
+	// GetCurrentStyle returns the active style version for the clinic.
 	// Returns domain.ErrNotFound if no style has been configured yet.
 	GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*StyleVersionRecord, error)
-	// CreateStyleVersion inserts a new style version row (version = prev+1).
+	// ListStyleVersions returns every style version for a clinic, newest first.
+	ListStyleVersions(ctx context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error)
+	// CreateStyleVersion inserts a new style version row (version = prev+1) and
+	// marks it active, demoting any previously-active row for the clinic.
 	CreateStyleVersion(ctx context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error)
 }

@@ -251,7 +251,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	formsSvc := forms.NewService(formsRepo, &formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo}, formChecker)
+	docThemeLogos := &docThemeLogoAdapter{store: store}
+	formsSvc := forms.NewService(
+		formsRepo,
+		&formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo},
+		formChecker,
+		docThemeLogos,
+		docThemeLogos,
+	)
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
@@ -579,6 +586,31 @@ func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string
 	url, err := a.store.PresignDownload(ctx, key, time.Hour)
 	if err != nil {
 		return "", fmt.Errorf("app.clinicLogoAdapter.SignLogoURL: %w", err)
+	}
+	return url, nil
+}
+
+// docThemeLogoAdapter implements forms.StyleLogoUploader and forms.StyleLogoSigner
+// against the platform/storage S3 client. Doc-theme logos are stored under
+// form-style-logos/{clinic_id}/ so they stay distinct from the clinic-wide
+// logo written by clinicLogoAdapter.
+type docThemeLogoAdapter struct {
+	store *storage.Store
+}
+
+func (a *docThemeLogoAdapter) UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error) {
+	ext := logoExtForContentType(contentType)
+	key := fmt.Sprintf("form-style-logos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", fmt.Errorf("app.docThemeLogoAdapter.UploadStyleLogo: %w", err)
+	}
+	return key, nil
+}
+
+func (a *docThemeLogoAdapter) SignStyleLogoURL(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.docThemeLogoAdapter.SignStyleLogoURL: %w", err)
 	}
 	return url, nil
 }

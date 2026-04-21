@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -505,14 +507,28 @@ type styleHTTPResponse struct {
 	Body *FormStyleResponse
 }
 
+type styleVersionsHTTPResponse struct {
+	Body *FormStyleVersionsResponse
+}
+
+type stylePresetsHTTPResponse struct {
+	Body *FormStylePresetsResponse
+}
+
 type updateStyleBodyInput struct {
 	Body struct {
-		LogoKey      *string `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
-		PrimaryColor *string `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
-		FontFamily   *string `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
-		HeaderExtra  *string `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
-		FooterText   *string `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
+		LogoKey      *string         `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
+		PrimaryColor *string         `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
+		FontFamily   *string         `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
+		HeaderExtra  *string         `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
+		FooterText   *string         `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
+		Config       json.RawMessage `json:"config,omitempty"        doc:"Rich doc-theme config blob produced by the three-pane designer. Free-form JSON; the top-level colour/font/header/footer fields are mirrored into the flat columns."`
+		PresetID     *string         `json:"preset_id,omitempty"     doc:"ID of the preset this config was derived from, e.g. 'dental.clean_clinical'."`
 	}
+}
+
+type stylePresetsQueryInput struct {
+	Vertical string `query:"vertical" doc:"Clinic vertical to return presets for. Matches clinics.vertical (aged_care|veterinary|dental|general_clinic). Falls back to general_clinic when empty or unknown." enum:"aged_care,veterinary,dental,general_clinic" required:"false"`
 }
 
 // getStyle handles GET /api/v1/clinic/form-style.
@@ -539,11 +555,89 @@ func (h *Handler) updateStyle(ctx context.Context, input *updateStyleBodyInput) 
 		FontFamily:   input.Body.FontFamily,
 		HeaderExtra:  input.Body.HeaderExtra,
 		FooterText:   input.Body.FooterText,
+		Config:       input.Body.Config,
+		PresetID:     input.Body.PresetID,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
 	}
 	return &styleHTTPResponse{Body: resp}, nil
+}
+
+// listStyleVersions handles GET /api/v1/clinic/form-style/versions.
+func (h *Handler) listStyleVersions(ctx context.Context, _ *struct{}) (*styleVersionsHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	resp, err := h.svc.ListStyleVersions(ctx, clinicID)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &styleVersionsHTTPResponse{Body: resp}, nil
+}
+
+// listStylePresets handles GET /api/v1/clinic/form-style/presets.
+// Accepts optional ?vertical=, defaulting to "general_clinic" when absent (a future
+// patch can resolve the caller's clinic vertical from the JWT-bound clinic
+// row; we keep this handler dependency-free for now).
+func (h *Handler) listStylePresets(ctx context.Context, input *stylePresetsQueryInput) (*stylePresetsHTTPResponse, error) {
+	vertical := input.Vertical
+	if vertical == "" {
+		vertical = "general_clinic"
+	}
+	return &stylePresetsHTTPResponse{Body: h.svc.ListStylePresets(ctx, vertical)}, nil
+}
+
+// ── Style logo upload ─────────────────────────────────────────────────────────
+
+type uploadStyleLogoInput struct {
+	RawBody multipart.Form
+}
+
+// maxStyleLogoBytes caps doc-theme logo uploads at 4 MiB.
+const maxStyleLogoBytes int64 = 4 << 20
+
+type styleLogoUploadHTTPResponse struct {
+	Body *FormStyleLogoUploadResponse
+}
+
+// uploadStyleLogo handles POST /api/v1/clinic/form-style/logo
+// (multipart/form-data, field "file").
+func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInput) (*styleLogoUploadHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("missing form field \"file\"")
+	}
+	hdr := files[0]
+	if hdr.Size > maxStyleLogoBytes {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("logo too large (max %d bytes)", maxStyleLogoBytes))
+	}
+
+	contentType := hdr.Header.Get("Content-Type")
+	if !isAllowedStyleLogoType(contentType) {
+		return nil, huma.Error415UnsupportedMediaType("logo must be png, jpeg, svg or webp")
+	}
+
+	f, err := hdr.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	defer func() { _ = f.Close() }()
+
+	resp, err := h.svc.UploadStyleLogo(ctx, clinicID, contentType, f, hdr.Size)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &styleLogoUploadHTTPResponse{Body: resp}, nil
+}
+
+func isAllowedStyleLogoType(ct string) bool {
+	switch ct {
+	case "image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml":
+		return true
+	}
+	return false
 }
 
 // ── Error mapping ─────────────────────────────────────────────────────────────
