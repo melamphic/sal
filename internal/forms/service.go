@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,17 +19,34 @@ type PolicyClauseFetcher interface {
 	GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error)
 }
 
+// StyleLogoSigner produces a short-lived signed GET URL for a doc-theme logo key.
+// Distinct from clinic.LogoSigner — doc-theme logos live under their own prefix
+// so clinics can set a different mark for documents (wordmark/square) than the
+// top-nav clinic logo. Implemented by platform/storage in app.go.
+type StyleLogoSigner interface {
+	SignStyleLogoURL(ctx context.Context, key string) (string, error)
+}
+
+// StyleLogoUploader uploads bytes to object storage under the doc-theme prefix
+// and returns the persisted key. Implemented by platform/storage in app.go.
+type StyleLogoUploader interface {
+	UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error)
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
-	repo    repo
-	clauses PolicyClauseFetcher
-	checker extraction.FormCoverageChecker
+	repo         repo
+	clauses      PolicyClauseFetcher
+	checker      extraction.FormCoverageChecker
+	logoSigner   StyleLogoSigner
+	logoUploader StyleLogoUploader
 }
 
 // NewService constructs a forms Service.
-// Pass nil for clauses and checker to disable policy checking (tests, local dev).
-func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker) *Service {
-	return &Service{repo: r, clauses: clauses, checker: checker}
+// Pass nil for clauses/checker to disable policy checking (tests, local dev).
+// Pass nil for signer/uploader to disable the doc-theme logo upload endpoint.
+func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader) *Service {
+	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -126,15 +144,59 @@ type FormGroupListResponse struct {
 
 // FormStyleResponse is the API-safe representation of the clinic's current PDF style.
 //
+// Config is the rich doc-theme blob consumed by the three-pane designer. Flat
+// fields remain the source of truth for the simple onboarding step and for any
+// renderer that only needs a logo + accent colour + font.
+//
 //nolint:revive
 type FormStyleResponse struct {
-	Version      int     `json:"version"`
-	LogoKey      *string `json:"logo_key,omitempty"`
-	PrimaryColor *string `json:"primary_color,omitempty"`
-	FontFamily   *string `json:"font_family,omitempty"`
-	HeaderExtra  *string `json:"header_extra,omitempty"`
-	FooterText   *string `json:"footer_text,omitempty"`
-	UpdatedAt    string  `json:"updated_at"`
+	Version       int             `json:"version"`
+	LogoKey       *string         `json:"logo_key,omitempty"`
+	HeaderLogoURL *string         `json:"header_logo_url,omitempty"`
+	PrimaryColor  *string         `json:"primary_color,omitempty"`
+	FontFamily    *string         `json:"font_family,omitempty"`
+	HeaderExtra   *string         `json:"header_extra,omitempty"`
+	FooterText    *string         `json:"footer_text,omitempty"`
+	Config        json.RawMessage `json:"config,omitempty"`
+	PresetID      *string         `json:"preset_id,omitempty"`
+	IsActive      bool            `json:"is_active"`
+	UpdatedAt     string          `json:"updated_at"`
+}
+
+// FormStyleVersionsResponse lists every published style version for a clinic.
+//
+//nolint:revive
+type FormStyleVersionsResponse struct {
+	Items []*FormStyleResponse `json:"items"`
+}
+
+// FormStylePresetResponse is a single vertical-specific starter template.
+//
+//nolint:revive
+type FormStylePresetResponse struct {
+	ID          string          `json:"id"`
+	Vertical    string          `json:"vertical"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Config      json.RawMessage `json:"config"`
+}
+
+// FormStylePresetsResponse is a list of preset templates.
+//
+//nolint:revive
+type FormStylePresetsResponse struct {
+	Items []*FormStylePresetResponse `json:"items"`
+}
+
+// FormStyleLogoUploadResponse is returned after a successful doc-theme logo
+// upload. Key is the persisted object-storage key (write into
+// config.header.logo_key via PUT /form-style to save the choice); URL is a
+// short-lived signed GET URL for immediate preview in the designer.
+//
+//nolint:revive
+type FormStyleLogoUploadResponse struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -236,6 +298,8 @@ type UpdateStyleInput struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -742,10 +806,12 @@ func (s *Service) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*For
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.GetCurrentStyle: %w", err)
 	}
-	return toStyleResponse(style), nil
+	return s.buildStyleResponse(ctx, style)
 }
 
 // UpdateStyle saves a new style version for the clinic, incrementing the version counter.
+// If Config is supplied, its top-level colour/font/header/footer are mirrored into the
+// flat columns so legacy renderers stay in sync.
 func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*FormStyleResponse, error) {
 	nextVer := 1
 	current, err := s.repo.GetCurrentStyle(ctx, input.ClinicID)
@@ -756,21 +822,90 @@ func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*For
 		nextVer = current.Version + 1
 	}
 
+	logoKey, primary, font, header, footer := input.LogoKey, input.PrimaryColor, input.FontFamily, input.HeaderExtra, input.FooterText
+	if len(input.Config) > 0 {
+		if m := mirrorFromConfig(input.Config); m != nil {
+			if logoKey == nil && m.LogoKey != nil {
+				logoKey = m.LogoKey
+			}
+			if primary == nil && m.PrimaryColor != nil {
+				primary = m.PrimaryColor
+			}
+			if font == nil && m.FontFamily != nil {
+				font = m.FontFamily
+			}
+			if header == nil && m.HeaderExtra != nil {
+				header = m.HeaderExtra
+			}
+			if footer == nil && m.FooterText != nil {
+				footer = m.FooterText
+			}
+		}
+	}
+
 	style, err := s.repo.CreateStyleVersion(ctx, CreateStyleVersionParams{
 		ID:           domain.NewID(),
 		ClinicID:     input.ClinicID,
 		Version:      nextVer,
-		LogoKey:      input.LogoKey,
-		PrimaryColor: input.PrimaryColor,
-		FontFamily:   input.FontFamily,
-		HeaderExtra:  input.HeaderExtra,
-		FooterText:   input.FooterText,
+		LogoKey:      logoKey,
+		PrimaryColor: primary,
+		FontFamily:   font,
+		HeaderExtra:  header,
+		FooterText:   footer,
+		Config:       input.Config,
+		PresetID:     input.PresetID,
 		CreatedBy:    input.StaffID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
 	}
-	return toStyleResponse(style), nil
+	return s.buildStyleResponse(ctx, style)
+}
+
+// ListStyleVersions returns the full version history for the clinic.
+func (s *Service) ListStyleVersions(ctx context.Context, clinicID uuid.UUID) (*FormStyleVersionsResponse, error) {
+	recs, err := s.repo.ListStyleVersions(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.ListStyleVersions: %w", err)
+	}
+	items := make([]*FormStyleResponse, len(recs))
+	for i, r := range recs {
+		built, err := s.buildStyleResponse(ctx, r)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.ListStyleVersions: %w", err)
+		}
+		items[i] = built
+	}
+	return &FormStyleVersionsResponse{Items: items}, nil
+}
+
+// ListStylePresets returns the curated set of starter themes for a given vertical.
+// Unknown verticals fall back to the "general_clinic" set.
+func (s *Service) ListStylePresets(_ context.Context, vertical string) *FormStylePresetsResponse {
+	return &FormStylePresetsResponse{Items: presetsFor(vertical)}
+}
+
+// UploadStyleLogo persists a doc-theme logo to object storage and returns the
+// key plus a signed preview URL. The key is NOT written to the style config
+// here — the client is expected to place it at config.header.logo_key and
+// persist via UpdateStyle. This lets the user try a logo in the live preview
+// and cancel without polluting the version history.
+func (s *Service) UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (*FormStyleLogoUploadResponse, error) {
+	if s.logoUploader == nil {
+		return nil, fmt.Errorf("forms.service.UploadStyleLogo: storage not configured")
+	}
+	key, err := s.logoUploader.UploadStyleLogo(ctx, clinicID, contentType, body, size)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.UploadStyleLogo: upload: %w", err)
+	}
+	var url string
+	if s.logoSigner != nil {
+		url, err = s.logoSigner.SignStyleLogoURL(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UploadStyleLogo: sign url: %w", err)
+		}
+	}
+	return &FormStyleLogoUploadResponse{Key: key, URL: url}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -884,6 +1019,22 @@ func toGroupResponse(g *GroupRecord) *FormGroupResponse {
 	}
 }
 
+// buildStyleResponse wraps toStyleResponse and attaches a short-lived signed
+// GET URL for the header logo when the record has a logo_key and a signer is
+// configured. Callers that have a signer-less Service (tests, local dev) get
+// the response back without HeaderLogoURL populated.
+func (s *Service) buildStyleResponse(ctx context.Context, rec *StyleVersionRecord) (*FormStyleResponse, error) {
+	resp := toStyleResponse(rec)
+	if rec.LogoKey != nil && s.logoSigner != nil {
+		url, err := s.logoSigner.SignStyleLogoURL(ctx, *rec.LogoKey)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.buildStyleResponse: sign url: %w", err)
+		}
+		resp.HeaderLogoURL = &url
+	}
+	return resp, nil
+}
+
 func toStyleResponse(s *StyleVersionRecord) *FormStyleResponse {
 	return &FormStyleResponse{
 		Version:      s.Version,
@@ -892,6 +1043,54 @@ func toStyleResponse(s *StyleVersionRecord) *FormStyleResponse {
 		FontFamily:   s.FontFamily,
 		HeaderExtra:  s.HeaderExtra,
 		FooterText:   s.FooterText,
+		Config:       s.Config,
+		PresetID:     s.PresetID,
+		IsActive:     s.IsActive,
 		UpdatedAt:    s.CreatedAt.Format(time.RFC3339),
 	}
+}
+
+// flatMirror holds the top-level fields we keep synced between Config JSON and
+// the legacy flat columns.
+type flatMirror struct {
+	LogoKey      *string
+	PrimaryColor *string
+	FontFamily   *string
+	HeaderExtra  *string
+	FooterText   *string
+}
+
+// mirrorFromConfig extracts the canonical flat fields from a doc-theme Config
+// blob. Returns nil if the blob is not a JSON object. The shape mirrors
+// DocThemeConfig on the Flutter side — only the fields we read are parsed.
+func mirrorFromConfig(cfg json.RawMessage) *flatMirror {
+	var parsed struct {
+		Header *struct {
+			LogoKey *string `json:"logo_key"`
+			Extra   *string `json:"extra_text"`
+		} `json:"header"`
+		Theme *struct {
+			PrimaryColor *string `json:"primary_color"`
+			BodyFont     *string `json:"body_font"`
+		} `json:"theme"`
+		Footer *struct {
+			Text *string `json:"text"`
+		} `json:"footer"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		return nil
+	}
+	m := &flatMirror{}
+	if parsed.Header != nil {
+		m.LogoKey = parsed.Header.LogoKey
+		m.HeaderExtra = parsed.Header.Extra
+	}
+	if parsed.Theme != nil {
+		m.PrimaryColor = parsed.Theme.PrimaryColor
+		m.FontFamily = parsed.Theme.BodyFont
+	}
+	if parsed.Footer != nil {
+		m.FooterText = parsed.Footer.Text
+	}
+	return m
 }
