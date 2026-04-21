@@ -32,7 +32,13 @@ type NoteRecord struct {
 	FormVersionContext *string    // e.g. "before decommission" — set at submit time
 	PolicyAlignmentPct *float64   // 0.0–100.0; nil until alignment job runs
 	PolicyCheckResult  *string    // JSONB per-clause check results; nil until check runs
-	PDFStorageKey      *string    // S3 key; nil until PDF generated after submit
+	// OverrideReason/By/At record a submitter's written justification for
+	// submitting despite a high-parity policy violation. The columns are
+	// populated together by a CHECK constraint or all null.
+	OverrideReason     *string
+	OverrideBy         *uuid.UUID
+	OverrideAt         *time.Time
+	PDFStorageKey      *string // S3 key; nil until PDF generated after submit
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -85,13 +91,17 @@ type ListNotesParams struct {
 }
 
 // SubmitNoteParams holds values for marking a note as submitted.
+// OverrideReason (when non-nil) records the submitter's justification for
+// submitting despite a high-parity policy violation. OverrideBy/At default to
+// the submitter/submit-time when the reason is set.
 type SubmitNoteParams struct {
-	ID          uuid.UUID
-	ClinicID    uuid.UUID
-	ReviewedBy  uuid.UUID
-	ReviewedAt  time.Time
-	SubmittedBy uuid.UUID
-	SubmittedAt time.Time
+	ID             uuid.UUID
+	ClinicID       uuid.UUID
+	ReviewedBy     uuid.UUID
+	ReviewedAt     time.Time
+	SubmittedBy    uuid.UUID
+	SubmittedAt    time.Time
+	OverrideReason *string
 }
 
 // ArchiveNoteParams holds values for soft-deleting a note.
@@ -146,6 +156,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, created_by,
 	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
 	archived_at, form_version_context, policy_alignment_pct, policy_check_result::text,
+	override_reason, override_by, override_at,
 	pdf_storage_key, created_at, updated_at`
 
 // CreateNote inserts a new note with the given status.
@@ -263,6 +274,9 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		    reviewed_at           = $4,
 		    submitted_by          = $5,
 		    submitted_at          = $6,
+		    override_reason       = $7,
+		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5 END,
+		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6 END,
 		    form_version_context  = (
 		        SELECT CASE
 		            WHEN f.archived_at IS NOT NULL THEN 'before decommission'
@@ -276,7 +290,7 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		WHERE id = $1 AND clinic_id = $2 AND status = 'draft'
 		RETURNING %s`, noteCols)
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt, p.OverrideReason)
 	rec, err := scanNote(row)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -478,6 +492,7 @@ func scanNote(row scannable) (*NoteRecord, error) {
 		&n.ReviewedBy, &n.ReviewedAt,
 		&n.SubmittedAt, &n.SubmittedBy,
 		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct, &n.PolicyCheckResult,
+		&n.OverrideReason, &n.OverrideBy, &n.OverrideAt,
 		&n.PDFStorageKey, &n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {
