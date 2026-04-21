@@ -342,7 +342,7 @@ func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 	repo.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil) //nolint:errcheck
 
-	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "")
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestService_SubmitNote_NotDraft(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	// Note is still 'extracting' — cannot submit.
-	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "")
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "", nil)
 	if !errors.Is(err, domain.ErrConflict) {
 		t.Errorf("expected conflict, got %v", err)
 	}
@@ -419,7 +419,7 @@ func TestService_SubmitNote_ValidationBlocksMissingRequiredFields(t *testing.T) 
 	noteID, _ := uuid.Parse(created.ID)
 
 	// Don't fill any fields — submit should fail.
-	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}
@@ -454,7 +454,7 @@ func TestService_SubmitNote_ValidationPassesWhenFieldsFilled(t *testing.T) {
 		{ID: uuid.New(), NoteID: noteID, FieldID: requiredFieldID, Value: &val},
 	})
 
-	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -486,7 +486,7 @@ func TestService_SubmitNote_ValidationIgnoresOptionalFields(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	// No fields filled — should still succeed because nothing is required.
-	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -516,9 +516,75 @@ func TestService_SubmitNote_PolicyCheckBlocksHighParityViolation(t *testing.T) {
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
 	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
 
-	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if !errors.Is(err, domain.ErrValidation) {
 		t.Fatalf("expected validation error for high-parity violation, got %v", err)
+	}
+}
+
+func TestService_SubmitNote_HighParityOverrideAllowsSubmit(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
+	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+
+	reason := "Elderly pet refused draw; informed owner verbally."
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", &reason)
+	if err != nil {
+		t.Fatalf("expected override to allow submit, got %v", err)
+	}
+	if resp.Status != domain.NoteStatusSubmitted {
+		t.Errorf("expected submitted, got %s", resp.Status)
+	}
+	if resp.OverrideReason == nil || *resp.OverrideReason != reason {
+		t.Errorf("expected override_reason persisted, got %v", resp.OverrideReason)
+	}
+	if resp.OverrideBy == nil || *resp.OverrideBy != staffID.String() {
+		t.Errorf("expected override_by=staffID, got %v", resp.OverrideBy)
+	}
+	if resp.OverrideAt == nil {
+		t.Errorf("expected override_at set")
+	}
+}
+
+func TestService_SubmitNote_BlankOverrideReasonStillBlocks(t *testing.T) {
+	t.Parallel()
+	restore := domain.SetTimeNow(func() time.Time { return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC) })
+	t.Cleanup(restore)
+
+	repo := newFakeRepo()
+	svc := NewService(repo, &fakeEnqueuer{}, nil, nil)
+	ctx := context.Background()
+
+	created, _ := svc.CreateNote(ctx, CreateNoteInput{
+		ClinicID:       clinicID,
+		StaffID:        staffID,
+		FormVersionID:  formVerID,
+		SkipExtraction: true,
+	})
+	noteID, _ := uuid.Parse(created.ID)
+
+	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
+	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+
+	blank := "   "
+	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", &blank)
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected blank override to be rejected as missing, got %v", err)
 	}
 }
 
@@ -543,7 +609,7 @@ func TestService_SubmitNote_PolicyCheckAllowsLowParityViolation(t *testing.T) {
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"low"}]`
 	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
 
-	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet")
+	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if err != nil {
 		t.Fatalf("unexpected error for low-parity violation: %v", err)
 	}
