@@ -397,9 +397,34 @@ func (f *fakeRepo) GetCurrentStyle(_ context.Context, clinicID uuid.UUID) (*Styl
 	return &cp, nil
 }
 
+func (f *fakeRepo) ListStyleVersions(_ context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []*StyleVersionRecord
+	for _, s := range f.styles {
+		if s.ClinicID == clinicID {
+			cp := *s
+			out = append(out, &cp)
+		}
+	}
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].Version > out[i].Version {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) CreateStyleVersion(_ context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	for _, s := range f.styles {
+		if s.ClinicID == p.ClinicID {
+			s.IsActive = false
+		}
+	}
 	s := &StyleVersionRecord{
 		ID:           p.ID,
 		ClinicID:     p.ClinicID,
@@ -409,6 +434,9 @@ func (f *fakeRepo) CreateStyleVersion(_ context.Context, p CreateStyleVersionPar
 		FontFamily:   p.FontFamily,
 		HeaderExtra:  p.HeaderExtra,
 		FooterText:   p.FooterText,
+		Config:       p.Config,
+		PresetID:     p.PresetID,
+		IsActive:     true,
 		CreatedBy:    p.CreatedBy,
 		CreatedAt:    domain.TimeNow(),
 	}
