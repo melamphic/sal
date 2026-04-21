@@ -1,9 +1,13 @@
 package forms
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -126,7 +130,9 @@ func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formLi
 		Limit:           input.Limit,
 		Offset:          input.Offset,
 		IncludeArchived: input.IncludeArchived,
-		Tag:             &input.Tag,
+	}
+	if input.Tag != "" {
+		svcInput.Tag = &input.Tag
 	}
 	if input.GroupID != "" {
 		id, err := uuid.Parse(input.GroupID)
@@ -207,13 +213,16 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 type publishFormBodyInput struct {
 	FormID string `path:"form_id"`
 	Body   struct {
-		ChangeType    string  `json:"change_type" enum:"minor,major" doc:"Semver bump type."`
-		ChangeSummary *string `json:"change_summary,omitempty" doc:"Human-readable summary of what changed."`
+		ChangeType    string          `json:"change_type" enum:"minor,major" doc:"Semver bump type."`
+		ChangeSummary *string         `json:"change_summary,omitempty" doc:"Human-readable summary of what changed."`
+		Changes       json.RawMessage `json:"changes,omitempty" doc:"Array of typed change ops the editor diffed from the previous published version. Display-only: rollback still targets whole versions."`
 	}
 }
 
 // publishForm handles POST /api/v1/forms/{form_id}/publish.
-func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) (*versionHTTPResponse, error) {
+// Returns the full form resource so the editor can refresh its draft and
+// latest_published in a single call.
+func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -228,11 +237,12 @@ func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) 
 		StaffID:       staffID,
 		ChangeType:    domain.ChangeType(input.Body.ChangeType),
 		ChangeSummary: input.Body.ChangeSummary,
+		Changes:       input.Body.Changes,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Policy check ──────────────────────────────────────────────────────────────
@@ -265,7 +275,9 @@ type rollbackFormBodyInput struct {
 }
 
 // rollbackForm handles POST /api/v1/forms/{form_id}/rollback.
-func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput) (*versionHTTPResponse, error) {
+// Returns the full form resource so the editor can rehydrate the new draft
+// in a single call.
+func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -288,7 +300,7 @@ func (h *Handler) rollbackForm(ctx context.Context, input *rollbackFormBodyInput
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Retire ────────────────────────────────────────────────────────────────────
@@ -505,14 +517,28 @@ type styleHTTPResponse struct {
 	Body *FormStyleResponse
 }
 
+type styleVersionsHTTPResponse struct {
+	Body *FormStyleVersionsResponse
+}
+
+type stylePresetsHTTPResponse struct {
+	Body *FormStylePresetsResponse
+}
+
 type updateStyleBodyInput struct {
 	Body struct {
-		LogoKey      *string `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
-		PrimaryColor *string `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
-		FontFamily   *string `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
-		HeaderExtra  *string `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
-		FooterText   *string `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
+		LogoKey      *string         `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
+		PrimaryColor *string         `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
+		FontFamily   *string         `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
+		HeaderExtra  *string         `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
+		FooterText   *string         `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
+		Config       json.RawMessage `json:"config,omitempty"        doc:"Rich doc-theme config blob produced by the three-pane designer. Free-form JSON; the top-level colour/font/header/footer fields are mirrored into the flat columns."`
+		PresetID     *string         `json:"preset_id,omitempty"     doc:"ID of the preset this config was derived from, e.g. 'dental.clean_clinical'."`
 	}
+}
+
+type stylePresetsQueryInput struct {
+	Vertical string `query:"vertical" doc:"Clinic vertical to return presets for. Matches clinics.vertical (aged_care|veterinary|dental|general_clinic). Falls back to general_clinic when empty or unknown." enum:"aged_care,veterinary,dental,general_clinic" required:"false"`
 }
 
 // getStyle handles GET /api/v1/clinic/form-style.
@@ -539,11 +565,140 @@ func (h *Handler) updateStyle(ctx context.Context, input *updateStyleBodyInput) 
 		FontFamily:   input.Body.FontFamily,
 		HeaderExtra:  input.Body.HeaderExtra,
 		FooterText:   input.Body.FooterText,
+		Config:       input.Body.Config,
+		PresetID:     input.Body.PresetID,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
 	}
 	return &styleHTTPResponse{Body: resp}, nil
+}
+
+// listStyleVersions handles GET /api/v1/clinic/form-style/versions.
+func (h *Handler) listStyleVersions(ctx context.Context, _ *struct{}) (*styleVersionsHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	resp, err := h.svc.ListStyleVersions(ctx, clinicID)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &styleVersionsHTTPResponse{Body: resp}, nil
+}
+
+// listStylePresets handles GET /api/v1/clinic/form-style/presets.
+// Accepts optional ?vertical=, defaulting to "general_clinic" when absent (a future
+// patch can resolve the caller's clinic vertical from the JWT-bound clinic
+// row; we keep this handler dependency-free for now).
+func (h *Handler) listStylePresets(ctx context.Context, input *stylePresetsQueryInput) (*stylePresetsHTTPResponse, error) {
+	vertical := input.Vertical
+	if vertical == "" {
+		vertical = "general_clinic"
+	}
+	return &stylePresetsHTTPResponse{Body: h.svc.ListStylePresets(ctx, vertical)}, nil
+}
+
+// ── Style logo upload ─────────────────────────────────────────────────────────
+
+type uploadStyleLogoInput struct {
+	RawBody multipart.Form
+}
+
+// maxStyleLogoBytes caps doc-theme logo uploads at 4 MiB.
+const maxStyleLogoBytes int64 = 4 << 20
+
+type styleLogoUploadHTTPResponse struct {
+	Body *FormStyleLogoUploadResponse
+}
+
+// uploadStyleLogo handles POST /api/v1/clinic/form-style/logo
+// (multipart/form-data, field "file").
+//
+// Validates in two phases: first the client-declared Content-Type, then the
+// file's magic bytes. The header alone isn't trustworthy — a caller can claim
+// "image/png" while uploading an HTML/SVG/executable — and the downstream
+// signed-URL flow serves whatever we stored with whatever content-type we
+// persisted, so an unverified upload becomes an XSS/SSRF vector when the
+// browser fetches it back. Also: SVG is rejected outright (scriptable XML);
+// the designer only needs raster logos for PDF rendering.
+func (h *Handler) uploadStyleLogo(ctx context.Context, input *uploadStyleLogoInput) (*styleLogoUploadHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("missing form field \"file\"")
+	}
+	hdr := files[0]
+	if hdr.Size > maxStyleLogoBytes {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("logo too large (max %d bytes)", maxStyleLogoBytes))
+	}
+
+	declared := hdr.Header.Get("Content-Type")
+	if !isAllowedStyleLogoType(declared) {
+		return nil, huma.Error415UnsupportedMediaType("logo must be png, jpeg, or webp")
+	}
+
+	f, err := hdr.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	defer func() { _ = f.Close() }()
+
+	// Peek enough bytes to cover every supported format's magic sequence
+	// (WEBP needs 12: "RIFF????WEBP"). Putting them back in front of the
+	// reader via io.MultiReader means the storage layer still sees the
+	// whole file.
+	head := make([]byte, 12)
+	n, err := io.ReadFull(f, head)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	head = head[:n]
+	detected := sniffImageType(head)
+	if detected == "" || detected != canonicalStyleLogoType(declared) {
+		return nil, huma.Error415UnsupportedMediaType("logo content does not match its declared type — must be a real png, jpeg, or webp image")
+	}
+
+	body := io.MultiReader(bytes.NewReader(head), f)
+	resp, err := h.svc.UploadStyleLogo(ctx, clinicID, detected, body, hdr.Size)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &styleLogoUploadHTTPResponse{Body: resp}, nil
+}
+
+func isAllowedStyleLogoType(ct string) bool {
+	return canonicalStyleLogoType(ct) != ""
+}
+
+// canonicalStyleLogoType collapses the aliases browsers send (e.g. "image/jpg"
+// from old Windows apps) into the one MIME string we store and return. Empty
+// means "not on the allowlist".
+func canonicalStyleLogoType(ct string) string {
+	switch ct {
+	case "image/png":
+		return "image/png"
+	case "image/jpeg", "image/jpg":
+		return "image/jpeg"
+	case "image/webp":
+		return "image/webp"
+	}
+	return ""
+}
+
+// sniffImageType returns the canonical MIME type that matches the file's
+// magic bytes, or "" if the bytes don't match any supported format. Callers
+// compare the result to canonicalStyleLogoType(declared) so a spoofed
+// Content-Type on a real image of a different kind still rejects.
+func sniffImageType(head []byte) string {
+	switch {
+	case len(head) >= 8 && bytes.Equal(head[:8], []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}):
+		return "image/png"
+	case len(head) >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF:
+		return "image/jpeg"
+	case len(head) >= 12 && bytes.Equal(head[:4], []byte("RIFF")) && bytes.Equal(head[8:12], []byte("WEBP")):
+		return "image/webp"
+	}
+	return ""
 }
 
 // ── Error mapping ─────────────────────────────────────────────────────────────

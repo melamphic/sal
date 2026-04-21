@@ -41,6 +41,13 @@ type repo interface {
 	// PublishDraftVersion freezes the draft: sets status=published, assigns
 	// version_major/minor, and records who published it and when.
 	PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error)
+	// CreatePublishedVersionWithFields inserts a new version already in the
+	// published state along with its fields in a single transaction. Used by
+	// rollback, which produces a fresh immutable version rather than mutating
+	// or discarding any existing draft. Returns domain.ErrConflict if the
+	// (form_id, version_major, version_minor) pair collides with an existing
+	// published version — caller should recompute and retry.
+	CreatePublishedVersionWithFields(ctx context.Context, p CreatePublishedVersionParams, fields []CreateFieldParams) (*FormVersionRecord, []*FieldRecord, error)
 	// SavePolicyCheckResult stores the raw AI policy-check output on the draft.
 	SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error)
 
@@ -62,9 +69,12 @@ type repo interface {
 
 	// ── Style ─────────────────────────────────────────────────────────────────
 
-	// GetCurrentStyle returns the latest style version for the clinic.
+	// GetCurrentStyle returns the active style version for the clinic.
 	// Returns domain.ErrNotFound if no style has been configured yet.
 	GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*StyleVersionRecord, error)
-	// CreateStyleVersion inserts a new style version row (version = prev+1).
+	// ListStyleVersions returns every style version for a clinic, newest first.
+	ListStyleVersions(ctx context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error)
+	// CreateStyleVersion inserts a new style version row (version = prev+1) and
+	// marks it active, demoting any previously-active row for the clinic.
 	CreateStyleVersion(ctx context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error)
 }

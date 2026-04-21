@@ -39,6 +39,7 @@ type FormRecord struct {
 	UpdatedAt     time.Time
 	ArchivedAt    *time.Time
 	RetireReason  *string
+	RetiredBy     *uuid.UUID
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
@@ -50,6 +51,10 @@ type FormVersionRecord struct {
 	VersionMinor      *int
 	ChangeType        *domain.ChangeType
 	ChangeSummary     *string
+	// Changes is a JSONB array of typed ops ({op: "add_field", title: "...", ...})
+	// computed client-side by diffing draft vs previous published. Stored opaque
+	// so new op types can ship without a migration.
+	Changes           json.RawMessage
 	RollbackOf        *uuid.UUID
 	PolicyCheckResult *string
 	PolicyCheckBy     *uuid.UUID
@@ -78,6 +83,13 @@ type FieldRecord struct {
 }
 
 // StyleVersionRecord is the raw database representation of a clinic_form_style_versions row.
+//
+// Config is the rich doc-theme JSON blob produced by the designer (header shape,
+// gradient stops, watermark, per-slot content, typography, etc.). The flat
+// fields (LogoKey/PrimaryColor/FontFamily/HeaderExtra/FooterText) are kept as a
+// legacy mirror of the top-level values for the old onboarding UI and simple
+// renderers. PresetID tracks which vertical-specific preset the clinic is
+// currently based on (e.g. "dental.clean_clinical").
 type StyleVersionRecord struct {
 	ID           uuid.UUID
 	ClinicID     uuid.UUID
@@ -87,6 +99,9 @@ type StyleVersionRecord struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
+	IsActive     bool
 	CreatedBy    uuid.UUID
 	CreatedAt    time.Time
 }
@@ -140,6 +155,7 @@ type RetireFormParams struct {
 	ClinicID     uuid.UUID
 	RetireReason *string
 	ArchivedAt   time.Time
+	RetiredBy    uuid.UUID
 }
 
 // ListFormsParams holds filter and pagination parameters for listing forms.
@@ -166,6 +182,24 @@ type PublishDraftVersionParams struct {
 	VersionMinor  int
 	ChangeType    domain.ChangeType
 	ChangeSummary *string
+	// Changes is the JSONB-serialised array of typed ops. Empty array when nil.
+	Changes     json.RawMessage
+	PublishedBy uuid.UUID
+	PublishedAt time.Time
+}
+
+// CreatePublishedVersionParams inserts a brand-new row already in the
+// published state. Used by rollback — the rollback result is itself a new
+// immutable version, so we skip the draft stage entirely.
+type CreatePublishedVersionParams struct {
+	ID            uuid.UUID
+	FormID        uuid.UUID
+	VersionMajor  int
+	VersionMinor  int
+	ChangeType    domain.ChangeType
+	ChangeSummary *string
+	Changes       json.RawMessage
+	RollbackOf    *uuid.UUID
 	PublishedBy   uuid.UUID
 	PublishedAt   time.Time
 }
@@ -203,6 +237,8 @@ type CreateStyleVersionParams struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
 	CreatedBy    uuid.UUID
 }
 
@@ -302,7 +338,7 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description,
@@ -319,7 +355,7 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
 	const q = `
 		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
 		FROM forms
 		WHERE id = $1 AND clinic_id = $2`
 
@@ -357,7 +393,7 @@ func (r *Repository) ListForms(ctx context.Context, clinicID uuid.UUID, p ListFo
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
 		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
 		FROM forms
 		WHERE %s
 		ORDER BY created_at DESC
@@ -390,7 +426,7 @@ func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams)
 		SET group_id = $3, name = $4, description = $5, overall_prompt = $6, tags = $7
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description, p.OverallPrompt, p.Tags,
@@ -402,16 +438,16 @@ func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams)
 	return rec, nil
 }
 
-// RetireForm sets archived_at and retire_reason on the form.
+// RetireForm sets archived_at, retire_reason, and retired_by on the form.
 func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormRecord, error) {
 	const q = `
 		UPDATE forms
-		SET archived_at = $3, retire_reason = $4
+		SET archived_at = $3, retire_reason = $4, retired_by = $5
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason, p.RetiredBy)
 	rec, err := scanForm(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.RetireForm: %w", err)
@@ -423,7 +459,7 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
-	rollback_of, policy_check_result, policy_check_by, policy_check_at,
+	changes, rollback_of, policy_check_result, policy_check_by, policy_check_at,
 	published_at, published_by, created_by, created_at`
 
 // GetDraftVersion returns the single mutable draft version for a form.
@@ -509,6 +545,7 @@ func (r *Repository) GetLatestPublishedVersion(ctx context.Context, formID uuid.
 	return rec, nil
 }
 
+
 // CreateDraftVersion inserts a new draft version for a form.
 func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersionParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
@@ -524,8 +561,89 @@ func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersio
 	return rec, nil
 }
 
-// PublishDraftVersion transitions a draft to published status.
+// CreatePublishedVersionWithFields inserts a brand-new version already in
+// the published state AND its fields, all inside a single transaction. Used
+// by rollback — a partial failure (version row inserted but field insert
+// fails) would otherwise leave a published version with zero fields in the
+// history, unusable but also undeletable since published versions are
+// immutable.
+//
+// A collision on the partial unique index
+// form_versions_published_semver_uniq (form_id, version_major, version_minor)
+// WHERE status='published' maps to domain.ErrConflict so the caller can
+// recompute the next version and retry.
+func (r *Repository) CreatePublishedVersionWithFields(ctx context.Context, p CreatePublishedVersionParams, fields []CreateFieldParams) (*FormVersionRecord, []*FieldRecord, error) {
+	changes := p.Changes
+	if len(changes) == 0 {
+		changes = json.RawMessage("[]")
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	versionQ := fmt.Sprintf(`
+		INSERT INTO form_versions (
+			id, form_id, status, version_major, version_minor,
+			change_type, change_summary, changes, rollback_of,
+			published_by, published_at, created_by
+		) VALUES (
+			$1, $2, 'published', $3, $4,
+			$5, $6, $7, $8,
+			$9, $10, $9
+		)
+		RETURNING %s`, versionCols)
+
+	row := tx.QueryRow(ctx, versionQ,
+		p.ID, p.FormID, p.VersionMajor, p.VersionMinor,
+		string(p.ChangeType), p.ChangeSummary, changes, p.RollbackOf,
+		p.PublishedBy, p.PublishedAt,
+	)
+	rec, err := scanVersion(row)
+	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: %w", domain.ErrConflict)
+		}
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: %w", err)
+	}
+
+	fieldQ := fmt.Sprintf(`
+		INSERT INTO form_fields (id, form_version_id, position, title, type, config, ai_prompt, required, skippable, allow_inference, min_confidence)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING %s`, fieldCols)
+
+	inserted := make([]*FieldRecord, 0, len(fields))
+	for _, fp := range fields {
+		frow := tx.QueryRow(ctx, fieldQ,
+			fp.ID, fp.FormVersionID, fp.Position, fp.Title, fp.Type,
+			fp.Config, fp.AIPrompt, fp.Required, fp.Skippable,
+			fp.AllowInference, fp.MinConfidence,
+		)
+		f, err := scanField(frow)
+		if err != nil {
+			return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: field: %w", err)
+		}
+		inserted = append(inserted, f)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreatePublishedVersionWithFields: commit: %w", err)
+	}
+	return rec, inserted, nil
+}
+
+// PublishDraftVersion transitions a draft to published status. A unique
+// violation on the partial index
+// form_versions_published_semver_uniq (form_id, version_major, version_minor)
+// WHERE status='published' maps to domain.ErrConflict so the service can
+// recompute the next version and retry once.
 func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
+	changes := p.Changes
+	if len(changes) == 0 {
+		changes = json.RawMessage("[]")
+	}
 	q := fmt.Sprintf(`
 		UPDATE form_versions
 		SET status        = 'published',
@@ -533,18 +651,22 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		    version_minor = $3,
 		    change_type   = $4,
 		    change_summary = $5,
-		    published_by  = $6,
-		    published_at  = $7
+		    changes       = $6,
+		    published_by  = $7,
+		    published_at  = $8
 		WHERE id = $1 AND status = 'draft'
 		RETURNING %s`, versionCols)
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.VersionMajor, p.VersionMinor,
-		string(p.ChangeType), p.ChangeSummary,
+		string(p.ChangeType), p.ChangeSummary, changes,
 		p.PublishedBy, p.PublishedAt,
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", err)
 	}
 	return rec, nil
@@ -720,14 +842,15 @@ func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) (
 
 // ── Style ─────────────────────────────────────────────────────────────────────
 
-const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, created_by, created_at`
+const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by, created_at`
 
-// GetCurrentStyle returns the highest-version style record for the clinic.
+// GetCurrentStyle returns the active style record for the clinic.
+// Falls back to the highest-version row when no row is marked active (legacy rows).
 func (r *Repository) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*StyleVersionRecord, error) {
 	q := fmt.Sprintf(`
 		SELECT %s FROM clinic_form_style_versions
 		WHERE clinic_id = $1
-		ORDER BY version DESC
+		ORDER BY is_active DESC, version DESC
 		LIMIT 1`, styleCols)
 
 	row := r.db.QueryRow(ctx, q, clinicID)
@@ -738,21 +861,65 @@ func (r *Repository) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*
 	return rec, nil
 }
 
-// CreateStyleVersion inserts a new style version row.
+// ListStyleVersions returns every style version for a clinic, newest first.
+func (r *Repository) ListStyleVersions(ctx context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error) {
+	q := fmt.Sprintf(`
+		SELECT %s FROM clinic_form_style_versions
+		WHERE clinic_id = $1
+		ORDER BY version DESC`, styleCols)
+
+	rows, err := r.db.Query(ctx, q, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListStyleVersions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*StyleVersionRecord
+	for rows.Next() {
+		rec, scanErr := scanStyle(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("forms.repo.ListStyleVersions: %w", scanErr)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListStyleVersions: rows: %w", err)
+	}
+	return out, nil
+}
+
+// CreateStyleVersion inserts a new style version row and marks it active,
+// demoting any previously-active row for the clinic inside the same tx.
 func (r *Repository) CreateStyleVersion(ctx context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE clinic_form_style_versions SET is_active = FALSE
+		WHERE clinic_id = $1 AND is_active`, p.ClinicID); err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: deactivate: %w", err)
+	}
+
 	q := fmt.Sprintf(`
 		INSERT INTO clinic_form_style_versions
-		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11)
 		RETURNING %s`, styleCols)
 
-	row := r.db.QueryRow(ctx, q,
+	row := tx.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.Version, p.LogoKey, p.PrimaryColor,
-		p.FontFamily, p.HeaderExtra, p.FooterText, p.CreatedBy,
+		p.FontFamily, p.HeaderExtra, p.FooterText, p.Config, p.PresetID, p.CreatedBy,
 	)
 	rec, err := scanStyle(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: commit: %w", err)
 	}
 	return rec, nil
 }
@@ -783,7 +950,7 @@ func scanForm(row scannable) (*FormRecord, error) {
 	err := row.Scan(
 		&f.ID, &f.ClinicID, &f.GroupID, &f.Name, &f.Description,
 		&f.OverallPrompt, &f.Tags, &f.CreatedBy,
-		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason,
+		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason, &f.RetiredBy,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -799,7 +966,7 @@ func scanVersion(row scannable) (*FormVersionRecord, error) {
 	var changeType *string
 	err := row.Scan(
 		&v.ID, &v.FormID, &v.Status, &v.VersionMajor, &v.VersionMinor,
-		&changeType, &v.ChangeSummary, &v.RollbackOf,
+		&changeType, &v.ChangeSummary, &v.Changes, &v.RollbackOf,
 		&v.PolicyCheckResult, &v.PolicyCheckBy, &v.PolicyCheckAt,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedBy, &v.CreatedAt,
 	)
@@ -838,6 +1005,7 @@ func scanStyle(row scannable) (*StyleVersionRecord, error) {
 	err := row.Scan(
 		&s.ID, &s.ClinicID, &s.Version, &s.LogoKey, &s.PrimaryColor,
 		&s.FontFamily, &s.HeaderExtra, &s.FooterText,
+		&s.Config, &s.PresetID, &s.IsActive,
 		&s.CreatedBy, &s.CreatedAt,
 	)
 	if err != nil {

@@ -177,6 +177,8 @@ func (f *fakeRepo) RetireForm(_ context.Context, p RetireFormParams) (*FormRecor
 	t := p.ArchivedAt
 	form.ArchivedAt = &t
 	form.RetireReason = p.RetireReason
+	rb := p.RetiredBy
+	form.RetiredBy = &rb
 	return cloneForm(form), nil
 }
 
@@ -255,6 +257,71 @@ func (f *fakeRepo) CreateDraftVersion(_ context.Context, p CreateDraftVersionPar
 	return cloneVersion(v), nil
 }
 
+func (f *fakeRepo) CreatePublishedVersionWithFields(_ context.Context, p CreatePublishedVersionParams, fields []CreateFieldParams) (*FormVersionRecord, []*FieldRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Enforce the partial unique index on (form_id, major, minor) for
+	// published rows. The real DB enforces this via
+	// form_versions_published_semver_uniq.
+	for _, existing := range f.versions {
+		if existing.FormID != p.FormID || existing.Status != domain.FormVersionStatusPublished {
+			continue
+		}
+		if existing.VersionMajor != nil && existing.VersionMinor != nil &&
+			*existing.VersionMajor == p.VersionMajor && *existing.VersionMinor == p.VersionMinor {
+			return nil, nil, domain.ErrConflict
+		}
+	}
+
+	ct := p.ChangeType
+	pubAt := p.PublishedAt
+	pubBy := p.PublishedBy
+	major := p.VersionMajor
+	minor := p.VersionMinor
+	v := &FormVersionRecord{
+		ID:            p.ID,
+		FormID:        p.FormID,
+		Status:        domain.FormVersionStatusPublished,
+		VersionMajor:  &major,
+		VersionMinor:  &minor,
+		ChangeType:    &ct,
+		ChangeSummary: p.ChangeSummary,
+		Changes:       p.Changes,
+		RollbackOf:    p.RollbackOf,
+		PublishedBy:   &pubBy,
+		PublishedAt:   &pubAt,
+		CreatedBy:     p.PublishedBy,
+		CreatedAt:     domain.TimeNow(),
+	}
+	f.versions[v.ID] = v
+
+	now := domain.TimeNow()
+	inserted := make([]*FieldRecord, len(fields))
+	stored := make([]*FieldRecord, len(fields))
+	for i, fp := range fields {
+		rec := &FieldRecord{
+			ID:             fp.ID,
+			FormVersionID:  v.ID,
+			Position:       fp.Position,
+			Title:          fp.Title,
+			Type:           fp.Type,
+			Config:         fp.Config,
+			AIPrompt:       fp.AIPrompt,
+			Required:       fp.Required,
+			Skippable:      fp.Skippable,
+			AllowInference: fp.AllowInference,
+			MinConfidence:  fp.MinConfidence,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		stored[i] = rec
+		cp := *rec
+		inserted[i] = &cp
+	}
+	f.fields[v.ID] = stored
+	return cloneVersion(v), inserted, nil
+}
+
 func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -262,12 +329,22 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	if !ok || v.Status != domain.FormVersionStatusDraft {
 		return nil, domain.ErrNotFound
 	}
+	for _, existing := range f.versions {
+		if existing.ID == v.ID || existing.FormID != v.FormID || existing.Status != domain.FormVersionStatusPublished {
+			continue
+		}
+		if existing.VersionMajor != nil && existing.VersionMinor != nil &&
+			*existing.VersionMajor == p.VersionMajor && *existing.VersionMinor == p.VersionMinor {
+			return nil, domain.ErrConflict
+		}
+	}
 	v.Status = domain.FormVersionStatusPublished
 	v.VersionMajor = &p.VersionMajor
 	v.VersionMinor = &p.VersionMinor
 	ct := p.ChangeType
 	v.ChangeType = &ct
 	v.ChangeSummary = p.ChangeSummary
+	v.Changes = p.Changes
 	v.PublishedBy = &p.PublishedBy
 	v.PublishedAt = &p.PublishedAt
 	return cloneVersion(v), nil
@@ -307,17 +384,19 @@ func (f *fakeRepo) ReplaceFields(_ context.Context, versionID uuid.UUID, params 
 	newFields := make([]*FieldRecord, len(params))
 	for i, p := range params {
 		newFields[i] = &FieldRecord{
-			ID:            p.ID,
-			FormVersionID: versionID,
-			Position:      p.Position,
-			Title:         p.Title,
-			Type:          p.Type,
-			Config:        p.Config,
-			AIPrompt:      p.AIPrompt,
-			Required:      p.Required,
-			Skippable:     p.Skippable,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:             p.ID,
+			FormVersionID:  versionID,
+			Position:       p.Position,
+			Title:          p.Title,
+			Type:           p.Type,
+			Config:         p.Config,
+			AIPrompt:       p.AIPrompt,
+			Required:       p.Required,
+			Skippable:      p.Skippable,
+			AllowInference: p.AllowInference,
+			MinConfidence:  p.MinConfidence,
+			CreatedAt:      now,
+			UpdatedAt:      now,
 		}
 	}
 	f.fields[versionID] = newFields
@@ -397,9 +476,34 @@ func (f *fakeRepo) GetCurrentStyle(_ context.Context, clinicID uuid.UUID) (*Styl
 	return &cp, nil
 }
 
+func (f *fakeRepo) ListStyleVersions(_ context.Context, clinicID uuid.UUID) ([]*StyleVersionRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []*StyleVersionRecord
+	for _, s := range f.styles {
+		if s.ClinicID == clinicID {
+			cp := *s
+			out = append(out, &cp)
+		}
+	}
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].Version > out[i].Version {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) CreateStyleVersion(_ context.Context, p CreateStyleVersionParams) (*StyleVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	for _, s := range f.styles {
+		if s.ClinicID == p.ClinicID {
+			s.IsActive = false
+		}
+	}
 	s := &StyleVersionRecord{
 		ID:           p.ID,
 		ClinicID:     p.ClinicID,
@@ -409,6 +513,9 @@ func (f *fakeRepo) CreateStyleVersion(_ context.Context, p CreateStyleVersionPar
 		FontFamily:   p.FontFamily,
 		HeaderExtra:  p.HeaderExtra,
 		FooterText:   p.FooterText,
+		Config:       p.Config,
+		PresetID:     p.PresetID,
+		IsActive:     true,
 		CreatedBy:    p.CreatedBy,
 		CreatedAt:    domain.TimeNow(),
 	}

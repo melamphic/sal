@@ -251,7 +251,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	formsSvc := forms.NewService(formsRepo, &formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo}, formChecker)
+	docThemeLogos := &docThemeLogoAdapter{store: store}
+	formsSvc := forms.NewService(
+		formsRepo,
+		&formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo},
+		formChecker,
+		docThemeLogos,
+		docThemeLogos,
+		&formsStaffNameAdapter{staff: staffSvc},
+		&formsPolicyOwnershipAdapter{policy: policyRepo},
+	)
 	formsHandler := forms.NewHandler(formsSvc)
 
 	// ── Notes module ──────────────────────────────────────────────────────────
@@ -583,6 +592,31 @@ func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string
 	return url, nil
 }
 
+// docThemeLogoAdapter implements forms.StyleLogoUploader and forms.StyleLogoSigner
+// against the platform/storage S3 client. Doc-theme logos are stored under
+// form-style-logos/{clinic_id}/ so they stay distinct from the clinic-wide
+// logo written by clinicLogoAdapter.
+type docThemeLogoAdapter struct {
+	store *storage.Store
+}
+
+func (a *docThemeLogoAdapter) UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error) {
+	ext := logoExtForContentType(contentType)
+	key := fmt.Sprintf("form-style-logos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", fmt.Errorf("app.docThemeLogoAdapter.UploadStyleLogo: %w", err)
+	}
+	return key, nil
+}
+
+func (a *docThemeLogoAdapter) SignStyleLogoURL(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.docThemeLogoAdapter.SignStyleLogoURL: %w", err)
+	}
+	return url, nil
+}
+
 func logoExtForContentType(ct string) string {
 	switch ct {
 	case "image/png":
@@ -650,6 +684,22 @@ func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, for
 		})
 	}
 	return result, nil
+}
+
+// formsPolicyOwnershipAdapter implements forms.PolicyOwnershipVerifier by
+// round-tripping through the policy repository's clinic-scoped lookup. A
+// mismatch surfaces as domain.ErrNotFound, which LinkPolicy then wraps into
+// its own error chain — the caller sees a 404, never a 403, so cross-tenant
+// IDs aren't distinguishable from non-existent ones.
+type formsPolicyOwnershipAdapter struct {
+	policy *policy.Repository
+}
+
+func (a *formsPolicyOwnershipAdapter) VerifyPolicyOwnership(ctx context.Context, policyID, clinicID uuid.UUID) error {
+	if _, err := a.policy.GetPolicyByID(ctx, policyID, clinicID); err != nil {
+		return fmt.Errorf("app.formsPolicyOwnershipAdapter: %w", err)
+	}
+	return nil
 }
 
 // formPolicyClauseFetcherAdapter implements forms.PolicyClauseFetcher.
@@ -1032,6 +1082,20 @@ func (a *staffNameAdapter) GetStaffName(ctx context.Context, staffID, clinicID u
 	s, err := a.staff.GetByID(ctx, staffID, clinicID)
 	if err != nil {
 		return "", fmt.Errorf("app.staffNameAdapter: %w", err)
+	}
+	return s.FullName, nil
+}
+
+// formsStaffNameAdapter implements forms.StaffNameResolver. Separate from
+// staffNameAdapter because the notes module uses a different method name.
+type formsStaffNameAdapter struct {
+	staff *staff.Service
+}
+
+func (a *formsStaffNameAdapter) ResolveStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error) {
+	s, err := a.staff.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.formsStaffNameAdapter: %w", err)
 	}
 	return s.FullName, nil
 }

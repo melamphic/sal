@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,17 +19,57 @@ type PolicyClauseFetcher interface {
 	GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error)
 }
 
+// StyleLogoSigner produces a short-lived signed GET URL for a doc-theme logo key.
+// Distinct from clinic.LogoSigner — doc-theme logos live under their own prefix
+// so clinics can set a different mark for documents (wordmark/square) than the
+// top-nav clinic logo. Implemented by platform/storage in app.go.
+type StyleLogoSigner interface {
+	SignStyleLogoURL(ctx context.Context, key string) (string, error)
+}
+
+// StyleLogoUploader uploads bytes to object storage under the doc-theme prefix
+// and returns the persisted key. Implemented by platform/storage in app.go.
+type StyleLogoUploader interface {
+	UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, error)
+}
+
+// StaffNameResolver turns a staff UUID into a displayable full name so the
+// version history can read "by Dr. Nadine Patel" instead of a raw ID. Adapter
+// lives in app.go and delegates to the staff service; nil implementations are
+// tolerated (we fall back to the UUID string).
+type StaffNameResolver interface {
+	ResolveStaffName(ctx context.Context, staffID, clinicID uuid.UUID) (string, error)
+}
+
+// PolicyOwnershipVerifier confirms that a policy belongs to the given clinic.
+// Used by LinkPolicy to reject cross-tenant links — without this, a malicious
+// clinic could enumerate policy UUIDs and attach another tenant's policy to
+// their own form, leaking the clause text through the policy-check endpoint.
+// Implementations must return domain.ErrNotFound when the policy doesn't
+// exist or belongs to a different clinic. Adapter lives in app.go.
+type PolicyOwnershipVerifier interface {
+	VerifyPolicyOwnership(ctx context.Context, policyID, clinicID uuid.UUID) error
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
-	repo    repo
-	clauses PolicyClauseFetcher
-	checker extraction.FormCoverageChecker
+	repo           repo
+	clauses        PolicyClauseFetcher
+	checker        extraction.FormCoverageChecker
+	logoSigner     StyleLogoSigner
+	logoUploader   StyleLogoUploader
+	staffNames     StaffNameResolver
+	policyVerifier PolicyOwnershipVerifier
 }
 
 // NewService constructs a forms Service.
-// Pass nil for clauses and checker to disable policy checking (tests, local dev).
-func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker) *Service {
-	return &Service{repo: r, clauses: clauses, checker: checker}
+// Pass nil for clauses/checker to disable policy checking (tests, local dev).
+// Pass nil for signer/uploader to disable the doc-theme logo upload endpoint.
+// Pass nil for staffNames to skip name resolution (API will return raw UUIDs).
+// Pass nil for policyVerifier to skip cross-tenant policy link checks (unit
+// tests); in production this MUST be wired to prevent clause-text leakage.
+func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCoverageChecker, signer StyleLogoSigner, uploader StyleLogoUploader, staffNames StaffNameResolver, policyVerifier PolicyOwnershipVerifier) *Service {
+	return &Service{repo: r, clauses: clauses, checker: checker, logoSigner: signer, logoUploader: uploader, staffNames: staffNames, policyVerifier: policyVerifier}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -54,15 +95,25 @@ type FormVersionResponse struct {
 	ID                string                   `json:"id"`
 	FormID            string                   `json:"form_id"`
 	Status            domain.FormVersionStatus `json:"status"`
+	// Kind distinguishes real version rows from synthetic timeline entries
+	// the service injects for compliance (e.g. "retire"). Empty/absent means
+	// a regular version row — front-ends should default to "version" in that
+	// case. Values: "version" (default) · "retire".
+	Kind              string                   `json:"kind,omitempty"`
 	VersionMajor      *int                     `json:"version_major,omitempty"`
 	VersionMinor      *int                     `json:"version_minor,omitempty"`
 	ChangeType        *domain.ChangeType       `json:"change_type,omitempty"`
 	ChangeSummary     *string                  `json:"change_summary,omitempty"`
+	// Changes is a raw JSON array of typed ops ({op, ...}) computed by the editor
+	// at publish time. Shape evolves over time; consumers should tolerate unknown
+	// op kinds.
+	Changes           json.RawMessage          `json:"changes,omitempty"`
 	RollbackOf        *string                  `json:"rollback_of,omitempty"`
 	PolicyCheckResult *string                  `json:"policy_check_result,omitempty"`
 	PolicyCheckAt     *string                  `json:"policy_check_at,omitempty"`
 	PublishedAt       *string                  `json:"published_at,omitempty"`
 	PublishedBy       *string                  `json:"published_by,omitempty"`
+	PublishedByName   *string                  `json:"published_by_name,omitempty"`
 	CreatedAt         string                   `json:"created_at"`
 	Fields            []*FieldResponse         `json:"fields,omitempty"`
 }
@@ -90,6 +141,8 @@ type FormResponse struct {
 	UpdatedAt     string   `json:"updated_at"`
 	ArchivedAt    *string  `json:"archived_at,omitempty"`
 	RetireReason  *string  `json:"retire_reason,omitempty"`
+	RetiredBy     *string  `json:"retired_by,omitempty"`
+	RetiredByName *string  `json:"retired_by_name,omitempty"`
 	// Draft is non-nil when an editable draft version exists.
 	Draft *FormVersionResponse `json:"draft,omitempty"`
 	// LatestPublished is the most recent frozen version; nil on a brand-new form.
@@ -126,15 +179,59 @@ type FormGroupListResponse struct {
 
 // FormStyleResponse is the API-safe representation of the clinic's current PDF style.
 //
+// Config is the rich doc-theme blob consumed by the three-pane designer. Flat
+// fields remain the source of truth for the simple onboarding step and for any
+// renderer that only needs a logo + accent colour + font.
+//
 //nolint:revive
 type FormStyleResponse struct {
-	Version      int     `json:"version"`
-	LogoKey      *string `json:"logo_key,omitempty"`
-	PrimaryColor *string `json:"primary_color,omitempty"`
-	FontFamily   *string `json:"font_family,omitempty"`
-	HeaderExtra  *string `json:"header_extra,omitempty"`
-	FooterText   *string `json:"footer_text,omitempty"`
-	UpdatedAt    string  `json:"updated_at"`
+	Version       int             `json:"version"`
+	LogoKey       *string         `json:"logo_key,omitempty"`
+	HeaderLogoURL *string         `json:"header_logo_url,omitempty"`
+	PrimaryColor  *string         `json:"primary_color,omitempty"`
+	FontFamily    *string         `json:"font_family,omitempty"`
+	HeaderExtra   *string         `json:"header_extra,omitempty"`
+	FooterText    *string         `json:"footer_text,omitempty"`
+	Config        json.RawMessage `json:"config,omitempty"`
+	PresetID      *string         `json:"preset_id,omitempty"`
+	IsActive      bool            `json:"is_active"`
+	UpdatedAt     string          `json:"updated_at"`
+}
+
+// FormStyleVersionsResponse lists every published style version for a clinic.
+//
+//nolint:revive
+type FormStyleVersionsResponse struct {
+	Items []*FormStyleResponse `json:"items"`
+}
+
+// FormStylePresetResponse is a single vertical-specific starter template.
+//
+//nolint:revive
+type FormStylePresetResponse struct {
+	ID          string          `json:"id"`
+	Vertical    string          `json:"vertical"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Config      json.RawMessage `json:"config"`
+}
+
+// FormStylePresetsResponse is a list of preset templates.
+//
+//nolint:revive
+type FormStylePresetsResponse struct {
+	Items []*FormStylePresetResponse `json:"items"`
+}
+
+// FormStyleLogoUploadResponse is returned after a successful doc-theme logo
+// upload. Key is the persisted object-storage key (write into
+// config.header.logo_key via PUT /form-style to save the choice); URL is a
+// short-lived signed GET URL for immediate preview in the designer.
+//
+//nolint:revive
+type FormStyleLogoUploadResponse struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -183,6 +280,9 @@ type PublishFormInput struct {
 	StaffID       uuid.UUID
 	ChangeType    domain.ChangeType
 	ChangeSummary *string
+	// Changes is the JSONB array of typed ops the editor diffed from the
+	// previous published version. Empty when absent; shape is opaque to server.
+	Changes json.RawMessage
 }
 
 // RollbackFormInput holds input for rolling a form back to a prior version.
@@ -236,6 +336,8 @@ type UpdateStyleInput struct {
 	FontFamily   *string
 	HeaderExtra  *string
 	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -310,6 +412,9 @@ func (s *Service) GetForm(ctx context.Context, formID, clinicID uuid.UUID) (*For
 		resp.LatestPublished = toVersionResponse(latest, fields)
 	}
 
+	s.resolvePublisherName(ctx, clinicID, resp.Draft)
+	s.resolvePublisherName(ctx, clinicID, resp.LatestPublished)
+
 	return resp, nil
 }
 
@@ -324,8 +429,43 @@ func (s *Service) ListForms(ctx context.Context, clinicID uuid.UUID, input ListF
 
 	items := make([]*FormResponse, len(forms))
 	for i, f := range forms {
-		items[i] = toFormResponse(f)
+		resp := toFormResponse(f)
+
+		// Attach draft + latest published metadata so the list UI can render
+		// the correct status pill without a per-form GetForm round-trip.
+		// Fields are omitted to keep the list endpoint light.
+		draft, err := s.repo.GetDraftVersion(ctx, f.ID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.ListForms: draft: %w", err)
+		}
+		if draft != nil {
+			resp.Draft = toVersionResponse(draft, nil)
+		}
+
+		latest, err := s.repo.GetLatestPublishedVersion(ctx, f.ID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.ListForms: latest published: %w", err)
+		}
+		if latest != nil {
+			resp.LatestPublished = toVersionResponse(latest, nil)
+		}
+
+		items[i] = resp
 	}
+
+	// Batch-resolve publisher names across every version we're returning so
+	// a clinic with dozens of forms doesn't fan out into dozens of staff
+	// lookups — the cache in resolvePublisherNames dedupes by UUID.
+	toEnrich := make([]*FormVersionResponse, 0, len(items)*2)
+	for _, it := range items {
+		if it.Draft != nil {
+			toEnrich = append(toEnrich, it.Draft)
+		}
+		if it.LatestPublished != nil {
+			toEnrich = append(toEnrich, it.LatestPublished)
+		}
+	}
+	s.resolvePublisherNames(ctx, clinicID, toEnrich)
 
 	return &FormListResponse{
 		Items:  items,
@@ -343,7 +483,7 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateDraft: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.UpdateDraft: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.UpdateDraft: form is retired: %w", domain.ErrConflict)
 	}
 
 	// Update form-level metadata.
@@ -410,14 +550,26 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 }
 
 // PublishForm freezes the current draft, assigns a semver number, and makes the
-// form available for use in audio processing.
-func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*FormVersionResponse, error) {
+// form available for use in audio processing. Returns the full form resource
+// (with the new latest_published attached) so the editor can refresh without
+// a follow-up GET.
+//
+// Rejects an empty draft: publishing a zero-field form would produce a
+// template that AI extraction can't populate and the PDF renderer has
+// nothing to render. The client gates on this too but a direct API call
+// would otherwise poison the version history.
+//
+// Tolerates a concurrent publish racing the same version number by
+// recomputing and retrying once when the DB's partial unique index rejects
+// the insert — simpler than a SELECT FOR UPDATE and good enough for the
+// two-tab case that triggers it in practice.
+func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.PublishForm: form is retired: %w", domain.ErrConflict)
 	}
 
 	draft, err := s.repo.GetDraftVersion(ctx, input.FormID)
@@ -425,35 +577,43 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 		return nil, fmt.Errorf("forms.service.PublishForm: no draft: %w", err)
 	}
 
-	// Compute next version number.
-	major, minor := NextVersion(input.ChangeType, nil, nil)
-	prev, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, fmt.Errorf("forms.service.PublishForm: prev version: %w", err)
+	fields, err := s.repo.GetFieldsByVersionID(ctx, draft.ID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.PublishForm: draft fields: %w", err)
 	}
-	if prev != nil {
-		major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("forms.service.PublishForm: draft has no fields: %w", domain.ErrConflict)
 	}
 
-	published, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
-		ID:            draft.ID,
-		VersionMajor:  major,
-		VersionMinor:  minor,
-		ChangeType:    input.ChangeType,
-		ChangeSummary: input.ChangeSummary,
-		PublishedBy:   input.StaffID,
-		PublishedAt:   domain.TimeNow(),
-	})
-	if err != nil {
+	for attempt := 0; attempt < 2; attempt++ {
+		major, minor := NextVersion(input.ChangeType, nil, nil)
+		prev, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.PublishForm: prev version: %w", err)
+		}
+		if prev != nil {
+			major, minor = NextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+		}
+
+		_, err = s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
+			ID:            draft.ID,
+			VersionMajor:  major,
+			VersionMinor:  minor,
+			ChangeType:    input.ChangeType,
+			ChangeSummary: input.ChangeSummary,
+			Changes:       input.Changes,
+			PublishedBy:   input.StaffID,
+			PublishedAt:   domain.TimeNow(),
+		})
+		if err == nil {
+			return s.GetForm(ctx, input.FormID, input.ClinicID)
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
 		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
-
-	fields, err := s.repo.GetFieldsByVersionID(ctx, published.ID)
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: fields: %w", err)
-	}
-
-	return toVersionResponse(published, fields), nil
+	return nil, fmt.Errorf("forms.service.PublishForm: could not assign version number: %w", domain.ErrConflict)
 }
 
 // RunPolicyCheck calls the AI to assess whether the form's fields cover the
@@ -533,15 +693,26 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 	return toVersionResponse(version, nil), nil
 }
 
-// RollbackForm creates a new draft that copies all fields from a prior published version.
-// Any existing draft is discarded.
-func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*FormVersionResponse, error) {
+// RollbackForm publishes a new immutable version whose fields are copied from
+// a prior published version. The new version gets its own semver number
+// (minor bump over the current latest) and records rollback_of so the history
+// shows the provenance. The draft is also overwritten with the target's
+// fields so the editor reflects the restored state — users expect clicking
+// "Rollback to v1" to bring back those fields in the editor, not preserve
+// orphan WIP from the discarded version.
+//
+// Version insert + field copy happen in a single transaction in the repo
+// layer, so a partial failure can't leave a zero-field published version in
+// the history. A unique-index collision on the semver pair (two concurrent
+// rollbacks, or a rollback racing a publish) is retried once with a
+// recomputed version number.
+func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, input.FormID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
 	}
 	if form.ArchivedAt != nil {
-		return nil, fmt.Errorf("forms.service.RollbackForm: %w", domain.ErrConflict)
+		return nil, fmt.Errorf("forms.service.RollbackForm: form is retired: %w", domain.ErrConflict)
 	}
 
 	target, err := s.repo.GetVersionByID(ctx, input.TargetVersionID)
@@ -555,33 +726,105 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 		return nil, fmt.Errorf("forms.service.RollbackForm: can only rollback to published version: %w", domain.ErrConflict)
 	}
 
-	// Copy fields from the target version.
 	sourceFields, err := s.repo.GetFieldsByVersionID(ctx, target.ID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RollbackForm: source fields: %w", err)
 	}
 
-	newDraftID := domain.NewID()
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:         newDraftID,
-		FormID:     input.FormID,
-		RollbackOf: &input.TargetVersionID,
-		CreatedBy:  input.StaffID,
-	})
-	if err != nil {
-		// If a draft already exists, it blocks the rollback.
-		if errors.Is(err, domain.ErrConflict) {
-			return nil, fmt.Errorf("forms.service.RollbackForm: discard existing draft before rollback: %w", domain.ErrConflict)
-		}
-		return nil, fmt.Errorf("forms.service.RollbackForm: create draft: %w", err)
+	// Build a human-readable summary. If the caller supplied one, keep it as
+	// the user's note and prepend the canonical rollback prefix so the history
+	// entry reads well at a glance.
+	targetLabel := "earlier version"
+	if target.VersionMajor != nil && target.VersionMinor != nil {
+		targetLabel = fmt.Sprintf("v%d.%d", *target.VersionMajor, *target.VersionMinor)
+	}
+	summary := "Rolled back to " + targetLabel
+	if input.Reason != nil && *input.Reason != "" {
+		summary = fmt.Sprintf("%s — %s", summary, *input.Reason)
 	}
 
-	// Copy fields into the new draft.
+	for attempt := 0; attempt < 2; attempt++ {
+		// Compute next version. Minor bump over the current latest — rollback
+		// is conceptually "a small course correction", not a breaking
+		// re-architecture. Fall back to 1.0 when there is somehow no latest
+		// (shouldn't happen since the target itself is published).
+		latest, err := s.repo.GetLatestPublishedVersion(ctx, input.FormID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.RollbackForm: latest: %w", err)
+		}
+		major, minor := NextVersion(domain.ChangeTypeMinor, nil, nil)
+		if latest != nil {
+			major, minor = NextVersion(domain.ChangeTypeMinor, latest.VersionMajor, latest.VersionMinor)
+		}
+
+		newID := domain.NewID()
+		fieldParams := make([]CreateFieldParams, len(sourceFields))
+		for i, f := range sourceFields {
+			fieldParams[i] = CreateFieldParams{
+				ID:             domain.NewID(),
+				FormVersionID:  newID,
+				Position:       f.Position,
+				Title:          f.Title,
+				Type:           f.Type,
+				Config:         f.Config,
+				AIPrompt:       f.AIPrompt,
+				Required:       f.Required,
+				Skippable:      f.Skippable,
+				AllowInference: f.AllowInference,
+				MinConfidence:  f.MinConfidence,
+			}
+		}
+
+		_, _, err = s.repo.CreatePublishedVersionWithFields(ctx, CreatePublishedVersionParams{
+			ID:            newID,
+			FormID:        input.FormID,
+			VersionMajor:  major,
+			VersionMinor:  minor,
+			ChangeType:    domain.ChangeTypeMinor,
+			ChangeSummary: &summary,
+			RollbackOf:    &input.TargetVersionID,
+			PublishedBy:   input.StaffID,
+			PublishedAt:   domain.TimeNow(),
+		}, fieldParams)
+		if err == nil {
+			// Also restore the draft to mirror the target so the editor
+			// reopens on the rolled-back fields instead of leftover WIP.
+			// Best-effort: a sync failure here doesn't invalidate the
+			// published rollback — the user can re-run it if the draft
+			// looks stale.
+			if draftErr := s.resetDraftToFields(ctx, input.FormID, input.StaffID, sourceFields); draftErr != nil {
+				return nil, fmt.Errorf("forms.service.RollbackForm: %w", draftErr)
+			}
+			return s.GetForm(ctx, input.FormID, input.ClinicID)
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
+		return nil, fmt.Errorf("forms.service.RollbackForm: %w", err)
+	}
+	return nil, fmt.Errorf("forms.service.RollbackForm: could not assign version number: %w", domain.ErrConflict)
+}
+
+// resetDraftToFields replaces (or creates) the form's draft so it carries an
+// independent copy of the supplied source fields. Used by rollback to keep
+// the editor aligned with the just-published rolled-back version.
+func (s *Service) resetDraftToFields(ctx context.Context, formID, staffID uuid.UUID, sourceFields []*FieldRecord) error {
+	draft, err := s.repo.GetDraftVersion(ctx, formID)
+	if errors.Is(err, domain.ErrNotFound) {
+		draft, err = s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
+			ID:        domain.NewID(),
+			FormID:    formID,
+			CreatedBy: staffID,
+		})
+	}
+	if err != nil {
+		return fmt.Errorf("resetDraftToFields: draft: %w", err)
+	}
 	fieldParams := make([]CreateFieldParams, len(sourceFields))
 	for i, f := range sourceFields {
 		fieldParams[i] = CreateFieldParams{
 			ID:             domain.NewID(),
-			FormVersionID:  newDraftID,
+			FormVersionID:  draft.ID,
 			Position:       f.Position,
 			Title:          f.Title,
 			Type:           f.Type,
@@ -593,12 +836,10 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 			MinConfidence:  f.MinConfidence,
 		}
 	}
-	fields, err := s.repo.ReplaceFields(ctx, newDraftID, fieldParams)
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.RollbackForm: fields: %w", err)
+	if _, err := s.repo.ReplaceFields(ctx, draft.ID, fieldParams); err != nil {
+		return fmt.Errorf("resetDraftToFields: replace: %w", err)
 	}
-
-	return toVersionResponse(draft, fields), nil
+	return nil
 }
 
 // RetireForm archives a form so it can no longer be used for new notes.
@@ -617,6 +858,7 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 		ClinicID:     input.ClinicID,
 		RetireReason: input.Reason,
 		ArchivedAt:   domain.TimeNow(),
+		RetiredBy:    input.StaffID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RetireForm: %w", err)
@@ -625,10 +867,12 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 	return toFormResponse(retired), nil
 }
 
-// ListVersions returns the full version history (published only) for a form.
+// ListVersions returns the compliance trail for a form: every published
+// version (newest first) plus a synthetic "retire" entry at the top when the
+// form is archived, so the timeline shows who retired it, when, and why.
 func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) (*FormVersionListResponse, error) {
-	// Verify clinic ownership.
-	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
+	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
+	if err != nil {
 		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
 	}
 
@@ -637,11 +881,51 @@ func (s *Service) ListVersions(ctx context.Context, formID, clinicID uuid.UUID) 
 		return nil, fmt.Errorf("forms.service.ListVersions: %w", err)
 	}
 
-	items := make([]*FormVersionResponse, len(versions))
-	for i, v := range versions {
-		items[i] = toVersionResponse(v, nil)
+	items := make([]*FormVersionResponse, 0, len(versions)+1)
+	if form.ArchivedAt != nil {
+		items = append(items, buildRetireEntry(form))
 	}
+	for _, v := range versions {
+		items = append(items, toVersionResponse(v, nil))
+	}
+	s.resolvePublisherNames(ctx, clinicID, items)
 	return &FormVersionListResponse{Items: items}, nil
+}
+
+// buildRetireEntry fabricates a timeline row representing the form's retire
+// event. It isn't a real form_versions row — retirement is a form-level
+// state change — but the UI renders the trail from a single list, so we
+// synthesise one here. ID is deterministic (formID suffixed with "-retire")
+// so the front-end can key on it without colliding with real version UUIDs.
+func buildRetireEntry(f *FormRecord) *FormVersionResponse {
+	summary := "Form retired"
+	if f.RetireReason != nil && *f.RetireReason != "" {
+		summary = fmt.Sprintf("Form retired — %s", *f.RetireReason)
+	}
+	var publishedAt *string
+	if f.ArchivedAt != nil {
+		s := f.ArchivedAt.Format(time.RFC3339)
+		publishedAt = &s
+	}
+	var publishedBy *string
+	if f.RetiredBy != nil {
+		s := f.RetiredBy.String()
+		publishedBy = &s
+	}
+	createdAt := ""
+	if f.ArchivedAt != nil {
+		createdAt = f.ArchivedAt.Format(time.RFC3339)
+	}
+	return &FormVersionResponse{
+		ID:            f.ID.String() + "-retire",
+		FormID:        f.ID.String(),
+		Status:        domain.FormVersionStatusArchived,
+		Kind:          "retire",
+		ChangeSummary: &summary,
+		PublishedAt:   publishedAt,
+		PublishedBy:   publishedBy,
+		CreatedAt:     createdAt,
+	}
 }
 
 // ── Groups ────────────────────────────────────────────────────────────────────
@@ -692,10 +976,20 @@ func (s *Service) UpdateGroup(ctx context.Context, input UpdateGroupInput) (*For
 // ── Policies ──────────────────────────────────────────────────────────────────
 
 // LinkPolicy attaches a policy to a form.
+//
+// Verifies both sides belong to the caller's clinic: the form is fetched
+// scoped to clinicID, and the policy is verified via PolicyOwnershipVerifier.
+// Without the second check, a caller with permission to edit their own forms
+// could attach any policy UUID they can guess and then exfiltrate its clause
+// text through the policy-check endpoint.
 func (s *Service) LinkPolicy(ctx context.Context, formID, clinicID, policyID, staffID uuid.UUID) error {
-	// Verify clinic ownership.
 	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
 		return fmt.Errorf("forms.service.LinkPolicy: %w", err)
+	}
+	if s.policyVerifier != nil {
+		if err := s.policyVerifier.VerifyPolicyOwnership(ctx, policyID, clinicID); err != nil {
+			return fmt.Errorf("forms.service.LinkPolicy: verify policy: %w", err)
+		}
 	}
 	if err := s.repo.LinkPolicy(ctx, formID, policyID, staffID); err != nil {
 		return fmt.Errorf("forms.service.LinkPolicy: %w", err)
@@ -742,10 +1036,12 @@ func (s *Service) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*For
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.GetCurrentStyle: %w", err)
 	}
-	return toStyleResponse(style), nil
+	return s.buildStyleResponse(ctx, style)
 }
 
 // UpdateStyle saves a new style version for the clinic, incrementing the version counter.
+// If Config is supplied, its top-level colour/font/header/footer are mirrored into the
+// flat columns so legacy renderers stay in sync.
 func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*FormStyleResponse, error) {
 	nextVer := 1
 	current, err := s.repo.GetCurrentStyle(ctx, input.ClinicID)
@@ -756,21 +1052,90 @@ func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*For
 		nextVer = current.Version + 1
 	}
 
+	logoKey, primary, font, header, footer := input.LogoKey, input.PrimaryColor, input.FontFamily, input.HeaderExtra, input.FooterText
+	if len(input.Config) > 0 {
+		if m := mirrorFromConfig(input.Config); m != nil {
+			if logoKey == nil && m.LogoKey != nil {
+				logoKey = m.LogoKey
+			}
+			if primary == nil && m.PrimaryColor != nil {
+				primary = m.PrimaryColor
+			}
+			if font == nil && m.FontFamily != nil {
+				font = m.FontFamily
+			}
+			if header == nil && m.HeaderExtra != nil {
+				header = m.HeaderExtra
+			}
+			if footer == nil && m.FooterText != nil {
+				footer = m.FooterText
+			}
+		}
+	}
+
 	style, err := s.repo.CreateStyleVersion(ctx, CreateStyleVersionParams{
 		ID:           domain.NewID(),
 		ClinicID:     input.ClinicID,
 		Version:      nextVer,
-		LogoKey:      input.LogoKey,
-		PrimaryColor: input.PrimaryColor,
-		FontFamily:   input.FontFamily,
-		HeaderExtra:  input.HeaderExtra,
-		FooterText:   input.FooterText,
+		LogoKey:      logoKey,
+		PrimaryColor: primary,
+		FontFamily:   font,
+		HeaderExtra:  header,
+		FooterText:   footer,
+		Config:       input.Config,
+		PresetID:     input.PresetID,
 		CreatedBy:    input.StaffID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
 	}
-	return toStyleResponse(style), nil
+	return s.buildStyleResponse(ctx, style)
+}
+
+// ListStyleVersions returns the full version history for the clinic.
+func (s *Service) ListStyleVersions(ctx context.Context, clinicID uuid.UUID) (*FormStyleVersionsResponse, error) {
+	recs, err := s.repo.ListStyleVersions(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.ListStyleVersions: %w", err)
+	}
+	items := make([]*FormStyleResponse, len(recs))
+	for i, r := range recs {
+		built, err := s.buildStyleResponse(ctx, r)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.ListStyleVersions: %w", err)
+		}
+		items[i] = built
+	}
+	return &FormStyleVersionsResponse{Items: items}, nil
+}
+
+// ListStylePresets returns the curated set of starter themes for a given vertical.
+// Unknown verticals fall back to the "general_clinic" set.
+func (s *Service) ListStylePresets(_ context.Context, vertical string) *FormStylePresetsResponse {
+	return &FormStylePresetsResponse{Items: presetsFor(vertical)}
+}
+
+// UploadStyleLogo persists a doc-theme logo to object storage and returns the
+// key plus a signed preview URL. The key is NOT written to the style config
+// here — the client is expected to place it at config.header.logo_key and
+// persist via UpdateStyle. This lets the user try a logo in the live preview
+// and cancel without polluting the version history.
+func (s *Service) UploadStyleLogo(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (*FormStyleLogoUploadResponse, error) {
+	if s.logoUploader == nil {
+		return nil, fmt.Errorf("forms.service.UploadStyleLogo: storage not configured")
+	}
+	key, err := s.logoUploader.UploadStyleLogo(ctx, clinicID, contentType, body, size)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.UploadStyleLogo: upload: %w", err)
+	}
+	var url string
+	if s.logoSigner != nil {
+		url, err = s.logoSigner.SignStyleLogoURL(ctx, key)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UploadStyleLogo: sign url: %w", err)
+		}
+	}
+	return &FormStyleLogoUploadResponse{Key: key, URL: url}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -819,7 +1184,68 @@ func toFormResponse(f *FormRecord) *FormResponse {
 		s := f.ArchivedAt.Format(time.RFC3339)
 		r.ArchivedAt = &s
 	}
+	if f.RetiredBy != nil {
+		s := f.RetiredBy.String()
+		r.RetiredBy = &s
+	}
 	return r
+}
+
+// resolvePublisherName looks up the staff display name for a version's
+// published_by UUID so the API returns "Dr. Nadine Patel" instead of a raw
+// ID. No-op when the resolver is nil (tests, local dev), when the version
+// isn't published yet, or when the lookup fails — a missing name is not
+// worth failing the whole request, since PublishedBy still round-trips.
+func (s *Service) resolvePublisherName(ctx context.Context, clinicID uuid.UUID, v *FormVersionResponse) {
+	if v == nil || v.PublishedBy == nil || s.staffNames == nil {
+		return
+	}
+	staffID, err := uuid.Parse(*v.PublishedBy)
+	if err != nil {
+		return
+	}
+	name, err := s.staffNames.ResolveStaffName(ctx, staffID, clinicID)
+	if err != nil || name == "" {
+		return
+	}
+	v.PublishedByName = &name
+}
+
+// resolvePublisherNames enriches a batch of version responses. Uses a
+// per-call cache so listing many versions by the same author only hits the
+// staff service once.
+func (s *Service) resolvePublisherNames(ctx context.Context, clinicID uuid.UUID, versions []*FormVersionResponse) {
+	if s.staffNames == nil {
+		return
+	}
+	cache := make(map[string]string)
+	for _, v := range versions {
+		if v == nil || v.PublishedBy == nil {
+			continue
+		}
+		if cached, ok := cache[*v.PublishedBy]; ok {
+			if cached != "" {
+				n := cached
+				v.PublishedByName = &n
+			}
+			continue
+		}
+		staffID, err := uuid.Parse(*v.PublishedBy)
+		if err != nil {
+			cache[*v.PublishedBy] = ""
+			continue
+		}
+		name, err := s.staffNames.ResolveStaffName(ctx, staffID, clinicID)
+		if err != nil {
+			cache[*v.PublishedBy] = ""
+			continue
+		}
+		cache[*v.PublishedBy] = name
+		if name != "" {
+			n := name
+			v.PublishedByName = &n
+		}
+	}
 }
 
 func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersionResponse {
@@ -831,6 +1257,7 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 		VersionMinor:      v.VersionMinor,
 		ChangeType:        v.ChangeType,
 		ChangeSummary:     v.ChangeSummary,
+		Changes:           v.Changes,
 		PolicyCheckResult: v.PolicyCheckResult,
 		CreatedAt:         v.CreatedAt.Format(time.RFC3339),
 	}
@@ -884,6 +1311,22 @@ func toGroupResponse(g *GroupRecord) *FormGroupResponse {
 	}
 }
 
+// buildStyleResponse wraps toStyleResponse and attaches a short-lived signed
+// GET URL for the header logo when the record has a logo_key and a signer is
+// configured. Callers that have a signer-less Service (tests, local dev) get
+// the response back without HeaderLogoURL populated.
+func (s *Service) buildStyleResponse(ctx context.Context, rec *StyleVersionRecord) (*FormStyleResponse, error) {
+	resp := toStyleResponse(rec)
+	if rec.LogoKey != nil && s.logoSigner != nil {
+		url, err := s.logoSigner.SignStyleLogoURL(ctx, *rec.LogoKey)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.buildStyleResponse: sign url: %w", err)
+		}
+		resp.HeaderLogoURL = &url
+	}
+	return resp, nil
+}
+
 func toStyleResponse(s *StyleVersionRecord) *FormStyleResponse {
 	return &FormStyleResponse{
 		Version:      s.Version,
@@ -892,6 +1335,54 @@ func toStyleResponse(s *StyleVersionRecord) *FormStyleResponse {
 		FontFamily:   s.FontFamily,
 		HeaderExtra:  s.HeaderExtra,
 		FooterText:   s.FooterText,
+		Config:       s.Config,
+		PresetID:     s.PresetID,
+		IsActive:     s.IsActive,
 		UpdatedAt:    s.CreatedAt.Format(time.RFC3339),
 	}
+}
+
+// flatMirror holds the top-level fields we keep synced between Config JSON and
+// the legacy flat columns.
+type flatMirror struct {
+	LogoKey      *string
+	PrimaryColor *string
+	FontFamily   *string
+	HeaderExtra  *string
+	FooterText   *string
+}
+
+// mirrorFromConfig extracts the canonical flat fields from a doc-theme Config
+// blob. Returns nil if the blob is not a JSON object. The shape mirrors
+// DocThemeConfig on the Flutter side — only the fields we read are parsed.
+func mirrorFromConfig(cfg json.RawMessage) *flatMirror {
+	var parsed struct {
+		Header *struct {
+			LogoKey *string `json:"logo_key"`
+			Extra   *string `json:"extra_text"`
+		} `json:"header"`
+		Theme *struct {
+			PrimaryColor *string `json:"primary_color"`
+			BodyFont     *string `json:"body_font"`
+		} `json:"theme"`
+		Footer *struct {
+			Text *string `json:"text"`
+		} `json:"footer"`
+	}
+	if err := json.Unmarshal(cfg, &parsed); err != nil {
+		return nil
+	}
+	m := &flatMirror{}
+	if parsed.Header != nil {
+		m.LogoKey = parsed.Header.LogoKey
+		m.HeaderExtra = parsed.Header.Extra
+	}
+	if parsed.Theme != nil {
+		m.PrimaryColor = parsed.Theme.PrimaryColor
+		m.FontFamily = parsed.Theme.BodyFont
+	}
+	if parsed.Footer != nil {
+		m.FooterText = parsed.Footer.Text
+	}
+	return m
 }

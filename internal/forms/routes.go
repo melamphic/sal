@@ -206,9 +206,42 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Method:      http.MethodPut,
 		Path:        "/api/v1/clinic/form-style",
 		Summary:     "Update PDF style settings",
-		Description: "Saves a new version of the clinic's PDF style settings. All forms use the latest style version. Previous style versions are retained for audit purposes.",
+		Description: "Saves a new version of the clinic's PDF style settings. All forms use the latest style version. Previous style versions are retained for audit purposes. Accepts either the flat fields (legacy simple mode) or the rich `config` JSON blob produced by the three-pane designer, or both — top-level values from `config` are mirrored into the flat columns.",
 		Tags:        []string{"Forms"},
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, manageForms},
 	}, h.updateStyle)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-form-style-versions",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/clinic/form-style/versions",
+		Summary:     "List PDF style version history",
+		Description: "Returns every saved style version for the clinic, newest first. Used by the designer's version-history tab for diff/rollback UI.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.listStyleVersions)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-form-style-presets",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/clinic/form-style/presets",
+		Summary:     "List starter themes for a vertical",
+		Description: "Returns the curated starter themes (3 per vertical) the designer shows during onboarding and in Settings → Doc Theme. Pass ?vertical= to scope the result; unknown verticals return the 'general' set.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.listStylePresets)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-form-style-logo",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/clinic/form-style/logo",
+		Summary:     "Upload doc-theme logo",
+		Description: "Uploads an image (PNG / JPEG / SVG / WEBP, max 4 MiB) to object storage for use as the doc-theme header logo. Returns the persisted key and a short-lived signed preview URL. Persist the key into config.header.logo_key via PUT /clinic/form-style to save the choice permanently.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.uploadStyleLogo)
 }
