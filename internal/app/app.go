@@ -709,7 +709,7 @@ type formPolicyClauseFetcherAdapter struct {
 	policy *policy.Repository
 }
 
-func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]extraction.PolicyClause, error) {
+func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, formID uuid.UUID) ([]forms.LinkedPolicyClauses, error) {
 	policyIDs, err := a.forms.ListLinkedPolicies(ctx, formID)
 	if err != nil {
 		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: list policies: %w", err)
@@ -723,13 +723,28 @@ func (a *formPolicyClauseFetcherAdapter) GetClausesForForm(ctx context.Context, 
 		return nil, fmt.Errorf("app.formPolicyClauseFetcherAdapter: get clauses: %w", err)
 	}
 
-	result := make([]extraction.PolicyClause, 0, len(clauses))
+	byPolicy := make(map[uuid.UUID]*forms.LinkedPolicyClauses)
+	order := make([]uuid.UUID, 0)
 	for _, c := range clauses {
-		result = append(result, extraction.PolicyClause{
+		g, ok := byPolicy[c.PolicyID]
+		if !ok {
+			g = &forms.LinkedPolicyClauses{
+				PolicyID:        c.PolicyID,
+				PolicyVersionID: c.PolicyVersionID,
+			}
+			byPolicy[c.PolicyID] = g
+			order = append(order, c.PolicyID)
+		}
+		g.Clauses = append(g.Clauses, extraction.PolicyClause{
 			BlockID: c.BlockID,
 			Title:   c.Title,
 			Parity:  c.Parity,
 		})
+	}
+
+	result := make([]forms.LinkedPolicyClauses, 0, len(order))
+	for _, id := range order {
+		result = append(result, *byPolicy[id])
 	}
 	return result, nil
 }
@@ -807,11 +822,17 @@ func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, c
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
-// When a policy is retired, it removes that policy from all linked forms.
+// When a policy is retired, it soft-unlinks the policy from every form that
+// references it, stamping the policy name and retire reason on each row so the
+// form's compliance trail can surface synthetic "Policy X unlinked" entries.
 type policyFormLinkerAdapter struct{ repo *forms.Repository }
 
-func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID) error {
-	if err := a.repo.UnlinkPolicyFromAllForms(ctx, policyID); err != nil {
+func (a *policyFormLinkerAdapter) DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID, policyName string, reason *string) error {
+	if err := a.repo.UnlinkPolicyFromAllForms(ctx, forms.UnlinkPolicyFromAllFormsParams{
+		PolicyID:           policyID,
+		PolicyNameSnapshot: policyName,
+		Reason:             reason,
+	}); err != nil {
 		return fmt.Errorf("app.policyFormLinkerAdapter: %w", err)
 	}
 	return nil
