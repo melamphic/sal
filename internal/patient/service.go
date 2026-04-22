@@ -51,6 +51,31 @@ type GeneralDetailsResponse struct {
 	PrimaryProviderName   *string            `json:"primary_provider_name,omitempty"`
 }
 
+// AgedCareDetailsResponse is the API-safe representation of aged-care
+// resident details. PII/PHI fields (NHI, Medicare, medications, etc.) are
+// decrypted by the service before this DTO is returned.
+type AgedCareDetailsResponse struct {
+	DateOfBirth          *string                          `json:"date_of_birth,omitempty"` // YYYY-MM-DD
+	Sex                  *domain.AgedCareSex              `json:"sex,omitempty"`
+	Room                 *string                          `json:"room,omitempty"`
+	NHINumber            *string                          `json:"nhi_number,omitempty"`
+	MedicareNumber       *string                          `json:"medicare_number,omitempty"`
+	Ethnicity            *string                          `json:"ethnicity,omitempty"`
+	PreferredLanguage    *string                          `json:"preferred_language,omitempty"`
+	MedicalAlerts        *string                          `json:"medical_alerts,omitempty"`
+	Medications          *string                          `json:"medications,omitempty"`
+	Allergies            *string                          `json:"allergies,omitempty"`
+	ChronicConditions    *string                          `json:"chronic_conditions,omitempty"`
+	CognitiveStatus      *domain.AgedCareCognitiveStatus  `json:"cognitive_status,omitempty"`
+	MobilityStatus       *domain.AgedCareMobilityStatus   `json:"mobility_status,omitempty"`
+	ContinenceStatus     *domain.AgedCareContinenceStatus `json:"continence_status,omitempty"`
+	DietNotes            *string                          `json:"diet_notes,omitempty"`
+	AdvanceDirectiveFlag bool                             `json:"advance_directive_flag"`
+	FundingLevel         *domain.AgedCareFundingLevel     `json:"funding_level,omitempty"`
+	AdmissionDate        *string                          `json:"admission_date,omitempty"` // YYYY-MM-DD
+	PrimaryGPName        *string                          `json:"primary_gp_name,omitempty"`
+}
+
 // DentalDetailsResponse is the API-safe representation of dental subject details.
 type DentalDetailsResponse struct {
 	DateOfBirth           *string           `json:"date_of_birth,omitempty"` // YYYY-MM-DD
@@ -89,18 +114,20 @@ type VetDetailsResponse struct {
 //
 //nolint:revive
 type SubjectResponse struct {
-	ID             string                  `json:"id"`
-	ClinicID       string                  `json:"clinic_id"`
-	DisplayName    string                  `json:"display_name"`
-	Status         domain.SubjectStatus    `json:"status"`
-	Vertical       domain.Vertical         `json:"vertical"`
-	Contact        *ContactResponse        `json:"contact,omitempty"`
-	VetDetails     *VetDetailsResponse     `json:"vet_details,omitempty"`
-	DentalDetails  *DentalDetailsResponse  `json:"dental_details,omitempty"`
-	GeneralDetails *GeneralDetailsResponse `json:"general_details,omitempty"`
-	CreatedBy      string                  `json:"created_by"`
-	CreatedAt      string                  `json:"created_at"`
-	UpdatedAt      string                  `json:"updated_at"`
+	ID              string                   `json:"id"`
+	ClinicID        string                   `json:"clinic_id"`
+	DisplayName     string                   `json:"display_name"`
+	Status          domain.SubjectStatus     `json:"status"`
+	Vertical        domain.Vertical          `json:"vertical"`
+	PhotoURL        *string                  `json:"photo_url,omitempty"`
+	Contact         *ContactResponse         `json:"contact,omitempty"`
+	VetDetails      *VetDetailsResponse      `json:"vet_details,omitempty"`
+	DentalDetails   *DentalDetailsResponse   `json:"dental_details,omitempty"`
+	GeneralDetails  *GeneralDetailsResponse  `json:"general_details,omitempty"`
+	AgedCareDetails *AgedCareDetailsResponse `json:"aged_care_details,omitempty"`
+	CreatedBy       string                   `json:"created_by"`
+	CreatedAt       string                   `json:"created_at"`
+	UpdatedAt       string                   `json:"updated_at"`
 }
 
 // SubjectListResponse is a paginated list of subjects.
@@ -151,16 +178,18 @@ type UpdateContactInput struct {
 }
 
 // CreateSubjectInput holds validated input for creating a subject.
-// VetDetails is required for veterinary vertical; DentalDetails for dental.
+// Each vertical requires its own details struct to be populated.
 type CreateSubjectInput struct {
-	ClinicID       uuid.UUID
-	CallerID       uuid.UUID
-	Vertical       domain.Vertical
-	DisplayName    string
-	ContactID      *uuid.UUID // optional — can be linked later
-	VetDetails     *VetDetailsInput
-	DentalDetails  *DentalDetailsInput
-	GeneralDetails *GeneralDetailsInput
+	ClinicID        uuid.UUID
+	CallerID        uuid.UUID
+	Vertical        domain.Vertical
+	DisplayName     string
+	PhotoURL        *string
+	ContactID       *uuid.UUID // optional — can be linked later
+	VetDetails      *VetDetailsInput
+	DentalDetails   *DentalDetailsInput
+	GeneralDetails  *GeneralDetailsInput
+	AgedCareDetails *AgedCareDetailsInput
 }
 
 // VetDetailsInput holds vet-specific fields for subject creation/update.
@@ -215,13 +244,41 @@ type DentalDetailsInput struct {
 	PrimaryDentistName    *string
 }
 
+// AgedCareDetailsInput holds aged-care-specific fields for subject creation.
+// Encrypted fields (NHINumber, MedicareNumber, MedicalAlerts, Medications,
+// Allergies, ChronicConditions, DietNotes) arrive as plaintext and are
+// encrypted by the service.
+type AgedCareDetailsInput struct {
+	DateOfBirth          *time.Time
+	Sex                  *domain.AgedCareSex
+	Room                 *string
+	NHINumber            *string
+	MedicareNumber       *string
+	Ethnicity            *string
+	PreferredLanguage    *string
+	MedicalAlerts        *string
+	Medications          *string
+	Allergies            *string
+	ChronicConditions    *string
+	CognitiveStatus      *domain.AgedCareCognitiveStatus
+	MobilityStatus       *domain.AgedCareMobilityStatus
+	ContinenceStatus     *domain.AgedCareContinenceStatus
+	DietNotes            *string
+	AdvanceDirectiveFlag bool
+	FundingLevel         *domain.AgedCareFundingLevel
+	AdmissionDate        *time.Time
+	PrimaryGPName        *string
+}
+
 // UpdateSubjectInput holds validated input for updating a subject.
 type UpdateSubjectInput struct {
-	DisplayName    *string
-	Status         *domain.SubjectStatus
-	VetDetails     *UpdateVetDetailsInput
-	DentalDetails  *UpdateDentalDetailsInput
-	GeneralDetails *UpdateGeneralDetailsInput
+	DisplayName     *string
+	Status          *domain.SubjectStatus
+	PhotoURL        *string
+	VetDetails      *UpdateVetDetailsInput
+	DentalDetails   *UpdateDentalDetailsInput
+	GeneralDetails  *UpdateGeneralDetailsInput
+	AgedCareDetails *UpdateAgedCareDetailsInput
 }
 
 // UpdateGeneralDetailsInput holds general_clinic-specific fields for a partial update.
@@ -238,6 +295,30 @@ type UpdateGeneralDetailsInput struct {
 	InsurancePolicyNumber *string
 	ReferringProviderName *string
 	PrimaryProviderName   *string
+}
+
+// UpdateAgedCareDetailsInput holds aged-care-specific fields for a partial update.
+// Encrypted fields arrive as plaintext and are encrypted by the service.
+type UpdateAgedCareDetailsInput struct {
+	DateOfBirth          *time.Time
+	Sex                  *domain.AgedCareSex
+	Room                 *string
+	NHINumber            *string
+	MedicareNumber       *string
+	Ethnicity            *string
+	PreferredLanguage    *string
+	MedicalAlerts        *string
+	Medications          *string
+	Allergies            *string
+	ChronicConditions    *string
+	CognitiveStatus      *domain.AgedCareCognitiveStatus
+	MobilityStatus       *domain.AgedCareMobilityStatus
+	ContinenceStatus     *domain.AgedCareContinenceStatus
+	DietNotes            *string
+	AdvanceDirectiveFlag *bool
+	FundingLevel         *domain.AgedCareFundingLevel
+	AdmissionDate        *time.Time
+	PrimaryGPName        *string
 }
 
 // UpdateDentalDetailsInput holds dental-specific fields for a partial update.
@@ -281,6 +362,7 @@ type ListSubjectsInput struct {
 	Status    *domain.SubjectStatus
 	Species   *domain.VetSpecies
 	ContactID *uuid.UUID
+	Search    *string
 	// ViewAll: caller has view_all_patients — no ownership filter is applied.
 	ViewAll bool
 	// OwnerScope: caller has view_own_patients but not view_all_patients.
@@ -397,6 +479,16 @@ func (s *Service) ListContacts(ctx context.Context, clinicID uuid.UUID, limit, o
 	return &ContactListResponse{Items: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
+// ArchiveContact soft-deletes a contact. Fails with ErrConflict if the
+// contact is still linked to any active subject.
+func (s *Service) ArchiveContact(ctx context.Context, id, clinicID uuid.UUID) (*ContactResponse, error) {
+	rec, err := s.repo.ArchiveContact(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.ArchiveContact: %w", err)
+	}
+	return s.decryptContact(rec)
+}
+
 // UpdateContact encrypts changed PII fields and applies a partial update.
 func (s *Service) UpdateContact(ctx context.Context, id, clinicID uuid.UUID, input UpdateContactInput) (*ContactResponse, error) {
 	p := UpdateContactParams{}
@@ -453,6 +545,9 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 	if input.Vertical == domain.VerticalGeneralClinic && input.GeneralDetails == nil {
 		return nil, fmt.Errorf("patient.service.CreateSubject: %w", domain.ErrValidation)
 	}
+	if input.Vertical == domain.VerticalAgedCare && input.AgedCareDetails == nil {
+		return nil, fmt.Errorf("patient.service.CreateSubject: %w", domain.ErrValidation)
+	}
 
 	subjectID := domain.NewID()
 
@@ -463,6 +558,7 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		DisplayName: input.DisplayName,
 		Status:      domain.SubjectStatusActive,
 		Vertical:    input.Vertical,
+		PhotoURL:    input.PhotoURL,
 		CreatedBy:   input.CallerID,
 	})
 	if err != nil {
@@ -590,6 +686,64 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		}
 	}
 
+	var agedCareDetails *AgedCareDetailsRecord
+	if input.AgedCareDetails != nil {
+		encNHI, err := s.encryptOpt(input.AgedCareDetails.NHINumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care nhi_number: %w", err)
+		}
+		encMedicare, err := s.encryptOpt(input.AgedCareDetails.MedicareNumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care medicare_number: %w", err)
+		}
+		encACMedAlerts, err := s.encryptOpt(input.AgedCareDetails.MedicalAlerts)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care medical_alerts: %w", err)
+		}
+		encACMeds, err := s.encryptOpt(input.AgedCareDetails.Medications)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care medications: %w", err)
+		}
+		encACAllergies, err := s.encryptOpt(input.AgedCareDetails.Allergies)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care allergies: %w", err)
+		}
+		encACChronic, err := s.encryptOpt(input.AgedCareDetails.ChronicConditions)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care chronic_conditions: %w", err)
+		}
+		encACDiet, err := s.encryptOpt(input.AgedCareDetails.DietNotes)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: encrypt aged-care diet_notes: %w", err)
+		}
+
+		agedCareDetails, err = s.repo.CreateAgedCareDetails(ctx, CreateAgedCareDetailsParams{
+			SubjectID:            subjectID,
+			DateOfBirth:          input.AgedCareDetails.DateOfBirth,
+			Sex:                  input.AgedCareDetails.Sex,
+			Room:                 input.AgedCareDetails.Room,
+			NHINumber:            encNHI,
+			MedicareNumber:       encMedicare,
+			Ethnicity:            input.AgedCareDetails.Ethnicity,
+			PreferredLanguage:    input.AgedCareDetails.PreferredLanguage,
+			MedicalAlerts:        encACMedAlerts,
+			Medications:          encACMeds,
+			Allergies:            encACAllergies,
+			ChronicConditions:    encACChronic,
+			CognitiveStatus:      input.AgedCareDetails.CognitiveStatus,
+			MobilityStatus:       input.AgedCareDetails.MobilityStatus,
+			ContinenceStatus:     input.AgedCareDetails.ContinenceStatus,
+			DietNotes:            encACDiet,
+			AdvanceDirectiveFlag: input.AgedCareDetails.AdvanceDirectiveFlag,
+			FundingLevel:         input.AgedCareDetails.FundingLevel,
+			AdmissionDate:        input.AgedCareDetails.AdmissionDate,
+			PrimaryGPName:        input.AgedCareDetails.PrimaryGPName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.CreateSubject: aged-care details: %w", err)
+		}
+	}
+
 	// Fetch contact if linked so the response is complete.
 	var contactRec *ContactRecord
 	if input.ContactID != nil {
@@ -604,11 +758,12 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 	}
 
 	return s.decryptSubject(&SubjectRow{
-		Subject:        *subjectRec,
-		Contact:        contactRec,
-		VetDetails:     vetDetails,
-		DentalDetails:  dentalDetails,
-		GeneralDetails: generalDetails,
+		Subject:         *subjectRec,
+		Contact:         contactRec,
+		VetDetails:      vetDetails,
+		DentalDetails:   dentalDetails,
+		GeneralDetails:  generalDetails,
+		AgedCareDetails: agedCareDetails,
 	})
 }
 
@@ -647,6 +802,7 @@ func (s *Service) ListSubjects(ctx context.Context, clinicID uuid.UUID, input Li
 		Status:    input.Status,
 		Species:   input.Species,
 		ContactID: input.ContactID,
+		Search:    input.Search,
 	}
 
 	// Apply own-patient scope at the repo layer.
@@ -681,6 +837,7 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 	_, err := s.repo.UpdateSubject(ctx, id, clinicID, UpdateSubjectParams{
 		DisplayName: input.DisplayName,
 		Status:      input.Status,
+		PhotoURL:    input.PhotoURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: %w", err)
@@ -800,6 +957,62 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 		}
 	}
 
+	if input.AgedCareDetails != nil {
+		encNHI, err := s.encryptOpt(input.AgedCareDetails.NHINumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care nhi_number: %w", err)
+		}
+		encMedicare, err := s.encryptOpt(input.AgedCareDetails.MedicareNumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care medicare_number: %w", err)
+		}
+		encACMedAlerts, err := s.encryptOpt(input.AgedCareDetails.MedicalAlerts)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care medical_alerts: %w", err)
+		}
+		encACMeds, err := s.encryptOpt(input.AgedCareDetails.Medications)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care medications: %w", err)
+		}
+		encACAllergies, err := s.encryptOpt(input.AgedCareDetails.Allergies)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care allergies: %w", err)
+		}
+		encACChronic, err := s.encryptOpt(input.AgedCareDetails.ChronicConditions)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care chronic_conditions: %w", err)
+		}
+		encACDiet, err := s.encryptOpt(input.AgedCareDetails.DietNotes)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: encrypt aged-care diet_notes: %w", err)
+		}
+
+		_, err = s.repo.UpdateAgedCareDetails(ctx, id, UpdateAgedCareDetailsParams{
+			DateOfBirth:          input.AgedCareDetails.DateOfBirth,
+			Sex:                  input.AgedCareDetails.Sex,
+			Room:                 input.AgedCareDetails.Room,
+			NHINumber:            encNHI,
+			MedicareNumber:       encMedicare,
+			Ethnicity:            input.AgedCareDetails.Ethnicity,
+			PreferredLanguage:    input.AgedCareDetails.PreferredLanguage,
+			MedicalAlerts:        encACMedAlerts,
+			Medications:          encACMeds,
+			Allergies:            encACAllergies,
+			ChronicConditions:    encACChronic,
+			CognitiveStatus:      input.AgedCareDetails.CognitiveStatus,
+			MobilityStatus:       input.AgedCareDetails.MobilityStatus,
+			ContinenceStatus:     input.AgedCareDetails.ContinenceStatus,
+			DietNotes:            encACDiet,
+			AdvanceDirectiveFlag: input.AgedCareDetails.AdvanceDirectiveFlag,
+			FundingLevel:         input.AgedCareDetails.FundingLevel,
+			AdmissionDate:        input.AgedCareDetails.AdmissionDate,
+			PrimaryGPName:        input.AgedCareDetails.PrimaryGPName,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.UpdateSubject: aged-care details: %w", err)
+		}
+	}
+
 	if err := s.logAccess(ctx, id, clinicID, callerID, domain.SubjectAccessActionUpdate, nil); err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: %w", err)
 	}
@@ -844,6 +1057,96 @@ func (s *Service) ArchiveSubject(ctx context.Context, id, clinicID, callerID uui
 		return nil, fmt.Errorf("patient.service.ArchiveSubject: %w", err)
 	}
 	return s.decryptSubject(&SubjectRow{Subject: *rec})
+}
+
+// ── Subject ↔ contact link methods ────────────────────────────────────────────
+
+// SubjectContactResponse is one (contact, role) binding for a subject with
+// the contact already decrypted.
+type SubjectContactResponse struct {
+	Role    domain.SubjectContactRole `json:"role"`
+	Note    *string                   `json:"note,omitempty"`
+	Contact *ContactResponse          `json:"contact"`
+}
+
+// AddSubjectContactInput holds validated input for linking a contact to a
+// subject with a specific role.
+type AddSubjectContactInput struct {
+	SubjectID uuid.UUID
+	ClinicID  uuid.UUID
+	ContactID uuid.UUID
+	Role      domain.SubjectContactRole
+	Note      *string
+	CallerID  uuid.UUID
+}
+
+// AddSubjectContact inserts a (subject, contact, role) binding and audits.
+func (s *Service) AddSubjectContact(ctx context.Context, in AddSubjectContactInput) (*SubjectContactResponse, error) {
+	rec, err := s.repo.CreateSubjectContact(ctx, in.ClinicID, CreateSubjectContactParams{
+		SubjectID: in.SubjectID,
+		ContactID: in.ContactID,
+		Role:      in.Role,
+		Note:      in.Note,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.AddSubjectContact: %w", err)
+	}
+
+	contactRec, err := s.repo.GetContactByID(ctx, in.ContactID, in.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.AddSubjectContact: fetch contact: %w", err)
+	}
+	contactDTO, err := s.decryptContact(contactRec)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.AddSubjectContact: %w", err)
+	}
+
+	if err := s.logAccess(ctx, in.SubjectID, in.ClinicID, in.CallerID, domain.SubjectAccessActionUpdate, nil); err != nil {
+		return nil, fmt.Errorf("patient.service.AddSubjectContact: %w", err)
+	}
+
+	return &SubjectContactResponse{
+		Role:    rec.Role,
+		Note:    rec.Note,
+		Contact: contactDTO,
+	}, nil
+}
+
+// RemoveSubjectContact deletes a single (subject, contact, role) binding.
+func (s *Service) RemoveSubjectContact(
+	ctx context.Context,
+	subjectID, clinicID, contactID, callerID uuid.UUID,
+	role domain.SubjectContactRole,
+) error {
+	if err := s.repo.DeleteSubjectContact(ctx, clinicID, subjectID, contactID, role); err != nil {
+		return fmt.Errorf("patient.service.RemoveSubjectContact: %w", err)
+	}
+	if err := s.logAccess(ctx, subjectID, clinicID, callerID, domain.SubjectAccessActionUpdate, nil); err != nil {
+		return fmt.Errorf("patient.service.RemoveSubjectContact: %w", err)
+	}
+	return nil
+}
+
+// ListSubjectContacts returns all decrypted contact bindings for a subject.
+func (s *Service) ListSubjectContacts(ctx context.Context, subjectID, clinicID uuid.UUID) ([]*SubjectContactResponse, error) {
+	links, err := s.repo.ListSubjectContacts(ctx, clinicID, subjectID)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.ListSubjectContacts: %w", err)
+	}
+
+	out := make([]*SubjectContactResponse, 0, len(links))
+	for _, l := range links {
+		dto, err := s.decryptContact(l.Contact)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.ListSubjectContacts: %w", err)
+		}
+		out = append(out, &SubjectContactResponse{
+			Role:    l.Role,
+			Note:    l.Note,
+			Contact: dto,
+		})
+	}
+	return out, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -894,6 +1197,7 @@ func (s *Service) decryptSubject(row *SubjectRow) (*SubjectResponse, error) {
 		DisplayName: row.Subject.DisplayName,
 		Status:      row.Subject.Status,
 		Vertical:    row.Subject.Vertical,
+		PhotoURL:    row.Subject.PhotoURL,
 		CreatedBy:   row.Subject.CreatedBy.String(),
 		CreatedAt:   row.Subject.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   row.Subject.UpdatedAt.Format(time.RFC3339),
@@ -1023,6 +1327,66 @@ func (s *Service) decryptSubject(row *SubjectRow) (*SubjectResponse, error) {
 		}
 		gr.InsurancePolicyNumber = decGPolicy
 		dto.GeneralDetails = gr
+	}
+
+	if row.AgedCareDetails != nil {
+		a := row.AgedCareDetails
+		ar := &AgedCareDetailsResponse{
+			Sex:                  a.Sex,
+			Room:                 a.Room,
+			Ethnicity:            a.Ethnicity,
+			PreferredLanguage:    a.PreferredLanguage,
+			CognitiveStatus:      a.CognitiveStatus,
+			MobilityStatus:       a.MobilityStatus,
+			ContinenceStatus:     a.ContinenceStatus,
+			AdvanceDirectiveFlag: a.AdvanceDirectiveFlag,
+			FundingLevel:         a.FundingLevel,
+			PrimaryGPName:        a.PrimaryGPName,
+		}
+		if a.DateOfBirth != nil {
+			str := a.DateOfBirth.Format("2006-01-02")
+			ar.DateOfBirth = &str
+		}
+		if a.AdmissionDate != nil {
+			str := a.AdmissionDate.Format("2006-01-02")
+			ar.AdmissionDate = &str
+		}
+		decNHI, err := s.decryptOpt(a.NHINumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care nhi_number: %w", err)
+		}
+		ar.NHINumber = decNHI
+		decMedicare, err := s.decryptOpt(a.MedicareNumber)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care medicare_number: %w", err)
+		}
+		ar.MedicareNumber = decMedicare
+		decACMedAlerts, err := s.decryptOpt(a.MedicalAlerts)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care medical_alerts: %w", err)
+		}
+		ar.MedicalAlerts = decACMedAlerts
+		decACMeds, err := s.decryptOpt(a.Medications)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care medications: %w", err)
+		}
+		ar.Medications = decACMeds
+		decACAllergies, err := s.decryptOpt(a.Allergies)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care allergies: %w", err)
+		}
+		ar.Allergies = decACAllergies
+		decACChronic, err := s.decryptOpt(a.ChronicConditions)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care chronic_conditions: %w", err)
+		}
+		ar.ChronicConditions = decACChronic
+		decACDiet, err := s.decryptOpt(a.DietNotes)
+		if err != nil {
+			return nil, fmt.Errorf("patient.service.decryptSubject: aged-care diet_notes: %w", err)
+		}
+		ar.DietNotes = decACDiet
+		dto.AgedCareDetails = ar
 	}
 
 	return dto, nil
@@ -1176,6 +1540,24 @@ func lookupEncryptedField(row *SubjectRow, field string) (*string, bool) {
 			return row.GeneralDetails.ChronicConditions, true
 		case "insurance_policy_number":
 			return row.GeneralDetails.InsurancePolicyNumber, true
+		}
+	}
+	if row.AgedCareDetails != nil {
+		switch field {
+		case "nhi_number":
+			return row.AgedCareDetails.NHINumber, true
+		case "medicare_number":
+			return row.AgedCareDetails.MedicareNumber, true
+		case "medical_alerts":
+			return row.AgedCareDetails.MedicalAlerts, true
+		case "medications":
+			return row.AgedCareDetails.Medications, true
+		case "allergies":
+			return row.AgedCareDetails.Allergies, true
+		case "chronic_conditions":
+			return row.AgedCareDetails.ChronicConditions, true
+		case "diet_notes":
+			return row.AgedCareDetails.DietNotes, true
 		}
 	}
 	return nil, false

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/melamphic/sal/internal/domain"
 )
 
 // repo is the interface the Service uses for all database operations.
@@ -22,6 +23,10 @@ type repo interface {
 
 	// UpdateContact applies a partial update to a contact and returns the updated record.
 	UpdateContact(ctx context.Context, id, clinicID uuid.UUID, p UpdateContactParams) (*ContactRecord, error)
+
+	// ArchiveContact soft-deletes a contact. Fails with ErrConflict if the
+	// contact still has active subjects linked.
+	ArchiveContact(ctx context.Context, id, clinicID uuid.UUID) (*ContactRecord, error)
 
 	// ── Subjects ──────────────────────────────────────────────────────────────
 
@@ -55,6 +60,12 @@ type repo interface {
 	// UpdateGeneralDetails applies a partial update to a general_subject_details row.
 	UpdateGeneralDetails(ctx context.Context, subjectID uuid.UUID, p UpdateGeneralDetailsParams) (*GeneralDetailsRecord, error)
 
+	// CreateAgedCareDetails inserts an aged_care_subject_details row for a subject.
+	CreateAgedCareDetails(ctx context.Context, p CreateAgedCareDetailsParams) (*AgedCareDetailsRecord, error)
+
+	// UpdateAgedCareDetails applies a partial update to an aged_care_subject_details row.
+	UpdateAgedCareDetails(ctx context.Context, subjectID uuid.UUID, p UpdateAgedCareDetailsParams) (*AgedCareDetailsRecord, error)
+
 	// ArchiveSubject soft-deletes a subject by setting archived_at.
 	ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID) (*SubjectRecord, error)
 
@@ -63,6 +74,18 @@ type repo interface {
 
 	// ListSubjectsByContact returns all active subjects for a given contact.
 	ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error)
+
+	// ── Subject ↔ contact links (many-to-many with roles) ─────────────────────
+
+	// CreateSubjectContact adds a (subject, contact, role) binding.
+	CreateSubjectContact(ctx context.Context, clinicID uuid.UUID, p CreateSubjectContactParams) (*SubjectContactRecord, error)
+
+	// DeleteSubjectContact removes a single (subject, contact, role) binding.
+	DeleteSubjectContact(ctx context.Context, clinicID, subjectID, contactID uuid.UUID, role domain.SubjectContactRole) error
+
+	// ListSubjectContacts returns all bindings for a subject with the
+	// underlying contact rows for decryption by the service.
+	ListSubjectContacts(ctx context.Context, clinicID, subjectID uuid.UUID) ([]*SubjectContactWithContact, error)
 
 	// ── Access log ────────────────────────────────────────────────────────────
 
