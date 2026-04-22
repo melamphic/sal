@@ -165,7 +165,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
-	patientHandler := patient.NewHandler(patientSvc)
+	patientHandler := patient.NewHandler(patientSvc, clinicSvc)
 
 	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
 	verticalsSvc := verticals.NewService(verticalAdapter)

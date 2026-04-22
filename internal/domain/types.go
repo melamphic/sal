@@ -113,6 +113,84 @@ const (
 	GeneralSexUnknown GeneralSex = "unknown"
 )
 
+// AgedCareSex represents the biological sex of an aged-care resident.
+type AgedCareSex string
+
+const (
+	AgedCareSexMale    AgedCareSex = "male"
+	AgedCareSexFemale  AgedCareSex = "female"
+	AgedCareSexOther   AgedCareSex = "other"
+	AgedCareSexUnknown AgedCareSex = "unknown"
+)
+
+// AgedCareCognitiveStatus classifies a resident's cognitive function.
+// Values map to InterRAI domains used in NZ/AU aged-care assessments.
+type AgedCareCognitiveStatus string
+
+const (
+	CognitiveIndependent         AgedCareCognitiveStatus = "independent"
+	CognitiveMildImpairment      AgedCareCognitiveStatus = "mild_impairment"
+	CognitiveModerateImpairment  AgedCareCognitiveStatus = "moderate_impairment"
+	CognitiveSevereImpairment    AgedCareCognitiveStatus = "severe_impairment"
+	CognitiveStatusUnknown       AgedCareCognitiveStatus = "unknown"
+)
+
+// AgedCareMobilityStatus classifies a resident's mobility level.
+type AgedCareMobilityStatus string
+
+const (
+	MobilityIndependent    AgedCareMobilityStatus = "independent"
+	MobilitySupervised     AgedCareMobilityStatus = "supervised"
+	MobilityAssisted       AgedCareMobilityStatus = "assisted"
+	MobilityImmobile       AgedCareMobilityStatus = "immobile"
+	MobilityStatusUnknown  AgedCareMobilityStatus = "unknown"
+)
+
+// AgedCareContinenceStatus classifies a resident's continence.
+type AgedCareContinenceStatus string
+
+const (
+	ContinenceContinent             AgedCareContinenceStatus = "continent"
+	ContinenceUrinaryIncontinence   AgedCareContinenceStatus = "urinary_incontinence"
+	ContinenceFaecalIncontinence    AgedCareContinenceStatus = "faecal_incontinence"
+	ContinenceDoubleIncontinence    AgedCareContinenceStatus = "double_incontinence"
+	ContinenceCatheterised          AgedCareContinenceStatus = "catheterised"
+	ContinenceStatusUnknown         AgedCareContinenceStatus = "unknown"
+)
+
+// AgedCareFundingLevel encodes the funding/assessment tier for a resident.
+// Covers NZ InterRAI and AU Home Care Package levels plus residential.
+type AgedCareFundingLevel string
+
+const (
+	FundingHomeCare1       AgedCareFundingLevel = "home_care_1"
+	FundingHomeCare2       AgedCareFundingLevel = "home_care_2"
+	FundingHomeCare3       AgedCareFundingLevel = "home_care_3"
+	FundingHomeCare4       AgedCareFundingLevel = "home_care_4"
+	FundingResidentialLow  AgedCareFundingLevel = "residential_low"
+	FundingResidentialHigh AgedCareFundingLevel = "residential_high"
+	FundingUnfunded        AgedCareFundingLevel = "unfunded"
+	FundingLevelUnknown    AgedCareFundingLevel = "unknown"
+)
+
+// SubjectContactRole is the relationship between a subject and a linked
+// contact. A subject can carry several contacts at once in different roles
+// (e.g. primary_owner + emergency_contact), so this is a free vocabulary
+// rather than a single choice. Enum values mirror the CHECK constraint on
+// the subject_contacts table.
+type SubjectContactRole string
+
+const (
+	SubjectContactRolePrimaryOwner      SubjectContactRole = "primary_owner"
+	SubjectContactRoleCoOwner           SubjectContactRole = "co_owner"
+	SubjectContactRoleEmergencyContact  SubjectContactRole = "emergency_contact"
+	SubjectContactRoleGuardian          SubjectContactRole = "guardian"
+	SubjectContactRoleNextOfKin         SubjectContactRole = "next_of_kin"
+	SubjectContactRolePowerOfAttorney   SubjectContactRole = "power_of_attorney"
+	SubjectContactRoleReferringProvider SubjectContactRole = "referring_provider"
+	SubjectContactRoleOther             SubjectContactRole = "other"
+)
+
 // FormVersionStatus represents the lifecycle state of a form version.
 type FormVersionStatus string
 
