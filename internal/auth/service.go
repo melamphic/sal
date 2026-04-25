@@ -62,6 +62,8 @@ type Service struct {
 	staffCreator       StaffCreator       // nil = invite acceptance disabled
 	handoffSecret      []byte             // shared HS256 secret with /mel; nil = handoff disabled
 	handoffProvisioner HandoffProvisioner // nil = handoff disabled
+	signupCheckout     SignupCheckoutClient // nil = signup-checkout disabled (handoffSecret also required)
+	signupCancelURL    string               // absolute /mel URL the browser lands on if Checkout is abandoned
 	emailLimiter       *emailLimiter      // nil = no per-email rate limit (tests)
 }
 
