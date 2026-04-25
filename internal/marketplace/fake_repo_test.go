@@ -683,6 +683,18 @@ func (f *fakePolicySnapshotter) SnapshotPolicy(_ context.Context, policyID, _ uu
 	return s, nil
 }
 
+func (f *fakePolicySnapshotter) SnapshotPolicies(_ context.Context, policyIDs []uuid.UUID, _ uuid.UUID) ([]*PolicySnapshot, error) {
+	out := make([]*PolicySnapshot, 0, len(policyIDs))
+	for _, pid := range policyIDs {
+		s, ok := f.snapshots[pid]
+		if !ok {
+			return nil, domain.ErrNotFound
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 type fakePolicyImporter struct {
 	called   bool
 	imported []PolicyImportInput
