@@ -99,6 +99,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.updateDraft)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "discard-form-draft",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/forms/{form_id}/draft",
+		Summary:     "Discard form draft",
+		Description: "Deletes the current draft version of a form. The latest published version (if any) remains active. Requires manage_forms permission.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.discardDraft)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "publish-form",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/forms/{form_id}/publish",
