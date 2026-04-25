@@ -5,6 +5,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -233,8 +235,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
 		notesRepo,
 		&formMetaAdapter{repo: formsRepo},
+		&formsFieldAdapter{repo: formsRepo},
 		&clinicStyleAdapter{clinic: clinicSvc},
 		&staffNameAdapter{staff: staffSvc},
+		&docThemeAdapter{repo: formsRepo},
+		&systemHeaderAdapter{repo: formsRepo},
+		&subjectRenderAdapter{patient: patientSvc},
 		store,
 	))
 
@@ -1102,18 +1108,155 @@ func (a *marketplacePolicyNamerAdapter) GetPolicyNames(ctx context.Context, clin
 	return out, nil
 }
 
-// clinicStyleAdapter implements notes.ClinicStyleProvider.
-// Returns the clinic name and an empty brand color (uses PDF default blue).
+// clinicStyleAdapter implements notes.ClinicStyleProvider. Returns the
+// clinic-profile fields the PDF renderer uses for header/footer slot
+// substitution. Brand color now lives on the doc-theme, not the clinic, so
+// it is not returned here.
 type clinicStyleAdapter struct {
 	clinic *clinic.Service
 }
 
-func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (*notes.ClinicForRender, error) {
 	c, err := a.clinic.GetByID(ctx, clinicID)
 	if err != nil {
-		return "", "", fmt.Errorf("app.clinicStyleAdapter: %w", err)
+		return nil, fmt.Errorf("app.clinicStyleAdapter: %w", err)
 	}
-	return c.Name, "", nil // empty color → PDF default blue
+	email := c.Email
+	return &notes.ClinicForRender{
+		Name:    c.Name,
+		Address: c.Address,
+		Phone:   c.Phone,
+		Email:   &email,
+	}, nil
+}
+
+// docThemeAdapter implements notes.DocThemeProvider by reading the active
+// clinic_form_style_versions row and decoding its rich JSONB config into a
+// typed notes.DocTheme.
+type docThemeAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *docThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID uuid.UUID) (*notes.DocTheme, error) {
+	style, err := a.repo.GetCurrentStyle(ctx, clinicID)
+	if err != nil {
+		// No active style is normal for a fresh clinic — fall back to defaults.
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	if style == nil || len(style.Config) == 0 {
+		return nil, nil
+	}
+	theme, err := notes.DecodeDocTheme(style.Config)
+	if err != nil {
+		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// systemHeaderAdapter implements notes.SystemHeaderProvider by reading the
+// per-form-version system_header_config JSONB through the forms repository.
+type systemHeaderAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *systemHeaderAdapter) GetSystemHeader(ctx context.Context, formVersionID uuid.UUID) (*notes.SystemHeaderConfigForPDF, error) {
+	v, err := a.repo.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.systemHeaderAdapter: %w", err)
+	}
+	if len(v.SystemHeaderConfig) == 0 {
+		return nil, nil
+	}
+	var raw struct {
+		Enabled bool     `json:"enabled"`
+		Fields  []string `json:"fields"`
+	}
+	if err := json.Unmarshal(v.SystemHeaderConfig, &raw); err != nil {
+		return nil, fmt.Errorf("app.systemHeaderAdapter: %w", err)
+	}
+	return &notes.SystemHeaderConfigForPDF{Enabled: raw.Enabled, Fields: raw.Fields}, nil
+}
+
+// subjectRenderAdapter implements notes.SubjectProvider by mapping the
+// vertical-specific subject details into the flat PDFSubject struct the
+// renderer consumes. Bypasses access logging — the PDF job runs in system
+// context, and the original submit action already produced an access log.
+type subjectRenderAdapter struct {
+	patient *patient.Service
+}
+
+func (a *subjectRenderAdapter) GetSubjectForRender(ctx context.Context, subjectID, clinicID uuid.UUID) (*notes.PDFSubject, error) {
+	s, err := a.patient.GetSubjectForRender(ctx, subjectID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.subjectRenderAdapter: %w", err)
+	}
+	out := &notes.PDFSubject{
+		DisplayName: &s.DisplayName,
+	}
+	if s.VetDetails != nil {
+		v := s.VetDetails
+		species := string(v.Species)
+		out.Species = &species
+		out.Breed = v.Breed
+		out.Microchip = v.Microchip
+		out.WeightKg = v.WeightKg
+		out.Desexed = v.Desexed
+		out.Color = v.Color
+		out.DOB = v.DateOfBirth
+		out.Allergies = v.Allergies
+		if v.Sex != nil {
+			sx := string(*v.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.DentalDetails != nil {
+		d := s.DentalDetails
+		out.DOB = d.DateOfBirth
+		out.MedicalAlerts = d.MedicalAlerts
+		out.Medications = d.Medications
+		out.Allergies = d.Allergies
+		if d.Sex != nil {
+			sx := string(*d.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.GeneralDetails != nil {
+		g := s.GeneralDetails
+		out.DOB = g.DateOfBirth
+		out.MedicalAlerts = g.MedicalAlerts
+		out.Medications = g.Medications
+		out.Allergies = g.Allergies
+		if g.Sex != nil {
+			sx := string(*g.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.AgedCareDetails != nil {
+		ac := s.AgedCareDetails
+		out.DOB = ac.DateOfBirth
+		out.Room = ac.Room
+		out.NHINumber = ac.NHINumber
+		out.MedicareNumber = ac.MedicareNumber
+		out.PreferredLanguage = ac.PreferredLanguage
+		out.MedicalAlerts = ac.MedicalAlerts
+		out.Medications = ac.Medications
+		out.Allergies = ac.Allergies
+		out.AdmissionDate = ac.AdmissionDate
+		if ac.FundingLevel != nil {
+			fl := string(*ac.FundingLevel)
+			out.FundingLevel = &fl
+		}
+		if ac.Sex != nil {
+			sx := string(*ac.Sex)
+			out.Sex = &sx
+		}
+	}
+	// External ID (clinic's own patient identifier) — pulled by separate
+	// service method until the SubjectResponse exposes it directly.
+	return out, nil
 }
 
 // staffNameAdapter implements notes.StaffNameProvider.
