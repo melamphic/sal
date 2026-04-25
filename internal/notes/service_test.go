@@ -296,7 +296,7 @@ func TestService_UpdateField_OK(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	// Force note to draft and insert a field.
-	repo.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil) //nolint:errcheck
+	repo.UpdateNoteStatus(ctx, noteID, clinicID, domain.NoteStatusDraft, nil) //nolint:errcheck
 	fieldID := uuid.New()
 	repo.UpsertNoteFields(ctx, noteID, []UpsertFieldParams{ //nolint:errcheck
 		{ID: uuid.New(), NoteID: noteID, FieldID: fieldID},
@@ -340,7 +340,7 @@ func TestService_SubmitNote_SetsReviewedBy(t *testing.T) {
 		FormVersionID: formVerID,
 	})
 	noteID, _ := uuid.Parse(created.ID)
-	repo.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil) //nolint:errcheck
+	repo.UpdateNoteStatus(ctx, noteID, clinicID, domain.NoteStatusDraft, nil) //nolint:errcheck
 
 	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "", nil)
 	if err != nil {
