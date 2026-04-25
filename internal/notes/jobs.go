@@ -175,15 +175,17 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return nil
 	}
 
-	// Fetch transcript.
+	// Fetch transcript. If the transcription job hasn't finished yet (it runs
+	// concurrently with this one), return a retryable error so River retries
+	// with exponential backoff. We do NOT mark the note Failed here — the
+	// transient absence of a transcript is expected during the first ~30s
+	// after upload while transcription is still running.
 	transcript, err := w.recording.GetTranscript(ctx, *note.RecordingID)
 	if err != nil {
 		return fmt.Errorf("extract_note: get transcript: %w", err)
 	}
 	if transcript == nil || *transcript == "" {
-		msg := "recording has no transcript — ensure transcription completed before extraction"
-		_, _ = w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusFailed, &msg)
-		return fmt.Errorf("extract_note: %s", msg)
+		return fmt.Errorf("extract_note: transcript not ready yet, retrying")
 	}
 
 	// Fetch ASR word confidence index (nil for GeminiTranscriber — handled gracefully).

@@ -179,7 +179,13 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 	}
 
 	if !input.SkipExtraction {
-		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
+		// Delay extraction so the parallel TranscribeAudio job has a head start.
+		// Without this, ExtractNote almost always loses the race and burns its
+		// first attempt finding no transcript yet, then waits ~60s for River's
+		// first retry — a poor first-time UX. 8s is enough that on dev (Gemini
+		// transcribes a 15s clip in ~3-4s) extraction lands after transcription.
+		opts := &river.InsertOpts{ScheduledAt: time.Now().Add(8 * time.Second)}
+		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, opts); err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
 		}
 	}
