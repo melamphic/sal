@@ -358,6 +358,9 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	if !ok || v.Status != domain.FormVersionStatusDraft {
 		return nil, domain.ErrNotFound
 	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != p.ClinicID {
+		return nil, domain.ErrNotFound
+	}
 	for _, existing := range f.versions {
 		if existing.ID == v.ID || existing.FormID != v.FormID || existing.Status != domain.FormVersionStatusPublished {
 			continue
@@ -379,11 +382,14 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	return cloneVersion(v), nil
 }
 
-func (f *fakeRepo) UpdateDraftSystemHeader(_ context.Context, versionID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+func (f *fakeRepo) UpdateDraftSystemHeader(_ context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	v, ok := f.versions[versionID]
 	if !ok || v.Status != domain.FormVersionStatusDraft {
+		return nil, domain.ErrNotFound
+	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != clinicID {
 		return nil, domain.ErrNotFound
 	}
 	cp := make([]byte, len(config))
@@ -397,6 +403,9 @@ func (f *fakeRepo) SavePolicyCheckResult(_ context.Context, p SavePolicyCheckPar
 	defer f.mu.Unlock()
 	v, ok := f.versions[p.VersionID]
 	if !ok || v.Status != domain.FormVersionStatusDraft {
+		return nil, domain.ErrNotFound
+	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != p.ClinicID {
 		return nil, domain.ErrNotFound
 	}
 	v.PolicyCheckResult = &p.Result
