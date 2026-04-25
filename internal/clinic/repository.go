@@ -32,6 +32,14 @@ type Clinic struct {
 	NoteCap                *int
 	NoteCount              int
 	NoteCountResetAt       *time.Time
+	// Note-cap metering (pricing-model-v3 §7). billing_period_start is
+	// authoritative for the current period; null on trial clinics that
+	// haven't subscribed yet — metering falls back to created_at then.
+	BillingPeriodStart  *time.Time
+	BillingPeriodEnd    *time.Time
+	NoteCapWarnedAt     *time.Time
+	NoteCapCSAlertedAt  *time.Time
+	NoteCapBlockedAt    *time.Time
 	DataRegion             string
 	ScheduledForDeletionAt *time.Time
 	LogoKey                *string
@@ -106,6 +114,8 @@ const clinicCols = `
 	vertical, status, trial_ends_at,
 	plan_code, stripe_customer_id, stripe_subscription_id,
 	note_cap, note_count, note_count_reset_at,
+	billing_period_start, billing_period_end,
+	note_cap_warned_at, note_cap_cs_alerted_at, note_cap_blocked_at,
 	data_region, scheduled_for_deletion_at,
 	logo_key, accent_color,
 	pdf_header_text, pdf_footer_text, pdf_primary_color, pdf_font,
@@ -199,10 +209,28 @@ func (r *Repository) ApplySubscriptionState(ctx context.Context, id uuid.UUID, p
 			plan_code              = COALESCE($3, plan_code),
 			stripe_customer_id     = COALESCE($4, stripe_customer_id),
 			stripe_subscription_id = COALESCE($5, stripe_subscription_id),
+			billing_period_start   = COALESCE($6, billing_period_start),
+			billing_period_end     = COALESCE($7, billing_period_end),
+			-- When the period rolls over (incoming start strictly newer than
+			-- the stored value) reset the per-period sticky alert flags so
+			-- the 80/110/150 cascade can re-fire in the next cycle.
+			note_cap_warned_at = CASE
+				WHEN $6::timestamptz IS NOT NULL
+				 AND (billing_period_start IS NULL OR $6::timestamptz > billing_period_start)
+				THEN NULL ELSE note_cap_warned_at END,
+			note_cap_cs_alerted_at = CASE
+				WHEN $6::timestamptz IS NOT NULL
+				 AND (billing_period_start IS NULL OR $6::timestamptz > billing_period_start)
+				THEN NULL ELSE note_cap_cs_alerted_at END,
+			note_cap_blocked_at = CASE
+				WHEN $6::timestamptz IS NOT NULL
+				 AND (billing_period_start IS NULL OR $6::timestamptz > billing_period_start)
+				THEN NULL ELSE note_cap_blocked_at END,
 			updated_at             = NOW()
 		WHERE id = $1 AND archived_at IS NULL
 		RETURNING `+clinicCols,
 		id, p.Status, p.PlanCode, p.StripeCustomerID, p.StripeSubscriptionID,
+		p.BillingPeriodStart, p.BillingPeriodEnd,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -330,6 +358,50 @@ func (r *Repository) SubmitCompliance(ctx context.Context, id uuid.UUID, p Compl
 	return c, nil
 }
 
+// MarkNoteCapWarned stamps note_cap_warned_at to the given time iff the
+// flag is currently NULL. Returns (true, nil) when the row was claimed
+// (i.e. the email should be sent), (false, nil) when another caller had
+// already marked it. Idempotent — safe to call repeatedly.
+func (r *Repository) MarkNoteCapWarned(ctx context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE clinics SET note_cap_warned_at = $2, updated_at = NOW()
+		WHERE id = $1 AND archived_at IS NULL AND note_cap_warned_at IS NULL
+	`, id, at)
+	if err != nil {
+		return false, fmt.Errorf("clinic.repo.MarkNoteCapWarned: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkNoteCapCSAlerted stamps note_cap_cs_alerted_at iff currently NULL.
+// Returns true when the caller claimed the alert (should send the CS
+// notification), false when it had already been marked.
+func (r *Repository) MarkNoteCapCSAlerted(ctx context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE clinics SET note_cap_cs_alerted_at = $2, updated_at = NOW()
+		WHERE id = $1 AND archived_at IS NULL AND note_cap_cs_alerted_at IS NULL
+	`, id, at)
+	if err != nil {
+		return false, fmt.Errorf("clinic.repo.MarkNoteCapCSAlerted: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkNoteCapBlocked stamps note_cap_blocked_at iff currently NULL. The
+// flag is informational — the actual block decision is computed at note
+// create time from the live count, never read from this column. We
+// persist it so analytics/CS can see when each tenant first hit 150%.
+func (r *Repository) MarkNoteCapBlocked(ctx context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE clinics SET note_cap_blocked_at = $2, updated_at = NOW()
+		WHERE id = $1 AND archived_at IS NULL AND note_cap_blocked_at IS NULL
+	`, id, at)
+	if err != nil {
+		return false, fmt.Errorf("clinic.repo.MarkNoteCapBlocked: %w", err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // CreateParams holds all values required to create a new clinic.
@@ -357,11 +429,18 @@ type CreateParams struct {
 // ApplySubscriptionStateParams is the authoritative billing-state write
 // triggered by Stripe webhooks. COALESCE semantics: nil pointer = leave
 // unchanged. Status is always written.
+//
+// BillingPeriodStart/End mirror sub.current_period_{start,end}. When
+// BillingPeriodStart advances past the prior value the per-period
+// note-cap alert flags (warned/cs_alerted/blocked) reset to NULL so the
+// 80/110/150% cascade can re-fire in the new period.
 type ApplySubscriptionStateParams struct {
 	Status               domain.ClinicStatus
 	PlanCode             *domain.PlanCode
 	StripeCustomerID     *string
 	StripeSubscriptionID *string
+	BillingPeriodStart   *time.Time
+	BillingPeriodEnd     *time.Time
 }
 
 func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*Clinic, error) {
@@ -371,6 +450,8 @@ func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*C
 		&c.Vertical, &c.Status, &c.TrialEndsAt,
 		&c.PlanCode, &c.StripeCustomerID, &c.StripeSubscriptionID,
 		&c.NoteCap, &c.NoteCount, &c.NoteCountResetAt,
+		&c.BillingPeriodStart, &c.BillingPeriodEnd,
+		&c.NoteCapWarnedAt, &c.NoteCapCSAlertedAt, &c.NoteCapBlockedAt,
 		&c.DataRegion, &c.ScheduledForDeletionAt,
 		&c.LogoKey, &c.AccentColor,
 		&c.PDFHeaderText, &c.PDFFooterText, &c.PDFPrimaryColor, &c.PDFFont,
