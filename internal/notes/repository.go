@@ -248,14 +248,16 @@ func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNo
 	return list, total, nil
 }
 
-// UpdateNoteStatus transitions a note to a new status.
-func (r *Repository) UpdateNoteStatus(ctx context.Context, id uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error) {
+// UpdateNoteStatus transitions a note to a new status. clinicID guards
+// against worker bugs accidentally writing across tenants — every caller
+// already has the clinic from a prior GetNoteByID lookup.
+func (r *Repository) UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE notes SET status = $2, error_message = $3
-		WHERE id = $1
+		UPDATE notes SET status = $3, error_message = $4
+		WHERE id = $1 AND clinic_id = $2
 		RETURNING %s`, noteCols)
 
-	row := r.db.QueryRow(ctx, q, id, string(status), errMsg)
+	row := r.db.QueryRow(ctx, q, id, clinicID, string(status), errMsg)
 	rec, err := scanNote(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.UpdateNoteStatus: %w", err)
