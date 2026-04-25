@@ -117,6 +117,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.publishPolicy)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "discard-policy-draft",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/policies/{policy_id}/draft",
+		Summary:     "Discard policy draft",
+		Description: "Deletes the current draft version of a policy. The latest published version (if any) remains active. Requires manage_policies permission.",
+		Tags:        []string{"Policy"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePolicies},
+	}, h.discardDraft)
+
+	huma.Register(api, huma.Operation{
 		OperationID:   "rollback-policy",
 		Method:        http.MethodPost,
 		Path:          "/api/v1/policies/{policy_id}/rollback",

@@ -252,30 +252,26 @@ func (s *Service) ListFolders(ctx context.Context, clinicID uuid.UUID) (*PolicyF
 	return &PolicyFolderListResponse{Items: items}, nil
 }
 
-// CreatePolicy creates a new policy and an empty draft version.
+// CreatePolicy creates a new policy and an empty draft version atomically
+// in a single transaction so a partial failure can never leave the policy
+// in a "no draft, no published" zombie state.
 func (s *Service) CreatePolicy(ctx context.Context, input CreatePolicyInput) (*PolicyResponse, error) {
 	policyID := domain.NewID()
 
-	pol, err := s.repo.CreatePolicy(ctx, CreatePolicyParams{
-		ID:          policyID,
-		ClinicID:    input.ClinicID,
-		FolderID:    input.FolderID,
-		Name:        input.Name,
-		Description: input.Description,
-		CreatedBy:   input.StaffID,
+	pol, draft, err := s.repo.CreatePolicyWithDraft(ctx, CreatePolicyWithDraftParams{
+		Policy: CreatePolicyParams{
+			ID:          policyID,
+			ClinicID:    input.ClinicID,
+			FolderID:    input.FolderID,
+			Name:        input.Name,
+			Description: input.Description,
+			CreatedBy:   input.StaffID,
+		},
+		DraftID:      domain.NewID(),
+		DraftContent: json.RawMessage(`[]`),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("policy.service.CreatePolicy: %w", err)
-	}
-
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:        domain.NewID(),
-		PolicyID:  policyID,
-		Content:   json.RawMessage(`[]`),
-		CreatedBy: input.StaffID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("policy.service.CreatePolicy: draft version: %w", err)
 	}
 
 	resp := toPolicyResponse(pol)
@@ -320,9 +316,22 @@ func (s *Service) ListPolicies(ctx context.Context, clinicID uuid.UUID, input Li
 		return nil, fmt.Errorf("policy.service.ListPolicies: %w", err)
 	}
 
+	ids := make([]uuid.UUID, len(recs))
+	for i, r := range recs {
+		ids[i] = r.ID
+	}
+	latestByPolicy, err := s.repo.GetLatestPublishedVersions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("policy.service.ListPolicies: latest published: %w", err)
+	}
+
 	items := make([]*PolicyResponse, len(recs))
 	for i, r := range recs {
-		items[i] = toPolicyResponse(r)
+		resp := toPolicyResponse(r)
+		if v, ok := latestByPolicy[r.ID]; ok {
+			resp.LatestPublished = toVersionResponse(v)
+		}
+		items[i] = resp
 	}
 	return &PolicyListResponse{
 		Items:  items,
@@ -383,6 +392,23 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*Pol
 	return resp, nil
 }
 
+// DiscardDraft deletes the current draft of a policy. Returns ErrNotFound if
+// no draft exists. The latest published version (if any) is unaffected and
+// remains the active version.
+func (s *Service) DiscardDraft(ctx context.Context, policyID, clinicID uuid.UUID) error {
+	pol, err := s.repo.GetPolicyByID(ctx, policyID, clinicID)
+	if err != nil {
+		return fmt.Errorf("policy.service.DiscardDraft: %w", err)
+	}
+	if pol.ArchivedAt != nil {
+		return fmt.Errorf("policy.service.DiscardDraft: policy is retired: %w", domain.ErrConflict)
+	}
+	if err := s.repo.DeleteDraftVersion(ctx, policyID); err != nil {
+		return fmt.Errorf("policy.service.DiscardDraft: %w", err)
+	}
+	return nil
+}
+
 // PublishPolicy freezes the current draft and assigns a semver number.
 func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (*PolicyVersionResponse, error) {
 	pol, err := s.repo.GetPolicyByID(ctx, input.PolicyID, input.ClinicID)
@@ -394,7 +420,10 @@ func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (
 	}
 
 	if _, err := s.repo.GetDraftVersion(ctx, input.PolicyID); err != nil {
-		return nil, fmt.Errorf("policy.service.PublishPolicy: no draft: %w", err)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("policy.service.PublishPolicy: no draft to publish — edit the policy first: %w", domain.ErrConflict)
+		}
+		return nil, fmt.Errorf("policy.service.PublishPolicy: %w", err)
 	}
 
 	// Compute next semver.
@@ -588,30 +617,24 @@ type ImportFromMarketplaceInput struct {
 // Returns the new policy ID.
 func (s *Service) ImportFromMarketplace(ctx context.Context, input ImportFromMarketplaceInput) (uuid.UUID, error) {
 	policyID := domain.NewID()
-	_, err := s.repo.CreatePolicy(ctx, CreatePolicyParams{
-		ID:                         policyID,
-		ClinicID:                   input.ClinicID,
-		Name:                       input.Name,
-		Description:                input.Description,
-		CreatedBy:                  input.StaffID,
-		SourceMarketplaceVersionID: &input.SourceMarketplaceVersionID,
-	})
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: create: %w", err)
-	}
-
 	content := input.Content
 	if content == nil {
 		content = json.RawMessage(`[]`)
 	}
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:        domain.NewID(),
-		PolicyID:  policyID,
-		Content:   content,
-		CreatedBy: input.StaffID,
+	_, draft, err := s.repo.CreatePolicyWithDraft(ctx, CreatePolicyWithDraftParams{
+		Policy: CreatePolicyParams{
+			ID:                         policyID,
+			ClinicID:                   input.ClinicID,
+			Name:                       input.Name,
+			Description:                input.Description,
+			CreatedBy:                  input.StaffID,
+			SourceMarketplaceVersionID: &input.SourceMarketplaceVersionID,
+		},
+		DraftID:      domain.NewID(),
+		DraftContent: content,
 	})
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: draft: %w", err)
+		return uuid.Nil, fmt.Errorf("policy.service.ImportFromMarketplace: %w", err)
 	}
 
 	if _, err := s.repo.ReplaceClauses(ctx, draft.ID, input.Clauses); err != nil {
