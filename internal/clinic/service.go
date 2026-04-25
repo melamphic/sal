@@ -275,6 +275,8 @@ type BillingState struct {
 	PlanCode             *domain.PlanCode
 	StripeCustomerID     *string
 	StripeSubscriptionID *string
+	BillingPeriodStart   *time.Time
+	BillingPeriodEnd     *time.Time
 }
 
 // GetIDByStripeCustomer returns the clinic id for a Stripe customer id.
@@ -309,6 +311,99 @@ func (s *Service) ApplyBillingState(ctx context.Context, clinicID uuid.UUID, p B
 	return nil
 }
 
+// NoteCapState is the read-only slice of clinic state notecap needs to
+// resolve cap, period window, and cascade flags. Email is decrypted —
+// notecap uses it as the "to" for the 80% warning.
+type NoteCapState struct {
+	ID                 uuid.UUID
+	Name               string
+	Email              string
+	Status             domain.ClinicStatus
+	PlanCode           *domain.PlanCode
+	BillingPeriodStart *time.Time
+	CreatedAt          time.Time
+	NoteCapWarnedAt    *time.Time
+	NoteCapCSAlertedAt *time.Time
+	NoteCapBlockedAt   *time.Time
+}
+
+// LoadNoteCapState fetches and decrypts the slice of clinic fields the
+// note-cap module needs. Cross-domain entrypoint — never called from
+// HTTP handlers.
+func (s *Service) LoadNoteCapState(ctx context.Context, clinicID uuid.UUID) (NoteCapState, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return NoteCapState{}, fmt.Errorf("clinic.service.LoadNoteCapState: %w", err)
+	}
+	email, err := s.cipher.Decrypt(row.Email)
+	if err != nil {
+		return NoteCapState{}, fmt.Errorf("clinic.service.LoadNoteCapState: decrypt email: %w", err)
+	}
+	return NoteCapState{
+		ID:                 row.ID,
+		Name:               row.Name,
+		Email:              email,
+		Status:             row.Status,
+		PlanCode:           row.PlanCode,
+		BillingPeriodStart: row.BillingPeriodStart,
+		CreatedAt:          row.CreatedAt,
+		NoteCapWarnedAt:    row.NoteCapWarnedAt,
+		NoteCapCSAlertedAt: row.NoteCapCSAlertedAt,
+		NoteCapBlockedAt:   row.NoteCapBlockedAt,
+	}, nil
+}
+
+// MarkNoteCapWarned stamps the warned-at flag iff currently NULL. The
+// idempotent claim contract is documented on Repository.MarkNoteCapWarned.
+func (s *Service) MarkNoteCapWarned(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := s.repo.MarkNoteCapWarned(ctx, clinicID, domain.TimeNow())
+	if err != nil {
+		return false, fmt.Errorf("clinic.service.MarkNoteCapWarned: %w", err)
+	}
+	return claimed, nil
+}
+
+// MarkNoteCapCSAlerted stamps the cs-alerted flag iff currently NULL.
+func (s *Service) MarkNoteCapCSAlerted(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := s.repo.MarkNoteCapCSAlerted(ctx, clinicID, domain.TimeNow())
+	if err != nil {
+		return false, fmt.Errorf("clinic.service.MarkNoteCapCSAlerted: %w", err)
+	}
+	return claimed, nil
+}
+
+// MarkNoteCapBlocked stamps the blocked-at flag iff currently NULL.
+func (s *Service) MarkNoteCapBlocked(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := s.repo.MarkNoteCapBlocked(ctx, clinicID, domain.TimeNow())
+	if err != nil {
+		return false, fmt.Errorf("clinic.service.MarkNoteCapBlocked: %w", err)
+	}
+	return claimed, nil
+}
+
+// TierState is the read-only slice of clinic state the tiering module
+// needs to reconcile a Practice/Pro plan against the current standard
+// staff headcount. Cross-domain port — never called from HTTP handlers.
+type TierState struct {
+	Status               domain.ClinicStatus
+	PlanCode             *domain.PlanCode
+	StripeSubscriptionID *string
+}
+
+// LoadTierState fetches the slice of clinic fields the tiering module
+// needs to decide whether to swap Stripe subscription items.
+func (s *Service) LoadTierState(ctx context.Context, clinicID uuid.UUID) (TierState, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return TierState{}, fmt.Errorf("clinic.service.LoadTierState: %w", err)
+	}
+	return TierState{
+		Status:               row.Status,
+		PlanCode:             row.PlanCode,
+		StripeSubscriptionID: row.StripeSubscriptionID,
+	}, nil
+}
+
 // GetByID returns decrypted clinic details for the authenticated clinic.
 func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicResponse, error) {
 	row, err := s.repo.GetByID(ctx, clinicID)
@@ -317,6 +412,17 @@ func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicRespo
 	}
 
 	return s.decryptAndBuild(ctx, row)
+}
+
+// GetStatus returns the subscription lifecycle status for a clinic.
+// Cheap (single column read, no decrypt) — safe to call on every
+// authenticated request from the grace-period middleware.
+func (s *Service) GetStatus(ctx context.Context, clinicID uuid.UUID) (domain.ClinicStatus, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("clinic.service.GetStatus: %w", err)
+	}
+	return row.Status, nil
 }
 
 // GetVertical returns the configured vertical for a clinic. It avoids the
