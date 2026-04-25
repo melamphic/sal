@@ -514,7 +514,7 @@ func TestService_SubmitNote_PolicyCheckBlocksHighParityViolation(t *testing.T) {
 
 	// Simulate a stored policy check result with a high-parity violation.
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
-	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+	repo.UpdatePolicyCheckResult(ctx, noteID, clinicID, checkResult) //nolint:errcheck
 
 	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if !errors.Is(err, domain.ErrValidation) {
@@ -540,7 +540,7 @@ func TestService_SubmitNote_HighParityOverrideAllowsSubmit(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
-	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+	repo.UpdatePolicyCheckResult(ctx, noteID, clinicID, checkResult) //nolint:errcheck
 
 	reason := "Elderly pet refused draw; informed owner verbally."
 	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", &reason)
@@ -579,7 +579,7 @@ func TestService_SubmitNote_BlankOverrideReasonStillBlocks(t *testing.T) {
 	noteID, _ := uuid.Parse(created.ID)
 
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"high"}]`
-	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+	repo.UpdatePolicyCheckResult(ctx, noteID, clinicID, checkResult) //nolint:errcheck
 
 	blank := "   "
 	_, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", &blank)
@@ -607,7 +607,7 @@ func TestService_SubmitNote_PolicyCheckAllowsLowParityViolation(t *testing.T) {
 
 	// Low-parity violation should not block.
 	checkResult := `[{"block_id":"b1","status":"violated","reasoning":"not addressed","parity":"low"}]`
-	repo.UpdatePolicyCheckResult(ctx, noteID, checkResult) //nolint:errcheck
+	repo.UpdatePolicyCheckResult(ctx, noteID, clinicID, checkResult) //nolint:errcheck
 
 	resp, err := svc.SubmitNote(ctx, noteID, clinicID, staffID, "vet", nil)
 	if err != nil {
