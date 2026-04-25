@@ -183,6 +183,7 @@ type CreateDraftVersionParams struct {
 // PublishDraftVersionParams holds values for freezing a draft into a published version.
 type PublishDraftVersionParams struct {
 	ID            uuid.UUID // draft version ID
+	ClinicID      uuid.UUID // tenant guard — must match the form's clinic
 	VersionMajor  int
 	VersionMinor  int
 	ChangeType    domain.ChangeType
@@ -214,6 +215,7 @@ type CreatePublishedVersionParams struct {
 // policy_check_result column stores it as JSONB.
 type SavePolicyCheckParams struct {
 	VersionID uuid.UUID
+	ClinicID  uuid.UUID // tenant guard — must match the form's clinic
 	Result    string
 	CheckedBy uuid.UUID
 	CheckedAt time.Time
@@ -535,6 +537,18 @@ const versionCols = `
 	changes, rollback_of, policy_check_result::text, policy_check_by, policy_check_at,
 	published_at, published_by, created_by, created_at, system_header_config`
 
+// prefixedVersionCols returns versionCols with each column qualified by alias —
+// required when the same SELECT/RETURNING joins forms (which has overlapping
+// names like id, created_at) so Postgres can disambiguate.
+func prefixedVersionCols(alias string) string {
+	return fmt.Sprintf(`
+	%[1]s.id, %[1]s.form_id, %[1]s.status, %[1]s.version_major, %[1]s.version_minor,
+	%[1]s.change_type, %[1]s.change_summary, %[1]s.changes, %[1]s.rollback_of,
+	%[1]s.policy_check_result::text, %[1]s.policy_check_by, %[1]s.policy_check_at,
+	%[1]s.published_at, %[1]s.published_by, %[1]s.created_by, %[1]s.created_at,
+	%[1]s.system_header_config`, alias)
+}
+
 // GetDraftVersion returns the single mutable draft version for a form.
 func (r *Repository) GetDraftVersion(ctx context.Context, formID uuid.UUID) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM form_versions WHERE form_id = $1 AND status = 'draft'`, versionCols)
@@ -718,7 +732,7 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		changes = json.RawMessage("[]")
 	}
 	q := fmt.Sprintf(`
-		UPDATE form_versions
+		UPDATE form_versions fv
 		SET status        = 'published',
 		    version_major = $2,
 		    version_minor = $3,
@@ -727,13 +741,15 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		    changes       = $6,
 		    published_by  = $7,
 		    published_at  = $8
-		WHERE id = $1 AND status = 'draft'
-		RETURNING %s`, versionCols)
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $9
+		RETURNING %s`, prefixedVersionCols("fv"))
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.VersionMajor, p.VersionMinor,
 		string(p.ChangeType), p.ChangeSummary, changes,
-		p.PublishedBy, p.PublishedAt,
+		p.PublishedBy, p.PublishedAt, p.ClinicID,
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
@@ -747,15 +763,19 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 
 // UpdateDraftSystemHeader replaces the system_header_config JSONB on the
 // given draft version. Published versions are immutable, so a non-draft row
-// returns domain.ErrNotFound (the WHERE clause filters it out).
-func (r *Repository) UpdateDraftSystemHeader(ctx context.Context, versionID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+// returns domain.ErrNotFound (the WHERE clause filters it out). clinicID is
+// required for tenant isolation — the JOIN ensures the draft belongs to the
+// caller's clinic, even if a service-layer bug passed the wrong version ID.
+func (r *Repository) UpdateDraftSystemHeader(ctx context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE form_versions
+		UPDATE form_versions fv
 		SET system_header_config = $2::jsonb
-		WHERE id = $1 AND status = 'draft'
-		RETURNING %s`, versionCols)
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $3
+		RETURNING %s`, prefixedVersionCols("fv"))
 
-	row := r.db.QueryRow(ctx, q, versionID, config)
+	row := r.db.QueryRow(ctx, q, versionID, config, clinicID)
 	rec, err := scanVersion(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.UpdateDraftSystemHeader: %w", err)
@@ -767,14 +787,16 @@ func (r *Repository) UpdateDraftSystemHeader(ctx context.Context, versionID uuid
 // p.Result is a JSON-encoded array of PolicyCheckResultEntry; the column is JSONB.
 func (r *Repository) SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE form_versions
+		UPDATE form_versions fv
 		SET policy_check_result = $2::jsonb,
 		    policy_check_by     = $3,
 		    policy_check_at     = $4
-		WHERE id = $1 AND status = 'draft'
-		RETURNING %s`, versionCols)
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $5
+		RETURNING %s`, prefixedVersionCols("fv"))
 
-	row := r.db.QueryRow(ctx, q, p.VersionID, p.Result, p.CheckedBy, p.CheckedAt)
+	row := r.db.QueryRow(ctx, q, p.VersionID, p.Result, p.CheckedBy, p.CheckedAt, p.ClinicID)
 	rec, err := scanVersion(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.SavePolicyCheckResult: %w", err)
