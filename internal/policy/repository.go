@@ -282,6 +282,41 @@ func (r *Repository) CreatePolicyWithDraft(ctx context.Context, p CreatePolicyWi
 	return polRec, verRec, nil
 }
 
+// GetPoliciesByIDs returns all policies whose IDs are in the given list and
+// belong to clinicID, in a single query. Used by the marketplace publisher to
+// batch-snapshot bundled policies without an N+1 round-trip per policy.
+// Policies that don't exist or belong to other tenants are silently dropped —
+// the caller decides whether a partial result is an error.
+func (r *Repository) GetPoliciesByIDs(ctx context.Context, ids []uuid.UUID, clinicID uuid.UUID) ([]*PolicyRecord, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	const q = `
+		SELECT id, clinic_id, folder_id, name, description,
+		       created_by, created_at, updated_at, archived_at, retire_reason
+		FROM policies
+		WHERE id = ANY($1) AND clinic_id = $2`
+
+	rows, err := r.db.Query(ctx, q, ids, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetPoliciesByIDs: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*PolicyRecord
+	for rows.Next() {
+		rec, err := scanPolicy(rows)
+		if err != nil {
+			return nil, fmt.Errorf("policy.repo.GetPoliciesByIDs: %w", err)
+		}
+		list = append(list, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.GetPoliciesByIDs: rows: %w", err)
+	}
+	return list, nil
+}
+
 // GetPolicyByID fetches a policy by ID scoped to the clinic.
 func (r *Repository) GetPolicyByID(ctx context.Context, id, clinicID uuid.UUID) (*PolicyRecord, error) {
 	const q = `
