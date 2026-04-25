@@ -239,6 +239,24 @@ type publishFormBodyInput struct {
 	}
 }
 
+// discardDraft handles DELETE /api/v1/forms/{form_id}/draft.
+func (h *Handler) discardDraft(ctx context.Context, input *formIDInput) (*emptyHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	formID, err := uuid.Parse(input.FormID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid form_id")
+	}
+
+	if err := h.svc.DiscardDraft(ctx, formID, clinicID); err != nil {
+		return nil, mapFormError(err)
+	}
+	return &emptyHTTPResponse{}, nil
+}
+
+// emptyHTTPResponse represents a 200 OK with no body.
+type emptyHTTPResponse struct{}
+
 // publishForm handles POST /api/v1/forms/{form_id}/publish.
 // Returns the full form resource so the editor can refresh its draft and
 // latest_published in a single call.
@@ -726,8 +744,10 @@ func sniffImageType(head []byte) string {
 func mapFormError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
+		slog.Warn("forms: not found", "error", err.Error())
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrConflict):
+		slog.Warn("forms: conflict", "error", err.Error())
 		return huma.Error409Conflict("operation not allowed in current state")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
