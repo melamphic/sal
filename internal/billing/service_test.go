@@ -37,6 +37,7 @@ func (r *fakeRepo) RecordEvent(_ context.Context, p RecordEventParams) error {
 type fakeClinics struct {
 	byCustID       map[string]uuid.UUID
 	customerIDByID map[uuid.UUID]*string
+	profileByID    map[uuid.UUID]ClinicProfile
 	applied        []appliedState
 }
 
@@ -54,6 +55,16 @@ func (c *fakeClinics) FindByStripeCustomerID(_ context.Context, id string) (uuid
 
 func (c *fakeClinics) ApplySubscriptionState(_ context.Context, clinicID uuid.UUID, s SubscriptionState) error {
 	c.applied = append(c.applied, appliedState{ClinicID: clinicID, State: s})
+	// Mirror the COALESCE-on-customer-id semantics so tests that round
+	// through CreateCheckoutSession see the persisted cus_… on the
+	// follow-up GetStripeCustomerID call.
+	if s.StripeCustomerID != nil {
+		if c.customerIDByID == nil {
+			c.customerIDByID = map[uuid.UUID]*string{}
+		}
+		val := *s.StripeCustomerID
+		c.customerIDByID[clinicID] = &val
+	}
 	return nil
 }
 
@@ -64,11 +75,34 @@ func (c *fakeClinics) GetStripeCustomerID(_ context.Context, clinicID uuid.UUID)
 	return nil, domain.ErrNotFound
 }
 
-type fakePlans map[string]domain.PlanCode
+func (c *fakeClinics) GetClinicProfile(_ context.Context, clinicID uuid.UUID) (ClinicProfile, error) {
+	if v, ok := c.profileByID[clinicID]; ok {
+		return v, nil
+	}
+	return ClinicProfile{}, domain.ErrNotFound
+}
+
+type fakePlans struct {
+	byPrice map[string]domain.PlanCode
+	byPlan  map[domain.PlanCode]string
+}
+
+func newFakePlans(byPrice map[string]domain.PlanCode) fakePlans {
+	byPlan := make(map[domain.PlanCode]string, len(byPrice))
+	for priceID, plan := range byPrice {
+		byPlan[plan] = priceID
+	}
+	return fakePlans{byPrice: byPrice, byPlan: byPlan}
+}
 
 func (p fakePlans) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
-	pc, ok := p[id]
+	pc, ok := p.byPrice[id]
 	return pc, ok
+}
+
+func (p fakePlans) StripePriceIDForPlanCode(plan domain.PlanCode) (string, bool) {
+	id, ok := p.byPlan[plan]
+	return id, ok
 }
 
 type fakePortal struct {
@@ -133,6 +167,143 @@ func TestService_CreatePortalSession_Success(t *testing.T) {
 	}
 }
 
+// ── Checkout tests ──────────────────────────────────────────────────────
+
+type fakeCheckout struct {
+	last CheckoutParams
+	url  string
+	err  error
+}
+
+func (c *fakeCheckout) Create(p CheckoutParams) (string, error) {
+	c.last = p
+	return c.url, c.err
+}
+
+type fakeCustomerCreator struct {
+	created     int
+	lastEmail   string
+	lastName    string
+	lastClinic  string
+	returnedID  string
+	returnedErr error
+}
+
+func (c *fakeCustomerCreator) Create(email, name, clinicID string) (string, error) {
+	c.created++
+	c.lastEmail = email
+	c.lastName = name
+	c.lastClinic = clinicID
+	return c.returnedID, c.returnedErr
+}
+
+func TestService_CreateCheckoutSession_Disabled(t *testing.T) {
+	t.Parallel()
+	svc := NewService(&fakeRepo{}, &fakeClinics{}, fakePlans{}, []byte("whsec"))
+
+	_, err := svc.CreateCheckoutSession(context.Background(), uuid.Must(uuid.NewV7()), domain.PlanCode("paws_pro_monthly"))
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation when checkout disabled, got %v", err)
+	}
+}
+
+func TestService_CreateCheckoutSession_UnknownPlan(t *testing.T) {
+	t.Parallel()
+	clinicID := uuid.Must(uuid.NewV7())
+	clinics := &fakeClinics{}
+	svc := NewService(&fakeRepo{}, clinics, fakePlans{}, []byte("whsec"))
+	svc.EnableCheckout(&fakeCheckout{}, &fakeCustomerCreator{}, "https://app/ok", "https://app/cancel")
+
+	_, err := svc.CreateCheckoutSession(context.Background(), clinicID, domain.PlanCode("nope"))
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("expected ErrValidation for unknown plan, got %v", err)
+	}
+}
+
+func TestService_CreateCheckoutSession_NewCustomer_ProvisionsAndPersists(t *testing.T) {
+	t.Parallel()
+	clinicID := uuid.Must(uuid.NewV7())
+	clinics := &fakeClinics{
+		customerIDByID: map[uuid.UUID]*string{clinicID: nil},
+		profileByID: map[uuid.UUID]ClinicProfile{
+			clinicID: {Email: "dr@clinic.example", Name: "Dr Smith"},
+		},
+	}
+	plans := newFakePlans(map[string]domain.PlanCode{
+		"price_paws_pro_monthly": domain.PlanCode("paws_pro_monthly"),
+	})
+	customer := &fakeCustomerCreator{returnedID: "cus_new_123"}
+	checkout := &fakeCheckout{url: "https://checkout.stripe.com/c/abc"}
+
+	svc := NewService(&fakeRepo{}, clinics, plans, []byte("whsec"))
+	svc.EnableCheckout(checkout, customer, "https://app/ok", "https://app/cancel")
+
+	url, err := svc.CreateCheckoutSession(context.Background(), clinicID, domain.PlanCode("paws_pro_monthly"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url != checkout.url {
+		t.Fatalf("url: got %q want %q", url, checkout.url)
+	}
+	if customer.created != 1 {
+		t.Fatalf("expected 1 customer created, got %d", customer.created)
+	}
+	if customer.lastEmail != "dr@clinic.example" || customer.lastName != "Dr Smith" {
+		t.Fatalf("profile not forwarded: email=%q name=%q", customer.lastEmail, customer.lastName)
+	}
+	if customer.lastClinic != clinicID.String() {
+		t.Fatalf("clinic id not forwarded: %q", customer.lastClinic)
+	}
+	if len(clinics.applied) != 1 {
+		t.Fatalf("expected 1 ApplySubscriptionState call, got %d", len(clinics.applied))
+	}
+	got := clinics.applied[0]
+	if got.State.StripeCustomerID == nil || *got.State.StripeCustomerID != "cus_new_123" {
+		t.Fatalf("cus_… not persisted: %v", got.State.StripeCustomerID)
+	}
+	if got.State.Status != domain.ClinicStatusTrial {
+		t.Fatalf("unexpected status persisted alongside cus_… : %q", got.State.Status)
+	}
+	if checkout.last.CustomerID != "cus_new_123" {
+		t.Fatalf("checkout customer id: %q", checkout.last.CustomerID)
+	}
+	if checkout.last.PriceID != "price_paws_pro_monthly" {
+		t.Fatalf("checkout price id: %q", checkout.last.PriceID)
+	}
+	if checkout.last.TrialDays != trialPeriodDays {
+		t.Fatalf("trial days: got %d want %d", checkout.last.TrialDays, trialPeriodDays)
+	}
+	if checkout.last.SuccessURL != "https://app/ok" || checkout.last.CancelURL != "https://app/cancel" {
+		t.Fatalf("urls not forwarded: success=%q cancel=%q", checkout.last.SuccessURL, checkout.last.CancelURL)
+	}
+}
+
+func TestService_CreateCheckoutSession_ExistingCustomer_SkipsProvision(t *testing.T) {
+	t.Parallel()
+	clinicID := uuid.Must(uuid.NewV7())
+	existing := "cus_existing"
+	clinics := &fakeClinics{customerIDByID: map[uuid.UUID]*string{clinicID: &existing}}
+	plans := newFakePlans(map[string]domain.PlanCode{"price_x": domain.PlanCode("paws_pro_monthly")})
+	customer := &fakeCustomerCreator{}
+	checkout := &fakeCheckout{url: "https://checkout.stripe.com/c/xyz"}
+
+	svc := NewService(&fakeRepo{}, clinics, plans, []byte("whsec"))
+	svc.EnableCheckout(checkout, customer, "https://app/ok", "https://app/cancel")
+
+	if _, err := svc.CreateCheckoutSession(context.Background(), clinicID, domain.PlanCode("paws_pro_monthly")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if customer.created != 0 {
+		t.Fatalf("expected no customer created, got %d", customer.created)
+	}
+	if len(clinics.applied) != 0 {
+		t.Fatalf("expected no ApplySubscriptionState calls, got %d", len(clinics.applied))
+	}
+	if checkout.last.CustomerID != existing {
+		t.Fatalf("checkout customer id: %q want %q", checkout.last.CustomerID, existing)
+	}
+}
+
 // ── Webhook tests ───────────────────────────────────────────────────────
 
 func TestService_HandleWebhook_InvalidSignature(t *testing.T) {
@@ -150,7 +321,7 @@ func TestService_HandleWebhook_SubscriptionCreated_AppliesState(t *testing.T) {
 	secret := "whsec_test_123"
 	clinicID := uuid.Must(uuid.NewV7())
 	clinics := &fakeClinics{byCustID: map[string]uuid.UUID{"cus_abc": clinicID}}
-	plans := fakePlans{"price_pro_annual": domain.PlanCode("paws_pro_annual")}
+	plans := newFakePlans(map[string]domain.PlanCode{"price_pro_annual": domain.PlanCode("paws_pro_annual")})
 	repo := &fakeRepo{}
 	svc := NewService(repo, clinics, plans, []byte(secret))
 

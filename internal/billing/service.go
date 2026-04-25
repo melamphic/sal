@@ -14,8 +14,14 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/stripe/stripe-go/v78"
 	portalsession "github.com/stripe/stripe-go/v78/billingportal/session"
+	checkoutsession "github.com/stripe/stripe-go/v78/checkout/session"
+	"github.com/stripe/stripe-go/v78/customer"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
+
+// trialPeriodDays is the trial length offered when a clinic upgrades from
+// the in-app Checkout flow. Pricing model v3 requires 14 days.
+const trialPeriodDays = 14
 
 // ClinicUpdater is implemented by an app.go adapter bridging to
 // clinic.Service. Billing never imports the clinic package directly.
@@ -29,6 +35,17 @@ type ClinicUpdater interface {
 	// GetStripeCustomerID returns the cus_… id for a clinic, or nil if
 	// the clinic is still on trial and has no Stripe customer yet.
 	GetStripeCustomerID(ctx context.Context, clinicID uuid.UUID) (*string, error)
+	// GetClinicProfile returns the clinic's billing-relevant identity
+	// (email + display name) so a Stripe customer can be provisioned the
+	// first time the clinic enters Checkout.
+	GetClinicProfile(ctx context.Context, clinicID uuid.UUID) (ClinicProfile, error)
+}
+
+// ClinicProfile is the minimal slice of clinic identity billing needs to
+// create a Stripe customer.
+type ClinicProfile struct {
+	Email string
+	Name  string
 }
 
 // SubscriptionState is the target state billing asks clinic to write.
@@ -39,10 +56,12 @@ type SubscriptionState struct {
 	StripeSubscriptionID *string             // nil = leave unchanged
 }
 
-// PlanLookup maps a Stripe price id → Salvia PlanCode. Populated at
-// startup from STRIPE_PRICE_MAP.
+// PlanLookup maps Stripe price ids ↔ Salvia PlanCode. Populated at
+// startup from STRIPE_PRICE_MAP. The reverse direction is needed when
+// the FE asks Checkout for "this plan code" — we resolve to the price.
 type PlanLookup interface {
 	PlanCodeForStripePriceID(priceID string) (domain.PlanCode, bool)
+	StripePriceIDForPlanCode(planCode domain.PlanCode) (string, bool)
 }
 
 // PortalSessionCreator creates a Stripe billing portal session and returns
@@ -50,6 +69,31 @@ type PlanLookup interface {
 // Stripe. Production uses stripePortalClient.
 type PortalSessionCreator interface {
 	Create(customerID, returnURL string) (string, error)
+}
+
+// CheckoutSessionCreator creates a Stripe Checkout session in subscription
+// mode and returns its hosted URL. Abstracted so tests can swap in a fake.
+type CheckoutSessionCreator interface {
+	Create(p CheckoutParams) (string, error)
+}
+
+// CheckoutParams is the input handed to a CheckoutSessionCreator. The
+// service fills it in from the clinic + plan_code; the implementation
+// only needs to forward to Stripe.
+type CheckoutParams struct {
+	CustomerID string
+	PriceID    string
+	SuccessURL string
+	CancelURL  string
+	TrialDays  int64
+	ClinicID   uuid.UUID
+}
+
+// StripeCustomerCreator creates a brand-new Stripe customer for a clinic
+// and returns its cus_… id. Called the first time a clinic enters Checkout
+// — afterwards the cus_… is persisted on the clinic and reused.
+type StripeCustomerCreator interface {
+	Create(email, name, clinicID string) (string, error)
 }
 
 // Service orchestrates Stripe webhook processing.
@@ -64,6 +108,14 @@ type Service struct {
 	// case so callers know the feature is off.
 	portal    PortalSessionCreator
 	returnURL string
+
+	// Checkout config — set via EnableCheckout. Both creators must be
+	// non-nil for the feature to work; CreateCheckoutSession returns
+	// domain.ErrValidation otherwise.
+	checkout         CheckoutSessionCreator
+	customerCreator  StripeCustomerCreator
+	checkoutSuccess  string
+	checkoutCancel   string
 }
 
 // NewService creates a new billing Service.
@@ -76,6 +128,20 @@ func NewService(repo repo, clinics ClinicUpdater, plans PlanLookup, webhookSecre
 func (s *Service) EnablePortal(portal PortalSessionCreator, returnURL string) {
 	s.portal = portal
 	s.returnURL = returnURL
+}
+
+// EnableCheckout wires Stripe Checkout (subscription mode). Pass nil
+// creators to leave it disabled — CreateCheckoutSession returns
+// domain.ErrValidation when off.
+func (s *Service) EnableCheckout(
+	checkout CheckoutSessionCreator,
+	customers StripeCustomerCreator,
+	successURL, cancelURL string,
+) {
+	s.checkout = checkout
+	s.customerCreator = customers
+	s.checkoutSuccess = successURL
+	s.checkoutCancel = cancelURL
 }
 
 // CreatePortalSession returns a one-shot Stripe customer portal URL for the
@@ -95,6 +161,66 @@ func (s *Service) CreatePortalSession(ctx context.Context, clinicID uuid.UUID) (
 	url, err := s.portal.Create(*custID, s.returnURL)
 	if err != nil {
 		return "", fmt.Errorf("billing.service.CreatePortalSession: %w", err)
+	}
+	return url, nil
+}
+
+// CreateCheckoutSession returns a one-shot Stripe Checkout URL for the
+// given clinic + plan_code. The first time a clinic enters Checkout we
+// pre-create a Stripe customer and persist the cus_… on the clinic so
+// the eventual customer.subscription.created webhook resolves the clinic
+// via the existing FindByStripeCustomerID path.
+//
+// Returns domain.ErrValidation when:
+//   - the feature is disabled (STRIPE_API_KEY unset at boot), or
+//   - the requested plan_code has no Stripe price mapping.
+func (s *Service) CreateCheckoutSession(
+	ctx context.Context,
+	clinicID uuid.UUID,
+	planCode domain.PlanCode,
+) (string, error) {
+	if s.checkout == nil || s.customerCreator == nil {
+		return "", fmt.Errorf("billing.service.CreateCheckoutSession: %w", domain.ErrValidation)
+	}
+	priceID, ok := s.plans.StripePriceIDForPlanCode(planCode)
+	if !ok {
+		return "", fmt.Errorf("billing.service.CreateCheckoutSession: unknown plan_code %q: %w", planCode, domain.ErrValidation)
+	}
+
+	custID, err := s.clinics.GetStripeCustomerID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("billing.service.CreateCheckoutSession: %w", err)
+	}
+	if custID == nil || *custID == "" {
+		profile, err := s.clinics.GetClinicProfile(ctx, clinicID)
+		if err != nil {
+			return "", fmt.Errorf("billing.service.CreateCheckoutSession: profile: %w", err)
+		}
+		newID, err := s.customerCreator.Create(profile.Email, profile.Name, clinicID.String())
+		if err != nil {
+			return "", fmt.Errorf("billing.service.CreateCheckoutSession: create customer: %w", err)
+		}
+		// Persist cus_… without touching status/plan — those stay whatever
+		// the trial put them at until the subscription webhook lands.
+		if err := s.clinics.ApplySubscriptionState(ctx, clinicID, SubscriptionState{
+			Status:           domain.ClinicStatusTrial,
+			StripeCustomerID: &newID,
+		}); err != nil {
+			return "", fmt.Errorf("billing.service.CreateCheckoutSession: persist customer id: %w", err)
+		}
+		custID = &newID
+	}
+
+	url, err := s.checkout.Create(CheckoutParams{
+		CustomerID: *custID,
+		PriceID:    priceID,
+		SuccessURL: s.checkoutSuccess,
+		CancelURL:  s.checkoutCancel,
+		TrialDays:  trialPeriodDays,
+		ClinicID:   clinicID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("billing.service.CreateCheckoutSession: %w", err)
 	}
 	return url, nil
 }
@@ -122,6 +248,67 @@ func (c *stripePortalClient) Create(customerID, returnURL string) (string, error
 		return "", fmt.Errorf("billing.stripePortalClient.Create: %w", err)
 	}
 	return sess.URL, nil
+}
+
+// stripeCheckoutClient is the production CheckoutSessionCreator.
+type stripeCheckoutClient struct {
+	key string
+}
+
+// NewStripeCheckoutClient builds a CheckoutSessionCreator using the given
+// secret key. Safe to construct at startup with cfg.StripeAPIKey.
+func NewStripeCheckoutClient(stripeSecretKey string) CheckoutSessionCreator {
+	return &stripeCheckoutClient{key: stripeSecretKey}
+}
+
+func (c *stripeCheckoutClient) Create(p CheckoutParams) (string, error) {
+	client := checkoutsession.Client{B: stripe.GetBackend(stripe.APIBackend), Key: c.key}
+	params := &stripe.CheckoutSessionParams{
+		Mode:       stripe.String(string(stripe.CheckoutSessionModeSubscription)),
+		Customer:   stripe.String(p.CustomerID),
+		SuccessURL: stripe.String(p.SuccessURL),
+		CancelURL:  stripe.String(p.CancelURL),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{Price: stripe.String(p.PriceID), Quantity: stripe.Int64(1)},
+		},
+	}
+	if p.TrialDays > 0 {
+		params.SubscriptionData = &stripe.CheckoutSessionSubscriptionDataParams{
+			TrialPeriodDays: stripe.Int64(p.TrialDays),
+		}
+	}
+	params.AddMetadata("clinic_id", p.ClinicID.String())
+	sess, err := client.New(params)
+	if err != nil {
+		return "", fmt.Errorf("billing.stripeCheckoutClient.Create: %w", err)
+	}
+	return sess.URL, nil
+}
+
+// stripeCustomerClient is the production StripeCustomerCreator. Backed
+// by stripe-go's /v1/customers endpoint.
+type stripeCustomerClient struct {
+	key string
+}
+
+// NewStripeCustomerClient builds a StripeCustomerCreator using the given
+// secret key.
+func NewStripeCustomerClient(stripeSecretKey string) StripeCustomerCreator {
+	return &stripeCustomerClient{key: stripeSecretKey}
+}
+
+func (c *stripeCustomerClient) Create(email, name, clinicID string) (string, error) {
+	client := customer.Client{B: stripe.GetBackend(stripe.APIBackend), Key: c.key}
+	params := &stripe.CustomerParams{
+		Email: stripe.String(email),
+		Name:  stripe.String(name),
+	}
+	params.AddMetadata("clinic_id", clinicID)
+	cust, err := client.New(params)
+	if err != nil {
+		return "", fmt.Errorf("billing.stripeCustomerClient.Create: %w", err)
+	}
+	return cust.ID, nil
 }
 
 // HandleWebhook verifies the Stripe signature, records the event for
