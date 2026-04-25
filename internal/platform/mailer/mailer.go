@@ -26,6 +26,15 @@ type Mailer interface {
 
 	// SendInvite delivers a clinic invitation to a new staff member.
 	SendInvite(ctx context.Context, to, inviterName, clinicName, inviteURL string) error
+
+	// SendNoteCapWarning notifies the clinic admin they've crossed 80%
+	// of their per-period (or trial) note allowance. Fired once per
+	// billing period — see notecap.Service for idempotency.
+	SendNoteCapWarning(ctx context.Context, to, clinicName string, current, capLimit int) error
+
+	// SendNoteCapCSAlert pages the ops inbox when a clinic crosses
+	// 110% of its note cap. Fired once per billing period.
+	SendNoteCapCSAlert(ctx context.Context, opsEmail, clinicID, clinicName string, current, capLimit int, plan string) error
 }
 
 // SMTPConfig holds the credentials for an SMTP connection.
@@ -63,6 +72,42 @@ func (m *SMTPMailer) SendMagicLink(_ context.Context, to, name, loginURL string)
 	}
 	if err := m.send(to, subject, body); err != nil {
 		return fmt.Errorf("mailer.SendMagicLink: send: %w", err)
+	}
+	return nil
+}
+
+// SendNoteCapWarning sends the 80%-of-cap warning email to a clinic admin.
+func (m *SMTPMailer) SendNoteCapWarning(_ context.Context, to, clinicName string, current, capLimit int) error {
+	subject := fmt.Sprintf("Heads up: %s is approaching its monthly note limit", clinicName)
+	body, err := render(noteCapWarningTemplate, map[string]string{
+		"ClinicName": clinicName,
+		"Current":    fmt.Sprintf("%d", current),
+		"Cap":        fmt.Sprintf("%d", capLimit),
+	})
+	if err != nil {
+		return fmt.Errorf("mailer.SendNoteCapWarning: render: %w", err)
+	}
+	if err := m.send(to, subject, body); err != nil {
+		return fmt.Errorf("mailer.SendNoteCapWarning: send: %w", err)
+	}
+	return nil
+}
+
+// SendNoteCapCSAlert sends the 110%-of-cap CS notification to the ops inbox.
+func (m *SMTPMailer) SendNoteCapCSAlert(_ context.Context, opsEmail, clinicID, clinicName string, current, capLimit int, plan string) error {
+	subject := fmt.Sprintf("[note-cap 110%%] %s exceeded its plan", clinicName)
+	body, err := render(noteCapCSAlertTemplate, map[string]string{
+		"ClinicID":   clinicID,
+		"ClinicName": clinicName,
+		"Current":    fmt.Sprintf("%d", current),
+		"Cap":        fmt.Sprintf("%d", capLimit),
+		"Plan":       plan,
+	})
+	if err != nil {
+		return fmt.Errorf("mailer.SendNoteCapCSAlert: render: %w", err)
+	}
+	if err := m.send(opsEmail, subject, body); err != nil {
+		return fmt.Errorf("mailer.SendNoteCapCSAlert: send: %w", err)
 	}
 	return nil
 }
@@ -244,6 +289,32 @@ var magicLinkTemplate = template.Must(template.New("magic_link").Parse(`<!DOCTYP
   <p style="color:#666;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>
   <hr style="border:none;border-top:1px solid #eee;margin:32px 0;">
   <p style="color:#999;font-size:12px;">Salvia · Melamphic</p>
+</body>
+</html>`))
+
+var noteCapWarningTemplate = template.Must(template.New("note_cap_warning").Parse(`<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 480px; margin: 40px auto; color: #1a1a1a;">
+  <h2 style="color: #1A3B2A;">{{.ClinicName}} is at 80% of its note limit</h2>
+  <p>Your clinic has logged <strong>{{.Current}} of {{.Cap}}</strong> notes in the current billing period.</p>
+  <p>You can keep recording without interruption. If you expect to exceed the limit this period, consider upgrading your plan to avoid temporary blocks at 150%.</p>
+  <p style="color:#666;font-size:13px;">Thresholds: warn at 80%, customer-success outreach at 110%, hard block at 150%.</p>
+  <hr style="border:none;border-top:1px solid #eee;margin:32px 0;">
+  <p style="color:#999;font-size:12px;">Salvia · Melamphic</p>
+</body>
+</html>`))
+
+var noteCapCSAlertTemplate = template.Must(template.New("note_cap_cs_alert").Parse(`<!DOCTYPE html>
+<html>
+<body style="font-family: monospace; max-width: 560px; margin: 40px auto; color: #1a1a1a;">
+  <h2 style="color: #B65A2A;">Note-cap 110% — {{.ClinicName}}</h2>
+  <p>Clinic <code>{{.ClinicID}}</code> ({{.ClinicName}}) has exceeded 110% of its monthly note allowance.</p>
+  <ul>
+    <li>Plan: <code>{{.Plan}}</code></li>
+    <li>Notes this period: <strong>{{.Current}}</strong></li>
+    <li>Plan cap: {{.Cap}}</li>
+  </ul>
+  <p>Reach out to discuss an upgrade before the 150% hard-block kicks in.</p>
 </body>
 </html>`))
 
