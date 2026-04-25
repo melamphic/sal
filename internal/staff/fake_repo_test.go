@@ -122,3 +122,22 @@ func (f *fakeRepo) Deactivate(_ context.Context, staffID, clinicID uuid.UUID) (*
 	s.UpdatedAt = time.Now().UTC()
 	return s, nil
 }
+
+func (f *fakeRepo) CountStandardActive(_ context.Context, clinicID uuid.UUID) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, s := range f.byID {
+		if s.ClinicID != clinicID || s.ArchivedAt != nil {
+			continue
+		}
+		if s.NoteTier != domain.NoteTierStandard {
+			continue
+		}
+		if s.Status != domain.StaffStatusActive && s.Status != domain.StaffStatusInvited {
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
