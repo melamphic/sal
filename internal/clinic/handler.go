@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"mime/multipart"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/melamphic/sal/internal/domain"
@@ -47,7 +48,7 @@ type updateInput struct {
 		PDFFooterText      *string `json:"pdf_footer_text,omitempty"     doc:"Text rendered in the footer of generated PDFs."`
 		PDFPrimaryColor    *string `json:"pdf_primary_color,omitempty"   doc:"Primary colour used in generated PDFs, hex."`
 		PDFFont            *string `json:"pdf_font,omitempty"            enum:"inter,plus_jakarta_sans,lora,jetbrains_mono" doc:"Font family used in generated PDFs."`
-		OnboardingStep     *int16  `json:"onboarding_step,omitempty"     minimum:"0" maximum:"4" doc:"Current onboarding step (0..3). Stops being meaningful once onboarding_complete is true."`
+		OnboardingStep     *int16  `json:"onboarding_step,omitempty"     minimum:"0" maximum:"5" doc:"Current onboarding step (0=clinic_profile, 1=compliance, 2=invite_team, 3=pdf_brand, 4=tour, 5=done). Stops being meaningful once onboarding_complete is true."`
 		OnboardingComplete *bool   `json:"onboarding_complete,omitempty" doc:"Set to true to mark first-run setup finished."`
 		LegalName          *string `json:"legal_name,omitempty"          maxLength:"200" doc:"Registered legal / trading name (e.g. 'Greenwood Veterinary Ltd'). Appears on invoices."`
 		Country            *string `json:"country,omitempty"             enum:"NZ,AU,GB,IN" doc:"ISO 3166-1 alpha-2 country code. Drives the business-registration label (NZBN / ABN / CRN / GSTIN)."`
@@ -59,6 +60,27 @@ type updateInput struct {
 
 type clinicResponse struct {
 	Body *ClinicResponse
+}
+
+// complianceInput is the body submitted from the onboarding wizard's
+// compliance step. The `header:` fields capture the client IP from the
+// reverse proxy for audit — both X-Forwarded-For and X-Real-Ip are read
+// because deployments vary (Cloudflare → X-Forwarded-For; Caddy/nginx
+// behind Cloudflare → X-Real-Ip already normalised).
+type complianceInput struct {
+	XForwardedFor string `header:"X-Forwarded-For"`
+	XRealIP       string `header:"X-Real-Ip"`
+	Body          struct {
+		PrivacyOfficerName         string `json:"privacy_officer_name"          minLength:"2" maxLength:"200" doc:"Designated Privacy Officer's full name. NZ Privacy Act 2020 s 201 mandates a Privacy Officer for every agency handling personal information; AU treats it as best practice (APP 1)."`
+		PrivacyOfficerEmail        string `json:"privacy_officer_email"         format:"email" doc:"Contact email for the Privacy Officer. Published on the clinic's privacy notice; treated as public-facing contact info."`
+		PrivacyOfficerPhone        string `json:"privacy_officer_phone,omitempty" maxLength:"50" doc:"Optional Privacy Officer phone number."`
+		POTrainingAttested         bool   `json:"po_training_attested"            doc:"Attestation that the Privacy Officer has completed privacy-program training."`
+		CrossBorderAcknowledged    bool   `json:"cross_border_acknowledged"       doc:"Acknowledgement that audio + transcripts may be processed by Deepgram (US) and Google Vertex AI (configurable region). Required by AU APP 8 and NZ HIPC Rule 12."`
+		MHRRegistered              *bool  `json:"mhr_registered,omitempty"        doc:"AU only: whether the clinic is registered to write to My Health Record. Null outside AU."`
+		AIOversightAcknowledged    bool   `json:"ai_oversight_acknowledged"       doc:"Clinician acknowledges AI is decision-support; every output is reviewed by a human before being signed. AU Voluntary AI Safety Standard 2024 + OAIC AI guidance."`
+		PatientConsentAcknowledged bool   `json:"patient_consent_acknowledged"    doc:"Clinic confirms responsibility for obtaining patient consent for audio capture and AI processing prior to recording."`
+		DPAAccepted                bool   `json:"dpa_accepted"                    doc:"Acceptance of Salvia's Data Processing Agreement (versioned)."`
+	}
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -118,6 +140,51 @@ func (h *Handler) update(ctx context.Context, input *updateInput) (*clinicRespon
 		return nil, mapClinicError(err)
 	}
 	return &clinicResponse{Body: dto}, nil
+}
+
+// submitCompliance handles POST /api/v1/clinic/compliance.
+// Stamps server-side timestamps on every attestation, captures the staff
+// id + IP for audit, and advances the onboarding cursor past the
+// compliance step. Re-submission updates the existing record (idempotent).
+func (h *Handler) submitCompliance(ctx context.Context, input *complianceInput) (*clinicResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	ip := input.XRealIP
+	if ip == "" {
+		ip = firstForwardedIP(input.XForwardedFor)
+	}
+
+	dto, err := h.svc.SubmitCompliance(ctx, clinicID, SubmitComplianceInput{
+		PrivacyOfficerName:         input.Body.PrivacyOfficerName,
+		PrivacyOfficerEmail:        input.Body.PrivacyOfficerEmail,
+		PrivacyOfficerPhone:        input.Body.PrivacyOfficerPhone,
+		POTrainingAttested:         input.Body.POTrainingAttested,
+		CrossBorderAcknowledged:    input.Body.CrossBorderAcknowledged,
+		MHRRegistered:              input.Body.MHRRegistered,
+		AIOversightAcknowledged:    input.Body.AIOversightAcknowledged,
+		PatientConsentAcknowledged: input.Body.PatientConsentAcknowledged,
+		DPAAccepted:                input.Body.DPAAccepted,
+		IP:                         ip,
+		StaffID:                    staffID,
+	})
+	if err != nil {
+		return nil, mapClinicError(err)
+	}
+	return &clinicResponse{Body: dto}, nil
+}
+
+// firstForwardedIP returns the left-most address from a comma-separated
+// X-Forwarded-For header (the original client). Empty string when the
+// header is absent.
+func firstForwardedIP(xff string) string {
+	if xff == "" {
+		return ""
+	}
+	if i := strings.IndexByte(xff, ','); i > 0 {
+		return strings.TrimSpace(xff[:i])
+	}
+	return strings.TrimSpace(xff)
 }
 
 // uploadLogoInput is multipart form input for the logo upload endpoint.
