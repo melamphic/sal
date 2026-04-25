@@ -21,11 +21,11 @@ type repo interface {
 	CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error)
 
 	// UpdatePolicyAlignment persists the computed alignment score on a note.
-	UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error
+	UpdatePolicyAlignment(ctx context.Context, noteID, clinicID uuid.UUID, pct float64) error
 	// UpdatePolicyCheckResult persists per-clause check results as JSONB on a note.
-	UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error
+	UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error
 	// UpdatePDFKey sets the pdf_storage_key on a note after PDF generation.
-	UpdatePDFKey(ctx context.Context, noteID uuid.UUID, key string) error
+	UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUID, key string) error
 
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
