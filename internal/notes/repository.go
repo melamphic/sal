@@ -343,6 +343,24 @@ func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, record
 	return count, nil
 }
 
+// CountSinceForClinic returns the count of non-archived notes created at
+// or after `since`. Used by note-cap metering to evaluate the current
+// billing period (or the trial window from clinics.created_at). Backed
+// by the partial index idx_notes_clinic_created_active.
+func (r *Repository) CountSinceForClinic(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	var count int
+	if err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM notes
+		   WHERE clinic_id = $1
+		     AND archived_at IS NULL
+		     AND created_at >= $2`,
+		clinicID, since,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("notes.repo.CountSinceForClinic: %w", err)
+	}
+	return count, nil
+}
+
 // UpdatePolicyAlignment sets the policy_alignment_pct on a note.
 // Called by the ComputePolicyAlignmentWorker after the AI alignment job runs.
 func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID, clinicID uuid.UUID, pct float64) error {
