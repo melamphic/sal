@@ -13,7 +13,7 @@ type repo interface {
 	CreateNote(ctx context.Context, p CreateNoteParams) (*NoteRecord, error)
 	GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*NoteRecord, error)
 	ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error)
-	UpdateNoteStatus(ctx context.Context, id uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error)
+	UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error)
 	SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error)
 	ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*NoteRecord, error)
 	// CountNotesByRecording returns how many notes exist for a recording within a clinic.
