@@ -14,4 +14,5 @@ type repo interface {
 	GetByStripeCustomerID(ctx context.Context, stripeCustomerID string) (*Clinic, error)
 	Update(ctx context.Context, id uuid.UUID, p UpdateParams) (*Clinic, error)
 	ApplySubscriptionState(ctx context.Context, id uuid.UUID, p ApplySubscriptionStateParams) (*Clinic, error)
+	SubmitCompliance(ctx context.Context, id uuid.UUID, p ComplianceParams) (*Clinic, error)
 }
