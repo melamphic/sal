@@ -2,8 +2,11 @@ package testutil
 
 import (
 	"context"
+	"strconv"
 	"sync"
 )
+
+func itoa(i int) string { return strconv.Itoa(i) }
 
 // FakeMailer records emails sent during a test without making network calls.
 // All methods are safe for concurrent use.
@@ -39,6 +42,40 @@ func (f *FakeMailer) SendInvite(_ context.Context, to, inviterName, clinicName, 
 		To:       to,
 		Template: "invite",
 		Data:     map[string]string{"inviter": inviterName, "clinic": clinicName, "url": inviteURL},
+	})
+	return nil
+}
+
+// SendNoteCapWarning records the 80% warning email.
+func (f *FakeMailer) SendNoteCapWarning(_ context.Context, to, clinicName string, current, capLimit int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Sent = append(f.Sent, SentEmail{
+		To:       to,
+		Template: "note_cap_warning",
+		Data: map[string]string{
+			"clinic":  clinicName,
+			"current": itoa(current),
+			"cap":     itoa(capLimit),
+		},
+	})
+	return nil
+}
+
+// SendNoteCapCSAlert records the 110% CS alert email.
+func (f *FakeMailer) SendNoteCapCSAlert(_ context.Context, opsEmail, clinicID, clinicName string, current, capLimit int, plan string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Sent = append(f.Sent, SentEmail{
+		To:       opsEmail,
+		Template: "note_cap_cs_alert",
+		Data: map[string]string{
+			"clinic_id": clinicID,
+			"clinic":    clinicName,
+			"current":   itoa(current),
+			"cap":       itoa(capLimit),
+			"plan":      plan,
+		},
 	})
 	return nil
 }
