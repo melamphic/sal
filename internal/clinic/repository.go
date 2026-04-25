@@ -47,9 +47,27 @@ type Clinic struct {
 	Timezone               string // IANA tz (e.g. Pacific/Auckland)
 	BusinessRegNo          *string
 	TermsAcceptedAt        *time.Time
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-	ArchivedAt             *time.Time
+	// Compliance onboarding (NZ Privacy Act 2020 / HIPC 2020 / AU Privacy
+	// Act 1988 APPs / AU Voluntary AI Safety Standard 2024). All fields are
+	// nullable — a null timestamp means "not yet attested".
+	PrivacyOfficerName              *string
+	PrivacyOfficerEmail             *string
+	PrivacyOfficerPhone             *string
+	POTrainingAttestedAt            *time.Time
+	CrossBorderAckAt                *time.Time
+	CrossBorderAckVersion           *string
+	MHRRegistered                   *bool // AU My Health Record; null outside AU
+	AIOversightAckAt                *time.Time
+	PatientConsentAckAt             *time.Time
+	DPAAcceptedAt                   *time.Time
+	DPAVersion                      *string
+	ComplianceOnboardingCompletedAt *time.Time
+	ComplianceOnboardingVersion     *string // "v1" or "grandfathered_v0"
+	ComplianceOnboardingIP          *string // INET-as-text in the DB
+	ComplianceOnboardingUserID      *uuid.UUID
+	CreatedAt                       time.Time
+	UpdatedAt                       time.Time
+	ArchivedAt                      *time.Time
 }
 
 // UpdateParams holds the fields that can be updated on a clinic.
@@ -93,6 +111,14 @@ const clinicCols = `
 	pdf_header_text, pdf_footer_text, pdf_primary_color, pdf_font,
 	onboarding_step, onboarding_complete,
 	legal_name, country, timezone, business_reg_no, terms_accepted_at,
+	privacy_officer_name, privacy_officer_email, privacy_officer_phone,
+	po_training_attested_at,
+	cross_border_ack_at, cross_border_ack_version,
+	mhr_registered,
+	ai_oversight_ack_at, patient_consent_ack_at,
+	dpa_accepted_at, dpa_version,
+	compliance_onboarding_completed_at, compliance_onboarding_version,
+	host(compliance_onboarding_ip)::text, compliance_onboarding_user_id,
 	created_at, updated_at, archived_at
 `
 
@@ -225,6 +251,85 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (
 	return c, nil
 }
 
+// ComplianceParams holds the full compliance attestation submitted during
+// the onboarding wizard. Service layer is responsible for stamping the
+// timestamp fields (ack_at, completed_at) — the repo just writes what it's
+// given. Pointer fields with COALESCE semantics: nil leaves the column
+// unchanged so a partial re-submission (e.g. PO contact only) doesn't
+// clobber prior attestations.
+type ComplianceParams struct {
+	PrivacyOfficerName    *string
+	PrivacyOfficerEmail   *string
+	PrivacyOfficerPhone   *string
+	POTrainingAttestedAt  *time.Time
+	CrossBorderAckAt      *time.Time
+	CrossBorderAckVersion *string
+	MHRRegistered         *bool
+	AIOversightAckAt      *time.Time
+	PatientConsentAckAt   *time.Time
+	DPAAcceptedAt         *time.Time
+	DPAVersion            *string
+	// Audit. CompletedAt + Version are stamped on the first complete
+	// submission; UserID + IP are recorded against that attestation.
+	CompletedAt *time.Time
+	Version     *string
+	IP          *string // INET-as-text; nil when not derivable
+	UserID      *uuid.UUID
+	// AdvanceStep, when true, advances onboarding_step to GREATEST(step, 2)
+	// — i.e. moves the clinic past compliance during fresh onboarding while
+	// never regressing a clinic that's already further along (grandfathered
+	// post-hoc submission).
+	AdvanceStep bool
+}
+
+// SubmitCompliance writes the compliance-onboarding attestation in one
+// atomic UPDATE. COALESCE preserves prior values when the caller passes
+// nil for a particular field.
+func (r *Repository) SubmitCompliance(ctx context.Context, id uuid.UUID, p ComplianceParams) (*Clinic, error) {
+	advance := int16(0)
+	if p.AdvanceStep {
+		advance = 2
+	}
+	c, err := r.scanOne(ctx, `
+		UPDATE clinics SET
+			privacy_officer_name               = COALESCE($2,  privacy_officer_name),
+			privacy_officer_email              = COALESCE($3,  privacy_officer_email),
+			privacy_officer_phone              = COALESCE($4,  privacy_officer_phone),
+			po_training_attested_at            = COALESCE($5,  po_training_attested_at),
+			cross_border_ack_at                = COALESCE($6,  cross_border_ack_at),
+			cross_border_ack_version           = COALESCE($7,  cross_border_ack_version),
+			mhr_registered                     = COALESCE($8,  mhr_registered),
+			ai_oversight_ack_at                = COALESCE($9,  ai_oversight_ack_at),
+			patient_consent_ack_at             = COALESCE($10, patient_consent_ack_at),
+			dpa_accepted_at                    = COALESCE($11, dpa_accepted_at),
+			dpa_version                        = COALESCE($12, dpa_version),
+			compliance_onboarding_completed_at = COALESCE($13, compliance_onboarding_completed_at),
+			compliance_onboarding_version      = COALESCE($14, compliance_onboarding_version),
+			compliance_onboarding_ip           = COALESCE($15::inet, compliance_onboarding_ip),
+			compliance_onboarding_user_id      = COALESCE($16, compliance_onboarding_user_id),
+			onboarding_step                    = GREATEST(onboarding_step, $17),
+			updated_at                         = NOW()
+		WHERE id = $1 AND archived_at IS NULL
+		RETURNING `+clinicCols,
+		id,
+		p.PrivacyOfficerName, p.PrivacyOfficerEmail, p.PrivacyOfficerPhone,
+		p.POTrainingAttestedAt,
+		p.CrossBorderAckAt, p.CrossBorderAckVersion,
+		p.MHRRegistered,
+		p.AIOversightAckAt, p.PatientConsentAckAt,
+		p.DPAAcceptedAt, p.DPAVersion,
+		p.CompletedAt, p.Version, p.IP, p.UserID,
+		advance,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("clinic.repo.SubmitCompliance: %w", err)
+	}
+	return c, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // CreateParams holds all values required to create a new clinic.
@@ -271,6 +376,14 @@ func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*C
 		&c.PDFHeaderText, &c.PDFFooterText, &c.PDFPrimaryColor, &c.PDFFont,
 		&c.OnboardingStep, &c.OnboardingComplete,
 		&c.LegalName, &c.Country, &c.Timezone, &c.BusinessRegNo, &c.TermsAcceptedAt,
+		&c.PrivacyOfficerName, &c.PrivacyOfficerEmail, &c.PrivacyOfficerPhone,
+		&c.POTrainingAttestedAt,
+		&c.CrossBorderAckAt, &c.CrossBorderAckVersion,
+		&c.MHRRegistered,
+		&c.AIOversightAckAt, &c.PatientConsentAckAt,
+		&c.DPAAcceptedAt, &c.DPAVersion,
+		&c.ComplianceOnboardingCompletedAt, &c.ComplianceOnboardingVersion,
+		&c.ComplianceOnboardingIP, &c.ComplianceOnboardingUserID,
 		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
 	); err != nil {
 		return nil, fmt.Errorf("clinic.repo.scanOne: %w", err)
