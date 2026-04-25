@@ -211,3 +211,51 @@ func (f *fakeRepo) SubmitCompliance(_ context.Context, id uuid.UUID, p Complianc
 	c.UpdatedAt = time.Now().UTC()
 	return c, nil
 }
+
+func (f *fakeRepo) MarkNoteCapWarned(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapWarnedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapWarnedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}
+
+func (f *fakeRepo) MarkNoteCapCSAlerted(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapCSAlertedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapCSAlertedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}
+
+func (f *fakeRepo) MarkNoteCapBlocked(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapBlockedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapBlockedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}
