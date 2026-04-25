@@ -275,8 +275,8 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		    submitted_by          = $5,
 		    submitted_at          = $6,
 		    override_reason       = $7,
-		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5 END,
-		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6 END,
+		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5::uuid END,
+		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6::timestamptz END,
 		    form_version_context  = (
 		        SELECT CASE
 		            WHEN f.archived_at IS NOT NULL THEN 'before decommission'
