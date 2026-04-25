@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -30,6 +31,7 @@ import (
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
 	"github.com/melamphic/sal/internal/marketplace"
+	"github.com/melamphic/sal/internal/notecap"
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
@@ -43,6 +45,7 @@ import (
 	"github.com/melamphic/sal/internal/policy"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
+	"github.com/melamphic/sal/internal/tiering"
 	"github.com/melamphic/sal/internal/timeline"
 	"github.com/melamphic/sal/internal/verticals"
 	"github.com/riverqueue/river"
@@ -155,10 +158,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 			return nil, fmt.Errorf("app.Build: %w", err)
 		}
 		billingRepo := billing.NewRepository(db)
+		planLookup := newStaticPlanLookup(priceMap)
 		billingSvc := billing.NewService(
 			billingRepo,
 			&billingClinicAdapter{clinic: clinicSvc},
-			newStaticPlanLookup(priceMap),
+			planLookup,
 			[]byte(cfg.StripeWebhookSecret),
 		)
 		if cfg.StripeAPIKey != "" {
@@ -166,12 +170,41 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 				billing.NewStripePortalClient(cfg.StripeAPIKey),
 				cfg.AppURL+"/settings/billing",
 			)
+			checkoutClient := billing.NewStripeCheckoutClient(cfg.StripeAPIKey)
+			customerClient := billing.NewStripeCustomerClient(cfg.StripeAPIKey)
 			billingSvc.EnableCheckout(
-				billing.NewStripeCheckoutClient(cfg.StripeAPIKey),
-				billing.NewStripeCustomerClient(cfg.StripeAPIKey),
+				checkoutClient,
+				customerClient,
 				cfg.AppURL+"/settings/billing?checkout=success",
 				cfg.AppURL+"/settings/billing?checkout=cancelled",
 			)
+			// Signup-checkout (mel card-up-front) needs all three primitives
+			// — Stripe customer + checkout session + plan-code → price-id —
+			// PLUS the mel handoff JWT secret so it can mint the post-checkout
+			// success URL. Wire it only when both gates are open.
+			if cfg.MelHandoffJWTSecret != "" {
+				authSvc.EnableSignupCheckout(
+					&signupCheckoutAdapter{
+						customers: customerClient,
+						checkout:  checkoutClient,
+						plans:     planLookup,
+					},
+					strings.TrimRight(cfg.MelBaseURL, "/")+"/signup?canceled=1",
+				)
+			}
+			// ── Tier auto-derivation (pricing-model-v3 §6) ────────────────────
+			// Wired only when Stripe is fully configured — without an API
+			// key we can't issue subscription-item swaps. Hooks into
+			// staff.Service so every invite/create/deactivate that touches
+			// a standard seat triggers a Reconcile.
+			tieringSvc := tiering.NewService(
+				&tieringClinicAdapter{clinic: clinicSvc},
+				&tieringStaffAdapter{staff: staffSvc},
+				billing.NewStripeSubscriptionClient(cfg.StripeAPIKey),
+				planLookup,
+				log,
+			)
+			staffSvc.SetTierReconciler(tieringSvc)
 		}
 		billingHandler = billing.NewHandler(billingSvc, log)
 	}
@@ -296,6 +329,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if detailedChecker != nil {
 		notesSvc.SetPolicyChecker(detailedChecker, &policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo})
 	}
+	// ── Note-cap metering (pricing-model-v3 §7) ──────────────────────────────
+	// Gates note creation against the per-period (or trial) note cap,
+	// fires 80% / 110% emails, and blocks at 150%. Wired here so the
+	// notes service can call into it for every CreateNote.
+	noteCapSvc := notecap.NewService(
+		&notecapClinicAdapter{clinic: clinicSvc},
+		&notecapNotesAdapter{notes: notesRepo},
+		m,
+		cfg.OpsAlertEmail,
+		log,
+	)
+	notesSvc.SetNoteCapEnforcer(noteCapSvc)
 	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
@@ -341,6 +386,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	r.Use(mw.RequestLogger(log))
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestSize(8 * 1024 * 1024)) // 8 MB — audio uploads bypass via S3 presigned URLs
+	// Grace-period write-block: if the clinic's Stripe subscription has
+	// gone unpaid past the dunning window, every write returns 402 until
+	// they pay. Reads + auth/billing/health prefixes pass through so the
+	// clinic can sign in and recover.
+	r.Use(mw.BlockWritesOnGracePeriod(&clinicStatusAdapter{clinic: clinicSvc}, jwtSecret, log))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -550,6 +600,8 @@ func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clini
 		PlanCode:             s.PlanCode,
 		StripeCustomerID:     s.StripeCustomerID,
 		StripeSubscriptionID: s.StripeSubscriptionID,
+		BillingPeriodStart:   s.BillingPeriodStart,
+		BillingPeriodEnd:     s.BillingPeriodEnd,
 	}); err != nil {
 		return fmt.Errorf("app.billingClinicAdapter.ApplySubscriptionState: %w", err)
 	}
@@ -585,6 +637,153 @@ func (m *staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode,
 func (m *staticPlanLookup) StripePriceIDForPlanCode(plan domain.PlanCode) (string, bool) {
 	id, ok := m.byPlan[plan]
 	return id, ok
+}
+
+// notecapClinicAdapter implements notecap.ClinicReader against
+// clinic.Service. Lives in app.go because notecap must not import the
+// clinic package directly per the cross-domain rule.
+type notecapClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *notecapClinicAdapter) LoadForCap(ctx context.Context, clinicID uuid.UUID) (notecap.ClinicState, error) {
+	st, err := a.clinic.LoadNoteCapState(ctx, clinicID)
+	if err != nil {
+		return notecap.ClinicState{}, fmt.Errorf("app.notecapClinicAdapter.LoadForCap: %w", err)
+	}
+	return notecap.ClinicState{
+		ID:                 st.ID,
+		Name:               st.Name,
+		AdminEmail:         st.Email,
+		Status:             st.Status,
+		PlanCode:           st.PlanCode,
+		BillingPeriodStart: st.BillingPeriodStart,
+		CreatedAt:          st.CreatedAt,
+		NoteCapWarnedAt:    st.NoteCapWarnedAt,
+		NoteCapCSAlertedAt: st.NoteCapCSAlertedAt,
+		NoteCapBlockedAt:   st.NoteCapBlockedAt,
+	}, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapWarned(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapWarned(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapWarned: %w", err)
+	}
+	return claimed, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapCSAlerted(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapCSAlerted(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapCSAlerted: %w", err)
+	}
+	return claimed, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapBlocked(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapBlocked(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapBlocked: %w", err)
+	}
+	return claimed, nil
+}
+
+// notecapNotesAdapter implements notecap.NoteCounter by bridging to the
+// notes repository's per-period count. Repo here, not service: the
+// service-level count would force unrelated event/policy work that's
+// not needed for a hot-path COUNT(*).
+type notecapNotesAdapter struct{ notes *notes.Repository }
+
+func (a *notecapNotesAdapter) CountSinceForClinic(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	n, err := a.notes.CountSinceForClinic(ctx, clinicID, since)
+	if err != nil {
+		return 0, fmt.Errorf("app.notecapNotesAdapter.CountSinceForClinic: %w", err)
+	}
+	return n, nil
+}
+
+// tieringClinicAdapter implements tiering.ClinicReader against
+// clinic.Service. Lives in app.go because tiering must not import the
+// clinic package directly per the cross-domain rule.
+type tieringClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *tieringClinicAdapter) LoadTierState(ctx context.Context, clinicID uuid.UUID) (tiering.ClinicState, error) {
+	st, err := a.clinic.LoadTierState(ctx, clinicID)
+	if err != nil {
+		return tiering.ClinicState{}, fmt.Errorf("app.tieringClinicAdapter.LoadTierState: %w", err)
+	}
+	return tiering.ClinicState{
+		Status:               st.Status,
+		PlanCode:             st.PlanCode,
+		StripeSubscriptionID: st.StripeSubscriptionID,
+	}, nil
+}
+
+// clinicStatusAdapter implements mw.ClinicStatusReader against
+// clinic.Service. Lives in app.go because the middleware package must
+// not import the clinic package.
+type clinicStatusAdapter struct{ clinic *clinic.Service }
+
+func (a *clinicStatusAdapter) GetStatus(ctx context.Context, clinicID uuid.UUID) (domain.ClinicStatus, error) {
+	st, err := a.clinic.GetStatus(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicStatusAdapter.GetStatus: %w", err)
+	}
+	return st, nil
+}
+
+// tieringStaffAdapter implements tiering.StaffCounter by bridging to
+// staff.Service's standard-seat count.
+type tieringStaffAdapter struct{ staff *staff.Service }
+
+func (a *tieringStaffAdapter) CountStandardActive(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	n, err := a.staff.CountStandardActive(ctx, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("app.tieringStaffAdapter.CountStandardActive: %w", err)
+	}
+	return n, nil
+}
+
+// signupCheckoutAdapter implements auth.SignupCheckoutClient by composing
+// the billing primitives (Stripe customer creation, Checkout session
+// creation, plan-code → price-id lookup). Lives in app.go because auth
+// must not import billing directly per the cross-domain rule.
+type signupCheckoutAdapter struct {
+	customers billing.StripeCustomerCreator
+	checkout  billing.CheckoutSessionCreator
+	plans     billing.PlanLookup
+}
+
+func (a *signupCheckoutAdapter) CreateCustomer(email, clinicName string) (string, error) {
+	// clinic_id is empty — no clinic row exists yet at this point in the
+	// signup flow. The Stripe customer client elides the metadata key
+	// when clinicID is "" so the dashboard isn't polluted.
+	id, err := a.customers.Create(email, clinicName, "")
+	if err != nil {
+		return "", fmt.Errorf("app.signupCheckoutAdapter.CreateCustomer: %w", err)
+	}
+	return id, nil
+}
+
+func (a *signupCheckoutAdapter) CreateCheckoutSession(p auth.SignupCheckoutSessionInput) (string, error) {
+	url, err := a.checkout.Create(billing.CheckoutParams{
+		CustomerID: p.CustomerID,
+		PriceID:    p.PriceID,
+		SuccessURL: p.SuccessURL,
+		CancelURL:  p.CancelURL,
+		TrialDays:  p.TrialDays,
+		// ClinicID intentionally zero — no clinic exists yet. The Stripe
+		// CheckoutSession metadata gets the zero-uuid string, which is
+		// fine: signup-checkout subscriptions resolve via cus_… on the
+		// webhook, not via the metadata.
+	})
+	if err != nil {
+		return "", fmt.Errorf("app.signupCheckoutAdapter.CreateCheckoutSession: %w", err)
+	}
+	return url, nil
+}
+
+func (a *signupCheckoutAdapter) PriceIDForPlanCode(planCode domain.PlanCode) (string, bool) {
+	return a.plans.StripePriceIDForPlanCode(planCode)
 }
 
 // melHandoffAdapter implements auth.HandoffProvisioner by bridging to
