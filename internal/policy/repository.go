@@ -229,20 +229,57 @@ func (r *Repository) ListFolders(ctx context.Context, clinicID uuid.UUID) ([]*Po
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-// CreatePolicy inserts a new policy row.
-func (r *Repository) CreatePolicy(ctx context.Context, p CreatePolicyParams) (*PolicyRecord, error) {
-	const q = `
+// CreatePolicyWithDraftParams bundles the inputs needed to create a policy
+// and its initial draft version atomically.
+type CreatePolicyWithDraftParams struct {
+	Policy       CreatePolicyParams
+	DraftID      uuid.UUID
+	DraftContent json.RawMessage
+}
+
+// CreatePolicyWithDraft inserts a new policy and its initial empty draft
+// version inside a single transaction. Either both rows are written or
+// neither — preventing the "zombie policy with no draft" state that arose
+// when the two inserts ran independently.
+func (r *Repository) CreatePolicyWithDraft(ctx context.Context, p CreatePolicyWithDraftParams) (*PolicyRecord, *PolicyVersionRecord, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("policy.repo.CreatePolicyWithDraft: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const polQ = `
 		INSERT INTO policies (id, clinic_id, folder_id, name, description, created_by, source_marketplace_version_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, clinic_id, folder_id, name, description,
 		          created_by, created_at, updated_at, archived_at, retire_reason`
 
-	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.FolderID, p.Name, p.Description, p.CreatedBy, p.SourceMarketplaceVersionID)
-	rec, err := scanPolicy(row)
+	pp := p.Policy
+	polRow := tx.QueryRow(ctx, polQ, pp.ID, pp.ClinicID, pp.FolderID, pp.Name, pp.Description, pp.CreatedBy, pp.SourceMarketplaceVersionID)
+	polRec, err := scanPolicy(polRow)
 	if err != nil {
-		return nil, fmt.Errorf("policy.repo.CreatePolicy: %w", err)
+		return nil, nil, fmt.Errorf("policy.repo.CreatePolicyWithDraft: policy: %w", err)
 	}
-	return rec, nil
+
+	draftContent := p.DraftContent
+	if draftContent == nil {
+		draftContent = json.RawMessage(`[]`)
+	}
+	verQ := fmt.Sprintf(`
+		INSERT INTO policy_versions (id, policy_id, status, content, created_by)
+		VALUES ($1, $2, 'draft', $3, $4)
+		RETURNING %s`, versionCols)
+
+	verRow := tx.QueryRow(ctx, verQ, p.DraftID, pp.ID, draftContent, pp.CreatedBy)
+	verRec, err := scanVersion(verRow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("policy.repo.CreatePolicyWithDraft: draft: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("policy.repo.CreatePolicyWithDraft: commit: %w", err)
+	}
+	return polRec, verRec, nil
 }
 
 // GetPolicyByID fetches a policy by ID scoped to the clinic.
@@ -398,6 +435,39 @@ func (r *Repository) ListPublishedVersions(ctx context.Context, policyID uuid.UU
 	return list, nil
 }
 
+// GetLatestPublishedVersions returns the latest published version (if any)
+// for each of the given policy IDs in a single query. Used to enrich list
+// responses without N+1 round-trips.
+func (r *Repository) GetLatestPublishedVersions(ctx context.Context, policyIDs []uuid.UUID) (map[uuid.UUID]*PolicyVersionRecord, error) {
+	out := make(map[uuid.UUID]*PolicyVersionRecord, len(policyIDs))
+	if len(policyIDs) == 0 {
+		return out, nil
+	}
+	q := fmt.Sprintf(`
+		SELECT DISTINCT ON (policy_id) %s
+		FROM policy_versions
+		WHERE policy_id = ANY($1) AND status = 'published'
+		ORDER BY policy_id, published_at DESC`, versionCols)
+
+	rows, err := r.db.Query(ctx, q, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetLatestPublishedVersions: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rec, err := scanVersion(rows)
+		if err != nil {
+			return nil, fmt.Errorf("policy.repo.GetLatestPublishedVersions: %w", err)
+		}
+		out[rec.PolicyID] = rec
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.GetLatestPublishedVersions: rows: %w", err)
+	}
+	return out, nil
+}
+
 // GetLatestPublishedVersion returns the most recently published version.
 func (r *Repository) GetLatestPublishedVersion(ctx context.Context, policyID uuid.UUID) (*PolicyVersionRecord, error) {
 	q := fmt.Sprintf(`
@@ -447,6 +517,20 @@ func (r *Repository) UpdateDraftContent(ctx context.Context, p UpdateDraftConten
 		return nil, fmt.Errorf("policy.repo.UpdateDraftContent: %w", err)
 	}
 	return rec, nil
+}
+
+// DeleteDraftVersion deletes the current draft version of a policy. Returns
+// ErrNotFound if no draft exists.
+func (r *Repository) DeleteDraftVersion(ctx context.Context, policyID uuid.UUID) error {
+	const q = `DELETE FROM policy_versions WHERE policy_id = $1 AND status = 'draft'`
+	tag, err := r.db.Exec(ctx, q, policyID)
+	if err != nil {
+		return fmt.Errorf("policy.repo.DeleteDraftVersion: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("policy.repo.DeleteDraftVersion: %w", domain.ErrNotFound)
+	}
+	return nil
 }
 
 // PublishDraftVersion transitions the draft to published status.
