@@ -358,6 +358,72 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 	return rec, nil
 }
 
+// CreateFormWithDraftParams bundles the inputs needed to create a form and
+// its initial draft version atomically.
+type CreateFormWithDraftParams struct {
+	Form    CreateFormParams
+	DraftID uuid.UUID
+}
+
+// CreateFormWithDraft inserts a new form and its initial empty draft version
+// inside a single transaction. Either both rows are written or neither —
+// preventing a partial failure from leaving a form without any draft (the
+// "zombie form" state where neither edit, publish, nor policy-check can
+// proceed).
+func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDraftParams) (*FormRecord, *FormVersionRecord, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const formQ = `
+		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+
+	fp := p.Form
+	formRow := tx.QueryRow(ctx, formQ,
+		fp.ID, fp.ClinicID, fp.GroupID, fp.Name, fp.Description,
+		fp.OverallPrompt, fp.Tags, fp.CreatedBy,
+	)
+	formRec, err := scanForm(formRow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: form: %w", err)
+	}
+
+	verQ := fmt.Sprintf(`
+		INSERT INTO form_versions (id, form_id, status, created_by)
+		VALUES ($1, $2, 'draft', $3)
+		RETURNING %s`, versionCols)
+
+	verRow := tx.QueryRow(ctx, verQ, p.DraftID, fp.ID, fp.CreatedBy)
+	verRec, err := scanVersion(verRow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: draft: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: commit: %w", err)
+	}
+	return formRec, verRec, nil
+}
+
+// DeleteDraftVersion deletes the current draft version of a form. Cascading
+// FKs remove draft fields. Returns domain.ErrNotFound if no draft exists.
+func (r *Repository) DeleteDraftVersion(ctx context.Context, formID uuid.UUID) error {
+	const q = `DELETE FROM form_versions WHERE form_id = $1 AND status = 'draft'`
+	tag, err := r.db.Exec(ctx, q, formID)
+	if err != nil {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
 // GetFormByID fetches a form by ID scoped to the clinic.
 func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
 	const q = `
