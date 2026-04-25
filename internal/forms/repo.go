@@ -58,8 +58,9 @@ type repo interface {
 	// SavePolicyCheckResult stores the raw AI policy-check output on the draft.
 	SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error)
 	// UpdateDraftSystemHeader replaces the system_header_config JSONB on a draft.
+	// clinicID enforces tenant isolation — passing the wrong tenant returns ErrNotFound.
 	// No-op for non-draft versions (published rows are immutable).
-	UpdateDraftSystemHeader(ctx context.Context, versionID uuid.UUID, config []byte) (*FormVersionRecord, error)
+	UpdateDraftSystemHeader(ctx context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error)
 
 	// ── Fields ────────────────────────────────────────────────────────────────
 
