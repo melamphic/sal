@@ -184,7 +184,7 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 		// first attempt finding no transcript yet, then waits ~60s for River's
 		// first retry — a poor first-time UX. 8s is enough that on dev (Gemini
 		// transcribes a 15s clip in ~3-4s) extraction lands after transcription.
-		opts := &river.InsertOpts{ScheduledAt: time.Now().Add(8 * time.Second)}
+		opts := &river.InsertOpts{ScheduledAt: domain.TimeNow().Add(8 * time.Second)}
 		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, opts); err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
 		}
@@ -477,7 +477,7 @@ func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.CheckPolicy: marshal: %w", err)
 	}
-	if err := s.repo.UpdatePolicyCheckResult(ctx, noteID, string(resultJSON)); err != nil {
+	if err := s.repo.UpdatePolicyCheckResult(ctx, noteID, clinicID, string(resultJSON)); err != nil {
 		return nil, fmt.Errorf("notes.service.CheckPolicy: store: %w", err)
 	}
 
