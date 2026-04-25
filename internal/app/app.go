@@ -103,6 +103,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		MagicLinkTTL:  cfg.MagicLinkTTL,
 		AppURL:        cfg.AppURL,
 	}, staffCreator)
+	// Per-email throttle (3 burst, 1 every 2 minutes) defends against
+	// distributed botnets flooding a single victim's inbox; the per-IP
+	// middleware below covers the orthogonal flooding-many-emails-from-one-IP
+	// case. Both must be in place for full coverage.
+	authSvc.EnableMagicLinkEmailLimit()
 	// 10 requests per minute per IP on public auth endpoints.
 	rlStore := mw.NewRateLimiterStore(10.0/60.0, 10)
 	authHandler := auth.NewHandler(authSvc, rlStore)
@@ -242,6 +247,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&systemHeaderAdapter{repo: formsRepo},
 		&subjectRenderAdapter{patient: patientSvc},
 		store,
+		eventAdapter,
 	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
@@ -962,6 +968,69 @@ func (a *marketplacePolicySnapshotAdapter) SnapshotPolicy(ctx context.Context, p
 			Body:    c.Body,
 			Parity:  c.Parity,
 		}
+	}
+	return out, nil
+}
+
+// SnapshotPolicies fetches metadata, latest published versions, and clauses
+// for many policies in three queries instead of 3*N. Order of input IDs is
+// preserved in the output. Returns ErrNotFound if any policy is missing,
+// belongs to a different tenant, or has no published version.
+func (a *marketplacePolicySnapshotAdapter) SnapshotPolicies(ctx context.Context, policyIDs []uuid.UUID, clinicID uuid.UUID) ([]*marketplace.PolicySnapshot, error) {
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
+
+	policies, err := a.policyRepo.GetPoliciesByIDs(ctx, policyIDs, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policies: %w", err)
+	}
+	policyByID := make(map[uuid.UUID]*policy.PolicyRecord, len(policies))
+	for _, p := range policies {
+		policyByID[p.ID] = p
+	}
+
+	versions, err := a.policyRepo.GetLatestPublishedVersions(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: versions: %w", err)
+	}
+
+	clauses, err := a.policyRepo.GetLatestClausesForPolicies(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: clauses: %w", err)
+	}
+	clausesByPolicy := make(map[uuid.UUID][]*policy.ClauseWithPolicyID, len(policyIDs))
+	for _, c := range clauses {
+		clausesByPolicy[c.PolicyID] = append(clausesByPolicy[c.PolicyID], c)
+	}
+
+	out := make([]*marketplace.PolicySnapshot, 0, len(policyIDs))
+	for _, pid := range policyIDs {
+		p, ok := policyByID[pid]
+		if !ok {
+			return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policy %s: %w", pid, domain.ErrNotFound)
+		}
+		v, ok := versions[pid]
+		if !ok {
+			return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policy %s has no published version: %w", pid, domain.ErrNotFound)
+		}
+		pcs := clausesByPolicy[pid]
+		snap := &marketplace.PolicySnapshot{
+			PolicyID:    p.ID,
+			Name:        p.Name,
+			Description: p.Description,
+			Content:     v.Content,
+			Clauses:     make([]marketplace.PolicySnapshotClause, len(pcs)),
+		}
+		for i, c := range pcs {
+			snap.Clauses[i] = marketplace.PolicySnapshotClause{
+				BlockID: c.BlockID,
+				Title:   c.Title,
+				Body:    c.Body,
+				Parity:  c.Parity,
+			}
+		}
+		out = append(out, snap)
 	}
 	return out, nil
 }
