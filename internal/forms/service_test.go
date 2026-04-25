@@ -3,6 +3,7 @@ package forms
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -305,7 +306,7 @@ func TestService_PublishForm_MajorBumpResetMinor(t *testing.T) {
 	}
 }
 
-func TestService_PublishForm_NoDraftReturnsNotFound(t *testing.T) {
+func TestService_PublishForm_NoDraftReturnsConflict(t *testing.T) {
 	svc := newTestService()
 	ctx := context.Background()
 
@@ -316,17 +317,15 @@ func TestService_PublishForm_NoDraftReturnsNotFound(t *testing.T) {
 	})
 	formID := uuid.MustParse(created.ID)
 
-	// Publish once (consumes draft).
 	_, _ = svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, Name: "Form",
 		Fields: []FieldInput{{Position: 1, Title: "A", Type: "text", Config: json.RawMessage(`{}`)}},
 	})
 	_, _ = svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
 
-	// Second publish with no new draft → not found.
 	_, err := svc.PublishForm(ctx, PublishFormInput{FormID: formID, ClinicID: testClinicID, StaffID: testStaffID, ChangeType: domain.ChangeTypeMajor})
-	if !isNotFound(err) {
-		t.Errorf("expected ErrNotFound, got %v", err)
+	if !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("expected ErrConflict, got %v", err)
 	}
 }
 
