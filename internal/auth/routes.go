@@ -82,6 +82,16 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: rl,
 	}, h.startSignup)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "start-signup-checkout",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/signup/checkout-start",
+		Summary:     "Start a card-up-front signup via Stripe Checkout",
+		Description: "Public endpoint called by /mel when the user picks a paid plan with card-up-front. Pre-creates a Stripe customer + Checkout session (14-day trial) and returns the hosted Checkout URL. On success, Stripe redirects to the Salvia handoff URL embedded in success_url, which provisions the clinic.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.startSignupCheckout)
+
 	// ── Authenticated routes ──────────────────────────────────────────────────
 	huma.Register(api, huma.Operation{
 		OperationID: "logout",
