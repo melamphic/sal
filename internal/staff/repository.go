@@ -243,6 +243,25 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 	return row, nil
 }
 
+// CountStandardActive counts staff members in a clinic whose
+// note_tier='standard' and whose status is invited or active. Used by
+// tier auto-derivation (pricing-model-v3 §6) — invited staff count
+// because clinics pay for seats once an invitation is sent, not at
+// first login. Archived rows never count.
+func (r *Repository) CountStandardActive(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	var count int
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM staff
+		WHERE clinic_id = $1
+		  AND archived_at IS NULL
+		  AND note_tier = $2
+		  AND status IN ('invited', 'active')
+	`, clinicID, domain.NoteTierStandard).Scan(&count); err != nil {
+		return 0, fmt.Errorf("staff.repo.CountStandardActive: %w", err)
+	}
+	return count, nil
+}
+
 // Deactivate soft-deletes a staff member by setting status to 'deactivated'.
 func (r *Repository) Deactivate(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
