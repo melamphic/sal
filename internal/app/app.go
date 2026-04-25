@@ -158,13 +158,19 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		billingSvc := billing.NewService(
 			billingRepo,
 			&billingClinicAdapter{clinic: clinicSvc},
-			staticPlanLookup(priceMap),
+			newStaticPlanLookup(priceMap),
 			[]byte(cfg.StripeWebhookSecret),
 		)
 		if cfg.StripeAPIKey != "" {
 			billingSvc.EnablePortal(
 				billing.NewStripePortalClient(cfg.StripeAPIKey),
 				cfg.AppURL+"/settings/billing",
+			)
+			billingSvc.EnableCheckout(
+				billing.NewStripeCheckoutClient(cfg.StripeAPIKey),
+				billing.NewStripeCustomerClient(cfg.StripeAPIKey),
+				cfg.AppURL+"/settings/billing?checkout=success",
+				cfg.AppURL+"/settings/billing?checkout=cancelled",
 			)
 		}
 		billingHandler = billing.NewHandler(billingSvc, log)
@@ -530,6 +536,14 @@ func (a *billingClinicAdapter) GetStripeCustomerID(ctx context.Context, clinicID
 	return id, nil
 }
 
+func (a *billingClinicAdapter) GetClinicProfile(ctx context.Context, clinicID uuid.UUID) (billing.ClinicProfile, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return billing.ClinicProfile{}, fmt.Errorf("app.billingClinicAdapter.GetClinicProfile: %w", err)
+	}
+	return billing.ClinicProfile{Email: c.Email, Name: c.Name}, nil
+}
+
 func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clinicID uuid.UUID, s billing.SubscriptionState) error {
 	if err := a.clinic.ApplyBillingState(ctx, clinicID, clinic.BillingState{
 		Status:               s.Status,
@@ -543,11 +557,34 @@ func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clini
 }
 
 // staticPlanLookup implements billing.PlanLookup from a parsed env map.
-type staticPlanLookup map[string]domain.PlanCode
+// Holds the forward (price → plan) and reverse (plan → price) indexes —
+// the reverse is computed once at startup so Checkout calls don't scan
+// the map on every request.
+type staticPlanLookup struct {
+	byPrice map[string]domain.PlanCode
+	byPlan  map[domain.PlanCode]string
+}
 
-func (m staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
-	pc, ok := m[id]
+func newStaticPlanLookup(byPrice map[string]domain.PlanCode) *staticPlanLookup {
+	byPlan := make(map[domain.PlanCode]string, len(byPrice))
+	for priceID, plan := range byPrice {
+		// Last write wins on duplicate plan codes — config validation
+		// already rejects unknown codes; duplicate codes (two prices
+		// mapped to the same plan) are unusual but harmless: either
+		// price will roundtrip the webhook back to the same plan.
+		byPlan[plan] = priceID
+	}
+	return &staticPlanLookup{byPrice: byPrice, byPlan: byPlan}
+}
+
+func (m *staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
+	pc, ok := m.byPrice[id]
 	return pc, ok
+}
+
+func (m *staticPlanLookup) StripePriceIDForPlanCode(plan domain.PlanCode) (string, bool) {
+	id, ok := m.byPlan[plan]
+	return id, ok
 }
 
 // melHandoffAdapter implements auth.HandoffProvisioner by bridging to
