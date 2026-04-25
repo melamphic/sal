@@ -459,7 +459,7 @@ func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[
 		return fmt.Errorf("compute_policy_alignment: align: %w", err)
 	}
 
-	if err := w.notes.UpdatePolicyAlignment(ctx, noteID, pct); err != nil {
+	if err := w.notes.UpdatePolicyAlignment(ctx, noteID, note.ClinicID, pct); err != nil {
 		return fmt.Errorf("compute_policy_alignment: update: %w", err)
 	}
 	return nil
@@ -687,7 +687,7 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 	}
 
 	// Store key on note record.
-	if err := w.notes.UpdatePDFKey(ctx, noteID, key); err != nil {
+	if err := w.notes.UpdatePDFKey(ctx, noteID, note.ClinicID, key); err != nil {
 		return fmt.Errorf("generate_note_pdf: update key: %w", err)
 	}
 
