@@ -16,6 +16,11 @@ const (
 	NoteEventArchived           NoteEventType = "note.archived"
 	NoteEventExtractionComplete NoteEventType = "note.extraction_complete"
 	NoteEventExtractionFailed   NoteEventType = "note.extraction_failed"
+	// NoteEventPDFReady fires after the post-submit PDF generation worker
+	// uploads the rendered PDF and stores its key on the note row. The UI
+	// uses this to flip the download button from "rendering…" to active
+	// without polling.
+	NoteEventPDFReady NoteEventType = "note.pdf_ready"
 )
 
 // NoteEvent carries data about a single note lifecycle transition.
