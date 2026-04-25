@@ -85,6 +85,34 @@ func (f *fakeRepo) UpdateGroup(_ context.Context, p UpdateGroupParams) (*GroupRe
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 
+func (f *fakeRepo) CreateFormWithDraft(ctx context.Context, p CreateFormWithDraftParams) (*FormRecord, *FormVersionRecord, error) {
+	form, err := f.CreateForm(ctx, p.Form)
+	if err != nil {
+		return nil, nil, err
+	}
+	v, err := f.CreateDraftVersion(ctx, CreateDraftVersionParams{
+		ID:        p.DraftID,
+		FormID:    p.Form.ID,
+		CreatedBy: p.Form.CreatedBy,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return form, v, nil
+}
+
+func (f *fakeRepo) DeleteDraftVersion(_ context.Context, formID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, v := range f.versions {
+		if v.FormID == formID && v.Status == domain.FormVersionStatusDraft {
+			delete(f.versions, id)
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
 func (f *fakeRepo) CreateForm(_ context.Context, p CreateFormParams) (*FormRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
