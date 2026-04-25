@@ -63,6 +63,11 @@ type FormVersionRecord struct {
 	PublishedBy       *uuid.UUID
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
+	// SystemHeaderConfig is the JSONB config for the patient-header card —
+	// {enabled, fields[]} — pulled into every note rendering (review +
+	// PDF). Stored opaque so adding new patient identifiers does not require
+	// a migration; app code validates the field name list.
+	SystemHeaderConfig json.RawMessage
 }
 
 // FieldRecord is the raw database representation of a form_fields row.
@@ -462,7 +467,7 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
 	changes, rollback_of, policy_check_result::text, policy_check_by, policy_check_at,
-	published_at, published_by, created_by, created_at`
+	published_at, published_by, created_by, created_at, system_header_config`
 
 // GetDraftVersion returns the single mutable draft version for a form.
 func (r *Repository) GetDraftVersion(ctx context.Context, formID uuid.UUID) (*FormVersionRecord, error) {
@@ -670,6 +675,24 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 			return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", domain.ErrConflict)
 		}
 		return nil, fmt.Errorf("forms.repo.PublishDraftVersion: %w", err)
+	}
+	return rec, nil
+}
+
+// UpdateDraftSystemHeader replaces the system_header_config JSONB on the
+// given draft version. Published versions are immutable, so a non-draft row
+// returns domain.ErrNotFound (the WHERE clause filters it out).
+func (r *Repository) UpdateDraftSystemHeader(ctx context.Context, versionID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE form_versions
+		SET system_header_config = $2::jsonb
+		WHERE id = $1 AND status = 'draft'
+		RETURNING %s`, versionCols)
+
+	row := r.db.QueryRow(ctx, q, versionID, config)
+	rec, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.UpdateDraftSystemHeader: %w", err)
 	}
 	return rec, nil
 }
@@ -1035,6 +1058,7 @@ func scanVersion(row scannable) (*FormVersionRecord, error) {
 		&changeType, &v.ChangeSummary, &v.Changes, &v.RollbackOf,
 		&v.PolicyCheckResult, &v.PolicyCheckBy, &v.PolicyCheckAt,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedBy, &v.CreatedAt,
+		&v.SystemHeaderConfig,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

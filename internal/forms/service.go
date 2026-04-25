@@ -114,6 +114,23 @@ type FieldResponse struct {
 	MinConfidence  *float64        `json:"min_confidence,omitempty"`
 }
 
+// SystemHeaderConfig describes the per-form-version "patient header" card
+// that renders at the top of every note (review screen + PDF). Values come
+// from the linked subject row at note-render time, NOT from AI extraction —
+// this is the system's source of truth for patient identity.
+//
+//   - Enabled: when false, the form has no patient header card and the form
+//     fields render flush to the doc-theme chrome.
+//   - Fields: ordered list of patient-row attributes to surface. Valid values
+//     are validated in app code (see SystemHeaderField allow-list); adding a
+//     new identifier is code-only, no migration.
+//
+//nolint:revive
+type SystemHeaderConfig struct {
+	Enabled bool     `json:"enabled"`
+	Fields  []string `json:"fields"`
+}
+
 // FormVersionResponse is the API-safe representation of a form version.
 //
 //nolint:revive
@@ -145,6 +162,10 @@ type FormVersionResponse struct {
 	PublishedByName   *string                  `json:"published_by_name,omitempty"`
 	CreatedAt         string                   `json:"created_at"`
 	Fields            []*FieldResponse         `json:"fields,omitempty"`
+	// SystemHeader carries the patient-header card config. Always populated
+	// — the column has a non-null default — so clients can render the card
+	// without falling back to inferred state.
+	SystemHeader      *SystemHeaderConfig      `json:"system_header,omitempty"`
 }
 
 // FormVersionListResponse is a list of form versions.
@@ -314,6 +335,11 @@ type UpdateDraftInput struct {
 	OverallPrompt *string
 	Tags          []string
 	Fields        []FieldInput
+	// SystemHeader is the patient-header card config. nil means "leave the
+	// existing config alone" — UpdateDraft does NOT clobber the column when
+	// the input is absent. Clients that want to disable the card send
+	// `{enabled: false, fields: []}` explicitly.
+	SystemHeader  *SystemHeaderConfig
 }
 
 // FieldInput holds the values for a single field in a draft update.
@@ -598,6 +624,17 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 	fields, err := s.repo.ReplaceFields(ctx, draft.ID, fieldParams)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.UpdateDraft: fields: %w", err)
+	}
+
+	if input.SystemHeader != nil {
+		cfg, err := encodeSystemHeader(input.SystemHeader)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
+		}
+		draft, err = s.repo.UpdateDraftSystemHeader(ctx, draft.ID, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
+		}
 	}
 
 	resp := toFormResponse(form)
@@ -1481,6 +1518,9 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 			r.Fields[i] = toFieldResponse(f)
 		}
 	}
+	if hdr, err := decodeSystemHeader(v.SystemHeaderConfig); err == nil {
+		r.SystemHeader = hdr
+	}
 	return r
 }
 
@@ -1583,4 +1623,98 @@ func mirrorFromConfig(cfg json.RawMessage) *flatMirror {
 		m.FooterText = parsed.Footer.Text
 	}
 	return m
+}
+
+// SystemHeaderFieldAllowList enumerates every patient-row attribute the
+// system-header card knows how to render. Form authors pick a subset of
+// these for their form's header. The set is enforced at the service layer
+// (not the DB) so adding a new identifier — say a new aged-care funding
+// code — is a code change, not a migration.
+//
+// Vertical applicability is enforced by the Flutter editor, which only
+// surfaces fields that match the clinic's vertical when the picker opens.
+// The backend stays vertical-agnostic and accepts any name on this list;
+// renderers skip entries that resolve to empty for the linked subject.
+//
+//nolint:revive
+var SystemHeaderFieldAllowList = map[string]struct{}{
+	// Universal
+	"name":          {},
+	"photo":         {},
+	"id":            {},
+	"dob":           {},
+	"age":           {},
+	"sex":           {},
+	"visit_date":    {},
+	"clinician":     {},
+	// General / dental
+	"medical_alerts":  {},
+	"medications":     {},
+	"allergies":       {},
+	// Vet
+	"species":   {},
+	"breed":     {},
+	"microchip": {},
+	"weight":    {},
+	"desexed":   {},
+	"color":     {},
+	// Aged care
+	"room":               {},
+	"nhi_number":         {},
+	"medicare_number":    {},
+	"preferred_language": {},
+	"funding_level":      {},
+	"admission_date":     {},
+}
+
+// encodeSystemHeader validates and serialises a SystemHeaderConfig for
+// persistence. Unknown field identifiers are rejected as ErrValidation so
+// a misbehaving client cannot silently store identifiers the renderer can't
+// resolve.
+func encodeSystemHeader(h *SystemHeaderConfig) ([]byte, error) {
+	if h == nil {
+		return nil, fmt.Errorf("encodeSystemHeader: %w", domain.ErrValidation)
+	}
+	cleaned := &SystemHeaderConfig{Enabled: h.Enabled, Fields: make([]string, 0, len(h.Fields))}
+	seen := make(map[string]struct{}, len(h.Fields))
+	for _, f := range h.Fields {
+		if _, ok := SystemHeaderFieldAllowList[f]; !ok {
+			return nil, fmt.Errorf("encodeSystemHeader: unknown field %q: %w", f, domain.ErrValidation)
+		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		cleaned.Fields = append(cleaned.Fields, f)
+	}
+	out, err := json.Marshal(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("encodeSystemHeader: %w", err)
+	}
+	return out, nil
+}
+
+// decodeSystemHeader parses the stored JSONB into a SystemHeaderConfig. A
+// missing or malformed blob returns the default config so older rows that
+// somehow slipped through the migration default still render the header
+// rather than disappearing.
+func decodeSystemHeader(raw json.RawMessage) (*SystemHeaderConfig, error) {
+	if len(raw) == 0 {
+		return defaultSystemHeader(), nil
+	}
+	var h SystemHeaderConfig
+	if err := json.Unmarshal(raw, &h); err != nil {
+		return defaultSystemHeader(), fmt.Errorf("decodeSystemHeader: %w", err)
+	}
+	if h.Fields == nil {
+		h.Fields = []string{}
+	}
+	return &h, nil
+}
+
+func defaultSystemHeader() *SystemHeaderConfig {
+	return &SystemHeaderConfig{
+		Enabled: true,
+		Fields:  []string{"name", "photo", "id", "dob", "age", "sex", "visit_date"},
+	}
 }

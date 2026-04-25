@@ -151,15 +151,25 @@ func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formLi
 
 // ── Draft update ──────────────────────────────────────────────────────────────
 
+// systemHeaderBodyInput is the API shape for the patient-header card config.
+// Omit the field on a draft update to leave the existing config alone; send
+// `{enabled: false, fields: []}` to disable the card explicitly. Fields must
+// be drawn from forms.SystemHeaderFieldAllowList.
+type systemHeaderBodyInput struct {
+	Enabled bool     `json:"enabled" doc:"Whether the patient header card renders on this form."`
+	Fields  []string `json:"fields"  doc:"Ordered list of patient-row attributes to surface in the header."`
+}
+
 type updateDraftBodyInput struct {
 	FormID string `path:"form_id"`
 	Body   struct {
-		GroupID       *string          `json:"group_id,omitempty"`
-		Name          string           `json:"name"          minLength:"1"`
-		Description   *string          `json:"description,omitempty"`
-		OverallPrompt *string          `json:"overall_prompt,omitempty"`
-		Tags          []string         `json:"tags,omitempty"`
-		Fields        []fieldBodyInput `json:"fields" doc:"Full replacement field list. Ordering reflects the position values."`
+		GroupID       *string                `json:"group_id,omitempty"`
+		Name          string                 `json:"name"          minLength:"1"`
+		Description   *string                `json:"description,omitempty"`
+		OverallPrompt *string                `json:"overall_prompt,omitempty"`
+		Tags          []string               `json:"tags,omitempty"`
+		Fields        []fieldBodyInput       `json:"fields" doc:"Full replacement field list. Ordering reflects the position values."`
+		SystemHeader  *systemHeaderBodyInput `json:"system_header,omitempty" doc:"Patient header card config. Omit to leave unchanged."`
 	}
 }
 
@@ -191,6 +201,14 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 		fields[i] = FieldInput(f)
 	}
 
+	var sysHeader *SystemHeaderConfig
+	if input.Body.SystemHeader != nil {
+		sysHeader = &SystemHeaderConfig{
+			Enabled: input.Body.SystemHeader.Enabled,
+			Fields:  input.Body.SystemHeader.Fields,
+		}
+	}
+
 	resp, err := h.svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID:        formID,
 		ClinicID:      clinicID,
@@ -201,6 +219,7 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 		OverallPrompt: input.Body.OverallPrompt,
 		Tags:          input.Body.Tags,
 		Fields:        fields,
+		SystemHeader:  sysHeader,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
@@ -711,6 +730,8 @@ func mapFormError(err error) error {
 		return huma.Error409Conflict("operation not allowed in current state")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
+	case errors.Is(err, domain.ErrValidation):
+		return huma.Error422UnprocessableEntity(err.Error())
 	default:
 		return huma.Error500InternalServerError("internal server error")
 	}

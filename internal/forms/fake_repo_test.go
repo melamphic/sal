@@ -351,6 +351,19 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	return cloneVersion(v), nil
 }
 
+func (f *fakeRepo) UpdateDraftSystemHeader(_ context.Context, versionID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.versions[versionID]
+	if !ok || v.Status != domain.FormVersionStatusDraft {
+		return nil, domain.ErrNotFound
+	}
+	cp := make([]byte, len(config))
+	copy(cp, config)
+	v.SystemHeaderConfig = cp
+	return cloneVersion(v), nil
+}
+
 func (f *fakeRepo) SavePolicyCheckResult(_ context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
