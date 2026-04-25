@@ -625,7 +625,7 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		if err != nil {
 			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
 		}
-		draft, err = s.repo.UpdateDraftSystemHeader(ctx, draft.ID, cfg)
+		draft, err = s.repo.UpdateDraftSystemHeader(ctx, draft.ID, form.ClinicID, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
 		}
@@ -704,6 +704,7 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 
 		_, err = s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
 			ID:            draft.ID,
+			ClinicID:      input.ClinicID,
 			VersionMajor:  major,
 			VersionMinor:  minor,
 			ChangeType:    input.ChangeType,
@@ -829,6 +830,7 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 
 	if _, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
 		VersionID: draft.ID,
+		ClinicID:  clinicID,
 		Result:    string(payload),
 		CheckedBy: staffID,
 		CheckedAt: domain.TimeNow(),
