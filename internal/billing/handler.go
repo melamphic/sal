@@ -91,3 +91,36 @@ func (h *Handler) createPortalSession(ctx context.Context, _ *portalSessionInput
 	resp.Body.URL = url
 	return resp, nil
 }
+
+// ── Checkout session ─────────────────────────────────────────────────────
+
+type checkoutSessionInput struct {
+	Body struct {
+		PlanCode string `json:"plan_code" minLength:"3" maxLength:"64" doc:"Salvia plan_code (e.g. paws_practice_monthly) the clinic wants to subscribe to."`
+	}
+}
+
+type checkoutSessionResponse struct {
+	Body struct {
+		URL string `json:"url" doc:"One-shot hosted URL for Stripe Checkout — redirect the user here."`
+	}
+}
+
+// createCheckoutSession handles POST /api/v1/billing/checkout-session.
+// Returns 400 when the plan_code is unknown or Checkout is disabled at
+// startup (no STRIPE_API_KEY).
+func (h *Handler) createCheckoutSession(ctx context.Context, in *checkoutSessionInput) (*checkoutSessionResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	url, err := h.svc.CreateCheckoutSession(ctx, clinicID, domain.PlanCode(in.Body.PlanCode))
+	if err != nil {
+		if errors.Is(err, domain.ErrValidation) {
+			return nil, huma.Error400BadRequest("checkout unavailable — invalid plan or feature disabled")
+		}
+		h.log.ErrorContext(ctx, "billing checkout session failed", "error", err)
+		return nil, huma.Error500InternalServerError("internal server error")
+	}
+
+	resp := &checkoutSessionResponse{}
+	resp.Body.URL = url
+	return resp, nil
+}
