@@ -22,6 +22,22 @@ type jobEnqueuer interface {
 // maxNotesPerRecording is the maximum number of notes (form fills) per recording.
 const maxNotesPerRecording = 3
 
+// NoteCapEnforcer is the cross-domain hook the notecap module wires in
+// to gate `CreateNote` against the per-period (or trial) note cap.
+//
+// CheckCanCreate returns domain.ErrForbidden when the clinic is at or
+// above 150% of cap, or when a trial clinic has exhausted its 100-note
+// quota. Returns nil otherwise.
+//
+// Evaluate runs after a successful create and fires the 80% warning /
+// 110% CS notification cascade. Implementations must swallow non-fatal
+// errors (e.g. mailer failures) internally — only DB read/write errors
+// that should 500 the request bubble up here.
+type NoteCapEnforcer interface {
+	CheckCanCreate(ctx context.Context, clinicID uuid.UUID) error
+	Evaluate(ctx context.Context, clinicID uuid.UUID) error
+}
+
 // Service handles business logic for the notes module.
 type Service struct {
 	repo          repo
@@ -31,6 +47,7 @@ type Service struct {
 	policyChecker extraction.PolicyDetailedChecker // nil = skip policy check
 	policyClauses PolicyClauseProvider             // nil = skip policy check
 	verticals     VerticalProvider                 // nil = generic (vertical-neutral) prompts
+	noteCap       NoteCapEnforcer                  // nil = cap not enforced (tests, local dev)
 }
 
 // NewService constructs a notes Service.
@@ -54,6 +71,13 @@ func (s *Service) SetPolicyChecker(checker extraction.PolicyDetailedChecker, cla
 // check still runs with a generic "clinic type not specified" preamble.
 func (s *Service) SetVerticalProvider(v VerticalProvider) {
 	s.verticals = v
+}
+
+// SetNoteCapEnforcer wires the note-cap pre-check + cascade evaluator.
+// Optional — leaving it nil disables enforcement (used by unit tests
+// that don't care about billing).
+func (s *Service) SetNoteCapEnforcer(c NoteCapEnforcer) {
+	s.noteCap = c
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -148,6 +172,12 @@ type UpdateFieldInput struct {
 // CreateNote creates a note and (unless SkipExtraction) enqueues the extraction job.
 // Enforces the 3-notes-per-recording cap when a recording is provided.
 func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteResponse, error) {
+	if s.noteCap != nil {
+		if err := s.noteCap.CheckCanCreate(ctx, input.ClinicID); err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: %w", err)
+		}
+	}
+
 	if input.RecordingID != nil {
 		count, err := s.repo.CountNotesByRecording(ctx, input.ClinicID, *input.RecordingID)
 		if err != nil {
@@ -198,6 +228,16 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 		ActorID:   input.StaffID,
 		ActorRole: input.ActorRole,
 	})
+
+	// Best-effort cap evaluation — fires the 80% warning email or 110%
+	// CS notification when this note crosses a threshold for the first
+	// time in the period. Never blocks create; the enforcer logs its
+	// own failures (mailer errors, etc.) so we don't surface them here.
+	if s.noteCap != nil {
+		if err := s.noteCap.Evaluate(ctx, input.ClinicID); err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: cap evaluate: %w", err)
+		}
+	}
 
 	return toNoteResponse(note, nil), nil
 }
