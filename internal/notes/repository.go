@@ -343,27 +343,27 @@ func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, record
 
 // UpdatePolicyAlignment sets the policy_alignment_pct on a note.
 // Called by the ComputePolicyAlignmentWorker after the AI alignment job runs.
-func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error {
-	const q = `UPDATE notes SET policy_alignment_pct = $2 WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, pct); err != nil {
+func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID, clinicID uuid.UUID, pct float64) error {
+	const q = `UPDATE notes SET policy_alignment_pct = $3 WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, pct); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePolicyAlignment: %w", err)
 	}
 	return nil
 }
 
 // UpdatePDFKey sets the pdf_storage_key on a note after the PDF is generated.
-func (r *Repository) UpdatePDFKey(ctx context.Context, noteID uuid.UUID, key string) error {
-	const q = `UPDATE notes SET pdf_storage_key = $2 WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, key); err != nil {
+func (r *Repository) UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUID, key string) error {
+	const q = `UPDATE notes SET pdf_storage_key = $3 WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, key); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePDFKey: %w", err)
 	}
 	return nil
 }
 
 // UpdatePolicyCheckResult sets the policy_check_result JSONB on a note.
-func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error {
-	const q = `UPDATE notes SET policy_check_result = $2::jsonb WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, resultJSON); err != nil {
+func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
+	const q = `UPDATE notes SET policy_check_result = $3::jsonb WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, resultJSON); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePolicyCheckResult: %w", err)
 	}
 	return nil
