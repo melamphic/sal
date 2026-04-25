@@ -726,7 +726,7 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 // RunPolicyCheck calls the AI to assess whether the form's fields cover the
 // requirements of all linked policy clauses. Saves the result on the draft.
 // Returns ErrConflict if no policies are linked or no checker is configured.
-func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID uuid.UUID) (*FormVersionResponse, error) {
+func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID uuid.UUID) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
@@ -827,17 +827,18 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: marshal result: %w", err)
 	}
 
-	version, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
+	if _, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
 		VersionID: draft.ID,
 		Result:    string(payload),
 		CheckedBy: staffID,
 		CheckedAt: domain.TimeNow(),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: save: %w", err)
 	}
 
-	return toVersionResponse(version, nil), nil
+	// Return the full form so the editor rehydrates draft + latest_published
+	// in a single call — same pattern as updateDraft / publish / rollback.
+	return s.GetForm(ctx, formID, clinicID)
 }
 
 // buildPolicyCheckEntries regroups a flat list of clause results back into one

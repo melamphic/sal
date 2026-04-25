@@ -174,10 +174,6 @@ type updateDraftBodyInput struct {
 	}
 }
 
-type versionHTTPResponse struct {
-	Body *FormVersionResponse
-}
-
 // updateDraft handles PUT /api/v1/forms/{form_id}/draft.
 func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
@@ -286,7 +282,7 @@ func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) 
 // ── Policy check ──────────────────────────────────────────────────────────────
 
 // policyCheckForm handles POST /api/v1/forms/{form_id}/policy-check.
-func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*versionHTTPResponse, error) {
+func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -299,7 +295,7 @@ func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*ver
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Rollback ──────────────────────────────────────────────────────────────────
