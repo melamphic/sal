@@ -302,6 +302,17 @@ func (s *Service) GetByID(ctx context.Context, clinicID uuid.UUID) (*ClinicRespo
 	return s.decryptAndBuild(ctx, row)
 }
 
+// GetVertical returns the configured vertical for a clinic. It avoids the
+// decrypt step used by GetByID so callers on the hot path (e.g. patient
+// create) can resolve the vertical cheaply.
+func (s *Service) GetVertical(ctx context.Context, clinicID uuid.UUID) (domain.Vertical, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("clinic.service.GetVertical: %w", err)
+	}
+	return row.Vertical, nil
+}
+
 // UpdateInput holds optional update fields. Nil = leave unchanged.
 type UpdateInput struct {
 	Name               *string

@@ -35,6 +35,7 @@ type SubjectRecord struct {
 	DisplayName string
 	Status      domain.SubjectStatus
 	Vertical    domain.Vertical
+	PhotoURL    *string
 	CreatedBy   uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -106,6 +107,64 @@ type GeneralDetailsRecord struct {
 	UpdatedAt             time.Time
 }
 
+// AgedCareDetailsRecord is the raw database representation of an
+// aged_care_subject_details row. Encrypted fields (NHINumber, MedicareNumber,
+// MedicalAlerts, Medications, Allergies, ChronicConditions, DietNotes) hold
+// ciphertext at this layer — service.go encrypts on write and decrypts on read.
+type AgedCareDetailsRecord struct {
+	SubjectID            uuid.UUID
+	DateOfBirth          *time.Time
+	Sex                  *domain.AgedCareSex
+	Room                 *string
+	NHINumber            *string // PII: encrypted
+	MedicareNumber       *string // PII: encrypted
+	Ethnicity            *string
+	PreferredLanguage    *string
+	MedicalAlerts        *string // PHI: encrypted
+	Medications          *string // PHI: encrypted
+	Allergies            *string // PHI: encrypted
+	ChronicConditions    *string // PHI: encrypted
+	CognitiveStatus      *domain.AgedCareCognitiveStatus
+	MobilityStatus       *domain.AgedCareMobilityStatus
+	ContinenceStatus     *domain.AgedCareContinenceStatus
+	DietNotes            *string // PHI: encrypted
+	AdvanceDirectiveFlag bool
+	FundingLevel         *domain.AgedCareFundingLevel
+	AdmissionDate        *time.Time
+	PrimaryGPName        *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// SubjectContactRecord is a row from subject_contacts — one (subject, contact,
+// role) binding. A single contact can appear multiple times for the same
+// subject with different roles, which is why role is part of the PK.
+type SubjectContactRecord struct {
+	SubjectID uuid.UUID
+	ContactID uuid.UUID
+	Role      domain.SubjectContactRole
+	Note      *string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// SubjectContactWithContact is a subject_contacts row joined with the
+// underlying contact record so the service can decrypt and return the
+// contact details in a single call.
+type SubjectContactWithContact struct {
+	Role    domain.SubjectContactRole
+	Note    *string
+	Contact *ContactRecord
+}
+
+// CreateSubjectContactParams holds values for an add-contact insert.
+type CreateSubjectContactParams struct {
+	SubjectID uuid.UUID
+	ContactID uuid.UUID
+	Role      domain.SubjectContactRole
+	Note      *string
+}
+
 // SubjectAccessLogRecord is a row from subject_access_log. Used for
 // historical replay / compliance export; writes go through CreateSubjectAccessLog.
 type SubjectAccessLogRecord struct {
@@ -130,13 +189,15 @@ type CreateSubjectAccessLogParams struct {
 
 // SubjectRow is a fully joined subject — subject + contact + per-vertical details.
 // This is what the service receives and decrypts before returning to handlers.
-// Only one of VetDetails / DentalDetails / GeneralDetails is non-nil for any given subject.
+// Only one of VetDetails / DentalDetails / GeneralDetails / AgedCareDetails is
+// non-nil for any given subject.
 type SubjectRow struct {
-	Subject        SubjectRecord
-	Contact        *ContactRecord        // nil if no contact linked
-	VetDetails     *VetDetailsRecord     // nil if not a vet vertical
-	DentalDetails  *DentalDetailsRecord  // nil if not a dental vertical
-	GeneralDetails *GeneralDetailsRecord // nil if not a general_clinic vertical
+	Subject         SubjectRecord
+	Contact         *ContactRecord         // nil if no contact linked
+	VetDetails      *VetDetailsRecord      // nil if not a vet vertical
+	DentalDetails   *DentalDetailsRecord   // nil if not a dental vertical
+	GeneralDetails  *GeneralDetailsRecord  // nil if not a general_clinic vertical
+	AgedCareDetails *AgedCareDetailsRecord // nil if not an aged_care vertical
 }
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -170,6 +231,7 @@ type CreateSubjectParams struct {
 	DisplayName string
 	Status      domain.SubjectStatus
 	Vertical    domain.Vertical
+	PhotoURL    *string
 	CreatedBy   uuid.UUID
 }
 
@@ -198,6 +260,7 @@ type UpdateSubjectParams struct {
 	DisplayName *string
 	Status      *domain.SubjectStatus
 	ContactID   *uuid.UUID
+	PhotoURL    *string
 }
 
 // UpdateVetDetailsParams holds fields for a partial vet details update.
@@ -284,6 +347,56 @@ type UpdateGeneralDetailsParams struct {
 	PrimaryProviderName   *string
 }
 
+// CreateAgedCareDetailsParams holds all values needed to insert an
+// aged_care_subject_details row. Encrypted fields are pre-encrypted by the
+// service before this call.
+type CreateAgedCareDetailsParams struct {
+	SubjectID            uuid.UUID
+	DateOfBirth          *time.Time
+	Sex                  *domain.AgedCareSex
+	Room                 *string
+	NHINumber            *string // pre-encrypted
+	MedicareNumber       *string // pre-encrypted
+	Ethnicity            *string
+	PreferredLanguage    *string
+	MedicalAlerts        *string // pre-encrypted
+	Medications          *string // pre-encrypted
+	Allergies            *string // pre-encrypted
+	ChronicConditions    *string // pre-encrypted
+	CognitiveStatus      *domain.AgedCareCognitiveStatus
+	MobilityStatus       *domain.AgedCareMobilityStatus
+	ContinenceStatus     *domain.AgedCareContinenceStatus
+	DietNotes            *string // pre-encrypted
+	AdvanceDirectiveFlag bool
+	FundingLevel         *domain.AgedCareFundingLevel
+	AdmissionDate        *time.Time
+	PrimaryGPName        *string
+}
+
+// UpdateAgedCareDetailsParams holds fields for a partial aged-care details
+// update. Encrypted fields are pre-encrypted by the service before this call.
+type UpdateAgedCareDetailsParams struct {
+	DateOfBirth          *time.Time
+	Sex                  *domain.AgedCareSex
+	Room                 *string
+	NHINumber            *string // pre-encrypted
+	MedicareNumber       *string // pre-encrypted
+	Ethnicity            *string
+	PreferredLanguage    *string
+	MedicalAlerts        *string // pre-encrypted
+	Medications          *string // pre-encrypted
+	Allergies            *string // pre-encrypted
+	ChronicConditions    *string // pre-encrypted
+	CognitiveStatus      *domain.AgedCareCognitiveStatus
+	MobilityStatus       *domain.AgedCareMobilityStatus
+	ContinenceStatus     *domain.AgedCareContinenceStatus
+	DietNotes            *string // pre-encrypted
+	AdvanceDirectiveFlag *bool
+	FundingLevel         *domain.AgedCareFundingLevel
+	AdmissionDate        *time.Time
+	PrimaryGPName        *string
+}
+
 // ListParams holds pagination parameters for contact listing.
 type ListParams struct {
 	Limit  int
@@ -298,6 +411,7 @@ type ListSubjectsParams struct {
 	Species   *domain.VetSpecies    // optional filter
 	ContactID *uuid.UUID            // optional filter
 	CreatedBy *uuid.UUID            // optional — for view_own_patients scope
+	Search    *string               // optional — ILIKE match on display_name
 }
 
 // Repository handles all database interactions for the patient module.
@@ -421,12 +535,12 @@ func (r *Repository) UpdateContact(ctx context.Context, id, clinicID uuid.UUID, 
 func (r *Repository) CreateSubject(ctx context.Context, p CreateSubjectParams) (*SubjectRecord, error) {
 	s := &SubjectRecord{}
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO subjects (id, clinic_id, contact_id, display_name, status, vertical, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical,
+		INSERT INTO subjects (id, clinic_id, contact_id, display_name, status, vertical, photo_url, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
 		          created_by, created_at, updated_at, archived_at
-	`, p.ID, p.ClinicID, p.ContactID, p.DisplayName, p.Status, p.Vertical, p.CreatedBy).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+	`, p.ID, p.ClinicID, p.ContactID, p.DisplayName, p.Status, p.Vertical, p.PhotoURL, p.CreatedBy).Scan(
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -471,6 +585,7 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 	d := &VetDetailsRecord{}
 	dd := &DentalDetailsRecord{}
 	g := &GeneralDetailsRecord{}
+	ac := &AgedCareDetailsRecord{}
 
 	var (
 		// Contact nullable columns.
@@ -531,11 +646,34 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		gPrimaryProvider   *string
 		gCreatedAt         *time.Time
 		gUpdatedAt         *time.Time
+		// Aged-care details nullable columns.
+		acSubjectID         *uuid.UUID
+		acDOB               *time.Time
+		acSex               *domain.AgedCareSex
+		acRoom              *string
+		acNHI               *string
+		acMedicare          *string
+		acEthnicity         *string
+		acLanguage          *string
+		acMedicalAlerts     *string
+		acMedications       *string
+		acAllergies         *string
+		acChronicConditions *string
+		acCognitive         *domain.AgedCareCognitiveStatus
+		acMobility          *domain.AgedCareMobilityStatus
+		acContinence        *domain.AgedCareContinenceStatus
+		acDietNotes         *string
+		acAdvanceDirective  *bool
+		acFundingLevel      *domain.AgedCareFundingLevel
+		acAdmissionDate     *time.Time
+		acPrimaryGP         *string
+		acCreatedAt         *time.Time
+		acUpdatedAt         *time.Time
 	)
 
 	err := r.db.QueryRow(ctx, `
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -552,15 +690,22 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 			g.allergies, g.chronic_conditions, g.admission_warnings,
 			g.insurance_provider_name, g.insurance_policy_number,
 			g.referring_provider_name, g.primary_provider_name,
-			g.created_at, g.updated_at
+			g.created_at, g.updated_at,
+			ac.subject_id, ac.date_of_birth, ac.sex, ac.room, ac.nhi_number,
+			ac.medicare_number, ac.ethnicity, ac.preferred_language,
+			ac.medical_alerts, ac.medications, ac.allergies, ac.chronic_conditions,
+			ac.cognitive_status, ac.mobility_status, ac.continence_status,
+			ac.diet_notes, ac.advance_directive_flag, ac.funding_level,
+			ac.admission_date, ac.primary_gp_name, ac.created_at, ac.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
 		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
 		LEFT JOIN general_subject_details g ON g.subject_id = s.id
+		LEFT JOIN aged_care_subject_details ac ON ac.subject_id = s.id
 		WHERE s.id = $1 AND s.clinic_id = $2 AND s.archived_at IS NULL
 	`, id, clinicID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
 		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
@@ -574,6 +719,11 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		&gAllergies, &gChronicConditions, &gAdmissionWarn,
 		&gInsProvider, &gInsPolicy, &gReferringProvider, &gPrimaryProvider,
 		&gCreatedAt, &gUpdatedAt,
+		&acSubjectID, &acDOB, &acSex, &acRoom, &acNHI, &acMedicare,
+		&acEthnicity, &acLanguage, &acMedicalAlerts, &acMedications,
+		&acAllergies, &acChronicConditions, &acCognitive, &acMobility,
+		&acContinence, &acDietNotes, &acAdvanceDirective, &acFundingLevel,
+		&acAdmissionDate, &acPrimaryGP, &acCreatedAt, &acUpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -654,6 +804,34 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		row.GeneralDetails = g
 	}
 
+	if acSubjectID != nil {
+		ac.SubjectID = *acSubjectID
+		ac.DateOfBirth = acDOB
+		ac.Sex = acSex
+		ac.Room = acRoom
+		ac.NHINumber = acNHI
+		ac.MedicareNumber = acMedicare
+		ac.Ethnicity = acEthnicity
+		ac.PreferredLanguage = acLanguage
+		ac.MedicalAlerts = acMedicalAlerts
+		ac.Medications = acMedications
+		ac.Allergies = acAllergies
+		ac.ChronicConditions = acChronicConditions
+		ac.CognitiveStatus = acCognitive
+		ac.MobilityStatus = acMobility
+		ac.ContinenceStatus = acContinence
+		ac.DietNotes = acDietNotes
+		if acAdvanceDirective != nil {
+			ac.AdvanceDirectiveFlag = *acAdvanceDirective
+		}
+		ac.FundingLevel = acFundingLevel
+		ac.AdmissionDate = acAdmissionDate
+		ac.PrimaryGPName = acPrimaryGP
+		ac.CreatedAt = *acCreatedAt
+		ac.UpdatedAt = *acUpdatedAt
+		row.AgedCareDetails = ac
+	}
+
 	return row, nil
 }
 
@@ -679,6 +857,10 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 		args = append(args, *p.Species)
 		where += fmt.Sprintf(" AND v.species = $%d", len(args))
 	}
+	if p.Search != nil && *p.Search != "" {
+		args = append(args, *p.Search)
+		where += fmt.Sprintf(" AND s.display_name ILIKE '%%' || $%d || '%%'", len(args))
+	}
 
 	// Count total matching rows.
 	var total int
@@ -688,6 +870,7 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
 		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
 		LEFT JOIN general_subject_details g ON g.subject_id = s.id
+		LEFT JOIN aged_care_subject_details ac ON ac.subject_id = s.id
 		WHERE %s
 	`, where)
 	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
@@ -698,7 +881,7 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 	args = append(args, p.Limit, p.Offset)
 	listQuery := fmt.Sprintf(`
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -715,12 +898,19 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 			g.allergies, g.chronic_conditions, g.admission_warnings,
 			g.insurance_provider_name, g.insurance_policy_number,
 			g.referring_provider_name, g.primary_provider_name,
-			g.created_at, g.updated_at
+			g.created_at, g.updated_at,
+			ac.subject_id, ac.date_of_birth, ac.sex, ac.room, ac.nhi_number,
+			ac.medicare_number, ac.ethnicity, ac.preferred_language,
+			ac.medical_alerts, ac.medications, ac.allergies, ac.chronic_conditions,
+			ac.cognitive_status, ac.mobility_status, ac.continence_status,
+			ac.diet_notes, ac.advance_directive_flag, ac.funding_level,
+			ac.admission_date, ac.primary_gp_name, ac.created_at, ac.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
 		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
 		LEFT JOIN general_subject_details g ON g.subject_id = s.id
+		LEFT JOIN aged_care_subject_details ac ON ac.subject_id = s.id
 		WHERE %s
 		ORDER BY s.created_at DESC
 		LIMIT $%d OFFSET $%d
@@ -755,12 +945,13 @@ func (r *Repository) UpdateSubject(ctx context.Context, id, clinicID uuid.UUID, 
 			display_name = COALESCE($3, display_name),
 			status       = COALESCE($4, status),
 			contact_id   = COALESCE($5, contact_id),
+			photo_url    = COALESCE($6, photo_url),
 			updated_at   = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
 		          created_by, created_at, updated_at, archived_at
-	`, id, clinicID, p.DisplayName, p.Status, p.ContactID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+	`, id, clinicID, p.DisplayName, p.Status, p.ContactID, p.PhotoURL).Scan(
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -964,6 +1155,132 @@ func (r *Repository) UpdateGeneralDetails(ctx context.Context, subjectID uuid.UU
 	return g, nil
 }
 
+// CreateAgedCareDetails inserts an aged_care_subject_details row.
+func (r *Repository) CreateAgedCareDetails(ctx context.Context, p CreateAgedCareDetailsParams) (*AgedCareDetailsRecord, error) {
+	a := &AgedCareDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO aged_care_subject_details
+			(subject_id, date_of_birth, sex, room, nhi_number, medicare_number,
+			 ethnicity, preferred_language, medical_alerts, medications,
+			 allergies, chronic_conditions, cognitive_status, mobility_status,
+			 continence_status, diet_notes, advance_directive_flag,
+			 funding_level, admission_date, primary_gp_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+		        $15, $16, $17, $18, $19, $20)
+		RETURNING subject_id, date_of_birth, sex, room, nhi_number, medicare_number,
+		          ethnicity, preferred_language, medical_alerts, medications,
+		          allergies, chronic_conditions, cognitive_status, mobility_status,
+		          continence_status, diet_notes, advance_directive_flag,
+		          funding_level, admission_date, primary_gp_name,
+		          created_at, updated_at
+	`, p.SubjectID, p.DateOfBirth, p.Sex, p.Room, p.NHINumber, p.MedicareNumber,
+		p.Ethnicity, p.PreferredLanguage, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.CognitiveStatus, p.MobilityStatus,
+		p.ContinenceStatus, p.DietNotes, p.AdvanceDirectiveFlag,
+		p.FundingLevel, p.AdmissionDate, p.PrimaryGPName,
+	).Scan(
+		&a.SubjectID, &a.DateOfBirth, &a.Sex, &a.Room, &a.NHINumber, &a.MedicareNumber,
+		&a.Ethnicity, &a.PreferredLanguage, &a.MedicalAlerts, &a.Medications,
+		&a.Allergies, &a.ChronicConditions, &a.CognitiveStatus, &a.MobilityStatus,
+		&a.ContinenceStatus, &a.DietNotes, &a.AdvanceDirectiveFlag,
+		&a.FundingLevel, &a.AdmissionDate, &a.PrimaryGPName,
+		&a.CreatedAt, &a.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.CreateAgedCareDetails: %w", err)
+	}
+	return a, nil
+}
+
+// UpdateAgedCareDetails applies a partial update to an aged_care_subject_details row.
+func (r *Repository) UpdateAgedCareDetails(ctx context.Context, subjectID uuid.UUID, p UpdateAgedCareDetailsParams) (*AgedCareDetailsRecord, error) {
+	a := &AgedCareDetailsRecord{}
+	err := r.db.QueryRow(ctx, `
+		UPDATE aged_care_subject_details SET
+			date_of_birth          = COALESCE($2, date_of_birth),
+			sex                    = COALESCE($3, sex),
+			room                   = COALESCE($4, room),
+			nhi_number             = COALESCE($5, nhi_number),
+			medicare_number        = COALESCE($6, medicare_number),
+			ethnicity              = COALESCE($7, ethnicity),
+			preferred_language     = COALESCE($8, preferred_language),
+			medical_alerts         = COALESCE($9, medical_alerts),
+			medications            = COALESCE($10, medications),
+			allergies              = COALESCE($11, allergies),
+			chronic_conditions     = COALESCE($12, chronic_conditions),
+			cognitive_status       = COALESCE($13, cognitive_status),
+			mobility_status        = COALESCE($14, mobility_status),
+			continence_status      = COALESCE($15, continence_status),
+			diet_notes             = COALESCE($16, diet_notes),
+			advance_directive_flag = COALESCE($17, advance_directive_flag),
+			funding_level          = COALESCE($18, funding_level),
+			admission_date         = COALESCE($19, admission_date),
+			primary_gp_name        = COALESCE($20, primary_gp_name),
+			updated_at             = NOW()
+		WHERE subject_id = $1
+		RETURNING subject_id, date_of_birth, sex, room, nhi_number, medicare_number,
+		          ethnicity, preferred_language, medical_alerts, medications,
+		          allergies, chronic_conditions, cognitive_status, mobility_status,
+		          continence_status, diet_notes, advance_directive_flag,
+		          funding_level, admission_date, primary_gp_name,
+		          created_at, updated_at
+	`, subjectID, p.DateOfBirth, p.Sex, p.Room, p.NHINumber, p.MedicareNumber,
+		p.Ethnicity, p.PreferredLanguage, p.MedicalAlerts, p.Medications,
+		p.Allergies, p.ChronicConditions, p.CognitiveStatus, p.MobilityStatus,
+		p.ContinenceStatus, p.DietNotes, p.AdvanceDirectiveFlag,
+		p.FundingLevel, p.AdmissionDate, p.PrimaryGPName,
+	).Scan(
+		&a.SubjectID, &a.DateOfBirth, &a.Sex, &a.Room, &a.NHINumber, &a.MedicareNumber,
+		&a.Ethnicity, &a.PreferredLanguage, &a.MedicalAlerts, &a.Medications,
+		&a.Allergies, &a.ChronicConditions, &a.CognitiveStatus, &a.MobilityStatus,
+		&a.ContinenceStatus, &a.DietNotes, &a.AdvanceDirectiveFlag,
+		&a.FundingLevel, &a.AdmissionDate, &a.PrimaryGPName,
+		&a.CreatedAt, &a.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.UpdateAgedCareDetails: %w", err)
+	}
+	return a, nil
+}
+
+// ArchiveContact soft-deletes a contact by stamping archived_at.
+// Returns ErrConflict if the contact is still linked to any active subject,
+// since archiving it out from under a live patient would strand the link.
+func (r *Repository) ArchiveContact(ctx context.Context, id, clinicID uuid.UUID) (*ContactRecord, error) {
+	var linkedCount int
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM subjects
+		WHERE contact_id = $1 AND clinic_id = $2 AND archived_at IS NULL
+	`, id, clinicID).Scan(&linkedCount); err != nil {
+		return nil, fmt.Errorf("patient.repo.ArchiveContact: count subjects: %w", err)
+	}
+	if linkedCount > 0 {
+		return nil, domain.ErrConflict
+	}
+
+	c := &ContactRecord{}
+	err := r.db.QueryRow(ctx, `
+		UPDATE contacts
+		SET archived_at = NOW(), updated_at = NOW()
+		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
+		RETURNING id, clinic_id, full_name, phone, email, email_hash, address,
+		          created_at, updated_at, archived_at
+	`, id, clinicID).Scan(
+		&c.ID, &c.ClinicID, &c.FullName, &c.Phone, &c.Email, &c.EmailHash, &c.Address,
+		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.ArchiveContact: %w", err)
+	}
+	return c, nil
+}
+
 // ArchiveSubject soft-deletes a subject.
 func (r *Repository) ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID) (*SubjectRecord, error) {
 	s := &SubjectRecord{}
@@ -971,10 +1288,10 @@ func (r *Repository) ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID)
 		UPDATE subjects
 		SET status = 'archived', archived_at = NOW(), updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
 		          created_by, created_at, updated_at, archived_at
 	`, id, clinicID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -993,10 +1310,10 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 		UPDATE subjects
 		SET contact_id = $3, updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
 		          created_by, created_at, updated_at, archived_at
 	`, subjectID, clinicID, contactID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -1012,7 +1329,7 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 func (r *Repository) ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -1029,12 +1346,19 @@ func (r *Repository) ListSubjectsByContact(ctx context.Context, contactID, clini
 			g.allergies, g.chronic_conditions, g.admission_warnings,
 			g.insurance_provider_name, g.insurance_policy_number,
 			g.referring_provider_name, g.primary_provider_name,
-			g.created_at, g.updated_at
+			g.created_at, g.updated_at,
+			ac.subject_id, ac.date_of_birth, ac.sex, ac.room, ac.nhi_number,
+			ac.medicare_number, ac.ethnicity, ac.preferred_language,
+			ac.medical_alerts, ac.medications, ac.allergies, ac.chronic_conditions,
+			ac.cognitive_status, ac.mobility_status, ac.continence_status,
+			ac.diet_notes, ac.advance_directive_flag, ac.funding_level,
+			ac.admission_date, ac.primary_gp_name, ac.created_at, ac.updated_at
 		FROM subjects s
 		LEFT JOIN contacts c ON c.id = s.contact_id AND c.archived_at IS NULL
 		LEFT JOIN vet_subject_details v ON v.subject_id = s.id
 		LEFT JOIN dental_subject_details dd ON dd.subject_id = s.id
 		LEFT JOIN general_subject_details g ON g.subject_id = s.id
+		LEFT JOIN aged_care_subject_details ac ON ac.subject_id = s.id
 		WHERE s.contact_id = $1 AND s.clinic_id = $2 AND s.archived_at IS NULL
 		ORDER BY s.created_at DESC
 	`, contactID, clinicID)
@@ -1081,6 +1405,7 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 	d := &VetDetailsRecord{}
 	dd := &DentalDetailsRecord{}
 	g := &GeneralDetailsRecord{}
+	ac := &AgedCareDetailsRecord{}
 
 	var (
 		cID        *uuid.UUID
@@ -1140,10 +1465,33 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 		gPrimaryProvider   *string
 		gCreatedAt         *time.Time
 		gUpdatedAt         *time.Time
+
+		acSubjectID         *uuid.UUID
+		acDOB               *time.Time
+		acSex               *domain.AgedCareSex
+		acRoom              *string
+		acNHI               *string
+		acMedicare          *string
+		acEthnicity         *string
+		acLanguage          *string
+		acMedicalAlerts     *string
+		acMedications       *string
+		acAllergies         *string
+		acChronicConditions *string
+		acCognitive         *domain.AgedCareCognitiveStatus
+		acMobility          *domain.AgedCareMobilityStatus
+		acContinence        *domain.AgedCareContinenceStatus
+		acDietNotes         *string
+		acAdvanceDirective  *bool
+		acFundingLevel      *domain.AgedCareFundingLevel
+		acAdmissionDate     *time.Time
+		acPrimaryGP         *string
+		acCreatedAt         *time.Time
+		acUpdatedAt         *time.Time
 	)
 
 	if err := rows.Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
 		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
@@ -1157,6 +1505,11 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 		&gAllergies, &gChronicConditions, &gAdmissionWarn,
 		&gInsProvider, &gInsPolicy, &gReferringProvider, &gPrimaryProvider,
 		&gCreatedAt, &gUpdatedAt,
+		&acSubjectID, &acDOB, &acSex, &acRoom, &acNHI, &acMedicare,
+		&acEthnicity, &acLanguage, &acMedicalAlerts, &acMedications,
+		&acAllergies, &acChronicConditions, &acCognitive, &acMobility,
+		&acContinence, &acDietNotes, &acAdvanceDirective, &acFundingLevel,
+		&acAdmissionDate, &acPrimaryGP, &acCreatedAt, &acUpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("patient.repo.scanSubjectRow: %w", err)
 	}
@@ -1233,6 +1586,34 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 		row.GeneralDetails = g
 	}
 
+	if acSubjectID != nil {
+		ac.SubjectID = *acSubjectID
+		ac.DateOfBirth = acDOB
+		ac.Sex = acSex
+		ac.Room = acRoom
+		ac.NHINumber = acNHI
+		ac.MedicareNumber = acMedicare
+		ac.Ethnicity = acEthnicity
+		ac.PreferredLanguage = acLanguage
+		ac.MedicalAlerts = acMedicalAlerts
+		ac.Medications = acMedications
+		ac.Allergies = acAllergies
+		ac.ChronicConditions = acChronicConditions
+		ac.CognitiveStatus = acCognitive
+		ac.MobilityStatus = acMobility
+		ac.ContinenceStatus = acContinence
+		ac.DietNotes = acDietNotes
+		if acAdvanceDirective != nil {
+			ac.AdvanceDirectiveFlag = *acAdvanceDirective
+		}
+		ac.FundingLevel = acFundingLevel
+		ac.AdmissionDate = acAdmissionDate
+		ac.PrimaryGPName = acPrimaryGP
+		ac.CreatedAt = *acCreatedAt
+		ac.UpdatedAt = *acUpdatedAt
+		row.AgedCareDetails = ac
+	}
+
 	return row, nil
 }
 
@@ -1254,4 +1635,123 @@ func (r *Repository) CreateSubjectAccessLog(ctx context.Context, p CreateSubject
 		return nil, fmt.Errorf("patient.repo.CreateSubjectAccessLog: %w", err)
 	}
 	return rec, nil
+}
+
+// CreateSubjectContact inserts a (subject, contact, role) binding.
+// Returns ErrConflict if the same role already exists for this pair.
+func (r *Repository) CreateSubjectContact(
+	ctx context.Context,
+	clinicID uuid.UUID,
+	p CreateSubjectContactParams,
+) (*SubjectContactRecord, error) {
+	// Guard that both rows belong to the calling clinic before inserting.
+	var subjectClinic, contactClinic uuid.UUID
+	if err := r.db.QueryRow(ctx, `
+		SELECT clinic_id FROM subjects WHERE id = $1 AND archived_at IS NULL
+	`, p.SubjectID).Scan(&subjectClinic); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.CreateSubjectContact: subject: %w", err)
+	}
+	if subjectClinic != clinicID {
+		return nil, domain.ErrNotFound
+	}
+	if err := r.db.QueryRow(ctx, `
+		SELECT clinic_id FROM contacts WHERE id = $1 AND archived_at IS NULL
+	`, p.ContactID).Scan(&contactClinic); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("patient.repo.CreateSubjectContact: contact: %w", err)
+	}
+	if contactClinic != clinicID {
+		return nil, domain.ErrNotFound
+	}
+
+	rec := &SubjectContactRecord{}
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO subject_contacts (subject_id, contact_id, role, note)
+		VALUES ($1, $2, $3, $4)
+		RETURNING subject_id, contact_id, role, note, created_at, updated_at
+	`, p.SubjectID, p.ContactID, p.Role, p.Note,
+	).Scan(
+		&rec.SubjectID, &rec.ContactID, &rec.Role, &rec.Note,
+		&rec.CreatedAt, &rec.UpdatedAt,
+	)
+	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, domain.ErrConflict
+		}
+		return nil, fmt.Errorf("patient.repo.CreateSubjectContact: %w", err)
+	}
+	return rec, nil
+}
+
+// DeleteSubjectContact removes a (subject, contact, role) binding.
+// Returns ErrNotFound when the row is absent or outside the caller's clinic.
+func (r *Repository) DeleteSubjectContact(
+	ctx context.Context,
+	clinicID, subjectID, contactID uuid.UUID,
+	role domain.SubjectContactRole,
+) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM subject_contacts sc
+		USING subjects s
+		WHERE sc.subject_id = $1
+		  AND sc.contact_id = $2
+		  AND sc.role       = $3
+		  AND sc.subject_id = s.id
+		  AND s.clinic_id   = $4
+	`, subjectID, contactID, role, clinicID)
+	if err != nil {
+		return fmt.Errorf("patient.repo.DeleteSubjectContact: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+// ListSubjectContacts returns all (contact, role) bindings for a subject,
+// joined to the contact rows so the caller can decrypt in one pass.
+func (r *Repository) ListSubjectContacts(
+	ctx context.Context,
+	clinicID, subjectID uuid.UUID,
+) ([]*SubjectContactWithContact, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT sc.role, sc.note,
+		       c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
+		       c.created_at, c.updated_at, c.archived_at
+		FROM subject_contacts sc
+		JOIN subjects s ON s.id = sc.subject_id
+		JOIN contacts c ON c.id = sc.contact_id
+		WHERE sc.subject_id = $1
+		  AND s.clinic_id   = $2
+		  AND s.archived_at IS NULL
+		  AND c.archived_at IS NULL
+		ORDER BY sc.created_at ASC
+	`, subjectID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.ListSubjectContacts: query: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*SubjectContactWithContact
+	for rows.Next() {
+		c := &ContactRecord{}
+		link := &SubjectContactWithContact{Contact: c}
+		if err := rows.Scan(
+			&link.Role, &link.Note,
+			&c.ID, &c.ClinicID, &c.FullName, &c.Phone, &c.Email, &c.EmailHash, &c.Address,
+			&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
+		); err != nil {
+			return nil, fmt.Errorf("patient.repo.ListSubjectContacts: scan: %w", err)
+		}
+		out = append(out, link)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("patient.repo.ListSubjectContacts: rows: %w", err)
+	}
+	return out, nil
 }

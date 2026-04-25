@@ -62,6 +62,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, managePatients},
 	}, h.updateContact)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "archive-contact",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/contacts/{contact_id}",
+		Summary:     "Archive a contact",
+		Description: "Soft-deletes a contact by setting archived_at. Fails with 409 Conflict if the contact still has active subjects — unlink or archive those first.",
+		Tags:        []string{"Contacts"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.archiveContact)
+
 	// ── Patients (Subjects) ────────────────────────────────────────────────
 
 	huma.Register(api, huma.Operation{
@@ -129,6 +140,39 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, managePatients},
 	}, h.linkContact)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-patient-contacts",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/patients/{subject_id}/contacts",
+		Summary:     "List contacts linked to a patient",
+		Description: "Returns every (contact, role) binding on a patient — supports having a primary owner plus emergency contacts, guardians, power of attorney etc. at once.",
+		Tags:        []string{"Patients"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth},
+	}, h.listSubjectContacts)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "add-patient-contact",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/patients/{subject_id}/contacts",
+		Summary:     "Link a contact to a patient with a role",
+		Description: "Adds an existing contact as a role-scoped relationship (e.g. emergency_contact, next_of_kin) on a patient. The same contact can hold multiple roles — one row per role.",
+		Tags:        []string{"Patients"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.addSubjectContact)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "remove-patient-contact",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/patients/{subject_id}/contacts/{contact_id}/{role}",
+		Summary:     "Remove a contact role from a patient",
+		Description: "Removes a single (contact, role) binding. Other roles held by the same contact remain untouched.",
+		Tags:        []string{"Patients"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.removeSubjectContact)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "unmask-patient-pii",
