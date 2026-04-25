@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -733,6 +734,7 @@ func mapFormError(err error) error {
 	case errors.Is(err, domain.ErrValidation):
 		return huma.Error422UnprocessableEntity(err.Error())
 	default:
+		slog.Error("forms: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
 }
