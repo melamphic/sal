@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
@@ -16,6 +17,7 @@ import (
 	portalsession "github.com/stripe/stripe-go/v78/billingportal/session"
 	checkoutsession "github.com/stripe/stripe-go/v78/checkout/session"
 	"github.com/stripe/stripe-go/v78/customer"
+	"github.com/stripe/stripe-go/v78/subscription"
 	"github.com/stripe/stripe-go/v78/webhook"
 )
 
@@ -49,11 +51,20 @@ type ClinicProfile struct {
 }
 
 // SubscriptionState is the target state billing asks clinic to write.
+//
+// BillingPeriodStart/End mirror sub.current_period_{start,end} so the
+// note-cap meter has an authoritative window. Stripe sends them on
+// `customer.subscription.{created,updated}` and refreshes them on every
+// `invoice.payment_succeeded` (when the period rolls). They're nil for
+// invoice.payment_failed (no period change) and subscription.deleted
+// (clinic moves to canceled).
 type SubscriptionState struct {
 	Status               domain.ClinicStatus // required
 	PlanCode             *domain.PlanCode    // nil = leave unchanged
 	StripeCustomerID     *string             // nil = leave unchanged
 	StripeSubscriptionID *string             // nil = leave unchanged
+	BillingPeriodStart   *time.Time          // nil = leave unchanged
+	BillingPeriodEnd     *time.Time          // nil = leave unchanged
 }
 
 // PlanLookup maps Stripe price ids ↔ Salvia PlanCode. Populated at
@@ -94,6 +105,15 @@ type CheckoutParams struct {
 // — afterwards the cus_… is persisted on the clinic and reused.
 type StripeCustomerCreator interface {
 	Create(email, name, clinicID string) (string, error)
+}
+
+// SubscriptionPlanUpdater swaps the price item on an existing Stripe
+// subscription. Used by the tiering module when a clinic's standard
+// staff headcount crosses the Practice ↔ Pro boundary. The DB write
+// follows on the resulting customer.subscription.updated webhook —
+// this method only mutates Stripe.
+type SubscriptionPlanUpdater interface {
+	UpdateSubscriptionPlan(ctx context.Context, subscriptionID, newPriceID string) error
 }
 
 // Service orchestrates Stripe webhook processing.
@@ -303,12 +323,59 @@ func (c *stripeCustomerClient) Create(email, name, clinicID string) (string, err
 		Email: stripe.String(email),
 		Name:  stripe.String(name),
 	}
-	params.AddMetadata("clinic_id", clinicID)
+	// Signup-checkout creates a Stripe customer before the clinic row
+	// exists, so clinicID is empty in that path. Recording an empty
+	// metadata key would be noise in the Stripe dashboard.
+	if clinicID != "" {
+		params.AddMetadata("clinic_id", clinicID)
+	}
 	cust, err := client.New(params)
 	if err != nil {
 		return "", fmt.Errorf("billing.stripeCustomerClient.Create: %w", err)
 	}
 	return cust.ID, nil
+}
+
+// stripeSubscriptionClient is the production SubscriptionPlanUpdater.
+// Reads the current item id from the subscription, then issues an
+// update with proration. Stripe fires customer.subscription.updated in
+// response, which HandleWebhook consumes to persist the new plan_code.
+type stripeSubscriptionClient struct {
+	key string
+}
+
+// NewStripeSubscriptionClient builds a SubscriptionPlanUpdater using the
+// given secret key. Safe to construct at startup with cfg.StripeAPIKey.
+func NewStripeSubscriptionClient(stripeSecretKey string) SubscriptionPlanUpdater {
+	return &stripeSubscriptionClient{key: stripeSecretKey}
+}
+
+func (c *stripeSubscriptionClient) UpdateSubscriptionPlan(ctx context.Context, subscriptionID, newPriceID string) error {
+	if subscriptionID == "" || newPriceID == "" {
+		return fmt.Errorf("billing.stripeSubscriptionClient.UpdateSubscriptionPlan: %w", domain.ErrValidation)
+	}
+	client := subscription.Client{B: stripe.GetBackend(stripe.APIBackend), Key: c.key}
+	getParams := &stripe.SubscriptionParams{}
+	getParams.Context = ctx
+	sub, err := client.Get(subscriptionID, getParams)
+	if err != nil {
+		return fmt.Errorf("billing.stripeSubscriptionClient.UpdateSubscriptionPlan: get: %w", err)
+	}
+	if sub.Items == nil || len(sub.Items.Data) == 0 || sub.Items.Data[0] == nil {
+		return fmt.Errorf("billing.stripeSubscriptionClient.UpdateSubscriptionPlan: subscription has no items")
+	}
+	itemID := sub.Items.Data[0].ID
+	params := &stripe.SubscriptionParams{
+		ProrationBehavior: stripe.String("create_prorations"),
+		Items: []*stripe.SubscriptionItemsParams{
+			{ID: stripe.String(itemID), Price: stripe.String(newPriceID)},
+		},
+	}
+	params.Context = ctx
+	if _, err := client.Update(subscriptionID, params); err != nil {
+		return fmt.Errorf("billing.stripeSubscriptionClient.UpdateSubscriptionPlan: update: %w", err)
+	}
+	return nil
 }
 
 // HandleWebhook verifies the Stripe signature, records the event for
@@ -402,6 +469,8 @@ func (s *Service) handleSubscription(ctx context.Context, raw json.RawMessage) (
 		PlanCode:             s.planCodeFromSubscription(&sub),
 		StripeCustomerID:     nonEmpty(custID),
 		StripeSubscriptionID: nonEmpty(subID),
+		BillingPeriodStart:   unixToTime(sub.CurrentPeriodStart),
+		BillingPeriodEnd:     unixToTime(sub.CurrentPeriodEnd),
 	}
 	return clinicID, state, EventStatusProcessed, nil
 }
@@ -471,7 +540,17 @@ func (s *Service) handleInvoicePaymentSucceeded(ctx context.Context, raw json.Ra
 	// still flip to active a few seconds earlier than Stripe would have
 	// moved the subscription — not a correctness issue, just less
 	// deterministic. Revisit if trial-billing UX becomes sensitive.
-	return clinicID, SubscriptionState{Status: domain.ClinicStatusActive}, EventStatusProcessed, nil
+	//
+	// Period boundaries come from invoice.lines for subscription invoices —
+	// the renewal invoice carries the new period in its first subscription
+	// line item. This rolls the note-cap meter forward synchronously with
+	// payment instead of waiting for the next subscription.updated.
+	state := SubscriptionState{Status: domain.ClinicStatusActive}
+	if start, end := periodFromInvoice(&inv); start != nil {
+		state.BillingPeriodStart = start
+		state.BillingPeriodEnd = end
+	}
+	return clinicID, state, EventStatusProcessed, nil
 }
 
 // resolveClinic looks up the clinic for a Stripe customer reference.
@@ -548,4 +627,39 @@ func nonEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// unixToTime converts a Stripe unix timestamp to *time.Time. Returns nil
+// for a zero timestamp so the COALESCE-on-nil semantics in clinic.repo
+// leave the column unchanged when Stripe didn't populate it.
+func unixToTime(ts int64) *time.Time {
+	if ts == 0 {
+		return nil
+	}
+	t := time.Unix(ts, 0).UTC()
+	return &t
+}
+
+// periodFromInvoice pulls the subscription period from the first
+// subscription-typed line of a Stripe invoice. Renewal invoices carry
+// the freshly-rolled period there; non-subscription invoices return nil.
+func periodFromInvoice(inv *stripe.Invoice) (*time.Time, *time.Time) {
+	if inv == nil || inv.Lines == nil {
+		return nil, nil
+	}
+	for _, line := range inv.Lines.Data {
+		if line == nil || line.Period == nil {
+			continue
+		}
+		if line.Period.Start == 0 || line.Period.End == 0 {
+			continue
+		}
+		// Only trust subscription-typed lines — one-off charges may
+		// have arbitrary period windows.
+		if line.Type != "subscription" {
+			continue
+		}
+		return unixToTime(line.Period.Start), unixToTime(line.Period.End)
+	}
+	return nil, nil
 }
