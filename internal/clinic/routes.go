@@ -50,6 +50,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.update)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "submit-clinic-compliance",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/clinic/compliance",
+		Summary:     "Submit compliance attestation",
+		Description: "Records the privacy-officer details and required attestations (cross-border, AI oversight, patient consent, DPA) for the onboarding compliance step. Idempotent — re-submission updates the existing record. Requires manage_staff.",
+		Tags:        []string{"Clinic"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.submitCompliance)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "upload-clinic-logo",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/clinic/logo",
