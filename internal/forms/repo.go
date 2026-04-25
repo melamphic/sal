@@ -38,6 +38,13 @@ type repo interface {
 	// CreateDraftVersion inserts a new draft row. Errors with domain.ErrConflict
 	// if a draft already exists (enforced by DB partial unique index).
 	CreateDraftVersion(ctx context.Context, p CreateDraftVersionParams) (*FormVersionRecord, error)
+	// CreateFormWithDraft atomically inserts a form row and its initial empty
+	// draft version inside a single transaction so a partial failure can
+	// never leave a form without a draft (the "zombie form" state).
+	CreateFormWithDraft(ctx context.Context, p CreateFormWithDraftParams) (*FormRecord, *FormVersionRecord, error)
+	// DeleteDraftVersion deletes the current draft version of a form. Returns
+	// domain.ErrNotFound if no draft exists.
+	DeleteDraftVersion(ctx context.Context, formID uuid.UUID) error
 	// PublishDraftVersion freezes the draft: sets status=published, assigns
 	// version_major/minor, and records who published it and when.
 	PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error)
