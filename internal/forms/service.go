@@ -433,27 +433,21 @@ func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormR
 		tags = []string{}
 	}
 
-	form, err := s.repo.CreateForm(ctx, CreateFormParams{
-		ID:            formID,
-		ClinicID:      input.ClinicID,
-		GroupID:       input.GroupID,
-		Name:          input.Name,
-		Description:   input.Description,
-		OverallPrompt: input.OverallPrompt,
-		Tags:          tags,
-		CreatedBy:     input.StaffID,
+	form, draft, err := s.repo.CreateFormWithDraft(ctx, CreateFormWithDraftParams{
+		Form: CreateFormParams{
+			ID:            formID,
+			ClinicID:      input.ClinicID,
+			GroupID:       input.GroupID,
+			Name:          input.Name,
+			Description:   input.Description,
+			OverallPrompt: input.OverallPrompt,
+			Tags:          tags,
+			CreatedBy:     input.StaffID,
+		},
+		DraftID: domain.NewID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.CreateForm: %w", err)
-	}
-
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:        domain.NewID(),
-		FormID:    formID,
-		CreatedBy: input.StaffID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.CreateForm: draft version: %w", err)
 	}
 
 	resp := toFormResponse(form)
@@ -642,6 +636,23 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 	return resp, nil
 }
 
+// DiscardDraft deletes the current draft of a form. Returns ErrNotFound if
+// no draft exists. The latest published version (if any) is unaffected and
+// remains the active version.
+func (s *Service) DiscardDraft(ctx context.Context, formID, clinicID uuid.UUID) error {
+	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
+	if err != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: %w", err)
+	}
+	if form.ArchivedAt != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: form is retired: %w", domain.ErrConflict)
+	}
+	if err := s.repo.DeleteDraftVersion(ctx, formID); err != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: %w", err)
+	}
+	return nil
+}
+
 // PublishForm freezes the current draft, assigns a semver number, and makes the
 // form available for use in audio processing. Returns the full form resource
 // (with the new latest_published attached) so the editor can refresh without
@@ -667,7 +678,10 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 
 	draft, err := s.repo.GetDraftVersion(ctx, input.FormID)
 	if err != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: no draft: %w", err)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.PublishForm: no draft to publish — edit the form first: %w", domain.ErrConflict)
+		}
+		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
 
 	fields, err := s.repo.GetFieldsByVersionID(ctx, draft.ID)
@@ -722,6 +736,26 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 	}
 
 	draft, err := s.repo.GetDraftVersion(ctx, formID)
+	if errors.Is(err, domain.ErrNotFound) {
+		// No draft yet — clone the latest published version so the user can
+		// run policy-check against the current form without a manual edit
+		// step. Errors out if the form has never been published.
+		latest, lerr := s.repo.GetLatestPublishedVersion(ctx, formID)
+		if lerr != nil {
+			if errors.Is(lerr, domain.ErrNotFound) {
+				return nil, fmt.Errorf("forms.service.RunPolicyCheck: form has no draft or published version — add fields first: %w", domain.ErrConflict)
+			}
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: latest published: %w", lerr)
+		}
+		latestFields, lerr := s.repo.GetFieldsByVersionID(ctx, latest.ID)
+		if lerr != nil {
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: latest fields: %w", lerr)
+		}
+		if rerr := s.resetDraftToFields(ctx, formID, staffID, latestFields); rerr != nil {
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: seed draft: %w", rerr)
+		}
+		draft, err = s.repo.GetDraftVersion(ctx, formID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
 	}
