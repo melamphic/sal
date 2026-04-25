@@ -146,7 +146,7 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	// If extractor not configured, skip AI and go straight to draft so staff
 	// can fill fields manually.
 	if w.extractor == nil {
-		_, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil)
+		_, err := w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusDraft, nil)
 		if err != nil {
 			return fmt.Errorf("extract_note: set draft (no extractor): %w", err)
 		}
@@ -168,7 +168,7 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 
 	// Manual notes (no recording) should never reach this worker — guard defensively.
 	if note.RecordingID == nil {
-		_, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil)
+		_, err := w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusDraft, nil)
 		if err != nil {
 			return fmt.Errorf("extract_note: set draft (manual note): %w", err)
 		}
@@ -249,7 +249,7 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		results, err = w.extractor.Extract(ctx, vertical, *transcript, formPrompt, specs)
 		if err != nil {
 			errMsg := fmt.Sprintf("extraction failed: %v", err)
-			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusFailed, &errMsg)
+			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusFailed, &errMsg)
 			w.events.Emit(ctx, NoteEvent{
 				NoteID:    noteID,
 				SubjectID: note.SubjectID,
@@ -328,7 +328,7 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	}
 
 	// Mark note as draft — ready for staff review.
-	if _, err := w.notes.UpdateNoteStatus(ctx, noteID, domain.NoteStatusDraft, nil); err != nil {
+	if _, err := w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusDraft, nil); err != nil {
 		return fmt.Errorf("extract_note: set draft: %w", err)
 	}
 
@@ -535,6 +535,7 @@ type GenerateNotePDFWorker struct {
 	headers    SystemHeaderProvider // nil = no patient header card
 	subjects   SubjectProvider      // nil = no subject lookups (manual-only)
 	store      pdfStore
+	events     EventEmitter
 }
 
 // pdfStore is the subset of storage.Store used by the PDF worker.
@@ -542,7 +543,9 @@ type pdfStore interface {
 	Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error
 }
 
-// NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker.
+// NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker. Pass nil for
+// events to disable the post-render notification (useful in tests where the
+// realtime bus isn't wired).
 func NewGenerateNotePDFWorker(
 	notes repo,
 	formMeta FormMetaProvider,
@@ -553,7 +556,11 @@ func NewGenerateNotePDFWorker(
 	headers SystemHeaderProvider,
 	subjects SubjectProvider,
 	store pdfStore,
+	events EventEmitter,
 ) *GenerateNotePDFWorker {
+	if events == nil {
+		events = noopEmitter{}
+	}
 	return &GenerateNotePDFWorker{
 		notes:      notes,
 		formMeta:   formMeta,
@@ -564,6 +571,7 @@ func NewGenerateNotePDFWorker(
 		headers:    headers,
 		subjects:   subjects,
 		store:      store,
+		events:     events,
 	}
 }
 
@@ -690,6 +698,17 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 	if err := w.notes.UpdatePDFKey(ctx, noteID, note.ClinicID, key); err != nil {
 		return fmt.Errorf("generate_note_pdf: update key: %w", err)
 	}
+
+	// Notify the realtime bus so the review page can flip the download
+	// button from "rendering…" to active without polling.
+	w.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  note.ClinicID,
+		EventType: NoteEventPDFReady,
+		ActorID:   note.CreatedBy,
+		ActorRole: "system",
+	})
 
 	return nil
 }
