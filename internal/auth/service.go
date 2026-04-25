@@ -303,8 +303,14 @@ func (s *Service) issueTokenPair(ctx context.Context, staff *staffRow) (*TokenPa
 	// Update last_active_at in the background — non-critical, must not block login.
 	// Note: we do NOT delete old refresh tokens here. Deletion only happens on
 	// explicit logout. Multiple active sessions (e.g. mobile + desktop) are allowed.
+	//
+	// We deliberately detach from the request context (so the update survives a
+	// fast client-side cancel) but bound it with a short timeout so the
+	// goroutine can't block during graceful shutdown / DB drain.
 	go func() {
-		_ = s.repo.UpdateLastActive(context.Background(), staff.ID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.UpdateLastActive(bgCtx, staff.ID)
 	}()
 
 	return &TokenPair{
