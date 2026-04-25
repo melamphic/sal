@@ -214,22 +214,22 @@ func (f *fakeRepo) GetNoteFields(_ context.Context, noteID uuid.UUID) ([]*NoteFi
 	return out, nil
 }
 
-func (f *fakeRepo) UpdatePolicyAlignment(_ context.Context, id uuid.UUID, pct float64) error {
+func (f *fakeRepo) UpdatePolicyAlignment(_ context.Context, id, clinicID uuid.UUID, pct float64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, ok := f.notes[id]
-	if !ok {
+	if !ok || n.ClinicID != clinicID {
 		return domain.ErrNotFound
 	}
 	n.PolicyAlignmentPct = &pct
 	return nil
 }
 
-func (f *fakeRepo) UpdatePolicyCheckResult(_ context.Context, id uuid.UUID, resultJSON string) error {
+func (f *fakeRepo) UpdatePolicyCheckResult(_ context.Context, id, clinicID uuid.UUID, resultJSON string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, ok := f.notes[id]
-	if !ok {
+	if !ok || n.ClinicID != clinicID {
 		return domain.ErrNotFound
 	}
 	n.PolicyCheckResult = &resultJSON
@@ -252,11 +252,11 @@ func (f *fakeRepo) UpdateNoteField(_ context.Context, p UpdateNoteFieldParams) (
 	return nil, domain.ErrNotFound
 }
 
-func (f *fakeRepo) UpdatePDFKey(_ context.Context, id uuid.UUID, key string) error {
+func (f *fakeRepo) UpdatePDFKey(_ context.Context, id, clinicID uuid.UUID, key string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	n, ok := f.notes[id]
-	if !ok {
+	if !ok || n.ClinicID != clinicID {
 		return domain.ErrNotFound
 	}
 	n.PDFStorageKey = &key
