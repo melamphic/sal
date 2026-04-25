@@ -475,9 +475,20 @@ type GenerateNotePDFArgs struct {
 // Kind returns the unique job type string used by River.
 func (GenerateNotePDFArgs) Kind() string { return "generate_note_pdf" }
 
-// ClinicStyleProvider returns the clinic name and brand color for the PDF header.
+// ClinicForRender is the clinic-profile data the PDF renderer needs to fill
+// header/footer slots. Color is now sourced from the doc theme — the brand
+// color lives there, not on the clinic row.
+type ClinicForRender struct {
+	Name    string
+	Address *string
+	Phone   *string
+	Email   *string
+}
+
+// ClinicStyleProvider returns the clinic-profile fields used by the PDF
+// renderer (header bar, footer slot substitution).
 type ClinicStyleProvider interface {
-	GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (name, color string, err error)
+	GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (*ClinicForRender, error)
 }
 
 // StaffNameProvider returns a staff member's full name for the PDF audit footer.
@@ -490,15 +501,40 @@ type FormMetaProvider interface {
 	GetFormMeta(ctx context.Context, formVersionID, clinicID uuid.UUID) (formName string, version string, err error)
 }
 
+// DocThemeProvider returns the active doc-theme for a clinic. Returns nil
+// (no error) when the clinic has not customised — renderer falls back to
+// built-in defaults.
+type DocThemeProvider interface {
+	GetActiveDocTheme(ctx context.Context, clinicID uuid.UUID) (*DocTheme, error)
+}
+
+// SystemHeaderProvider returns the per-form-version system_header config
+// (the "patient" identity card pinned above body fields). Returns nil with
+// no error if the version row carries no config.
+type SystemHeaderProvider interface {
+	GetSystemHeader(ctx context.Context, formVersionID uuid.UUID) (*SystemHeaderConfigForPDF, error)
+}
+
+// SubjectProvider resolves the linked subject row into the typed PDFSubject
+// the renderer needs. Returns nil with no error when the note has no
+// subject (skip-extraction manual notes recorded without a patient).
+type SubjectProvider interface {
+	GetSubjectForRender(ctx context.Context, subjectID, clinicID uuid.UUID) (*PDFSubject, error)
+}
+
 // GenerateNotePDFWorker builds a branded PDF after note submission, uploads to S3,
 // and stores the storage key on the note.
 type GenerateNotePDFWorker struct {
 	river.WorkerDefaults[GenerateNotePDFArgs]
-	notes   repo
-	forms   FormMetaProvider
-	clinics ClinicStyleProvider
-	staff   StaffNameProvider
-	store   pdfStore
+	notes      repo
+	formMeta   FormMetaProvider
+	formFields FormFieldProvider
+	clinics    ClinicStyleProvider
+	staff      StaffNameProvider
+	theme      DocThemeProvider     // nil = renderer defaults
+	headers    SystemHeaderProvider // nil = no patient header card
+	subjects   SubjectProvider      // nil = no subject lookups (manual-only)
+	store      pdfStore
 }
 
 // pdfStore is the subset of storage.Store used by the PDF worker.
@@ -509,17 +545,25 @@ type pdfStore interface {
 // NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker.
 func NewGenerateNotePDFWorker(
 	notes repo,
-	forms FormMetaProvider,
+	formMeta FormMetaProvider,
+	formFields FormFieldProvider,
 	clinics ClinicStyleProvider,
 	staff StaffNameProvider,
+	theme DocThemeProvider,
+	headers SystemHeaderProvider,
+	subjects SubjectProvider,
 	store pdfStore,
 ) *GenerateNotePDFWorker {
 	return &GenerateNotePDFWorker{
-		notes:   notes,
-		forms:   forms,
-		clinics: clinics,
-		staff:   staff,
-		store:   store,
+		notes:      notes,
+		formMeta:   formMeta,
+		formFields: formFields,
+		clinics:    clinics,
+		staff:      staff,
+		theme:      theme,
+		headers:    headers,
+		subjects:   subjects,
+		store:      store,
 	}
 }
 
@@ -532,44 +576,81 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 		return fmt.Errorf("generate_note_pdf: get note: %w", err)
 	}
 
-	// Fetch clinic style.
-	clinicName, clinicColor, err := w.clinics.GetClinicStyle(ctx, note.ClinicID)
+	clinic, err := w.clinics.GetClinicStyle(ctx, note.ClinicID)
 	if err != nil {
 		return fmt.Errorf("generate_note_pdf: get clinic style: %w", err)
 	}
 
-	// Fetch form name and version string.
-	formName, formVersion, err := w.forms.GetFormMeta(ctx, note.FormVersionID, note.ClinicID)
+	formName, formVersion, err := w.formMeta.GetFormMeta(ctx, note.FormVersionID, note.ClinicID)
 	if err != nil {
 		return fmt.Errorf("generate_note_pdf: get form meta: %w", err)
 	}
 
-	// Fetch note fields with titles from form field definitions.
 	noteFields, err := w.notes.GetNoteFields(ctx, noteID)
 	if err != nil {
 		return fmt.Errorf("generate_note_pdf: get note fields: %w", err)
 	}
 
-	// Resolve submitter name.
-	submittedBy := "Unknown"
-	if note.SubmittedBy != nil {
-		name, err := w.staff.GetStaffName(ctx, *note.SubmittedBy, note.ClinicID)
-		if err == nil {
-			submittedBy = name
+	// Title index from the form's field definitions so the PDF can label
+	// rows by title rather than UUID. Missing entries (rare — only after a
+	// hard delete) fall back to the field ID.
+	formFields, err := w.formFields.GetFieldsByVersionID(ctx, note.FormVersionID)
+	if err != nil {
+		return fmt.Errorf("generate_note_pdf: get form fields: %w", err)
+	}
+	titleByID := make(map[uuid.UUID]string, len(formFields))
+	for _, f := range formFields {
+		titleByID[f.ID] = f.Title
+	}
+
+	// Best-effort theme lookup — defaults render fine if unavailable.
+	var theme *DocTheme
+	if w.theme != nil {
+		t, themeErr := w.theme.GetActiveDocTheme(ctx, note.ClinicID)
+		if themeErr == nil {
+			theme = t
 		}
 	}
 
-	// Build PDF field list.
+	var sysHeader *SystemHeaderConfigForPDF
+	if w.headers != nil {
+		h, headerErr := w.headers.GetSystemHeader(ctx, note.FormVersionID)
+		if headerErr == nil {
+			sysHeader = h
+		}
+	}
+
+	var subject *PDFSubject
+	if w.subjects != nil && note.SubjectID != nil {
+		s, subjErr := w.subjects.GetSubjectForRender(ctx, *note.SubjectID, note.ClinicID)
+		if subjErr == nil {
+			subject = s
+		}
+	}
+
+	submittedBy := "Unknown"
+	if note.SubmittedBy != nil {
+		name, nameErr := w.staff.GetStaffName(ctx, *note.SubmittedBy, note.ClinicID)
+		if nameErr == nil {
+			submittedBy = name
+			if subject != nil && subject.ClinicianName == nil {
+				clin := name
+				subject.ClinicianName = &clin
+			}
+		}
+	}
+
 	pdfFields := make([]PDFField, 0, len(noteFields))
 	for _, f := range noteFields {
 		val := ""
 		if f.Value != nil && *f.Value != "null" {
 			val = *f.Value
 		}
-		pdfFields = append(pdfFields, PDFField{
-			Label: f.FieldID.String(), // default to field ID
-			Value: val,
-		})
+		label := titleByID[f.FieldID]
+		if label == "" {
+			label = f.FieldID.String()
+		}
+		pdfFields = append(pdfFields, PDFField{Label: label, Value: val})
 	}
 
 	var submittedAt time.Time
@@ -577,15 +658,22 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 		submittedAt = *note.SubmittedAt
 	}
 
+	visitDate := note.CreatedAt
 	buf, err := BuildNotePDF(PDFInput{
-		ClinicName:  clinicName,
-		ClinicColor: clinicColor,
-		FormName:    formName,
-		FormVersion: formVersion,
-		Fields:      pdfFields,
-		SubmittedAt: submittedAt,
-		SubmittedBy: submittedBy,
-		NoteID:      noteID.String(),
+		Theme:         theme,
+		ClinicName:    clinic.Name,
+		ClinicAddress: clinic.Address,
+		ClinicPhone:   clinic.Phone,
+		ClinicEmail:   clinic.Email,
+		FormName:      formName,
+		FormVersion:   formVersion,
+		Fields:        pdfFields,
+		SubmittedAt:   submittedAt,
+		SubmittedBy:   submittedBy,
+		NoteID:        noteID.String(),
+		SystemHeader:  sysHeader,
+		Subject:       subject,
+		VisitDate:     &visitDate,
 	})
 	if err != nil {
 		return fmt.Errorf("generate_note_pdf: build: %w", err)
