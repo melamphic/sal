@@ -50,6 +50,11 @@ issues:
       linters:
         - wrapcheck
         - godot
+    # cmd/billing-smoke is a development harness — wrapping every external
+    # error doesn't add signal in a single-use script.
+    - path: cmd/billing-smoke/
+      linters:
+        - wrapcheck
     # These types are intentionally prefixed with their package name so
     # huma's global OpenAPI schema registry can distinguish them across packages.
     - text: "type name will be used as (clinic\\.ClinicResponse|staff\\.StaffResponse|staff\\.StaffListResponse|staff\\.StaffRecord|patient\\.SubjectResponse|patient\\.SubjectListResponse|patient\\.ContactListResponse|patient\\.ContactWithSubjectsResponse|audio\\.RecordingResponse|audio\\.CreateRecordingResponse|audio\\.RecordingListResponse|audio\\.DownloadURLResponse|forms\\.FormResponse|forms\\.FormListResponse|forms\\.FormVersionResponse|forms\\.FormVersionListResponse|forms\\.FormGroupResponse|forms\\.FormGroupListResponse|forms\\.FormStyleResponse|notes\\.NoteResponse|notes\\.NoteListResponse|notes\\.NoteFieldResponse|policy\\.PolicyFolderRecord|policy\\.PolicyRecord|policy\\.PolicyVersionRecord|policy\\.PolicyClauseRecord|policy\\.PolicyContent|policy\\.PolicyFolderResponse|policy\\.PolicyFolderListResponse|policy\\.PolicyClauseResponse|policy\\.PolicyClauseListResponse|policy\\.PolicyVersionResponse|policy\\.PolicyVersionListResponse|policy\\.PolicyResponse|policy\\.PolicyListResponse)"

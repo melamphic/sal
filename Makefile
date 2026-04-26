@@ -1,4 +1,4 @@
-.PHONY: dev build test test-integration lint migrate migrate-down docs docs-api docs-install tidy
+.PHONY: dev build test test-integration lint migrate migrate-down docs docs-api docs-install tidy smoke-billing
 SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +80,15 @@ docs-api:
 # Install Python documentation dependencies.
 docs-install:
 	$(PYTHON3) -m pip install --break-system-packages -r requirements-docs.txt
+
+# ── Smoke tests ────────────────────────────────────────────────────────────────
+
+# Exercise the billing-enforcement bundle (#134/135/137 fully, #136 partial)
+# end-to-end against a running `make dev` instance. Provisions a throwaway
+# clinic, asserts behaviour, cleans up. Pass KEEP=1 to skip cleanup so you
+# can inspect the seeded rows after a run.
+smoke-billing:
+	@if [ "$$KEEP" = "1" ]; then go run ./cmd/billing-smoke -keep; else go run ./cmd/billing-smoke; fi
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
