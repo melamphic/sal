@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -1000,13 +1001,17 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 			PublishedAt:   domain.TimeNow(),
 		}, fieldParams)
 		if err == nil {
-			// Also restore the draft to mirror the target so the editor
-			// reopens on the rolled-back fields instead of leftover WIP.
-			// Best-effort: a sync failure here doesn't invalidate the
-			// published rollback — the user can re-run it if the draft
-			// looks stale.
+			// Restore draft to mirror target so editor reopens on rolled-back
+			// fields. Published rollback already committed at this point — a
+			// draft-sync failure must NOT bubble up as a 5xx, or the caller
+			// thinks rollback failed when the published row exists. Log and
+			// continue; user can re-sync by reloading the editor.
 			if draftErr := s.resetDraftToFields(ctx, input.FormID, input.StaffID, sourceFields); draftErr != nil {
-				return nil, fmt.Errorf("forms.service.RollbackForm: %w", draftErr)
+				slog.Warn("forms.service.RollbackForm: draft sync failed after publish",
+					"form_id", input.FormID,
+					"version_id", newID,
+					"error", draftErr.Error(),
+				)
 			}
 			return s.GetForm(ctx, input.FormID, input.ClinicID)
 		}

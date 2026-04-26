@@ -81,6 +81,7 @@ type PolicyVersionResponse struct {
 	VersionMinor  *int            `json:"version_minor,omitempty"`
 	ChangeType    *string         `json:"change_type,omitempty"`
 	ChangeSummary *string         `json:"change_summary,omitempty"`
+	Changes       json.RawMessage `json:"changes"`
 	Content       json.RawMessage `json:"content"`
 	RollbackOf    *string         `json:"rollback_of,omitempty"`
 	PublishedAt   *string         `json:"published_at,omitempty"`
@@ -168,6 +169,7 @@ type PublishPolicyInput struct {
 	StaffID       uuid.UUID
 	ChangeType    string
 	ChangeSummary *string
+	Changes       json.RawMessage
 }
 
 // RollbackPolicyInput holds input for rolling a policy back to a prior version.
@@ -442,6 +444,7 @@ func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (
 		VersionMinor:  minor,
 		ChangeType:    input.ChangeType,
 		ChangeSummary: input.ChangeSummary,
+		Changes:       input.Changes,
 		PublishedBy:   input.StaffID,
 		PublishedAt:   domain.TimeNow(),
 	})
@@ -709,6 +712,10 @@ func toPolicyResponse(p *PolicyRecord) *PolicyResponse {
 }
 
 func toVersionResponse(v *PolicyVersionRecord) *PolicyVersionResponse {
+	changes := v.Changes
+	if changes == nil {
+		changes = json.RawMessage(`[]`)
+	}
 	r := &PolicyVersionResponse{
 		ID:            v.ID.String(),
 		PolicyID:      v.PolicyID.String(),
@@ -717,6 +724,7 @@ func toVersionResponse(v *PolicyVersionRecord) *PolicyVersionResponse {
 		VersionMinor:  v.VersionMinor,
 		ChangeType:    v.ChangeType,
 		ChangeSummary: v.ChangeSummary,
+		Changes:       changes,
 		Content:       v.Content,
 		CreatedAt:     v.CreatedAt.Format(time.RFC3339),
 	}

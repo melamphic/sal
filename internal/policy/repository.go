@@ -47,6 +47,7 @@ type PolicyVersionRecord struct {
 	VersionMinor  *int
 	ChangeType    *string
 	ChangeSummary *string
+	Changes       json.RawMessage
 	Content       json.RawMessage
 	RollbackOf    *uuid.UUID
 	PublishedAt   *time.Time
@@ -143,6 +144,7 @@ type PublishDraftVersionParams struct {
 	VersionMinor  int
 	ChangeType    string
 	ChangeSummary *string
+	Changes       json.RawMessage
 	PublishedBy   uuid.UUID
 	PublishedAt   time.Time
 }
@@ -419,7 +421,7 @@ func (r *Repository) RetirePolicy(ctx context.Context, p RetirePolicyParams) (*P
 
 const versionCols = `
 	id, policy_id, status, version_major, version_minor, change_type, change_summary,
-	content, rollback_of, published_at, published_by, created_by, created_at`
+	changes, content, rollback_of, published_at, published_by, created_by, created_at`
 
 // GetDraftVersion returns the single mutable draft version for a policy.
 func (r *Repository) GetDraftVersion(ctx context.Context, policyID uuid.UUID) (*PolicyVersionRecord, error) {
@@ -570,6 +572,10 @@ func (r *Repository) DeleteDraftVersion(ctx context.Context, policyID uuid.UUID)
 
 // PublishDraftVersion transitions the draft to published status.
 func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*PolicyVersionRecord, error) {
+	changes := p.Changes
+	if changes == nil {
+		changes = json.RawMessage(`[]`)
+	}
 	q := fmt.Sprintf(`
 		UPDATE policy_versions
 		SET status        = 'published',
@@ -577,14 +583,15 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		    version_minor = $3,
 		    change_type   = $4,
 		    change_summary = $5,
-		    published_by  = $6,
-		    published_at  = $7
+		    changes       = $6,
+		    published_by  = $7,
+		    published_at  = $8
 		WHERE policy_id = $1 AND status = 'draft'
 		RETURNING %s`, versionCols)
 
 	row := r.db.QueryRow(ctx, q,
 		p.PolicyID, p.VersionMajor, p.VersionMinor,
-		p.ChangeType, p.ChangeSummary,
+		p.ChangeType, p.ChangeSummary, changes,
 		p.PublishedBy, p.PublishedAt,
 	)
 	rec, err := scanVersion(row)
@@ -760,7 +767,7 @@ func scanVersion(row scannable) (*PolicyVersionRecord, error) {
 	var r PolicyVersionRecord
 	err := row.Scan(
 		&r.ID, &r.PolicyID, &r.Status, &r.VersionMajor, &r.VersionMinor,
-		&r.ChangeType, &r.ChangeSummary, &r.Content, &r.RollbackOf,
+		&r.ChangeType, &r.ChangeSummary, &r.Changes, &r.Content, &r.RollbackOf,
 		&r.PublishedAt, &r.PublishedBy, &r.CreatedBy, &r.CreatedAt,
 	)
 	if err != nil {

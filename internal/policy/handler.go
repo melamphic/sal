@@ -248,8 +248,9 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftInput) (*po
 type publishPolicyInput struct {
 	PolicyID string `path:"policy_id" doc:"Policy UUID."`
 	Body     struct {
-		ChangeType    string  `json:"change_type"              enum:"minor,major" doc:"Version bump type."`
-		ChangeSummary *string `json:"change_summary,omitempty"                   doc:"Optional summary of changes."`
+		ChangeType    string          `json:"change_type"              enum:"minor,major" doc:"Version bump type."`
+		ChangeSummary *string         `json:"change_summary,omitempty"                   doc:"Optional summary of changes."`
+		Changes       json.RawMessage `json:"changes,omitempty"                          doc:"Array of typed change ops the editor diffed from the previous published version. Display-only: rollback still targets whole versions."`
 	}
 }
 
@@ -268,6 +269,7 @@ func (h *Handler) publishPolicy(ctx context.Context, input *publishPolicyInput) 
 		StaffID:       staffID,
 		ChangeType:    input.Body.ChangeType,
 		ChangeSummary: input.Body.ChangeSummary,
+		Changes:       input.Body.Changes,
 	})
 	if err != nil {
 		return nil, mapPolicyError(err)
