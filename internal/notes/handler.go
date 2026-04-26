@@ -307,6 +307,38 @@ func (h *Handler) getNotePDF(ctx context.Context, input *noteIDInput) (*notePDFH
 	return resp, nil
 }
 
+// retryNotePDF handles POST /api/v1/notes/{note_id}/retry-pdf.
+func (h *Handler) retryNotePDF(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	resp, err := h.svc.RetryPDF(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &noteHTTPResponse{Body: resp}, nil
+}
+
+// retryNoteExtraction handles POST /api/v1/notes/{note_id}/retry-extraction.
+func (h *Handler) retryNoteExtraction(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	resp, err := h.svc.RetryExtraction(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &noteHTTPResponse{Body: resp}, nil
+}
+
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
 func mapNoteError(err error) error {

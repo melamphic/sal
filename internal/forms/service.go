@@ -1085,6 +1085,31 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 	return toFormResponse(retired), nil
 }
 
+// GetVersion returns a single version (draft, published, or archived) along
+// with its fields. Used by the note review page when a note was filed against
+// a version that is no longer the current draft or latest published — list
+// endpoints omit fields to keep payloads small, so the renderer needs a
+// targeted lookup that includes them.
+func (s *Service) GetVersion(ctx context.Context, formID, clinicID, versionID uuid.UUID) (*FormVersionResponse, error) {
+	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", err)
+	}
+	v, err := s.repo.GetVersionByID(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", err)
+	}
+	if v.FormID != formID {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", domain.ErrForbidden)
+	}
+	fields, err := s.repo.GetFieldsByVersionID(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: fields: %w", err)
+	}
+	resp := toVersionResponse(v, fields)
+	s.resolvePublisherName(ctx, clinicID, resp)
+	return resp, nil
+}
+
 // ListVersions returns the compliance trail for a form: every published
 // version (newest first), a synthetic "retire" entry when the form itself is
 // archived, and one synthetic "policy_unlinked" entry per policy that was

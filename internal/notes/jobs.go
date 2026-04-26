@@ -248,7 +248,11 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	if len(specs) > 0 {
 		results, err = w.extractor.Extract(ctx, vertical, *transcript, formPrompt, specs)
 		if err != nil {
-			errMsg := fmt.Sprintf("extraction failed: %v", err)
+			// Store a clean human-readable message; UI prefixes "Extraction failed:"
+			// itself, so don't double-stamp it. Keep the leaf error from the
+			// provider (e.g. "Gemini timed out (504)") rather than the wrapped
+			// internal chain.
+			errMsg := humanizeExtractionError(err)
 			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusFailed, &errMsg)
 			w.events.Emit(ctx, NoteEvent{
 				NoteID:    noteID,
@@ -349,6 +353,33 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	})
 
 	return nil
+}
+
+// humanizeExtractionError turns an internal-wrapped extraction error into a
+// short user-facing message that's safe to render on the failure banner. The
+// raw chain ("extraction.gemini: generate: Error 504, Message: ...") leaks
+// internals and double-stamps the "extraction failed" prefix the UI adds.
+func humanizeExtractionError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "504"), strings.Contains(low, "timed out"), strings.Contains(low, "deadline exceeded"):
+		return "AI extractor timed out. Try again — the model is usually back within a minute."
+	case strings.Contains(low, "429"), strings.Contains(low, "rate limit"), strings.Contains(low, "quota"):
+		return "AI extractor is rate limited. Wait a minute and retry."
+	case strings.Contains(low, "503"), strings.Contains(low, "unavailable"):
+		return "AI extractor is temporarily unavailable. Retry shortly."
+	}
+	// Fallback: strip our internal `pkg.layer: ` chain so the surface message
+	// is the leaf cause rather than the full wrap path.
+	parts := strings.Split(msg, ": ")
+	if len(parts) > 1 {
+		return parts[len(parts)-1]
+	}
+	return msg
 }
 
 // ── ComputePolicyAlignmentWorker ──────────────────────────────────────────────
@@ -522,10 +553,16 @@ type SubjectProvider interface {
 	GetSubjectForRender(ctx context.Context, subjectID, clinicID uuid.UUID) (*PDFSubject, error)
 }
 
-// GenerateNotePDFWorker builds a branded PDF after note submission, uploads to S3,
-// and stores the storage key on the note.
-type GenerateNotePDFWorker struct {
-	river.WorkerDefaults[GenerateNotePDFArgs]
+// pdfStore is the subset of storage.Store used by the PDF renderer.
+type pdfStore interface {
+	Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error
+}
+
+// PDFRenderer builds a branded note PDF, uploads it to object storage, stamps
+// the storage key on the note, and emits the `note.pdf_ready` event. The
+// pipeline is shared between the synchronous submit path (called inline by
+// notes.Service) and the River-driven async retry path (GenerateNotePDFWorker).
+type PDFRenderer struct {
 	notes      repo
 	formMeta   FormMetaProvider
 	formFields FormFieldProvider
@@ -538,15 +575,9 @@ type GenerateNotePDFWorker struct {
 	events     EventEmitter
 }
 
-// pdfStore is the subset of storage.Store used by the PDF worker.
-type pdfStore interface {
-	Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error
-}
-
-// NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker. Pass nil for
-// events to disable the post-render notification (useful in tests where the
-// realtime bus isn't wired).
-func NewGenerateNotePDFWorker(
+// NewPDFRenderer constructs a PDFRenderer. Pass nil for events to disable the
+// post-render notification (tests where the realtime bus isn't wired).
+func NewPDFRenderer(
 	notes repo,
 	formMeta FormMetaProvider,
 	formFields FormFieldProvider,
@@ -557,11 +588,11 @@ func NewGenerateNotePDFWorker(
 	subjects SubjectProvider,
 	store pdfStore,
 	events EventEmitter,
-) *GenerateNotePDFWorker {
+) *PDFRenderer {
 	if events == nil {
 		events = noopEmitter{}
 	}
-	return &GenerateNotePDFWorker{
+	return &PDFRenderer{
 		notes:      notes,
 		formMeta:   formMeta,
 		formFields: formFields,
@@ -575,62 +606,61 @@ func NewGenerateNotePDFWorker(
 	}
 }
 
-// Work executes the PDF generation job.
-func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[GenerateNotePDFArgs]) error {
-	noteID := job.Args.NoteID
-
-	note, err := w.notes.GetNoteByID(ctx, noteID, uuid.Nil)
+// Render produces the branded PDF for the given note, uploads it, and stores
+// the resulting key on the note row. Idempotent — if the note already has a
+// stored key the existing artifact is left in place and no event is emitted.
+func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
+	note, err := r.notes.GetNoteByID(ctx, noteID, uuid.Nil)
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: get note: %w", err)
+		return fmt.Errorf("notes.pdf.Render: get note: %w", err)
+	}
+	if note.PDFStorageKey != nil {
+		return nil
 	}
 
-	clinic, err := w.clinics.GetClinicStyle(ctx, note.ClinicID)
+	clinic, err := r.clinics.GetClinicStyle(ctx, note.ClinicID)
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: get clinic style: %w", err)
+		return fmt.Errorf("notes.pdf.Render: get clinic style: %w", err)
 	}
 
-	formName, formVersion, err := w.formMeta.GetFormMeta(ctx, note.FormVersionID, note.ClinicID)
+	formName, formVersion, err := r.formMeta.GetFormMeta(ctx, note.FormVersionID, note.ClinicID)
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: get form meta: %w", err)
+		return fmt.Errorf("notes.pdf.Render: get form meta: %w", err)
 	}
 
-	noteFields, err := w.notes.GetNoteFields(ctx, noteID)
+	noteFields, err := r.notes.GetNoteFields(ctx, noteID)
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: get note fields: %w", err)
+		return fmt.Errorf("notes.pdf.Render: get note fields: %w", err)
 	}
 
-	// Title index from the form's field definitions so the PDF can label
-	// rows by title rather than UUID. Missing entries (rare — only after a
-	// hard delete) fall back to the field ID.
-	formFields, err := w.formFields.GetFieldsByVersionID(ctx, note.FormVersionID)
+	formFields, err := r.formFields.GetFieldsByVersionID(ctx, note.FormVersionID)
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: get form fields: %w", err)
+		return fmt.Errorf("notes.pdf.Render: get form fields: %w", err)
 	}
 	titleByID := make(map[uuid.UUID]string, len(formFields))
 	for _, f := range formFields {
 		titleByID[f.ID] = f.Title
 	}
 
-	// Best-effort theme lookup — defaults render fine if unavailable.
 	var theme *DocTheme
-	if w.theme != nil {
-		t, themeErr := w.theme.GetActiveDocTheme(ctx, note.ClinicID)
+	if r.theme != nil {
+		t, themeErr := r.theme.GetActiveDocTheme(ctx, note.ClinicID)
 		if themeErr == nil {
 			theme = t
 		}
 	}
 
 	var sysHeader *SystemHeaderConfigForPDF
-	if w.headers != nil {
-		h, headerErr := w.headers.GetSystemHeader(ctx, note.FormVersionID)
+	if r.headers != nil {
+		h, headerErr := r.headers.GetSystemHeader(ctx, note.FormVersionID)
 		if headerErr == nil {
 			sysHeader = h
 		}
 	}
 
 	var subject *PDFSubject
-	if w.subjects != nil && note.SubjectID != nil {
-		s, subjErr := w.subjects.GetSubjectForRender(ctx, *note.SubjectID, note.ClinicID)
+	if r.subjects != nil && note.SubjectID != nil {
+		s, subjErr := r.subjects.GetSubjectForRender(ctx, *note.SubjectID, note.ClinicID)
 		if subjErr == nil {
 			subject = s
 		}
@@ -638,7 +668,7 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 
 	submittedBy := "Unknown"
 	if note.SubmittedBy != nil {
-		name, nameErr := w.staff.GetStaffName(ctx, *note.SubmittedBy, note.ClinicID)
+		name, nameErr := r.staff.GetStaffName(ctx, *note.SubmittedBy, note.ClinicID)
 		if nameErr == nil {
 			submittedBy = name
 			if subject != nil && subject.ClinicianName == nil {
@@ -684,24 +714,20 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 		VisitDate:     &visitDate,
 	})
 	if err != nil {
-		return fmt.Errorf("generate_note_pdf: build: %w", err)
+		return fmt.Errorf("notes.pdf.Render: build: %w", err)
 	}
 
-	// Upload to S3.
 	key := fmt.Sprintf("notes/%s/%s.pdf", note.ClinicID, noteID)
 	size := int64(buf.Len())
-	if err := w.store.Upload(ctx, key, "application/pdf", buf, size); err != nil {
-		return fmt.Errorf("generate_note_pdf: upload: %w", err)
+	if err := r.store.Upload(ctx, key, "application/pdf", buf, size); err != nil {
+		return fmt.Errorf("notes.pdf.Render: upload: %w", err)
 	}
 
-	// Store key on note record.
-	if err := w.notes.UpdatePDFKey(ctx, noteID, note.ClinicID, key); err != nil {
-		return fmt.Errorf("generate_note_pdf: update key: %w", err)
+	if err := r.notes.UpdatePDFKey(ctx, noteID, note.ClinicID, key); err != nil {
+		return fmt.Errorf("notes.pdf.Render: update key: %w", err)
 	}
 
-	// Notify the realtime bus so the review page can flip the download
-	// button from "rendering…" to active without polling.
-	w.events.Emit(ctx, NoteEvent{
+	r.events.Emit(ctx, NoteEvent{
 		NoteID:    noteID,
 		SubjectID: note.SubjectID,
 		ClinicID:  note.ClinicID,
@@ -710,6 +736,29 @@ func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[Generat
 		ActorRole: "system",
 	})
 
+	return nil
+}
+
+// GenerateNotePDFWorker is the River-side wrapper around PDFRenderer. It
+// remains the recovery path: when the synchronous render at submit time fails,
+// a job is enqueued so the artifact is eventually produced without operator
+// intervention.
+type GenerateNotePDFWorker struct {
+	river.WorkerDefaults[GenerateNotePDFArgs]
+	renderer *PDFRenderer
+}
+
+// NewGenerateNotePDFWorker constructs a GenerateNotePDFWorker around an
+// existing PDFRenderer.
+func NewGenerateNotePDFWorker(renderer *PDFRenderer) *GenerateNotePDFWorker {
+	return &GenerateNotePDFWorker{renderer: renderer}
+}
+
+// Work executes the PDF generation job.
+func (w *GenerateNotePDFWorker) Work(ctx context.Context, job *river.Job[GenerateNotePDFArgs]) error {
+	if err := w.renderer.Render(ctx, job.Args.NoteID); err != nil {
+		return fmt.Errorf("generate_note_pdf: %w", err)
+	}
 	return nil
 }
 

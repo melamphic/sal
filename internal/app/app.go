@@ -276,7 +276,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		aligner,
 		verticalStrings,
 	))
-	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
+	pdfRenderer := notes.NewPDFRenderer(
 		notesRepo,
 		&formMetaAdapter{repo: formsRepo},
 		&formsFieldAdapter{repo: formsRepo},
@@ -287,7 +287,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&subjectRenderAdapter{patient: patientSvc},
 		store,
 		eventAdapter,
-	))
+	)
+	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(pdfRenderer))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
 		Queues: map[string]river.QueueConfig{
@@ -341,6 +342,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		log,
 	)
 	notesSvc.SetNoteCapEnforcer(noteCapSvc)
+	notesSvc.SetPDFRenderer(pdfRenderer)
 	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
