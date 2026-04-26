@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -274,6 +275,29 @@ func (h *Handler) publishPolicy(ctx context.Context, input *publishPolicyInput) 
 	return &policyVersionHTTPResponse{Body: resp}, nil
 }
 
+// ── Discard draft ─────────────────────────────────────────────────────────────
+
+type discardDraftInput struct {
+	PolicyID string `path:"policy_id" doc:"Policy UUID."`
+}
+
+type emptyHTTPResponse struct{}
+
+// discardDraft handles DELETE /api/v1/policies/{policy_id}/draft.
+func (h *Handler) discardDraft(ctx context.Context, input *discardDraftInput) (*emptyHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	policyID, err := uuid.Parse(input.PolicyID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid policy_id")
+	}
+
+	if err := h.svc.DiscardDraft(ctx, policyID, clinicID); err != nil {
+		return nil, mapPolicyError(err)
+	}
+	return &emptyHTTPResponse{}, nil
+}
+
 // ── Rollback ──────────────────────────────────────────────────────────────────
 
 type rollbackPolicyInput struct {
@@ -466,12 +490,14 @@ func (h *Handler) listClauses(ctx context.Context, input *listClausesInput) (*po
 func mapPolicyError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
+		slog.Warn("policy: not found", "error", err.Error())
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
 	case errors.Is(err, domain.ErrConflict):
 		return huma.Error409Conflict("conflict")
 	default:
+		slog.Error("policy: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
 }

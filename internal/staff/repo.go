@@ -15,4 +15,5 @@ type repo interface {
 	List(ctx context.Context, clinicID uuid.UUID, p ListParams) ([]*StaffRecord, int, error)
 	UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, p UpdatePermsParams) (*StaffRecord, error)
 	Deactivate(ctx context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error)
+	CountStandardActive(ctx context.Context, clinicID uuid.UUID) (int, error)
 }

@@ -35,4 +35,15 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    []map[string][]string{{"bearerAuth": {}}},
 		Middlewares: huma.Middlewares{auth, manageBilling},
 	}, h.createPortalSession)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "create-billing-checkout-session",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/billing/checkout-session",
+		Summary:     "Create a Stripe Checkout session",
+		Description: "Returns a one-shot URL to Stripe Checkout (subscription mode, 14-day trial) for a clinic upgrading from trial to a paid plan. Requires manage_billing. The first call provisions a Stripe customer and persists cus_… on the clinic; subsequent calls reuse it.",
+		Tags:        []string{"Billing"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageBilling},
+	}, h.createCheckoutSession)
 }

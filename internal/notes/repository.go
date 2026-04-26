@@ -248,14 +248,16 @@ func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNo
 	return list, total, nil
 }
 
-// UpdateNoteStatus transitions a note to a new status.
-func (r *Repository) UpdateNoteStatus(ctx context.Context, id uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error) {
+// UpdateNoteStatus transitions a note to a new status. clinicID guards
+// against worker bugs accidentally writing across tenants — every caller
+// already has the clinic from a prior GetNoteByID lookup.
+func (r *Repository) UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE notes SET status = $2, error_message = $3
-		WHERE id = $1
+		UPDATE notes SET status = $3, error_message = $4
+		WHERE id = $1 AND clinic_id = $2
 		RETURNING %s`, noteCols)
 
-	row := r.db.QueryRow(ctx, q, id, string(status), errMsg)
+	row := r.db.QueryRow(ctx, q, id, clinicID, string(status), errMsg)
 	rec, err := scanNote(row)
 	if err != nil {
 		return nil, fmt.Errorf("notes.repo.UpdateNoteStatus: %w", err)
@@ -275,8 +277,8 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		    submitted_by          = $5,
 		    submitted_at          = $6,
 		    override_reason       = $7,
-		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5 END,
-		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6 END,
+		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5::uuid END,
+		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6::timestamptz END,
 		    form_version_context  = (
 		        SELECT CASE
 		            WHEN f.archived_at IS NOT NULL THEN 'before decommission'
@@ -341,29 +343,47 @@ func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, record
 	return count, nil
 }
 
+// CountSinceForClinic returns the count of non-archived notes created at
+// or after `since`. Used by note-cap metering to evaluate the current
+// billing period (or the trial window from clinics.created_at). Backed
+// by the partial index idx_notes_clinic_created_active.
+func (r *Repository) CountSinceForClinic(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	var count int
+	if err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM notes
+		   WHERE clinic_id = $1
+		     AND archived_at IS NULL
+		     AND created_at >= $2`,
+		clinicID, since,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("notes.repo.CountSinceForClinic: %w", err)
+	}
+	return count, nil
+}
+
 // UpdatePolicyAlignment sets the policy_alignment_pct on a note.
 // Called by the ComputePolicyAlignmentWorker after the AI alignment job runs.
-func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID uuid.UUID, pct float64) error {
-	const q = `UPDATE notes SET policy_alignment_pct = $2 WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, pct); err != nil {
+func (r *Repository) UpdatePolicyAlignment(ctx context.Context, noteID, clinicID uuid.UUID, pct float64) error {
+	const q = `UPDATE notes SET policy_alignment_pct = $3 WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, pct); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePolicyAlignment: %w", err)
 	}
 	return nil
 }
 
 // UpdatePDFKey sets the pdf_storage_key on a note after the PDF is generated.
-func (r *Repository) UpdatePDFKey(ctx context.Context, noteID uuid.UUID, key string) error {
-	const q = `UPDATE notes SET pdf_storage_key = $2 WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, key); err != nil {
+func (r *Repository) UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUID, key string) error {
+	const q = `UPDATE notes SET pdf_storage_key = $3 WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, key); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePDFKey: %w", err)
 	}
 	return nil
 }
 
 // UpdatePolicyCheckResult sets the policy_check_result JSONB on a note.
-func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID uuid.UUID, resultJSON string) error {
-	const q = `UPDATE notes SET policy_check_result = $2::jsonb WHERE id = $1`
-	if _, err := r.db.Exec(ctx, q, noteID, resultJSON); err != nil {
+func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
+	const q = `UPDATE notes SET policy_check_result = $3::jsonb WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, resultJSON); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePolicyCheckResult: %w", err)
 	}
 	return nil

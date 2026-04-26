@@ -74,6 +74,23 @@ type signupStartOutput struct {
 	}
 }
 
+type signupCheckoutInput struct {
+	Body struct {
+		Email      string          `json:"email" format:"email" minLength:"3" maxLength:"254" doc:"Admin work email — becomes the clinic primary contact + first super admin."`
+		FullName   string          `json:"full_name" minLength:"2" maxLength:"200" doc:"Admin's display name."`
+		ClinicName string          `json:"clinic_name" minLength:"2" maxLength:"200" doc:"Clinic display name."`
+		Vertical   domain.Vertical `json:"vertical" enum:"veterinary,dental,general_clinic" doc:"Which product the customer signed up for."`
+		PlanCode   string          `json:"plan_code" minLength:"3" maxLength:"80" doc:"Billing SKU selected on the pricing page. Required — there is no plan-less checkout."`
+	}
+}
+
+type signupCheckoutOutput struct {
+	Body struct {
+		CheckoutURL string `json:"checkout_url" doc:"Absolute Stripe Checkout URL — redirect the browser here."`
+		ExpiresAt   string `json:"expires_at" doc:"RFC3339 timestamp after which the handoff URL behind Checkout's success_url is invalid."`
+	}
+}
+
 type emptyOutput = struct{}
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -149,6 +166,29 @@ func (h *Handler) startSignup(ctx context.Context, input *signupStartInput) (*si
 	}
 	out := &signupStartOutput{}
 	out.Body.HandoffURL = res.HandoffURL
+	out.Body.ExpiresAt = res.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+	return out, nil
+}
+
+// startSignupCheckout handles POST /api/v1/signup/checkout-start.
+// Public endpoint called by /mel when the user clicks "Start trial" with
+// card-up-front. Pre-creates a Stripe customer + Checkout session (14-day
+// trial), mints a handoff JWT carrying the cus_… as Stripe success_url,
+// and returns the Checkout URL. Browser redirects to checkout_url; on
+// success Stripe redirects to the handoff URL which provisions the clinic.
+func (h *Handler) startSignupCheckout(ctx context.Context, input *signupCheckoutInput) (*signupCheckoutOutput, error) {
+	res, err := h.svc.StartSignupCheckout(ctx, StartSignupCheckoutInput{
+		Email:      input.Body.Email,
+		FullName:   input.Body.FullName,
+		ClinicName: input.Body.ClinicName,
+		Vertical:   input.Body.Vertical,
+		PlanCode:   input.Body.PlanCode,
+	})
+	if err != nil {
+		return nil, mapAuthError(err)
+	}
+	out := &signupCheckoutOutput{}
+	out.Body.CheckoutURL = res.CheckoutURL
 	out.Body.ExpiresAt = res.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 	return out, nil
 }

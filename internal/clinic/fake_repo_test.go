@@ -152,3 +152,110 @@ func (f *fakeRepo) Update(_ context.Context, id uuid.UUID, p UpdateParams) (*Cli
 	c.UpdatedAt = time.Now().UTC()
 	return c, nil
 }
+
+func (f *fakeRepo) SubmitCompliance(_ context.Context, id uuid.UUID, p ComplianceParams) (*Clinic, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	if p.PrivacyOfficerName != nil {
+		c.PrivacyOfficerName = p.PrivacyOfficerName
+	}
+	if p.PrivacyOfficerEmail != nil {
+		c.PrivacyOfficerEmail = p.PrivacyOfficerEmail
+	}
+	if p.PrivacyOfficerPhone != nil {
+		c.PrivacyOfficerPhone = p.PrivacyOfficerPhone
+	}
+	if p.POTrainingAttestedAt != nil {
+		c.POTrainingAttestedAt = p.POTrainingAttestedAt
+	}
+	if p.CrossBorderAckAt != nil {
+		c.CrossBorderAckAt = p.CrossBorderAckAt
+	}
+	if p.CrossBorderAckVersion != nil {
+		c.CrossBorderAckVersion = p.CrossBorderAckVersion
+	}
+	if p.MHRRegistered != nil {
+		c.MHRRegistered = p.MHRRegistered
+	}
+	if p.AIOversightAckAt != nil {
+		c.AIOversightAckAt = p.AIOversightAckAt
+	}
+	if p.PatientConsentAckAt != nil {
+		c.PatientConsentAckAt = p.PatientConsentAckAt
+	}
+	if p.DPAAcceptedAt != nil {
+		c.DPAAcceptedAt = p.DPAAcceptedAt
+	}
+	if p.DPAVersion != nil {
+		c.DPAVersion = p.DPAVersion
+	}
+	if p.CompletedAt != nil {
+		c.ComplianceOnboardingCompletedAt = p.CompletedAt
+	}
+	if p.Version != nil {
+		c.ComplianceOnboardingVersion = p.Version
+	}
+	if p.IP != nil {
+		c.ComplianceOnboardingIP = p.IP
+	}
+	if p.UserID != nil {
+		c.ComplianceOnboardingUserID = p.UserID
+	}
+	if p.AdvanceStep && c.OnboardingStep < 2 {
+		c.OnboardingStep = 2
+	}
+	c.UpdatedAt = time.Now().UTC()
+	return c, nil
+}
+
+func (f *fakeRepo) MarkNoteCapWarned(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapWarnedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapWarnedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}
+
+func (f *fakeRepo) MarkNoteCapCSAlerted(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapCSAlertedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapCSAlertedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}
+
+func (f *fakeRepo) MarkNoteCapBlocked(_ context.Context, id uuid.UUID, at time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.byID[id]
+	if !ok {
+		return false, domain.ErrNotFound
+	}
+	if c.NoteCapBlockedAt != nil {
+		return false, nil
+	}
+	t := at
+	c.NoteCapBlockedAt = &t
+	c.UpdatedAt = time.Now().UTC()
+	return true, nil
+}

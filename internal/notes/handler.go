@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -319,6 +320,7 @@ func mapNoteError(err error) error {
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
 	default:
+		slog.Error("notes: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
 }

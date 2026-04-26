@@ -5,10 +5,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -28,6 +31,7 @@ import (
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
 	"github.com/melamphic/sal/internal/marketplace"
+	"github.com/melamphic/sal/internal/notecap"
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/notifications"
 	"github.com/melamphic/sal/internal/patient"
@@ -41,6 +45,7 @@ import (
 	"github.com/melamphic/sal/internal/policy"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
+	"github.com/melamphic/sal/internal/tiering"
 	"github.com/melamphic/sal/internal/timeline"
 	"github.com/melamphic/sal/internal/verticals"
 	"github.com/riverqueue/river"
@@ -101,6 +106,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		MagicLinkTTL:  cfg.MagicLinkTTL,
 		AppURL:        cfg.AppURL,
 	}, staffCreator)
+	// Per-email throttle (3 burst, 1 every 2 minutes) defends against
+	// distributed botnets flooding a single victim's inbox; the per-IP
+	// middleware below covers the orthogonal flooding-many-emails-from-one-IP
+	// case. Both must be in place for full coverage.
+	authSvc.EnableMagicLinkEmailLimit()
 	// 10 requests per minute per IP on public auth endpoints.
 	rlStore := mw.NewRateLimiterStore(10.0/60.0, 10)
 	authHandler := auth.NewHandler(authSvc, rlStore)
@@ -148,10 +158,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 			return nil, fmt.Errorf("app.Build: %w", err)
 		}
 		billingRepo := billing.NewRepository(db)
+		planLookup := newStaticPlanLookup(priceMap)
 		billingSvc := billing.NewService(
 			billingRepo,
 			&billingClinicAdapter{clinic: clinicSvc},
-			staticPlanLookup(priceMap),
+			planLookup,
 			[]byte(cfg.StripeWebhookSecret),
 		)
 		if cfg.StripeAPIKey != "" {
@@ -159,6 +170,41 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 				billing.NewStripePortalClient(cfg.StripeAPIKey),
 				cfg.AppURL+"/settings/billing",
 			)
+			checkoutClient := billing.NewStripeCheckoutClient(cfg.StripeAPIKey)
+			customerClient := billing.NewStripeCustomerClient(cfg.StripeAPIKey)
+			billingSvc.EnableCheckout(
+				checkoutClient,
+				customerClient,
+				cfg.AppURL+"/settings/billing?checkout=success",
+				cfg.AppURL+"/settings/billing?checkout=cancelled",
+			)
+			// Signup-checkout (mel card-up-front) needs all three primitives
+			// — Stripe customer + checkout session + plan-code → price-id —
+			// PLUS the mel handoff JWT secret so it can mint the post-checkout
+			// success URL. Wire it only when both gates are open.
+			if cfg.MelHandoffJWTSecret != "" {
+				authSvc.EnableSignupCheckout(
+					&signupCheckoutAdapter{
+						customers: customerClient,
+						checkout:  checkoutClient,
+						plans:     planLookup,
+					},
+					strings.TrimRight(cfg.MelBaseURL, "/")+"/signup?canceled=1",
+				)
+			}
+			// ── Tier auto-derivation (pricing-model-v3 §6) ────────────────────
+			// Wired only when Stripe is fully configured — without an API
+			// key we can't issue subscription-item swaps. Hooks into
+			// staff.Service so every invite/create/deactivate that touches
+			// a standard seat triggers a Reconcile.
+			tieringSvc := tiering.NewService(
+				&tieringClinicAdapter{clinic: clinicSvc},
+				&tieringStaffAdapter{staff: staffSvc},
+				billing.NewStripeSubscriptionClient(cfg.StripeAPIKey),
+				planLookup,
+				log,
+			)
+			staffSvc.SetTierReconciler(tieringSvc)
 		}
 		billingHandler = billing.NewHandler(billingSvc, log)
 	}
@@ -233,9 +279,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(
 		notesRepo,
 		&formMetaAdapter{repo: formsRepo},
+		&formsFieldAdapter{repo: formsRepo},
 		&clinicStyleAdapter{clinic: clinicSvc},
 		&staffNameAdapter{staff: staffSvc},
+		&docThemeAdapter{repo: formsRepo},
+		&systemHeaderAdapter{repo: formsRepo},
+		&subjectRenderAdapter{patient: patientSvc},
 		store,
+		eventAdapter,
 	))
 
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
@@ -278,6 +329,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if detailedChecker != nil {
 		notesSvc.SetPolicyChecker(detailedChecker, &policyClauseProviderAdapter{forms: formsRepo, policy: policyRepo})
 	}
+	// ── Note-cap metering (pricing-model-v3 §7) ──────────────────────────────
+	// Gates note creation against the per-period (or trial) note cap,
+	// fires 80% / 110% emails, and blocks at 150%. Wired here so the
+	// notes service can call into it for every CreateNote.
+	noteCapSvc := notecap.NewService(
+		&notecapClinicAdapter{clinic: clinicSvc},
+		&notecapNotesAdapter{notes: notesRepo},
+		m,
+		cfg.OpsAlertEmail,
+		log,
+	)
+	notesSvc.SetNoteCapEnforcer(noteCapSvc)
 	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
@@ -323,6 +386,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	r.Use(mw.RequestLogger(log))
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestSize(8 * 1024 * 1024)) // 8 MB — audio uploads bypass via S3 presigned URLs
+	// Grace-period write-block: if the clinic's Stripe subscription has
+	// gone unpaid past the dunning window, every write returns 402 until
+	// they pay. Reads + auth/billing/health prefixes pass through so the
+	// clinic can sign in and recover.
+	r.Use(mw.BlockWritesOnGracePeriod(&clinicStatusAdapter{clinic: clinicSvc}, jwtSecret, log))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.AllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -518,12 +586,22 @@ func (a *billingClinicAdapter) GetStripeCustomerID(ctx context.Context, clinicID
 	return id, nil
 }
 
+func (a *billingClinicAdapter) GetClinicProfile(ctx context.Context, clinicID uuid.UUID) (billing.ClinicProfile, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return billing.ClinicProfile{}, fmt.Errorf("app.billingClinicAdapter.GetClinicProfile: %w", err)
+	}
+	return billing.ClinicProfile{Email: c.Email, Name: c.Name}, nil
+}
+
 func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clinicID uuid.UUID, s billing.SubscriptionState) error {
 	if err := a.clinic.ApplyBillingState(ctx, clinicID, clinic.BillingState{
 		Status:               s.Status,
 		PlanCode:             s.PlanCode,
 		StripeCustomerID:     s.StripeCustomerID,
 		StripeSubscriptionID: s.StripeSubscriptionID,
+		BillingPeriodStart:   s.BillingPeriodStart,
+		BillingPeriodEnd:     s.BillingPeriodEnd,
 	}); err != nil {
 		return fmt.Errorf("app.billingClinicAdapter.ApplySubscriptionState: %w", err)
 	}
@@ -531,11 +609,181 @@ func (a *billingClinicAdapter) ApplySubscriptionState(ctx context.Context, clini
 }
 
 // staticPlanLookup implements billing.PlanLookup from a parsed env map.
-type staticPlanLookup map[string]domain.PlanCode
+// Holds the forward (price → plan) and reverse (plan → price) indexes —
+// the reverse is computed once at startup so Checkout calls don't scan
+// the map on every request.
+type staticPlanLookup struct {
+	byPrice map[string]domain.PlanCode
+	byPlan  map[domain.PlanCode]string
+}
 
-func (m staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
-	pc, ok := m[id]
+func newStaticPlanLookup(byPrice map[string]domain.PlanCode) *staticPlanLookup {
+	byPlan := make(map[domain.PlanCode]string, len(byPrice))
+	for priceID, plan := range byPrice {
+		// Last write wins on duplicate plan codes — config validation
+		// already rejects unknown codes; duplicate codes (two prices
+		// mapped to the same plan) are unusual but harmless: either
+		// price will roundtrip the webhook back to the same plan.
+		byPlan[plan] = priceID
+	}
+	return &staticPlanLookup{byPrice: byPrice, byPlan: byPlan}
+}
+
+func (m *staticPlanLookup) PlanCodeForStripePriceID(id string) (domain.PlanCode, bool) {
+	pc, ok := m.byPrice[id]
 	return pc, ok
+}
+
+func (m *staticPlanLookup) StripePriceIDForPlanCode(plan domain.PlanCode) (string, bool) {
+	id, ok := m.byPlan[plan]
+	return id, ok
+}
+
+// notecapClinicAdapter implements notecap.ClinicReader against
+// clinic.Service. Lives in app.go because notecap must not import the
+// clinic package directly per the cross-domain rule.
+type notecapClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *notecapClinicAdapter) LoadForCap(ctx context.Context, clinicID uuid.UUID) (notecap.ClinicState, error) {
+	st, err := a.clinic.LoadNoteCapState(ctx, clinicID)
+	if err != nil {
+		return notecap.ClinicState{}, fmt.Errorf("app.notecapClinicAdapter.LoadForCap: %w", err)
+	}
+	return notecap.ClinicState{
+		ID:                 st.ID,
+		Name:               st.Name,
+		AdminEmail:         st.Email,
+		Status:             st.Status,
+		PlanCode:           st.PlanCode,
+		BillingPeriodStart: st.BillingPeriodStart,
+		CreatedAt:          st.CreatedAt,
+		NoteCapWarnedAt:    st.NoteCapWarnedAt,
+		NoteCapCSAlertedAt: st.NoteCapCSAlertedAt,
+		NoteCapBlockedAt:   st.NoteCapBlockedAt,
+	}, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapWarned(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapWarned(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapWarned: %w", err)
+	}
+	return claimed, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapCSAlerted(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapCSAlerted(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapCSAlerted: %w", err)
+	}
+	return claimed, nil
+}
+
+func (a *notecapClinicAdapter) MarkNoteCapBlocked(ctx context.Context, clinicID uuid.UUID) (bool, error) {
+	claimed, err := a.clinic.MarkNoteCapBlocked(ctx, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.notecapClinicAdapter.MarkNoteCapBlocked: %w", err)
+	}
+	return claimed, nil
+}
+
+// notecapNotesAdapter implements notecap.NoteCounter by bridging to the
+// notes repository's per-period count. Repo here, not service: the
+// service-level count would force unrelated event/policy work that's
+// not needed for a hot-path COUNT(*).
+type notecapNotesAdapter struct{ notes *notes.Repository }
+
+func (a *notecapNotesAdapter) CountSinceForClinic(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	n, err := a.notes.CountSinceForClinic(ctx, clinicID, since)
+	if err != nil {
+		return 0, fmt.Errorf("app.notecapNotesAdapter.CountSinceForClinic: %w", err)
+	}
+	return n, nil
+}
+
+// tieringClinicAdapter implements tiering.ClinicReader against
+// clinic.Service. Lives in app.go because tiering must not import the
+// clinic package directly per the cross-domain rule.
+type tieringClinicAdapter struct{ clinic *clinic.Service }
+
+func (a *tieringClinicAdapter) LoadTierState(ctx context.Context, clinicID uuid.UUID) (tiering.ClinicState, error) {
+	st, err := a.clinic.LoadTierState(ctx, clinicID)
+	if err != nil {
+		return tiering.ClinicState{}, fmt.Errorf("app.tieringClinicAdapter.LoadTierState: %w", err)
+	}
+	return tiering.ClinicState{
+		Status:               st.Status,
+		PlanCode:             st.PlanCode,
+		StripeSubscriptionID: st.StripeSubscriptionID,
+	}, nil
+}
+
+// clinicStatusAdapter implements mw.ClinicStatusReader against
+// clinic.Service. Lives in app.go because the middleware package must
+// not import the clinic package.
+type clinicStatusAdapter struct{ clinic *clinic.Service }
+
+func (a *clinicStatusAdapter) GetStatus(ctx context.Context, clinicID uuid.UUID) (domain.ClinicStatus, error) {
+	st, err := a.clinic.GetStatus(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.clinicStatusAdapter.GetStatus: %w", err)
+	}
+	return st, nil
+}
+
+// tieringStaffAdapter implements tiering.StaffCounter by bridging to
+// staff.Service's standard-seat count.
+type tieringStaffAdapter struct{ staff *staff.Service }
+
+func (a *tieringStaffAdapter) CountStandardActive(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	n, err := a.staff.CountStandardActive(ctx, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("app.tieringStaffAdapter.CountStandardActive: %w", err)
+	}
+	return n, nil
+}
+
+// signupCheckoutAdapter implements auth.SignupCheckoutClient by composing
+// the billing primitives (Stripe customer creation, Checkout session
+// creation, plan-code → price-id lookup). Lives in app.go because auth
+// must not import billing directly per the cross-domain rule.
+type signupCheckoutAdapter struct {
+	customers billing.StripeCustomerCreator
+	checkout  billing.CheckoutSessionCreator
+	plans     billing.PlanLookup
+}
+
+func (a *signupCheckoutAdapter) CreateCustomer(email, clinicName string) (string, error) {
+	// clinic_id is empty — no clinic row exists yet at this point in the
+	// signup flow. The Stripe customer client elides the metadata key
+	// when clinicID is "" so the dashboard isn't polluted.
+	id, err := a.customers.Create(email, clinicName, "")
+	if err != nil {
+		return "", fmt.Errorf("app.signupCheckoutAdapter.CreateCustomer: %w", err)
+	}
+	return id, nil
+}
+
+func (a *signupCheckoutAdapter) CreateCheckoutSession(p auth.SignupCheckoutSessionInput) (string, error) {
+	url, err := a.checkout.Create(billing.CheckoutParams{
+		CustomerID: p.CustomerID,
+		PriceID:    p.PriceID,
+		SuccessURL: p.SuccessURL,
+		CancelURL:  p.CancelURL,
+		TrialDays:  p.TrialDays,
+		// ClinicID intentionally zero — no clinic exists yet. The Stripe
+		// CheckoutSession metadata gets the zero-uuid string, which is
+		// fine: signup-checkout subscriptions resolve via cus_… on the
+		// webhook, not via the metadata.
+	})
+	if err != nil {
+		return "", fmt.Errorf("app.signupCheckoutAdapter.CreateCheckoutSession: %w", err)
+	}
+	return url, nil
+}
+
+func (a *signupCheckoutAdapter) PriceIDForPlanCode(planCode domain.PlanCode) (string, bool) {
+	return a.plans.StripePriceIDForPlanCode(planCode)
 }
 
 // melHandoffAdapter implements auth.HandoffProvisioner by bridging to
@@ -960,6 +1208,69 @@ func (a *marketplacePolicySnapshotAdapter) SnapshotPolicy(ctx context.Context, p
 	return out, nil
 }
 
+// SnapshotPolicies fetches metadata, latest published versions, and clauses
+// for many policies in three queries instead of 3*N. Order of input IDs is
+// preserved in the output. Returns ErrNotFound if any policy is missing,
+// belongs to a different tenant, or has no published version.
+func (a *marketplacePolicySnapshotAdapter) SnapshotPolicies(ctx context.Context, policyIDs []uuid.UUID, clinicID uuid.UUID) ([]*marketplace.PolicySnapshot, error) {
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
+
+	policies, err := a.policyRepo.GetPoliciesByIDs(ctx, policyIDs, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policies: %w", err)
+	}
+	policyByID := make(map[uuid.UUID]*policy.PolicyRecord, len(policies))
+	for _, p := range policies {
+		policyByID[p.ID] = p
+	}
+
+	versions, err := a.policyRepo.GetLatestPublishedVersions(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: versions: %w", err)
+	}
+
+	clauses, err := a.policyRepo.GetLatestClausesForPolicies(ctx, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: clauses: %w", err)
+	}
+	clausesByPolicy := make(map[uuid.UUID][]*policy.ClauseWithPolicyID, len(policyIDs))
+	for _, c := range clauses {
+		clausesByPolicy[c.PolicyID] = append(clausesByPolicy[c.PolicyID], c)
+	}
+
+	out := make([]*marketplace.PolicySnapshot, 0, len(policyIDs))
+	for _, pid := range policyIDs {
+		p, ok := policyByID[pid]
+		if !ok {
+			return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policy %s: %w", pid, domain.ErrNotFound)
+		}
+		v, ok := versions[pid]
+		if !ok {
+			return nil, fmt.Errorf("app.marketplacePolicySnapshotAdapter.SnapshotPolicies: policy %s has no published version: %w", pid, domain.ErrNotFound)
+		}
+		pcs := clausesByPolicy[pid]
+		snap := &marketplace.PolicySnapshot{
+			PolicyID:    p.ID,
+			Name:        p.Name,
+			Description: p.Description,
+			Content:     v.Content,
+			Clauses:     make([]marketplace.PolicySnapshotClause, len(pcs)),
+		}
+		for i, c := range pcs {
+			snap.Clauses[i] = marketplace.PolicySnapshotClause{
+				BlockID: c.BlockID,
+				Title:   c.Title,
+				Body:    c.Body,
+				Parity:  c.Parity,
+			}
+		}
+		out = append(out, snap)
+	}
+	return out, nil
+}
+
 // marketplaceClinicInfoAdapter implements marketplace.ClinicInfoProvider.
 type marketplaceClinicInfoAdapter struct {
 	clinicSvc *clinic.Service
@@ -1102,18 +1413,155 @@ func (a *marketplacePolicyNamerAdapter) GetPolicyNames(ctx context.Context, clin
 	return out, nil
 }
 
-// clinicStyleAdapter implements notes.ClinicStyleProvider.
-// Returns the clinic name and an empty brand color (uses PDF default blue).
+// clinicStyleAdapter implements notes.ClinicStyleProvider. Returns the
+// clinic-profile fields the PDF renderer uses for header/footer slot
+// substitution. Brand color now lives on the doc-theme, not the clinic, so
+// it is not returned here.
 type clinicStyleAdapter struct {
 	clinic *clinic.Service
 }
 
-func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+func (a *clinicStyleAdapter) GetClinicStyle(ctx context.Context, clinicID uuid.UUID) (*notes.ClinicForRender, error) {
 	c, err := a.clinic.GetByID(ctx, clinicID)
 	if err != nil {
-		return "", "", fmt.Errorf("app.clinicStyleAdapter: %w", err)
+		return nil, fmt.Errorf("app.clinicStyleAdapter: %w", err)
 	}
-	return c.Name, "", nil // empty color → PDF default blue
+	email := c.Email
+	return &notes.ClinicForRender{
+		Name:    c.Name,
+		Address: c.Address,
+		Phone:   c.Phone,
+		Email:   &email,
+	}, nil
+}
+
+// docThemeAdapter implements notes.DocThemeProvider by reading the active
+// clinic_form_style_versions row and decoding its rich JSONB config into a
+// typed notes.DocTheme.
+type docThemeAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *docThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID uuid.UUID) (*notes.DocTheme, error) {
+	style, err := a.repo.GetCurrentStyle(ctx, clinicID)
+	if err != nil {
+		// No active style is normal for a fresh clinic — fall back to defaults.
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	if style == nil || len(style.Config) == 0 {
+		return nil, nil
+	}
+	theme, err := notes.DecodeDocTheme(style.Config)
+	if err != nil {
+		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// systemHeaderAdapter implements notes.SystemHeaderProvider by reading the
+// per-form-version system_header_config JSONB through the forms repository.
+type systemHeaderAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *systemHeaderAdapter) GetSystemHeader(ctx context.Context, formVersionID uuid.UUID) (*notes.SystemHeaderConfigForPDF, error) {
+	v, err := a.repo.GetVersionByID(ctx, formVersionID)
+	if err != nil {
+		return nil, fmt.Errorf("app.systemHeaderAdapter: %w", err)
+	}
+	if len(v.SystemHeaderConfig) == 0 {
+		return nil, nil
+	}
+	var raw struct {
+		Enabled bool     `json:"enabled"`
+		Fields  []string `json:"fields"`
+	}
+	if err := json.Unmarshal(v.SystemHeaderConfig, &raw); err != nil {
+		return nil, fmt.Errorf("app.systemHeaderAdapter: %w", err)
+	}
+	return &notes.SystemHeaderConfigForPDF{Enabled: raw.Enabled, Fields: raw.Fields}, nil
+}
+
+// subjectRenderAdapter implements notes.SubjectProvider by mapping the
+// vertical-specific subject details into the flat PDFSubject struct the
+// renderer consumes. Bypasses access logging — the PDF job runs in system
+// context, and the original submit action already produced an access log.
+type subjectRenderAdapter struct {
+	patient *patient.Service
+}
+
+func (a *subjectRenderAdapter) GetSubjectForRender(ctx context.Context, subjectID, clinicID uuid.UUID) (*notes.PDFSubject, error) {
+	s, err := a.patient.GetSubjectForRender(ctx, subjectID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.subjectRenderAdapter: %w", err)
+	}
+	out := &notes.PDFSubject{
+		DisplayName: &s.DisplayName,
+	}
+	if s.VetDetails != nil {
+		v := s.VetDetails
+		species := string(v.Species)
+		out.Species = &species
+		out.Breed = v.Breed
+		out.Microchip = v.Microchip
+		out.WeightKg = v.WeightKg
+		out.Desexed = v.Desexed
+		out.Color = v.Color
+		out.DOB = v.DateOfBirth
+		out.Allergies = v.Allergies
+		if v.Sex != nil {
+			sx := string(*v.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.DentalDetails != nil {
+		d := s.DentalDetails
+		out.DOB = d.DateOfBirth
+		out.MedicalAlerts = d.MedicalAlerts
+		out.Medications = d.Medications
+		out.Allergies = d.Allergies
+		if d.Sex != nil {
+			sx := string(*d.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.GeneralDetails != nil {
+		g := s.GeneralDetails
+		out.DOB = g.DateOfBirth
+		out.MedicalAlerts = g.MedicalAlerts
+		out.Medications = g.Medications
+		out.Allergies = g.Allergies
+		if g.Sex != nil {
+			sx := string(*g.Sex)
+			out.Sex = &sx
+		}
+	}
+	if s.AgedCareDetails != nil {
+		ac := s.AgedCareDetails
+		out.DOB = ac.DateOfBirth
+		out.Room = ac.Room
+		out.NHINumber = ac.NHINumber
+		out.MedicareNumber = ac.MedicareNumber
+		out.PreferredLanguage = ac.PreferredLanguage
+		out.MedicalAlerts = ac.MedicalAlerts
+		out.Medications = ac.Medications
+		out.Allergies = ac.Allergies
+		out.AdmissionDate = ac.AdmissionDate
+		if ac.FundingLevel != nil {
+			fl := string(*ac.FundingLevel)
+			out.FundingLevel = &fl
+		}
+		if ac.Sex != nil {
+			sx := string(*ac.Sex)
+			out.Sex = &sx
+		}
+	}
+	// External ID (clinic's own patient identifier) — pulled by separate
+	// service method until the SubjectResponse exposes it directly.
+	return out, nil
 }
 
 // staffNameAdapter implements notes.StaffNameProvider.

@@ -85,6 +85,34 @@ func (f *fakeRepo) UpdateGroup(_ context.Context, p UpdateGroupParams) (*GroupRe
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 
+func (f *fakeRepo) CreateFormWithDraft(ctx context.Context, p CreateFormWithDraftParams) (*FormRecord, *FormVersionRecord, error) {
+	form, err := f.CreateForm(ctx, p.Form)
+	if err != nil {
+		return nil, nil, err
+	}
+	v, err := f.CreateDraftVersion(ctx, CreateDraftVersionParams{
+		ID:        p.DraftID,
+		FormID:    p.Form.ID,
+		CreatedBy: p.Form.CreatedBy,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return form, v, nil
+}
+
+func (f *fakeRepo) DeleteDraftVersion(_ context.Context, formID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, v := range f.versions {
+		if v.FormID == formID && v.Status == domain.FormVersionStatusDraft {
+			delete(f.versions, id)
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
 func (f *fakeRepo) CreateForm(_ context.Context, p CreateFormParams) (*FormRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -330,6 +358,9 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	if !ok || v.Status != domain.FormVersionStatusDraft {
 		return nil, domain.ErrNotFound
 	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != p.ClinicID {
+		return nil, domain.ErrNotFound
+	}
 	for _, existing := range f.versions {
 		if existing.ID == v.ID || existing.FormID != v.FormID || existing.Status != domain.FormVersionStatusPublished {
 			continue
@@ -351,11 +382,30 @@ func (f *fakeRepo) PublishDraftVersion(_ context.Context, p PublishDraftVersionP
 	return cloneVersion(v), nil
 }
 
+func (f *fakeRepo) UpdateDraftSystemHeader(_ context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.versions[versionID]
+	if !ok || v.Status != domain.FormVersionStatusDraft {
+		return nil, domain.ErrNotFound
+	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != clinicID {
+		return nil, domain.ErrNotFound
+	}
+	cp := make([]byte, len(config))
+	copy(cp, config)
+	v.SystemHeaderConfig = cp
+	return cloneVersion(v), nil
+}
+
 func (f *fakeRepo) SavePolicyCheckResult(_ context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	v, ok := f.versions[p.VersionID]
 	if !ok || v.Status != domain.FormVersionStatusDraft {
+		return nil, domain.ErrNotFound
+	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != p.ClinicID {
 		return nil, domain.ErrNotFound
 	}
 	v.PolicyCheckResult = &p.Result

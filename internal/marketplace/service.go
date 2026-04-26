@@ -54,9 +54,14 @@ type FormSnapshotField struct {
 
 // PolicySnapshotter reads a policy's latest published version + clauses for
 // bundling into a marketplace package. Returns ErrNotFound if no published
-// version exists.
+// version exists. SnapshotPolicies is the batched form used by PublishVersion
+// to avoid an N+1 (3 queries per policy) when bundling many policies into one
+// listing — the implementation must return one entry per input ID, in the same
+// order as policyIDs, or fail with ErrNotFound if any policy lacks a
+// publishable version.
 type PolicySnapshotter interface {
 	SnapshotPolicy(ctx context.Context, policyID, clinicID uuid.UUID) (*PolicySnapshot, error)
+	SnapshotPolicies(ctx context.Context, policyIDs []uuid.UUID, clinicID uuid.UUID) ([]*PolicySnapshot, error)
 }
 
 // PolicySnapshot is a DTO for the policy-carrying payload. The content JSONB
@@ -747,12 +752,12 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 		if s.policySnap == nil {
 			return nil, fmt.Errorf("marketplace.service.PublishVersion: policy snapshotter not configured but listing is bundled: %w", domain.ErrConflict)
 		}
-		bundledPolicies = make([]PackagePolicy, 0, len(policyIDs))
-		for _, pid := range policyIDs {
-			ps, err := s.policySnap.SnapshotPolicy(ctx, pid, input.ClinicID)
-			if err != nil {
-				return nil, fmt.Errorf("marketplace.service.PublishVersion: policy snapshot %s: %w", pid, err)
-			}
+		snaps, err := s.policySnap.SnapshotPolicies(ctx, policyIDs, input.ClinicID)
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.PublishVersion: policy snapshots: %w", err)
+		}
+		bundledPolicies = make([]PackagePolicy, 0, len(snaps))
+		for _, ps := range snaps {
 			clauses := make([]PackagePolicyClause, len(ps.Clauses))
 			for i, c := range ps.Clauses {
 				clauses[i] = PackagePolicyClause(c)

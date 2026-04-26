@@ -114,6 +114,23 @@ type FieldResponse struct {
 	MinConfidence  *float64        `json:"min_confidence,omitempty"`
 }
 
+// SystemHeaderConfig describes the per-form-version "patient header" card
+// that renders at the top of every note (review screen + PDF). Values come
+// from the linked subject row at note-render time, NOT from AI extraction —
+// this is the system's source of truth for patient identity.
+//
+//   - Enabled: when false, the form has no patient header card and the form
+//     fields render flush to the doc-theme chrome.
+//   - Fields: ordered list of patient-row attributes to surface. Valid values
+//     are validated in app code (see SystemHeaderField allow-list); adding a
+//     new identifier is code-only, no migration.
+//
+//nolint:revive
+type SystemHeaderConfig struct {
+	Enabled bool     `json:"enabled"`
+	Fields  []string `json:"fields"`
+}
+
 // FormVersionResponse is the API-safe representation of a form version.
 //
 //nolint:revive
@@ -145,6 +162,10 @@ type FormVersionResponse struct {
 	PublishedByName   *string                  `json:"published_by_name,omitempty"`
 	CreatedAt         string                   `json:"created_at"`
 	Fields            []*FieldResponse         `json:"fields,omitempty"`
+	// SystemHeader carries the patient-header card config. Always populated
+	// — the column has a non-null default — so clients can render the card
+	// without falling back to inferred state.
+	SystemHeader      *SystemHeaderConfig      `json:"system_header,omitempty"`
 }
 
 // FormVersionListResponse is a list of form versions.
@@ -314,6 +335,11 @@ type UpdateDraftInput struct {
 	OverallPrompt *string
 	Tags          []string
 	Fields        []FieldInput
+	// SystemHeader is the patient-header card config. nil means "leave the
+	// existing config alone" — UpdateDraft does NOT clobber the column when
+	// the input is absent. Clients that want to disable the card send
+	// `{enabled: false, fields: []}` explicitly.
+	SystemHeader  *SystemHeaderConfig
 }
 
 // FieldInput holds the values for a single field in a draft update.
@@ -407,27 +433,21 @@ func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormR
 		tags = []string{}
 	}
 
-	form, err := s.repo.CreateForm(ctx, CreateFormParams{
-		ID:            formID,
-		ClinicID:      input.ClinicID,
-		GroupID:       input.GroupID,
-		Name:          input.Name,
-		Description:   input.Description,
-		OverallPrompt: input.OverallPrompt,
-		Tags:          tags,
-		CreatedBy:     input.StaffID,
+	form, draft, err := s.repo.CreateFormWithDraft(ctx, CreateFormWithDraftParams{
+		Form: CreateFormParams{
+			ID:            formID,
+			ClinicID:      input.ClinicID,
+			GroupID:       input.GroupID,
+			Name:          input.Name,
+			Description:   input.Description,
+			OverallPrompt: input.OverallPrompt,
+			Tags:          tags,
+			CreatedBy:     input.StaffID,
+		},
+		DraftID: domain.NewID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.CreateForm: %w", err)
-	}
-
-	draft, err := s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
-		ID:        domain.NewID(),
-		FormID:    formID,
-		CreatedBy: input.StaffID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("forms.service.CreateForm: draft version: %w", err)
 	}
 
 	resp := toFormResponse(form)
@@ -600,9 +620,37 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateDraft: fields: %w", err)
 	}
 
+	if input.SystemHeader != nil {
+		cfg, err := encodeSystemHeader(input.SystemHeader)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
+		}
+		draft, err = s.repo.UpdateDraftSystemHeader(ctx, draft.ID, form.ClinicID, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("forms.service.UpdateDraft: system_header: %w", err)
+		}
+	}
+
 	resp := toFormResponse(form)
 	resp.Draft = toVersionResponse(draft, fields)
 	return resp, nil
+}
+
+// DiscardDraft deletes the current draft of a form. Returns ErrNotFound if
+// no draft exists. The latest published version (if any) is unaffected and
+// remains the active version.
+func (s *Service) DiscardDraft(ctx context.Context, formID, clinicID uuid.UUID) error {
+	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
+	if err != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: %w", err)
+	}
+	if form.ArchivedAt != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: form is retired: %w", domain.ErrConflict)
+	}
+	if err := s.repo.DeleteDraftVersion(ctx, formID); err != nil {
+		return fmt.Errorf("forms.service.DiscardDraft: %w", err)
+	}
+	return nil
 }
 
 // PublishForm freezes the current draft, assigns a semver number, and makes the
@@ -630,7 +678,10 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 
 	draft, err := s.repo.GetDraftVersion(ctx, input.FormID)
 	if err != nil {
-		return nil, fmt.Errorf("forms.service.PublishForm: no draft: %w", err)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.PublishForm: no draft to publish — edit the form first: %w", domain.ErrConflict)
+		}
+		return nil, fmt.Errorf("forms.service.PublishForm: %w", err)
 	}
 
 	fields, err := s.repo.GetFieldsByVersionID(ctx, draft.ID)
@@ -653,6 +704,7 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 
 		_, err = s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
 			ID:            draft.ID,
+			ClinicID:      input.ClinicID,
 			VersionMajor:  major,
 			VersionMinor:  minor,
 			ChangeType:    input.ChangeType,
@@ -675,7 +727,7 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 // RunPolicyCheck calls the AI to assess whether the form's fields cover the
 // requirements of all linked policy clauses. Saves the result on the draft.
 // Returns ErrConflict if no policies are linked or no checker is configured.
-func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID uuid.UUID) (*FormVersionResponse, error) {
+func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID uuid.UUID) (*FormResponse, error) {
 	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
@@ -685,6 +737,26 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 	}
 
 	draft, err := s.repo.GetDraftVersion(ctx, formID)
+	if errors.Is(err, domain.ErrNotFound) {
+		// No draft yet — clone the latest published version so the user can
+		// run policy-check against the current form without a manual edit
+		// step. Errors out if the form has never been published.
+		latest, lerr := s.repo.GetLatestPublishedVersion(ctx, formID)
+		if lerr != nil {
+			if errors.Is(lerr, domain.ErrNotFound) {
+				return nil, fmt.Errorf("forms.service.RunPolicyCheck: form has no draft or published version — add fields first: %w", domain.ErrConflict)
+			}
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: latest published: %w", lerr)
+		}
+		latestFields, lerr := s.repo.GetFieldsByVersionID(ctx, latest.ID)
+		if lerr != nil {
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: latest fields: %w", lerr)
+		}
+		if rerr := s.resetDraftToFields(ctx, formID, staffID, latestFields); rerr != nil {
+			return nil, fmt.Errorf("forms.service.RunPolicyCheck: seed draft: %w", rerr)
+		}
+		draft, err = s.repo.GetDraftVersion(ctx, formID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: %w", err)
 	}
@@ -756,17 +828,19 @@ func (s *Service) RunPolicyCheck(ctx context.Context, formID, clinicID, staffID 
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: marshal result: %w", err)
 	}
 
-	version, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
+	if _, err := s.repo.SavePolicyCheckResult(ctx, SavePolicyCheckParams{
 		VersionID: draft.ID,
+		ClinicID:  clinicID,
 		Result:    string(payload),
 		CheckedBy: staffID,
 		CheckedAt: domain.TimeNow(),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("forms.service.RunPolicyCheck: save: %w", err)
 	}
 
-	return toVersionResponse(version, nil), nil
+	// Return the full form so the editor rehydrates draft + latest_published
+	// in a single call — same pattern as updateDraft / publish / rollback.
+	return s.GetForm(ctx, formID, clinicID)
 }
 
 // buildPolicyCheckEntries regroups a flat list of clause results back into one
@@ -1481,6 +1555,9 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 			r.Fields[i] = toFieldResponse(f)
 		}
 	}
+	if hdr, err := decodeSystemHeader(v.SystemHeaderConfig); err == nil {
+		r.SystemHeader = hdr
+	}
 	return r
 }
 
@@ -1583,4 +1660,98 @@ func mirrorFromConfig(cfg json.RawMessage) *flatMirror {
 		m.FooterText = parsed.Footer.Text
 	}
 	return m
+}
+
+// SystemHeaderFieldAllowList enumerates every patient-row attribute the
+// system-header card knows how to render. Form authors pick a subset of
+// these for their form's header. The set is enforced at the service layer
+// (not the DB) so adding a new identifier — say a new aged-care funding
+// code — is a code change, not a migration.
+//
+// Vertical applicability is enforced by the Flutter editor, which only
+// surfaces fields that match the clinic's vertical when the picker opens.
+// The backend stays vertical-agnostic and accepts any name on this list;
+// renderers skip entries that resolve to empty for the linked subject.
+//
+//nolint:revive
+var SystemHeaderFieldAllowList = map[string]struct{}{
+	// Universal
+	"name":          {},
+	"photo":         {},
+	"id":            {},
+	"dob":           {},
+	"age":           {},
+	"sex":           {},
+	"visit_date":    {},
+	"clinician":     {},
+	// General / dental
+	"medical_alerts":  {},
+	"medications":     {},
+	"allergies":       {},
+	// Vet
+	"species":   {},
+	"breed":     {},
+	"microchip": {},
+	"weight":    {},
+	"desexed":   {},
+	"color":     {},
+	// Aged care
+	"room":               {},
+	"nhi_number":         {},
+	"medicare_number":    {},
+	"preferred_language": {},
+	"funding_level":      {},
+	"admission_date":     {},
+}
+
+// encodeSystemHeader validates and serialises a SystemHeaderConfig for
+// persistence. Unknown field identifiers are rejected as ErrValidation so
+// a misbehaving client cannot silently store identifiers the renderer can't
+// resolve.
+func encodeSystemHeader(h *SystemHeaderConfig) ([]byte, error) {
+	if h == nil {
+		return nil, fmt.Errorf("encodeSystemHeader: %w", domain.ErrValidation)
+	}
+	cleaned := &SystemHeaderConfig{Enabled: h.Enabled, Fields: make([]string, 0, len(h.Fields))}
+	seen := make(map[string]struct{}, len(h.Fields))
+	for _, f := range h.Fields {
+		if _, ok := SystemHeaderFieldAllowList[f]; !ok {
+			return nil, fmt.Errorf("encodeSystemHeader: unknown field %q: %w", f, domain.ErrValidation)
+		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		cleaned.Fields = append(cleaned.Fields, f)
+	}
+	out, err := json.Marshal(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("encodeSystemHeader: %w", err)
+	}
+	return out, nil
+}
+
+// decodeSystemHeader parses the stored JSONB into a SystemHeaderConfig. A
+// missing or malformed blob returns the default config so older rows that
+// somehow slipped through the migration default still render the header
+// rather than disappearing.
+func decodeSystemHeader(raw json.RawMessage) (*SystemHeaderConfig, error) {
+	if len(raw) == 0 {
+		return defaultSystemHeader(), nil
+	}
+	var h SystemHeaderConfig
+	if err := json.Unmarshal(raw, &h); err != nil {
+		return defaultSystemHeader(), fmt.Errorf("decodeSystemHeader: %w", err)
+	}
+	if h.Fields == nil {
+		h.Fields = []string{}
+	}
+	return &h, nil
+}
+
+func defaultSystemHeader() *SystemHeaderConfig {
+	return &SystemHeaderConfig{
+		Enabled: true,
+		Fields:  []string{"name", "photo", "id", "dob", "age", "sex", "visit_date"},
+	}
 }

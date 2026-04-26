@@ -12,6 +12,7 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/platform/crypto"
 	"github.com/melamphic/sal/internal/platform/mailer"
+	"golang.org/x/time/rate"
 )
 
 // StaffCreator creates a staff member record from an accepted invite.
@@ -61,6 +62,9 @@ type Service struct {
 	staffCreator       StaffCreator       // nil = invite acceptance disabled
 	handoffSecret      []byte             // shared HS256 secret with /mel; nil = handoff disabled
 	handoffProvisioner HandoffProvisioner // nil = handoff disabled
+	signupCheckout     SignupCheckoutClient // nil = signup-checkout disabled (handoffSecret also required)
+	signupCancelURL    string               // absolute /mel URL the browser lands on if Checkout is abandoned
+	emailLimiter       *emailLimiter      // nil = no per-email rate limit (tests)
 }
 
 // ServiceConfig holds auth-specific configuration values.
@@ -90,6 +94,26 @@ func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, jwtSecret []b
 	}
 }
 
+// EnableMagicLinkEmailLimit installs the per-email rate limiter used by
+// SendMagicLink. Production wires this in app.go; tests may leave it nil to
+// disable throttling. Wired separately from NewService so existing call
+// sites (and the wide test surface) need no change.
+func (s *Service) EnableMagicLinkEmailLimit() {
+	// rate.Every(2*time.Minute) with burst=3 = up to 3 immediate sends, then
+	// one every 2 minutes thereafter. Generous enough that a real user
+	// re-requesting after a typo isn't blocked, tight enough that flooding a
+	// victim's inbox via a botnet hits the cap fast.
+	s.emailLimiter = newEmailLimiter(rate.Every(2*time.Minute), 3)
+}
+
+// StopBackgroundJobs halts goroutines started by the service (currently the
+// email limiter sweeper). Safe to call when no limiter is installed.
+func (s *Service) StopBackgroundJobs() {
+	if s.emailLimiter != nil {
+		s.emailLimiter.Stop()
+	}
+}
+
 // SetMelHandoff wires the /mel JWT handoff dependencies. Pass nil secret
 // or nil provisioner to leave the feature disabled (the handoff endpoint
 // then returns 503 — useful for environments where /mel is offline).
@@ -102,6 +126,13 @@ func (s *Service) SetMelHandoff(secret []byte, p HandoffProvisioner) {
 // We always return success even if the email is not found (prevents email enumeration).
 func (s *Service) SendMagicLink(ctx context.Context, email string, r *http.Request) error {
 	emailHash := s.cipher.Hash(email)
+
+	// Per-email rate limit: silently drop excess requests. Returning a 429 here
+	// would leak which addresses are being flooded (and thus exist in our DB),
+	// so we mirror the not-found path and return nil.
+	if s.emailLimiter != nil && !s.emailLimiter.allow(emailHash) {
+		return nil
+	}
 
 	staff, err := s.repo.FindStaffByEmailHash(ctx, emailHash)
 	if err != nil {
@@ -303,8 +334,14 @@ func (s *Service) issueTokenPair(ctx context.Context, staff *staffRow) (*TokenPa
 	// Update last_active_at in the background — non-critical, must not block login.
 	// Note: we do NOT delete old refresh tokens here. Deletion only happens on
 	// explicit logout. Multiple active sessions (e.g. mobile + desktop) are allowed.
+	//
+	// We deliberately detach from the request context (so the update survives a
+	// fast client-side cancel) but bound it with a short timeout so the
+	// goroutine can't block during graceful shutdown / DB drain.
 	go func() {
-		_ = s.repo.UpdateLastActive(context.Background(), staff.ID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.UpdateLastActive(bgCtx, staff.ID)
 	}()
 
 	return &TokenPair{

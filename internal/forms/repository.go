@@ -63,6 +63,11 @@ type FormVersionRecord struct {
 	PublishedBy       *uuid.UUID
 	CreatedBy         uuid.UUID
 	CreatedAt         time.Time
+	// SystemHeaderConfig is the JSONB config for the patient-header card —
+	// {enabled, fields[]} — pulled into every note rendering (review +
+	// PDF). Stored opaque so adding new patient identifiers does not require
+	// a migration; app code validates the field name list.
+	SystemHeaderConfig json.RawMessage
 }
 
 // FieldRecord is the raw database representation of a form_fields row.
@@ -178,6 +183,7 @@ type CreateDraftVersionParams struct {
 // PublishDraftVersionParams holds values for freezing a draft into a published version.
 type PublishDraftVersionParams struct {
 	ID            uuid.UUID // draft version ID
+	ClinicID      uuid.UUID // tenant guard — must match the form's clinic
 	VersionMajor  int
 	VersionMinor  int
 	ChangeType    domain.ChangeType
@@ -209,6 +215,7 @@ type CreatePublishedVersionParams struct {
 // policy_check_result column stores it as JSONB.
 type SavePolicyCheckParams struct {
 	VersionID uuid.UUID
+	ClinicID  uuid.UUID // tenant guard — must match the form's clinic
 	Result    string
 	CheckedBy uuid.UUID
 	CheckedAt time.Time
@@ -353,6 +360,72 @@ func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormR
 	return rec, nil
 }
 
+// CreateFormWithDraftParams bundles the inputs needed to create a form and
+// its initial draft version atomically.
+type CreateFormWithDraftParams struct {
+	Form    CreateFormParams
+	DraftID uuid.UUID
+}
+
+// CreateFormWithDraft inserts a new form and its initial empty draft version
+// inside a single transaction. Either both rows are written or neither —
+// preventing a partial failure from leaving a form without any draft (the
+// "zombie form" state where neither edit, publish, nor policy-check can
+// proceed).
+func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDraftParams) (*FormRecord, *FormVersionRecord, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const formQ = `
+		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+
+	fp := p.Form
+	formRow := tx.QueryRow(ctx, formQ,
+		fp.ID, fp.ClinicID, fp.GroupID, fp.Name, fp.Description,
+		fp.OverallPrompt, fp.Tags, fp.CreatedBy,
+	)
+	formRec, err := scanForm(formRow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: form: %w", err)
+	}
+
+	verQ := fmt.Sprintf(`
+		INSERT INTO form_versions (id, form_id, status, created_by)
+		VALUES ($1, $2, 'draft', $3)
+		RETURNING %s`, versionCols)
+
+	verRow := tx.QueryRow(ctx, verQ, p.DraftID, fp.ID, fp.CreatedBy)
+	verRec, err := scanVersion(verRow)
+	if err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: draft: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("forms.repo.CreateFormWithDraft: commit: %w", err)
+	}
+	return formRec, verRec, nil
+}
+
+// DeleteDraftVersion deletes the current draft version of a form. Cascading
+// FKs remove draft fields. Returns domain.ErrNotFound if no draft exists.
+func (r *Repository) DeleteDraftVersion(ctx context.Context, formID uuid.UUID) error {
+	const q = `DELETE FROM form_versions WHERE form_id = $1 AND status = 'draft'`
+	tag, err := r.db.Exec(ctx, q, formID)
+	if err != nil {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
 // GetFormByID fetches a form by ID scoped to the clinic.
 func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
 	const q = `
@@ -462,7 +535,19 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
 	changes, rollback_of, policy_check_result::text, policy_check_by, policy_check_at,
-	published_at, published_by, created_by, created_at`
+	published_at, published_by, created_by, created_at, system_header_config`
+
+// prefixedVersionCols returns versionCols with each column qualified by alias —
+// required when the same SELECT/RETURNING joins forms (which has overlapping
+// names like id, created_at) so Postgres can disambiguate.
+func prefixedVersionCols(alias string) string {
+	return fmt.Sprintf(`
+	%[1]s.id, %[1]s.form_id, %[1]s.status, %[1]s.version_major, %[1]s.version_minor,
+	%[1]s.change_type, %[1]s.change_summary, %[1]s.changes, %[1]s.rollback_of,
+	%[1]s.policy_check_result::text, %[1]s.policy_check_by, %[1]s.policy_check_at,
+	%[1]s.published_at, %[1]s.published_by, %[1]s.created_by, %[1]s.created_at,
+	%[1]s.system_header_config`, alias)
+}
 
 // GetDraftVersion returns the single mutable draft version for a form.
 func (r *Repository) GetDraftVersion(ctx context.Context, formID uuid.UUID) (*FormVersionRecord, error) {
@@ -647,7 +732,7 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		changes = json.RawMessage("[]")
 	}
 	q := fmt.Sprintf(`
-		UPDATE form_versions
+		UPDATE form_versions fv
 		SET status        = 'published',
 		    version_major = $2,
 		    version_minor = $3,
@@ -656,13 +741,15 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 		    changes       = $6,
 		    published_by  = $7,
 		    published_at  = $8
-		WHERE id = $1 AND status = 'draft'
-		RETURNING %s`, versionCols)
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $9
+		RETURNING %s`, prefixedVersionCols("fv"))
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.VersionMajor, p.VersionMinor,
 		string(p.ChangeType), p.ChangeSummary, changes,
-		p.PublishedBy, p.PublishedAt,
+		p.PublishedBy, p.PublishedAt, p.ClinicID,
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
@@ -674,18 +761,42 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 	return rec, nil
 }
 
+// UpdateDraftSystemHeader replaces the system_header_config JSONB on the
+// given draft version. Published versions are immutable, so a non-draft row
+// returns domain.ErrNotFound (the WHERE clause filters it out). clinicID is
+// required for tenant isolation — the JOIN ensures the draft belongs to the
+// caller's clinic, even if a service-layer bug passed the wrong version ID.
+func (r *Repository) UpdateDraftSystemHeader(ctx context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE form_versions fv
+		SET system_header_config = $2::jsonb
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $3
+		RETURNING %s`, prefixedVersionCols("fv"))
+
+	row := r.db.QueryRow(ctx, q, versionID, config, clinicID)
+	rec, err := scanVersion(row)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.UpdateDraftSystemHeader: %w", err)
+	}
+	return rec, nil
+}
+
 // SavePolicyCheckResult records the AI policy-check result on the draft version.
 // p.Result is a JSON-encoded array of PolicyCheckResultEntry; the column is JSONB.
 func (r *Repository) SavePolicyCheckResult(ctx context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
-		UPDATE form_versions
+		UPDATE form_versions fv
 		SET policy_check_result = $2::jsonb,
 		    policy_check_by     = $3,
 		    policy_check_at     = $4
-		WHERE id = $1 AND status = 'draft'
-		RETURNING %s`, versionCols)
+		FROM forms f
+		WHERE fv.id = $1 AND fv.status = 'draft'
+		  AND fv.form_id = f.id AND f.clinic_id = $5
+		RETURNING %s`, prefixedVersionCols("fv"))
 
-	row := r.db.QueryRow(ctx, q, p.VersionID, p.Result, p.CheckedBy, p.CheckedAt)
+	row := r.db.QueryRow(ctx, q, p.VersionID, p.Result, p.CheckedBy, p.CheckedAt, p.ClinicID)
 	rec, err := scanVersion(row)
 	if err != nil {
 		return nil, fmt.Errorf("forms.repo.SavePolicyCheckResult: %w", err)
@@ -1035,6 +1146,7 @@ func scanVersion(row scannable) (*FormVersionRecord, error) {
 		&changeType, &v.ChangeSummary, &v.Changes, &v.RollbackOf,
 		&v.PolicyCheckResult, &v.PolicyCheckBy, &v.PolicyCheckAt,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedBy, &v.CreatedAt,
+		&v.SystemHeaderConfig,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

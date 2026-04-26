@@ -82,6 +82,11 @@ type Config struct {
 	// Empty disables the POST /api/v1/auth/handoff endpoint (503).
 	MelHandoffJWTSecret string `env:"MEL_HANDOFF_JWT_SECRET"`
 
+	// MelBaseURL is the public origin of the /mel marketing site. Used
+	// only by signup-checkout to build the Stripe Checkout cancel URL
+	// (i.e. where the browser lands when a user abandons Checkout).
+	MelBaseURL string `env:"MEL_BASE_URL,default=http://localhost:3001"`
+
 	// Stripe — shared across billing (v78 portal/webhook) and marketplace
 	// (v82 Connect). STRIPE_API_KEY is the secret key (sk_…) used by both
 	// modules; STRIPE_WEBHOOK_SECRET signs incoming webhooks.
@@ -91,6 +96,11 @@ type Config struct {
 	// — a static mapping of Stripe price ids to Salvia plan codes.
 	// Parsed at startup via ParseStripePriceMap; invalid codes abort boot.
 	StripePriceMap string `env:"STRIPE_PRICE_MAP"`
+
+	// OpsAlertEmail is the destination for the 110%-of-cap CS alert
+	// (pricing-model-v3 §7). Empty disables the CS branch — warnings
+	// at 80% still fire, and the 150% hard block still applies.
+	OpsAlertEmail string `env:"OPS_ALERT_EMAIL"`
 }
 
 // Load reads configuration from the environment and validates it.

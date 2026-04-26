@@ -787,6 +787,23 @@ func (s *Service) GetSubjectByID(ctx context.Context, id, clinicID, callerID uui
 	return s.decryptSubject(row)
 }
 
+// GetSubjectForRender fetches and decrypts a subject for system-driven
+// rendering (PDF generation, scheduled exports). Bypasses access logging and
+// caller-scoped checks because the calling code runs in a background worker
+// after the human action has already been audited via the originating note's
+// submission. Never expose this through an HTTP handler.
+func (s *Service) GetSubjectForRender(ctx context.Context, id, clinicID uuid.UUID) (*SubjectResponse, error) {
+	row, err := s.repo.GetSubjectByID(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
+	}
+	dto, err := s.decryptSubject(row)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
+	}
+	return dto, nil
+}
+
 // ListSubjects returns a paginated, decrypted list of subjects with filters.
 // Returns ErrForbidden if the caller has neither view_all_patients nor view_own_patients.
 func (s *Service) ListSubjects(ctx context.Context, clinicID uuid.UUID, input ListSubjectsInput) (*SubjectListResponse, error) {

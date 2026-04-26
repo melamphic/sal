@@ -34,6 +34,19 @@ type CreateInviteTokenParams struct {
 	InvitedByID uuid.UUID
 }
 
+// TierReconciler is the cross-domain hook tier-auto-derivation wires
+// in. After every staff invite/create/deactivate that touches a
+// note_tier=standard seat, staff.Service calls Reconcile so the
+// clinic's Stripe subscription can be flipped between Practice and Pro
+// when the headcount crosses the boundary.
+//
+// Implementations must swallow non-fatal errors (Stripe API hiccups,
+// network blips). Only DB-read errors that should 500 the request
+// bubble up. Set to nil to disable auto-derivation (tests, local dev).
+type TierReconciler interface {
+	Reconcile(ctx context.Context, clinicID uuid.UUID) error
+}
+
 // Service handles all staff business logic.
 type Service struct {
 	repo    repo // interface — see repo.go
@@ -42,11 +55,19 @@ type Service struct {
 	appURL  string
 	invites InviteCreator      // nil = invite tokens not created (test mode)
 	clinics ClinicNameProvider // nil = clinic name omitted from emails (test mode)
+	tier    TierReconciler     // nil = tier auto-derivation off
 }
 
 // NewService creates a new staff Service.
 func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string, invites InviteCreator, clinics ClinicNameProvider) *Service {
 	return &Service{repo: repo, cipher: cipher, mailer: m, appURL: appURL, invites: invites, clinics: clinics}
+}
+
+// SetTierReconciler wires the cross-domain tier-derivation hook. Called
+// from app.go after staff.Service is constructed — keeps NewService
+// signature stable.
+func (s *Service) SetTierReconciler(t TierReconciler) {
+	s.tier = t
 }
 
 // DTO is the decrypted service-layer representation of a staff member.
@@ -139,6 +160,12 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 		}
 	}
 
+	// Tier auto-derivation kicks in only when the new seat is `standard` —
+	// nurse/none seats don't count toward the Practice/Pro boundary.
+	if in.NoteTier == domain.NoteTierStandard {
+		s.reconcileTier(ctx, clinicID)
+	}
+
 	return inviteURL, nil
 }
 
@@ -170,6 +197,10 @@ func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffRespon
 	row, err := s.repo.Create(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("staff.service.Create: %w", err)
+	}
+
+	if in.NoteTier == domain.NoteTierStandard {
+		s.reconcileTier(ctx, in.ClinicID)
 	}
 
 	return s.toDTO(row, in.Email, in.FullName), nil
@@ -257,6 +288,18 @@ func (s *Service) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.
 	return s.decryptAndBuild(row)
 }
 
+// CountStandardActive returns the count of active+invited staff in a
+// clinic whose note_tier is `standard`. Cross-domain entrypoint used by
+// the tiering module to derive Practice/Pro from headcount. Never
+// called from HTTP handlers.
+func (s *Service) CountStandardActive(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	n, err := s.repo.CountStandardActive(ctx, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("staff.service.CountStandardActive: %w", err)
+	}
+	return n, nil
+}
+
 // Deactivate marks a staff member as deactivated. Cannot deactivate the caller's own account.
 func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uuid.UUID) (*StaffResponse, error) {
 	if staffID == callerID {
@@ -268,10 +311,24 @@ func (s *Service) Deactivate(ctx context.Context, staffID, clinicID, callerID uu
 		return nil, fmt.Errorf("staff.service.Deactivate: %w", err)
 	}
 
+	if row.NoteTier == domain.NoteTierStandard {
+		s.reconcileTier(ctx, clinicID)
+	}
+
 	return s.decryptAndBuild(row)
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+// reconcileTier invokes the cross-domain tier reconciler if one is wired.
+// Best-effort: errors are swallowed so a Stripe blip can't fail a staff
+// mutation. The caller has already committed the underlying staff row.
+func (s *Service) reconcileTier(ctx context.Context, clinicID uuid.UUID) {
+	if s.tier == nil {
+		return
+	}
+	_ = s.tier.Reconcile(ctx, clinicID)
+}
 
 func (s *Service) decryptAndBuild(row *StaffRecord) (*StaffResponse, error) {
 	email, err := s.cipher.Decrypt(row.Email)

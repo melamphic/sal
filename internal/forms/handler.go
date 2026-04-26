@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -151,20 +152,26 @@ func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formLi
 
 // ── Draft update ──────────────────────────────────────────────────────────────
 
+// systemHeaderBodyInput is the API shape for the patient-header card config.
+// Omit the field on a draft update to leave the existing config alone; send
+// `{enabled: false, fields: []}` to disable the card explicitly. Fields must
+// be drawn from forms.SystemHeaderFieldAllowList.
+type systemHeaderBodyInput struct {
+	Enabled bool     `json:"enabled" doc:"Whether the patient header card renders on this form."`
+	Fields  []string `json:"fields"  doc:"Ordered list of patient-row attributes to surface in the header."`
+}
+
 type updateDraftBodyInput struct {
 	FormID string `path:"form_id"`
 	Body   struct {
-		GroupID       *string          `json:"group_id,omitempty"`
-		Name          string           `json:"name"          minLength:"1"`
-		Description   *string          `json:"description,omitempty"`
-		OverallPrompt *string          `json:"overall_prompt,omitempty"`
-		Tags          []string         `json:"tags,omitempty"`
-		Fields        []fieldBodyInput `json:"fields" doc:"Full replacement field list. Ordering reflects the position values."`
+		GroupID       *string                `json:"group_id,omitempty"`
+		Name          string                 `json:"name"          minLength:"1"`
+		Description   *string                `json:"description,omitempty"`
+		OverallPrompt *string                `json:"overall_prompt,omitempty"`
+		Tags          []string               `json:"tags,omitempty"`
+		Fields        []fieldBodyInput       `json:"fields" doc:"Full replacement field list. Ordering reflects the position values."`
+		SystemHeader  *systemHeaderBodyInput `json:"system_header,omitempty" doc:"Patient header card config. Omit to leave unchanged."`
 	}
-}
-
-type versionHTTPResponse struct {
-	Body *FormVersionResponse
 }
 
 // updateDraft handles PUT /api/v1/forms/{form_id}/draft.
@@ -191,6 +198,14 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 		fields[i] = FieldInput(f)
 	}
 
+	var sysHeader *SystemHeaderConfig
+	if input.Body.SystemHeader != nil {
+		sysHeader = &SystemHeaderConfig{
+			Enabled: input.Body.SystemHeader.Enabled,
+			Fields:  input.Body.SystemHeader.Fields,
+		}
+	}
+
 	resp, err := h.svc.UpdateDraft(ctx, UpdateDraftInput{
 		FormID:        formID,
 		ClinicID:      clinicID,
@@ -201,6 +216,7 @@ func (h *Handler) updateDraft(ctx context.Context, input *updateDraftBodyInput) 
 		OverallPrompt: input.Body.OverallPrompt,
 		Tags:          input.Body.Tags,
 		Fields:        fields,
+		SystemHeader:  sysHeader,
 	})
 	if err != nil {
 		return nil, mapFormError(err)
@@ -218,6 +234,24 @@ type publishFormBodyInput struct {
 		Changes       json.RawMessage `json:"changes,omitempty" doc:"Array of typed change ops the editor diffed from the previous published version. Display-only: rollback still targets whole versions."`
 	}
 }
+
+// discardDraft handles DELETE /api/v1/forms/{form_id}/draft.
+func (h *Handler) discardDraft(ctx context.Context, input *formIDInput) (*emptyHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	formID, err := uuid.Parse(input.FormID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid form_id")
+	}
+
+	if err := h.svc.DiscardDraft(ctx, formID, clinicID); err != nil {
+		return nil, mapFormError(err)
+	}
+	return &emptyHTTPResponse{}, nil
+}
+
+// emptyHTTPResponse represents a 200 OK with no body.
+type emptyHTTPResponse struct{}
 
 // publishForm handles POST /api/v1/forms/{form_id}/publish.
 // Returns the full form resource so the editor can refresh its draft and
@@ -248,7 +282,7 @@ func (h *Handler) publishForm(ctx context.Context, input *publishFormBodyInput) 
 // ── Policy check ──────────────────────────────────────────────────────────────
 
 // policyCheckForm handles POST /api/v1/forms/{form_id}/policy-check.
-func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*versionHTTPResponse, error) {
+func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*formHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
 
@@ -261,7 +295,7 @@ func (h *Handler) policyCheckForm(ctx context.Context, input *formIDInput) (*ver
 	if err != nil {
 		return nil, mapFormError(err)
 	}
-	return &versionHTTPResponse{Body: resp}, nil
+	return &formHTTPResponse{Body: resp}, nil
 }
 
 // ── Rollback ──────────────────────────────────────────────────────────────────
@@ -706,12 +740,17 @@ func sniffImageType(head []byte) string {
 func mapFormError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
+		slog.Warn("forms: not found", "error", err.Error())
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrConflict):
+		slog.Warn("forms: conflict", "error", err.Error())
 		return huma.Error409Conflict("operation not allowed in current state")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
+	case errors.Is(err, domain.ErrValidation):
+		return huma.Error422UnprocessableEntity(err.Error())
 	default:
+		slog.Error("forms: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
 }

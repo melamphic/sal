@@ -167,3 +167,37 @@ func (p Plan) AnnualPriceUSDCents() int {
 	}
 	return int(float64(p.PriceUSDCents*12) * annualDiscount)
 }
+
+// DeriveTierFromHeadcount maps a count of `note_tier=standard` staff to
+// the expected billing tier per pricing-model-v3 §6:
+//
+//	1–3 standard clinicians → Practice
+//	4+ standard clinicians  → Pro
+//
+// (Pro caps at 7 in marketing copy but >7 still falls into Pro on the
+// auto-derivation path — sales/CS handle the enterprise upgrade
+// conversation manually.) Returns ("", false) for non-positive counts
+// so callers can distinguish "no clinicians yet, leave plan alone" from
+// a legitimate downgrade.
+func DeriveTierFromHeadcount(count int) (PlanTier, bool) {
+	if count <= 0 {
+		return "", false
+	}
+	if count <= 3 {
+		return PlanTierPractice, true
+	}
+	return PlanTierPro, true
+}
+
+// PlanCodeFor resolves the canonical PlanCode for a (product, tier,
+// cycle) triple by scanning the registry. Returns ("", false) when no
+// plan exists for the combination — should never happen for known
+// products + tiers + cycles, but the bool keeps the call site honest.
+func PlanCodeFor(product PlanProduct, tier PlanTier, cycle PlanCycle) (PlanCode, bool) {
+	for code, p := range Plans {
+		if p.Product == product && p.Tier == tier && p.Cycle == cycle {
+			return code, true
+		}
+	}
+	return "", false
+}

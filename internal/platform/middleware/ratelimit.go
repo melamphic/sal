@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -18,9 +19,12 @@ type RateLimiterStore struct {
 	stop     chan struct{}
 }
 
+// limiterEntry stores a per-IP rate limiter plus an atomic last-seen timestamp.
+// lastSeen is read by the cleanup goroutine and written on every request, so
+// it must be accessed atomically — a plain time.Time field would race.
 type limiterEntry struct {
-	limiter  *rate.Limiter
-	lastSeen time.Time
+	limiter      *rate.Limiter
+	lastSeenUnix atomic.Int64
 }
 
 // NewRateLimiterStore creates a store with the given rate (requests per second) and burst.
@@ -41,18 +45,22 @@ func (s *RateLimiterStore) Stop() {
 }
 
 func (s *RateLimiterStore) getLimiter(ip string) *rate.Limiter {
-	now := time.Now()
+	nowUnix := time.Now().UnixNano()
 	if v, ok := s.limiters.Load(ip); ok {
 		entry := v.(*limiterEntry)
-		entry.lastSeen = now
+		entry.lastSeenUnix.Store(nowUnix)
 		return entry.limiter
 	}
 	entry := &limiterEntry{
-		limiter:  rate.NewLimiter(s.rate, s.burst),
-		lastSeen: now,
+		limiter: rate.NewLimiter(s.rate, s.burst),
 	}
+	entry.lastSeenUnix.Store(nowUnix)
 	actual, _ := s.limiters.LoadOrStore(ip, entry)
-	return actual.(*limiterEntry).limiter
+	stored := actual.(*limiterEntry)
+	// If another goroutine raced us to LoadOrStore, refresh its lastSeen too
+	// so this request is correctly counted against staleness.
+	stored.lastSeenUnix.Store(nowUnix)
+	return stored.limiter
 }
 
 func (s *RateLimiterStore) cleanup() {
@@ -63,9 +71,10 @@ func (s *RateLimiterStore) cleanup() {
 		case <-s.stop:
 			return
 		case now := <-ticker.C:
+			cutoff := now.Add(-5 * time.Minute).UnixNano()
 			s.limiters.Range(func(key, value any) bool {
 				entry := value.(*limiterEntry)
-				if now.Sub(entry.lastSeen) > 5*time.Minute {
+				if entry.lastSeenUnix.Load() < cutoff {
 					s.limiters.Delete(key)
 				}
 				return true
