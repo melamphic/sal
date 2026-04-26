@@ -390,6 +390,38 @@ func (h *Handler) listVersions(ctx context.Context, input *formIDInput) (*versio
 	return &versionListHTTPResponse{Body: resp}, nil
 }
 
+type getVersionInput struct {
+	FormID    string `path:"form_id"    doc:"Form UUID."`
+	VersionID string `path:"version_id" doc:"Version UUID."`
+}
+
+type versionHTTPResponse struct {
+	Body *FormVersionResponse
+}
+
+// getVersion handles GET /api/v1/forms/{form_id}/versions/{version_id}.
+// Returns the version with its fields populated — the list endpoint omits
+// fields to keep payloads small, so the note review page needs this when a
+// note was filed against a historical version.
+func (h *Handler) getVersion(ctx context.Context, input *getVersionInput) (*versionHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	formID, err := uuid.Parse(input.FormID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid form_id")
+	}
+	versionID, err := uuid.Parse(input.VersionID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid version_id")
+	}
+
+	resp, err := h.svc.GetVersion(ctx, formID, clinicID, versionID)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &versionHTTPResponse{Body: resp}, nil
+}
+
 // ── Groups ────────────────────────────────────────────────────────────────────
 
 type createGroupBodyInput struct {

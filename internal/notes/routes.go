@@ -94,6 +94,28 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.getNotePDF)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "retry-note-pdf",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/retry-pdf",
+		Summary:     "Retry note PDF render",
+		Description: "Re-enqueues the PDF generation job for a submitted note whose PDF has not been produced yet (River job exhausted retries or never ran). Idempotent — returns success when the PDF is already ready.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.retryNotePDF)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "retry-note-extraction",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/retry-extraction",
+		Summary:     "Retry note extraction",
+		Description: "Re-enqueues the AI extraction job for a note in the failed state (e.g. extractor returned a transient 5xx). Resets status to extracting and clears the prior error. Returns 409 if the note is not in the failed state.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.retryNoteExtraction)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "archive-note",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/notes/{note_id}/archive",

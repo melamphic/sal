@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type Service struct {
 	policyClauses PolicyClauseProvider             // nil = skip policy check
 	verticals     VerticalProvider                 // nil = generic (vertical-neutral) prompts
 	noteCap       NoteCapEnforcer                  // nil = cap not enforced (tests, local dev)
+	pdf           *PDFRenderer                     // nil = skip sync PDF render (defer to worker)
 }
 
 // NewService constructs a notes Service.
@@ -78,6 +80,15 @@ func (s *Service) SetVerticalProvider(v VerticalProvider) {
 // that don't care about billing).
 func (s *Service) SetNoteCapEnforcer(c NoteCapEnforcer) {
 	s.noteCap = c
+}
+
+// SetPDFRenderer wires the synchronous PDF renderer used inside SubmitNote.
+// When set, submit produces the canonical PDF inline so the response carries
+// `pdf_storage_key` and the review page never has to wait. If render fails the
+// submit still succeeds — a River fallback job ensures the artifact lands
+// eventually, and the retry-pdf endpoint is available for manual nudges.
+func (s *Service) SetPDFRenderer(r *PDFRenderer) {
+	s.pdf = r
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -386,10 +397,25 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 	// Best-effort: recompute alignment against submitted field values.
 	_, _ = s.enqueue.Insert(ctx, ComputePolicyAlignmentArgs{NoteID: noteID}, nil)
 
-	// Best-effort: generate branded PDF asynchronously.
-	_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
+	// Render the canonical PDF synchronously so the submit response already
+	// carries pdf_storage_key — the review page never sits on a spinner.
+	// If render fails (transient storage glitch, missing dep) we log and
+	// enqueue the worker as a recovery path; submit still succeeds.
+	if s.pdf != nil {
+		if rerr := s.pdf.Render(ctx, noteID); rerr != nil {
+			slog.Error("notes: sync PDF render failed; enqueueing fallback",
+				"note_id", noteID.String(), "error", rerr.Error())
+			_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
+		}
+	} else {
+		// No sync renderer wired (e.g. unit tests) — fall back to queue.
+		_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
+	}
 
-	return toNoteResponse(note, nil), nil
+	// Always re-hydrate via GetNote so the response carries field values + the
+	// freshly-stored pdf_storage_key. Returning toNoteResponse(note, nil) here
+	// would ship an empty fields[] and blank the cubit's form on the client.
+	return s.GetNote(ctx, noteID, clinicID)
 }
 
 // ArchiveNote soft-deletes a note. Archived notes are hidden from list results
@@ -403,12 +429,11 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 		return nil, fmt.Errorf("notes.service.ArchiveNote: already archived: %w", domain.ErrConflict)
 	}
 
-	archived, err := s.repo.ArchiveNote(ctx, ArchiveNoteParams{
+	if _, err := s.repo.ArchiveNote(ctx, ArchiveNoteParams{
 		ID:         noteID,
 		ClinicID:   clinicID,
 		ArchivedAt: domain.TimeNow(),
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("notes.service.ArchiveNote: %w", err)
 	}
 
@@ -421,7 +446,8 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 		ActorRole: staffRole,
 	})
 
-	return toNoteResponse(archived, nil), nil
+	// Re-hydrate via GetNote so the response carries field values for the UI.
+	return s.GetNote(ctx, noteID, clinicID)
 }
 
 // GetNotePDFKey returns the S3 storage key for the note's PDF, if generated.
@@ -435,6 +461,63 @@ func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID)
 		return "", fmt.Errorf("notes.service.GetNotePDFKey: pdf not ready: %w", domain.ErrNotFound)
 	}
 	return *note.PDFStorageKey, nil
+}
+
+// RetryPDF re-enqueues the PDF generation job for a submitted note whose PDF
+// has not yet been produced (e.g. River job exhausted retries or never ran).
+// Idempotent: if the PDF key already exists the call is a no-op success;
+// rejects unsubmitted notes with ErrConflict.
+func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.RetryPDF: %w", err)
+	}
+	if note.Status != domain.NoteStatusSubmitted {
+		return nil, fmt.Errorf("notes.service.RetryPDF: not submitted: %w", domain.ErrConflict)
+	}
+	if note.PDFStorageKey != nil {
+		return s.GetNote(ctx, noteID, clinicID)
+	}
+
+	// Prefer a synchronous re-render so the response carries the new key.
+	// On failure: enqueue the worker as a recovery path AND surface the error
+	// to the caller so the UI can show what went wrong rather than sitting on
+	// a stale "PDF not ready" state.
+	if s.pdf != nil {
+		if rerr := s.pdf.Render(ctx, noteID); rerr != nil {
+			slog.Error("notes: sync retry render failed; enqueueing fallback",
+				"note_id", noteID.String(), "error", rerr.Error())
+			_, _ = s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil)
+			return nil, fmt.Errorf("notes.service.RetryPDF: render: %w", rerr)
+		}
+	} else {
+		if _, err := s.enqueue.Insert(ctx, GenerateNotePDFArgs{NoteID: noteID}, nil); err != nil {
+			return nil, fmt.Errorf("notes.service.RetryPDF: enqueue: %w", err)
+		}
+	}
+	return s.GetNote(ctx, noteID, clinicID)
+}
+
+// RetryExtraction re-enqueues the AI extraction job for a note whose previous
+// extraction failed (status=failed). Clears the prior error and resets status
+// to extracting so the worker re-runs cleanly. Rejects notes that are not in
+// the failed state with ErrConflict — there's no value in re-running on a
+// note that already has fields, and submitted notes must not be perturbed.
+func (s *Service) RetryExtraction(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.RetryExtraction: %w", err)
+	}
+	if note.Status != domain.NoteStatusFailed {
+		return nil, fmt.Errorf("notes.service.RetryExtraction: not failed: %w", domain.ErrConflict)
+	}
+	if _, err := s.repo.UpdateNoteStatus(ctx, noteID, clinicID, domain.NoteStatusExtracting, nil); err != nil {
+		return nil, fmt.Errorf("notes.service.RetryExtraction: reset status: %w", err)
+	}
+	if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
+		return nil, fmt.Errorf("notes.service.RetryExtraction: enqueue: %w", err)
+	}
+	return s.GetNote(ctx, noteID, clinicID)
 }
 
 // ── Policy check ─────────────────────────────────────────────────────────────

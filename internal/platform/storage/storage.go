@@ -31,6 +31,13 @@ type Store struct {
 // New builds a Store from application config.
 // Works with MinIO (dev), Cloudflare R2, and AWS S3 (prod) — swap env vars, no code changes.
 func New(cfg *config.Config) (*Store, error) {
+	// RequestChecksumCalculationWhenRequired disables the SDK's default
+	// trailing SHA-256 on PutObject. The default ("WhenSupported") forces a
+	// checksum that S3 over HTTP can only compute by re-reading the body —
+	// which fails on non-seekable readers (`*bytes.Buffer`, multipart parts)
+	// with "unseekable stream is not supported without TLS and trailing
+	// checksum". Dev MinIO is HTTP, R2/S3 prod are TLS, so the safe default
+	// is to skip auto-checksum across the board.
 	sdkCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.StorageRegion),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -38,6 +45,7 @@ func New(cfg *config.Config) (*Store, error) {
 			cfg.StorageSecretKey,
 			"",
 		)),
+		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("storage.New: load aws config: %w", err)

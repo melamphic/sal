@@ -164,6 +164,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, manageForms},
 	}, h.listVersions)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "get-form-version",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/forms/{form_id}/versions/{version_id}",
+		Summary:     "Get a single form version with fields",
+		Description: "Returns one version (draft, published, or archived) with its fields populated. Used by the note review page when a note was filed against a version that is no longer the current draft or latest published.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.getVersion)
+
 	// ── Policies ──────────────────────────────────────────────────────────
 
 	huma.Register(api, huma.Operation{

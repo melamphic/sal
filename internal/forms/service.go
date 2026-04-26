@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"time"
 
@@ -1000,13 +1001,17 @@ func (s *Service) RollbackForm(ctx context.Context, input RollbackFormInput) (*F
 			PublishedAt:   domain.TimeNow(),
 		}, fieldParams)
 		if err == nil {
-			// Also restore the draft to mirror the target so the editor
-			// reopens on the rolled-back fields instead of leftover WIP.
-			// Best-effort: a sync failure here doesn't invalidate the
-			// published rollback — the user can re-run it if the draft
-			// looks stale.
+			// Restore draft to mirror target so editor reopens on rolled-back
+			// fields. Published rollback already committed at this point — a
+			// draft-sync failure must NOT bubble up as a 5xx, or the caller
+			// thinks rollback failed when the published row exists. Log and
+			// continue; user can re-sync by reloading the editor.
 			if draftErr := s.resetDraftToFields(ctx, input.FormID, input.StaffID, sourceFields); draftErr != nil {
-				return nil, fmt.Errorf("forms.service.RollbackForm: %w", draftErr)
+				slog.Warn("forms.service.RollbackForm: draft sync failed after publish",
+					"form_id", input.FormID,
+					"version_id", newID,
+					"error", draftErr.Error(),
+				)
 			}
 			return s.GetForm(ctx, input.FormID, input.ClinicID)
 		}
@@ -1078,6 +1083,31 @@ func (s *Service) RetireForm(ctx context.Context, input RetireFormInput) (*FormR
 	}
 
 	return toFormResponse(retired), nil
+}
+
+// GetVersion returns a single version (draft, published, or archived) along
+// with its fields. Used by the note review page when a note was filed against
+// a version that is no longer the current draft or latest published — list
+// endpoints omit fields to keep payloads small, so the renderer needs a
+// targeted lookup that includes them.
+func (s *Service) GetVersion(ctx context.Context, formID, clinicID, versionID uuid.UUID) (*FormVersionResponse, error) {
+	if _, err := s.repo.GetFormByID(ctx, formID, clinicID); err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", err)
+	}
+	v, err := s.repo.GetVersionByID(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", err)
+	}
+	if v.FormID != formID {
+		return nil, fmt.Errorf("forms.service.GetVersion: %w", domain.ErrForbidden)
+	}
+	fields, err := s.repo.GetFieldsByVersionID(ctx, versionID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.GetVersion: fields: %w", err)
+	}
+	resp := toVersionResponse(v, fields)
+	s.resolvePublisherName(ctx, clinicID, resp)
+	return resp, nil
 }
 
 // ListVersions returns the compliance trail for a form: every published
