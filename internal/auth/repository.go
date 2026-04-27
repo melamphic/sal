@@ -209,6 +209,7 @@ func (r *Repository) GetInviteByTokenHash(ctx context.Context, tokenHash string)
 		}
 		return nil, fmt.Errorf("auth.repo.GetInviteByTokenHash: %w", err)
 	}
+	inv.Permissions = perms
 	return &inv, nil
 }
 
