@@ -398,6 +398,22 @@ func (f *fakeRepo) UpdateDraftSystemHeader(_ context.Context, versionID, clinicI
 	return cloneVersion(v), nil
 }
 
+func (f *fakeRepo) SaveGenerationMetadata(_ context.Context, versionID, clinicID uuid.UUID, metadata []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	v, ok := f.versions[versionID]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if form, ok := f.forms[v.FormID]; ok && form.ClinicID != clinicID {
+		return domain.ErrNotFound
+	}
+	cp := make([]byte, len(metadata))
+	copy(cp, metadata)
+	v.GenerationMetadata = cp
+	return nil
+}
+
 func (f *fakeRepo) SavePolicyCheckResult(_ context.Context, p SavePolicyCheckParams) (*FormVersionRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
