@@ -68,6 +68,11 @@ type FormVersionRecord struct {
 	// PDF). Stored opaque so adding new patient identifiers does not require
 	// a migration; app code validates the field name list.
 	SystemHeaderConfig json.RawMessage
+	// GenerationMetadata is the AI-generation provenance JSONB written by
+	// aigen-driven flows (provider, model, prompt_hash, staff_id, timestamps,
+	// repair counts). NULL for human-authored versions. The Flutter editor
+	// reads this to render an "AI drafted — review before publishing" pill.
+	GenerationMetadata json.RawMessage
 }
 
 // FieldRecord is the raw database representation of a form_fields row.
@@ -535,18 +540,26 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 const versionCols = `
 	id, form_id, status, version_major, version_minor, change_type, change_summary,
 	changes, rollback_of, policy_check_result::text, policy_check_by, policy_check_at,
-	published_at, published_by, created_by, created_at, system_header_config`
+	published_at, published_by, created_by, created_at, system_header_config,
+	generation_metadata`
 
 // prefixedVersionCols returns versionCols with each column qualified by alias —
 // required when the same SELECT/RETURNING joins forms (which has overlapping
 // names like id, created_at) so Postgres can disambiguate.
+//
+// IMPORTANT: this list MUST stay in sync with versionCols and scanVersion's
+// Scan call. Adding a column to versionCols without updating both this
+// builder and scanVersion produces a column-count mismatch in the
+// publish / system-header / policy-check UPDATE…RETURNING paths, surfacing
+// as an opaque "internal server error" 500 — the kind of regression that
+// is hard to localise from the response alone.
 func prefixedVersionCols(alias string) string {
 	return fmt.Sprintf(`
 	%[1]s.id, %[1]s.form_id, %[1]s.status, %[1]s.version_major, %[1]s.version_minor,
 	%[1]s.change_type, %[1]s.change_summary, %[1]s.changes, %[1]s.rollback_of,
 	%[1]s.policy_check_result::text, %[1]s.policy_check_by, %[1]s.policy_check_at,
 	%[1]s.published_at, %[1]s.published_by, %[1]s.created_by, %[1]s.created_at,
-	%[1]s.system_header_config`, alias)
+	%[1]s.system_header_config, %[1]s.generation_metadata`, alias)
 }
 
 // GetDraftVersion returns the single mutable draft version for a form.
@@ -1147,6 +1160,7 @@ func scanVersion(row scannable) (*FormVersionRecord, error) {
 		&v.PolicyCheckResult, &v.PolicyCheckBy, &v.PolicyCheckAt,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedBy, &v.CreatedAt,
 		&v.SystemHeaderConfig,
+		&v.GenerationMetadata,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -1176,6 +1190,28 @@ func scanField(row scannable) (*FieldRecord, error) {
 		return nil, fmt.Errorf("scanField: %w", err)
 	}
 	return &f, nil
+}
+
+// SaveGenerationMetadata persists the AI-generation provenance JSONB on a
+// form_version row. The version is matched via its parent form's clinic_id
+// to enforce tenant isolation.
+func (r *Repository) SaveGenerationMetadata(ctx context.Context, versionID, clinicID uuid.UUID, metadata []byte) error {
+	const q = `
+		UPDATE form_versions fv
+		   SET generation_metadata = $1::JSONB
+		  FROM forms f
+		 WHERE fv.id = $2
+		   AND fv.form_id = f.id
+		   AND f.clinic_id = $3
+	`
+	tag, err := r.db.Exec(ctx, q, metadata, versionID, clinicID)
+	if err != nil {
+		return fmt.Errorf("forms.repo.SaveGenerationMetadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("forms.repo.SaveGenerationMetadata: %w", domain.ErrNotFound)
+	}
+	return nil
 }
 
 func scanStyle(row scannable) (*StyleVersionRecord, error) {
