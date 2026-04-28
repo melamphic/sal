@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.aged_care_NZ",
+    "name": "Resident Care & Documentation (NZS 8134 aligned)",
+    "description": "Reference policy aligned with the NZ Health & Disability Services Standards (NZS 8134) and HQSC guidance.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Resident care & documentation — NZS 8134 aligned"}},
+      {"id": "care-plan", "type": "paragraph", "data": {"text": "Each resident has an individualised care plan reviewed at admission, on change of condition, and at least every 6 months."}},
+      {"id": "consent", "type": "paragraph", "data": {"text": "Informed consent is documented for residency, treatment, and significant interventions; advance directives and EPOA are recorded."}},
+      {"id": "incident-reporting", "type": "paragraph", "data": {"text": "Incidents (falls, medication errors, restraint, behaviour) are documented at the time, reviewed by the RN/manager, and notified to NOK and HQSC where required."}},
+      {"id": "mar", "type": "paragraph", "data": {"text": "Medication administration is recorded on the MAR; controlled drugs require a witness and are reconciled per shift."}},
+      {"id": "behaviour-monitoring", "type": "paragraph", "data": {"text": "Residents living with dementia have behaviour-monitoring entries documenting triggers, interventions, and outcomes."}},
+      {"id": "retention-10yr", "type": "paragraph", "data": {"text": "Resident records are retained for at least 10 years after the date of last care."}}
+    ],
+    "clauses": [
+      {"block_id": "care-plan", "title": "Individualised care plan", "body": "Each resident must have an individualised care plan reviewed at admission, on change of condition, and at least every 6 months.", "parity": "high", "source_citation": "NZS 8134"},
+      {"block_id": "consent", "title": "Consent and advance directives recorded", "body": "Informed consent for residency, treatment, and significant interventions must be documented; advance directives and EPOA recorded.", "parity": "high"},
+      {"block_id": "incident-reporting", "title": "Incidents documented and notified", "body": "Incidents must be documented at the time, reviewed by the RN/manager, and notified to NOK and HQSC where required.", "parity": "high"},
+      {"block_id": "mar", "title": "MAR and controlled-drug witness", "body": "Medication administration must be recorded on the MAR; controlled drugs require a witness and are reconciled per shift.", "parity": "high"},
+      {"block_id": "behaviour-monitoring", "title": "Behaviour monitoring", "body": "Residents living with dementia must have behaviour-monitoring entries documenting triggers, interventions, and outcomes.", "parity": "medium"},
+      {"block_id": "retention-10yr", "title": "10-year retention", "body": "Resident records must be retained at least 10 years from the date of last care.", "parity": "high"}
+    ]
+  }
+]

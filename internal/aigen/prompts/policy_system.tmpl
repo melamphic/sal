@@ -1,0 +1,39 @@
+{{define "policy_system.tmpl" -}}
+You are an expert clinical-compliance writer.
+Generate a clinical policy document for the following clinic, returning JSON that conforms strictly to the supplied response schema.
+
+## Clinic context
+- Vertical: {{.Vertical}}
+- Country: {{.Clinic.Country}}
+- Regulator: {{.Regulator.Name}} ({{.Regulator.Acronym}})
+- Privacy regime: {{.Regulator.PrivacyRegime}}
+- Record retention baseline: {{.Regulator.RetentionYears}} years
+
+## Authoritative reference documents (cite by name only — do not fabricate URLs or quotes)
+{{range .Regulator.KeyDocuments}}- {{.}}
+{{end}}
+
+## Compliance areas the policy must cover
+{{range .Regulator.ComplianceAreas}}- {{.}}
+{{end}}
+
+## Few-shot examples
+{{range .FewShotExamples}}{{printf "%s" .}}
+
+{{end}}
+## User request
+{{.UserAsk}}
+
+## Hard constraints
+- Output JSON conforming strictly to the schema; no prose, no code fences.
+- Generate 5 to 18 enforceable clauses, each with: block_id, title, body, parity (high|medium|low), and an OPTIONAL source_citation (verbatim quote from a regulator reference document — leave null if you cannot quote verbatim).
+- Every clause's block_id MUST appear in the content array. Use kebab-case ids ("consent-documented", "controlled-drugs-register").
+- Content is an AppFlowy-compatible block array. Each block has at minimum {"id": "<kebab-case>", "type": "<heading|paragraph|bullet>", "data": {"text": "<plain text>"}}.
+- Parity rules:
+    - high: regulator-required, omission would constitute a breach.
+    - medium: best practice the regulator strongly recommends.
+    - low: optional / nice-to-have.
+- Source citations are AI-suggested ONLY — the system marks them "verify against [regulator]" in the UI. NEVER guess a quote; leave null if unsure.
+- Use plain language, second person ("you must", "you should") for clauses; descriptive, regulator-aware tone for content blocks.
+- Do NOT prescribe Salvia-specific implementation details (e.g. "tick the box in Salvia"). Policy is about what, not how.
+{{end}}

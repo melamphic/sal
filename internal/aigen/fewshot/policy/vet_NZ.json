@@ -1,0 +1,27 @@
+[
+  {
+    "_kind": "fewshot.policy.vet_NZ",
+    "name": "VCNZ Record-Keeping & Consent",
+    "description": "Reference example policy aligned with the VCNZ Code of Professional Conduct (NZ).",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Record-keeping and consent — VCNZ aligned"}},
+      {"id": "scope", "type": "paragraph", "data": {"text": "This policy applies to every clinical encounter recorded in the practice and reflects the requirements of the Veterinary Council of New Zealand (VCNZ) Code of Professional Conduct."}},
+      {"id": "record-clarity", "type": "paragraph", "data": {"text": "Records must be clear, accurate, and detailed enough that another veterinarian could continue care."}},
+      {"id": "retention-7yr", "type": "paragraph", "data": {"text": "Patient records are retained for 7 years from the date of the last consultation."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for invasive procedures, anaesthesia, and euthanasia, including a record of the specific risks discussed."}},
+      {"id": "telemedicine-suitability", "type": "paragraph", "data": {"text": "When telemedicine is used, the case suitability rationale and informed consent are recorded in the same record."}},
+      {"id": "controlled-drugs-register", "type": "paragraph", "data": {"text": "Schedule 1, 2, and 3 controlled drugs (Misuse of Drugs Act 1975) are recorded in the controlled drugs register, including batch and expiry. Reconciliation occurs at least monthly with two staff present."}},
+      {"id": "signoff-identity", "type": "paragraph", "data": {"text": "Every entry identifies the signing veterinarian; corrections are made by addendum, never by overwrite."}},
+      {"id": "continuity-of-care", "type": "paragraph", "data": {"text": "Discharge instructions and follow-up plans are recorded in plain language understood by the client."}}
+    ],
+    "clauses": [
+      {"block_id": "record-clarity", "title": "Records are clear and complete", "body": "You must keep records that are clear, accurate, and detailed enough that another veterinarian could continue care without reinterpretation.", "parity": "high", "source_citation": "VCNZ Code of Professional Conduct"},
+      {"block_id": "retention-7yr", "title": "7-year record retention", "body": "You must retain patient records for at least 7 years from the date of the last consultation.", "parity": "high", "source_citation": "VCNZ Code of Professional Conduct"},
+      {"block_id": "consent-documented", "title": "Informed consent recorded", "body": "You must document informed consent for invasive procedures, anaesthesia, and euthanasia.", "parity": "high"},
+      {"block_id": "telemedicine-suitability", "title": "Telemedicine suitability documented", "body": "When using telemedicine, you must document the suitability rationale and informed consent.", "parity": "medium", "source_citation": "VCNZ How-to guidance: Using Veterinary Telemedicine"},
+      {"block_id": "controlled-drugs-register", "title": "Controlled drugs register kept", "body": "You must record Schedule 1, 2, and 3 controlled drug administration in the controlled drugs register and reconcile at least monthly with a witness.", "parity": "high", "source_citation": "Misuse of Drugs Act 1975"},
+      {"block_id": "signoff-identity", "title": "Veterinarian sign-off identified", "body": "You must identify the signing veterinarian on every record entry; corrections are by addendum only.", "parity": "high"},
+      {"block_id": "continuity-of-care", "title": "Discharge and follow-up recorded", "body": "You should record clear discharge instructions and any follow-up plan in language the client can understand.", "parity": "medium"}
+    ]
+  }
+]

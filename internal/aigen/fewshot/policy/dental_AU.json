@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.dental_AU",
+    "name": "Dental Records & Consent (DBA / AHPRA aligned)",
+    "description": "Reference policy aligned with the Dental Board of Australia Code of Conduct.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Dental records & consent — DBA / AHPRA aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records are clear, contemporaneous, and detailed enough for another practitioner to continue care."}},
+      {"id": "retention-adult", "type": "paragraph", "data": {"text": "Adult patient records are retained for at least 7 years from the last contact."}},
+      {"id": "retention-child", "type": "paragraph", "data": {"text": "Records for patients aged under 18 are retained until the patient is 25 years old, or 7 years from last contact, whichever is later."}},
+      {"id": "tooth-charting", "type": "paragraph", "data": {"text": "Tooth charting uses an explicit notation system (FDI is standard in AU); restorations, caries, mobility, and missing teeth are recorded for every full exam."}},
+      {"id": "perio-recording", "type": "paragraph", "data": {"text": "Periodontal status is recorded at every full exam."}},
+      {"id": "item-codes", "type": "paragraph", "data": {"text": "Treatment items are coded against the Australian Schedule of Dental Services & Glossary."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for treatment plans, especially invasive procedures."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep records detailed enough for another practitioner to continue care.", "parity": "high", "source_citation": "DBA Code of Conduct"},
+      {"block_id": "retention-adult", "title": "7-year adult retention", "body": "Adult records must be retained at least 7 years from last contact.", "parity": "high"},
+      {"block_id": "retention-child", "title": "Child retention to age 25", "body": "Records for patients under 18 must be retained until they are 25 or 7 years from last contact, whichever is later.", "parity": "high"},
+      {"block_id": "tooth-charting", "title": "Tooth charting recorded", "body": "Every full exam must include tooth charting using an explicit notation system.", "parity": "high"},
+      {"block_id": "perio-recording", "title": "Periodontal status recorded", "body": "Every full exam must record periodontal status.", "parity": "high"},
+      {"block_id": "item-codes", "title": "Schedule item codes used", "body": "Treatment items must be coded against the Australian Schedule of Dental Services & Glossary.", "parity": "medium"},
+      {"block_id": "consent-documented", "title": "Treatment consent documented", "body": "You must document informed consent for treatment plans, especially invasive procedures.", "parity": "high"}
+    ]
+  }
+]

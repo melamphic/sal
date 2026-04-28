@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.general_NZ",
+    "name": "Patient Records & Consent (MCNZ aligned)",
+    "description": "Reference policy aligned with MCNZ guidance on patient records.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Patient records & consent — MCNZ aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Clinical notes are clear, accurate, and detailed enough for another doctor to continue care."}},
+      {"id": "retention-10yr", "type": "paragraph", "data": {"text": "Records are retained for at least 10 years from the date of last consultation."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for procedures, prescribing of high-risk medicines, and any treatment with significant risks."}},
+      {"id": "prescribing-records", "type": "paragraph", "data": {"text": "Prescribing records identify the medicine, dose, frequency, duration, and indication."}},
+      {"id": "continuity", "type": "paragraph", "data": {"text": "Discharge instructions and follow-up plans are recorded in language the patient can understand."}},
+      {"id": "signoff", "type": "paragraph", "data": {"text": "Each entry identifies the doctor; corrections by addendum only."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Notes sufficient for handover", "body": "Clinical notes must be clear, accurate, and detailed enough for another doctor to continue care.", "parity": "high"},
+      {"block_id": "retention-10yr", "title": "10-year retention", "body": "Records must be retained for at least 10 years from the date of last consultation.", "parity": "high", "source_citation": "MCNZ Statement on retention of patient records"},
+      {"block_id": "consent-documented", "title": "Informed consent documented", "body": "Informed consent must be documented for procedures, prescribing of high-risk medicines, and any treatment with significant risks.", "parity": "high"},
+      {"block_id": "prescribing-records", "title": "Prescribing records complete", "body": "Prescribing records must identify the medicine, dose, frequency, duration, and indication.", "parity": "high"},
+      {"block_id": "continuity", "title": "Continuity of care documented", "body": "You must record discharge instructions and follow-up plans in language the patient understands.", "parity": "medium"},
+      {"block_id": "signoff", "title": "Doctor sign-off identified", "body": "Each entry must identify the doctor; corrections by addendum only.", "parity": "high"}
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.vet_UK",
+    "name": "Clinical Records & Consent (RCVS aligned)",
+    "description": "Reference policy aligned with the RCVS Code of Professional Conduct and Practice Standards Manual. Includes evolving AI-use guidance from the RCVS AI Roundtable Report.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Clinical records, consent, and AI use — RCVS aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records must be sufficient for another veterinary surgeon to continue care without reinterpretation."}},
+      {"id": "retention-6yr", "type": "paragraph", "data": {"text": "Clinical records are retained for at least 6 years from the date of the last entry."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented in writing for invasive procedures, anaesthesia, euthanasia, and significant off-label use."}},
+      {"id": "controlled-drugs", "type": "paragraph", "data": {"text": "Controlled drugs are recorded in line with the Misuse of Drugs Regulations 2001; CD register entries are reconciled regularly."}},
+      {"id": "ai-use", "type": "paragraph", "data": {"text": "Where AI is used in clinical workflows the practice documents (1) when the AI is used, (2) how clients are informed, (3) where transcripts and recordings are stored, and (4) human review and sign-off responsibilities."}},
+      {"id": "signoff-identity", "type": "paragraph", "data": {"text": "Every entry identifies the signing veterinary surgeon; corrections are made by addendum."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep records detailed enough for another veterinary surgeon to continue care.", "parity": "high", "source_citation": "RCVS Code of Professional Conduct"},
+      {"block_id": "retention-6yr", "title": "6-year minimum retention", "body": "Clinical records must be retained at least 6 years from the date of the last entry.", "parity": "high"},
+      {"block_id": "consent-documented", "title": "Written consent for invasive care", "body": "Informed consent must be documented in writing for invasive procedures, anaesthesia, euthanasia, and significant off-label use.", "parity": "high"},
+      {"block_id": "controlled-drugs", "title": "CD register kept", "body": "Controlled drug administration must be recorded in the CD register and reconciled regularly per the Misuse of Drugs Regulations 2001.", "parity": "high"},
+      {"block_id": "ai-use", "title": "Documented AI-use protocol", "body": "When AI is used in clinical workflows, the practice must document use cases, client information, recording storage, and human review responsibilities.", "parity": "medium", "source_citation": "RCVS AI Roundtable Report"},
+      {"block_id": "signoff-identity", "title": "Veterinary surgeon sign-off identified", "body": "Each record entry must identify the signing veterinary surgeon; corrections by addendum only.", "parity": "high"}
+    ]
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.aged_care_US",
+    "name": "Skilled Nursing Facility Records (CMS aligned)",
+    "description": "Reference policy aligned with CMS Conditions of Participation for Long-Term Care Facilities and the MDS 3.0 RAI process.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "SNF documentation — CMS / MDS 3.0 aligned"}},
+      {"id": "comprehensive-assessment", "type": "paragraph", "data": {"text": "Each resident has an MDS 3.0 comprehensive assessment within 14 days of admission, with quarterly and annual reassessments."}},
+      {"id": "care-plan", "type": "paragraph", "data": {"text": "An interdisciplinary care plan is developed within 7 days of the comprehensive assessment, reviewed and revised after each assessment and on change of condition."}},
+      {"id": "f-tags", "type": "paragraph", "data": {"text": "Documentation supports F-tag compliance (e.g. F584 dignity, F689 falls, F694 ADLs, F758 unnecessary drugs)."}},
+      {"id": "incident-investigation", "type": "paragraph", "data": {"text": "Incidents are documented, investigated, and reported per CMS abuse / neglect / theft requirements."}},
+      {"id": "med-administration", "type": "paragraph", "data": {"text": "Medication administration follows facility policy: prescribing, administration, reconciliation. Controlled substances follow DEA storage and recording rules."}},
+      {"id": "rights-directives", "type": "paragraph", "data": {"text": "Resident rights, advance directives, and surrogate decision-makers are documented and accessible to the care team."}},
+      {"id": "retention-5yr", "type": "paragraph", "data": {"text": "Records are retained for at least 5 years from discharge per the federal CMS minimum, longer where state law requires."}}
+    ],
+    "clauses": [
+      {"block_id": "comprehensive-assessment", "title": "MDS 3.0 assessment cycle", "body": "Each resident must have an MDS 3.0 comprehensive assessment within 14 days of admission, with quarterly and annual reassessments.", "parity": "high", "source_citation": "CMS RAI Manual"},
+      {"block_id": "care-plan", "title": "Interdisciplinary care plan", "body": "An interdisciplinary care plan must be developed within 7 days of the comprehensive assessment and revised on change of condition.", "parity": "high"},
+      {"block_id": "f-tags", "title": "F-tag documentation", "body": "Documentation must support F-tag compliance (e.g. dignity, falls, ADLs, unnecessary drugs).", "parity": "high"},
+      {"block_id": "incident-investigation", "title": "Incident investigation + reporting", "body": "Incidents must be documented, investigated, and reported per CMS abuse / neglect / theft requirements.", "parity": "high"},
+      {"block_id": "med-administration", "title": "Medication administration recorded", "body": "Prescribing, administration, and reconciliation of medication must be recorded; controlled substances follow DEA storage and recording rules.", "parity": "high"},
+      {"block_id": "rights-directives", "title": "Resident rights + advance directives", "body": "Resident rights, advance directives, and surrogate decision-makers must be documented and accessible.", "parity": "high"},
+      {"block_id": "retention-5yr", "title": "5-year federal retention", "body": "Records must be retained at least 5 years from discharge per the federal CMS minimum; longer where state law requires.", "parity": "high"}
+    ]
+  }
+]

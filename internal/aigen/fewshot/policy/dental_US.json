@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.dental_US",
+    "name": "Dental Records & HIPAA (ADA / state aligned)",
+    "description": "Reference policy aligned with ADA Principles of Ethics and HIPAA Privacy Rule. Tune retention to the state of practice (federal HIPAA minimum is 6 years).",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Dental records & HIPAA — ADA / state aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records are clear, contemporaneous, and detailed enough for another licensed dentist to continue care."}},
+      {"id": "retention-hipaa", "type": "paragraph", "data": {"text": "Patient records are retained per state law and at minimum for the HIPAA Privacy Rule period (typically 6 years)."}},
+      {"id": "tooth-charting", "type": "paragraph", "data": {"text": "Tooth charting uses Universal numbering (US standard); restorations, caries, mobility, and missing teeth are recorded at every comprehensive exam."}},
+      {"id": "perio-recording", "type": "paragraph", "data": {"text": "Periodontal status is recorded at every comprehensive exam — pocket depths, recession, BoP."}},
+      {"id": "cdt-codes", "type": "paragraph", "data": {"text": "Treatment items are coded with current CDT codes."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for invasive procedures (extractions, endo, implants, sedation)."}},
+      {"id": "hipaa-disclosures", "type": "paragraph", "data": {"text": "PHI disclosures, NPP acknowledgements, and BAAs with vendors are tracked and retained."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep records detailed enough for another licensed dentist to continue care.", "parity": "high"},
+      {"block_id": "retention-hipaa", "title": "HIPAA / state retention", "body": "Records must be retained per state law and at minimum for the HIPAA Privacy Rule period (typically 6 years).", "parity": "high"},
+      {"block_id": "tooth-charting", "title": "Tooth charting recorded", "body": "Every comprehensive exam must include tooth charting using Universal numbering.", "parity": "high"},
+      {"block_id": "perio-recording", "title": "Periodontal status recorded", "body": "Every comprehensive exam must record periodontal status (pocket depths, recession, BoP).", "parity": "high"},
+      {"block_id": "cdt-codes", "title": "CDT coding used", "body": "Treatment items must be coded with current CDT codes.", "parity": "medium"},
+      {"block_id": "consent-documented", "title": "Informed consent documented", "body": "Informed consent must be documented for invasive procedures.", "parity": "high"},
+      {"block_id": "hipaa-disclosures", "title": "HIPAA disclosures tracked", "body": "PHI disclosures, NPP acknowledgements, and BAAs must be tracked and retained.", "parity": "high", "source_citation": "HIPAA Privacy Rule"}
+    ]
+  }
+]
