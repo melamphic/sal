@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/billing"
@@ -51,6 +52,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivertype"
+	"golang.org/x/time/rate"
 )
 
 // App holds the running HTTP server and all wired dependencies.
@@ -357,6 +359,41 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
 	policyHandler := policy.NewHandler(policySvc)
 
+	// ── AI generation (forms + policies) ─────────────────────────────────────
+	// Provider is best-effort: missing API keys disable the feature without
+	// failing startup. The corresponding handlers detect a nil provider and
+	// skip route registration so the OpenAPI surface only advertises what
+	// will actually answer.
+	aigenClinicLookup := &aigenClinicLookupAdapter{clinicSvc: clinicSvc}
+	var (
+		formAIGenHandler   *forms.AIGenHandler
+		policyAIGenHandler *policy.AIGenHandler
+	)
+	aigenProvider, aigenErr := aigen.NewProvider(aigen.FactoryConfig{
+		Provider:     cfg.AIGenProvider,
+		GeminiAPIKey: cfg.GeminiAPIKey,
+		OpenAIAPIKey: cfg.OpenAIAPIKey,
+		GeminiModel:  cfg.AIGenGeminiModel,
+		OpenAIModel:  cfg.AIGenOpenAIModel,
+	})
+	switch {
+	case aigenErr == nil:
+		log.Info("aigen: provider configured", "provider", aigenProvider.Name(), "model", aigenProvider.Model())
+		formGenSvc := aigen.NewFormGenService(aigenProvider, log)
+		policyGenSvc := aigen.NewPolicyGenService(aigenProvider, log)
+		// Per-IP rate limit on /generate. Generation is expensive and
+		// latency-bound; a tight bucket (0.1 rps, burst 3) blocks runaway
+		// scripts while leaving room for legitimate bursts (e.g., user
+		// retries after a typo). Cleanup goroutine reaps idle entries.
+		aigenRateLimit := mw.NewRateLimiterStore(rate.Every(10*time.Second), 3)
+		formAIGenHandler = forms.NewAIGenHandler(formsSvc, formGenSvc, aigenClinicLookup, aigenRateLimit)
+		policyAIGenHandler = policy.NewAIGenHandler(policySvc, policyGenSvc, aigenClinicLookup, aigenRateLimit)
+	case errors.Is(aigenErr, aigen.ErrProviderNotConfigured):
+		log.Info("aigen: no provider configured — /generate routes disabled")
+	default:
+		return nil, fmt.Errorf("app.Build: aigen provider: %w", aigenErr)
+	}
+
 	// ── Reports module ────────────────────────────────────────────────────────
 	reportsSvc := reports.NewService(reportsRepo, riverClient)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
@@ -422,10 +459,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	verticalsHandler.Mount(r, api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
+	if formAIGenHandler != nil {
+		formAIGenHandler.Mount(r, api, jwtSecret)
+	}
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
 	notificationsHandler.Mount(r, jwtSecret)
 	policyHandler.Mount(r, api, jwtSecret)
+	if policyAIGenHandler != nil {
+		policyAIGenHandler.Mount(r, api, jwtSecret)
+	}
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
@@ -1074,6 +1117,27 @@ func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, c
 		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
 	}
 	return c.Vertical, nil
+}
+
+// aigenClinicLookupAdapter satisfies forms.AIGenClinicLookup AND
+// policy.AIGenClinicLookup by reading the clinic record via clinic.Service
+// and projecting the fields aigen needs (vertical, country, plan tier).
+type aigenClinicLookupAdapter struct {
+	clinicSvc *clinic.Service
+}
+
+// GetForAIGen returns (vertical, country, tier) for the given clinic.
+// Tier is derived from PlanCode; trial / unbilled clinics return "trial".
+func (a *aigenClinicLookupAdapter) GetForAIGen(ctx context.Context, clinicID uuid.UUID) (string, string, string, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", "", "", fmt.Errorf("app.aigenClinicLookupAdapter: %w", err)
+	}
+	tier := "trial"
+	if c.PlanCode != nil {
+		tier = string(*c.PlanCode)
+	}
+	return string(c.Vertical), c.Country, tier, nil
 }
 
 // verticalStringAdapter satisfies notes.VerticalProvider / forms.VerticalProvider,
