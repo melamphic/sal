@@ -7,6 +7,12 @@ dev:
 	docker compose up -d
 	go run ./cmd/api
 
+# Start infrastructure and run the API server with hot reload (requires air).
+watch:
+	docker compose up -d
+	@command -v air > /dev/null || (echo "air not found — installing..." && go install github.com/air-verse/air@latest)
+	$$(go env GOPATH)/bin/air
+
 # Start infrastructure only (no API server).
 infra:
 	docker compose up -d
