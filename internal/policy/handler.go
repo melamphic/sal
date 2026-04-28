@@ -428,10 +428,11 @@ type upsertClausesInput struct {
 }
 
 type clauseInputItem struct {
-	BlockID string `json:"block_id"                   minLength:"1" doc:"Client-assigned block identifier within the content JSONB."`
-	Title   string `json:"title"                      minLength:"1" doc:"Human-readable clause title."`
-	Body    string `json:"body"                                    doc:"Optional rich body using a lightweight markdown subset (bold/italic/bullets)."`
-	Parity  string `json:"parity"  enum:"high,medium,low"          doc:"Enforcement level: high=must, medium=should, low=try."`
+	BlockID        string  `json:"block_id"                   minLength:"1" doc:"Client-assigned block identifier within the content JSONB."`
+	Title          string  `json:"title"                      minLength:"1" doc:"Human-readable clause title."`
+	Body           string  `json:"body"                                    doc:"Optional rich body using a lightweight markdown subset (bold/italic/bullets)."`
+	Parity         string  `json:"parity"  enum:"high,medium,low"          doc:"Enforcement level: high=must, medium=should, low=try."`
+	SourceCitation *string `json:"source_citation,omitempty"               doc:"Optional verbatim quote from a regulator document. Stored as-is; AI-generated citations are rendered with a 'verify' badge in the editor."`
 }
 
 func (h *Handler) upsertClauses(ctx context.Context, input *upsertClausesInput) (*policyClauseListHTTPResponse, error) {
