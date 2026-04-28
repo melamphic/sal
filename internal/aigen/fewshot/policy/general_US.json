@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.general_US",
+    "name": "Patient Records, HIPAA & Controlled Substances (US)",
+    "description": "Reference policy aligned with HIPAA Privacy Rule, state medical board record-keeping rules, and DEA controlled-substances framework.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Patient records, HIPAA & controlled substances"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Clinical notes are clear, accurate, and detailed enough for another licensed clinician to continue care."}},
+      {"id": "retention-hipaa", "type": "paragraph", "data": {"text": "Records are retained per state law and at minimum for the HIPAA Privacy Rule period (typically 6 years)."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for procedures, off-label prescribing, and treatments with material risks."}},
+      {"id": "advance-directives", "type": "paragraph", "data": {"text": "Advance directives, surrogate decision-makers, and POLST/MOLST forms are tracked and accessible to the care team."}},
+      {"id": "em-documentation", "type": "paragraph", "data": {"text": "E&M documentation supports billed level of service per current CMS / payer guidelines."}},
+      {"id": "controlled-substances", "type": "paragraph", "data": {"text": "Controlled substances are prescribed and dispensed per DEA rules; PDMP queries are documented where required."}},
+      {"id": "hipaa-disclosures", "type": "paragraph", "data": {"text": "PHI disclosures, NPP acknowledgements, and BAAs with vendors are tracked and retained."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Notes sufficient for handover", "body": "Clinical notes must be clear, accurate, and detailed enough for another licensed clinician to continue care.", "parity": "high"},
+      {"block_id": "retention-hipaa", "title": "HIPAA / state retention", "body": "Records must be retained per state law and at minimum for the HIPAA Privacy Rule period (typically 6 years).", "parity": "high"},
+      {"block_id": "consent-documented", "title": "Informed consent documented", "body": "Informed consent must be documented for procedures, off-label prescribing, and treatments with material risks.", "parity": "high"},
+      {"block_id": "advance-directives", "title": "Advance directives tracked", "body": "Advance directives, surrogate decision-makers, and POLST/MOLST forms must be tracked and accessible.", "parity": "high"},
+      {"block_id": "em-documentation", "title": "E&M documentation supports billing", "body": "E&M documentation must support the billed level of service per CMS / payer guidelines.", "parity": "medium"},
+      {"block_id": "controlled-substances", "title": "DEA / PDMP compliance", "body": "Controlled substances must be prescribed and dispensed per DEA rules; PDMP queries documented where required.", "parity": "high"},
+      {"block_id": "hipaa-disclosures", "title": "HIPAA disclosures tracked", "body": "PHI disclosures, NPP acknowledgements, and BAAs must be tracked and retained.", "parity": "high", "source_citation": "HIPAA Privacy Rule"}
+    ]
+  }
+]

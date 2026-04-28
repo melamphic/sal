@@ -64,6 +64,14 @@ type Config struct {
 	OpenAIAPIKey       string `env:"OPENAI_API_KEY"`
 	ExtractionProvider string `env:"EXTRACTION_PROVIDER,default=gemini"`
 
+	// AI generation — form / policy generation from free-text user descriptions.
+	// Re-uses GeminiAPIKey / OpenAIAPIKey above. Empty AIGenProvider auto-selects:
+	// OpenAI when OPENAI_API_KEY is set (prod), otherwise Gemini (dev/staging).
+	// Leave both keys empty to disable the /generate endpoints (returns 503).
+	AIGenProvider     string `env:"AIGEN_PROVIDER"`
+	AIGenOpenAIModel  string `env:"AIGEN_OPENAI_MODEL"`
+	AIGenGeminiModel  string `env:"AIGEN_GEMINI_MODEL"`
+
 	// Database pool tuning
 	DBMaxConns int `env:"DB_MAX_CONNS,default=30"`
 	DBMinConns int `env:"DB_MIN_CONNS,default=2"`

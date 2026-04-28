@@ -62,6 +62,13 @@ type repo interface {
 	// No-op for non-draft versions (published rows are immutable).
 	UpdateDraftSystemHeader(ctx context.Context, versionID, clinicID uuid.UUID, config []byte) (*FormVersionRecord, error)
 
+	// SaveGenerationMetadata stores the AI-generation provenance JSONB on a
+	// form_version row. Used by aigen-driven flows to mark a draft as
+	// AI-authored so the editor can render the "AI drafted" badge and the
+	// audit log captures provider/model/prompt-hash. metadata may be nil to
+	// clear the column. clinicID enforces tenant isolation.
+	SaveGenerationMetadata(ctx context.Context, versionID, clinicID uuid.UUID, metadata []byte) error
+
 	// ── Fields ────────────────────────────────────────────────────────────────
 
 	GetFieldsByVersionID(ctx context.Context, versionID uuid.UUID) ([]*FieldRecord, error)

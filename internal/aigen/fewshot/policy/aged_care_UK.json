@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.aged_care_UK",
+    "name": "Care Home Documentation & CQC (UK)",
+    "description": "Reference policy aligned with the CQC Fundamental Standards and the single assessment framework.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Care home documentation — CQC Fundamental Standards"}},
+      {"id": "person-centred-plan", "type": "paragraph", "data": {"text": "Each resident has a person-centred care plan covering safe, effective, caring, responsive, and well-led domains; reviewed at admission and on change of need."}},
+      {"id": "consent-mca", "type": "paragraph", "data": {"text": "Consent is recorded; mental-capacity assessments and DoLS authorisations are documented when capacity is in doubt."}},
+      {"id": "notifications", "type": "paragraph", "data": {"text": "Statutory notifications to the CQC are documented for relevant incidents; a record is kept of decision and rationale."}},
+      {"id": "mar", "type": "paragraph", "data": {"text": "Medication administration is recorded on a MAR; controlled drugs follow stricter recording requirements with witness sign-off."}},
+      {"id": "incident-reporting", "type": "paragraph", "data": {"text": "Incidents (falls, medication, safeguarding, behaviour) are documented at the time and reviewed by the manager."}},
+      {"id": "audit-trail", "type": "paragraph", "data": {"text": "Documentation supporting CQC inspections — care plans, incident logs, audit cycle, complaints, training records — is kept current."}}
+    ],
+    "clauses": [
+      {"block_id": "person-centred-plan", "title": "Person-centred care plan", "body": "Each resident must have a person-centred care plan covering safe, effective, caring, responsive, and well-led domains; reviewed at admission and on change of need.", "parity": "high", "source_citation": "CQC Fundamental Standards"},
+      {"block_id": "consent-mca", "title": "Consent + Mental Capacity Act", "body": "Consent must be recorded; mental-capacity assessments and DoLS authorisations documented when capacity is in doubt.", "parity": "high"},
+      {"block_id": "notifications", "title": "CQC notifications recorded", "body": "Statutory notifications to the CQC must be documented for relevant incidents; record of decision and rationale kept.", "parity": "high"},
+      {"block_id": "mar", "title": "MAR + controlled-drug witness", "body": "Medication administration must be recorded on a MAR; controlled drugs follow stricter recording requirements with witness sign-off.", "parity": "high"},
+      {"block_id": "incident-reporting", "title": "Incident reporting", "body": "Incidents must be documented at the time and reviewed by the manager.", "parity": "high"},
+      {"block_id": "audit-trail", "title": "Inspection-ready documentation", "body": "Documentation supporting CQC inspections must be kept current — care plans, incident logs, audit cycle, complaints, training records.", "parity": "high"}
+    ]
+  }
+]

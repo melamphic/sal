@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.general_AU",
+    "name": "Patient Records & Consent (AHPRA / RACGP aligned)",
+    "description": "Reference policy aligned with the Medical Board of Australia's Good Medical Practice and the RACGP Standards for general practice.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Patient records & consent — AHPRA / RACGP aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Clinical notes are clear, accurate, and detailed enough for another doctor to continue care."}},
+      {"id": "retention-adult", "type": "paragraph", "data": {"text": "Adult patient records are retained for at least 7 years after the last contact."}},
+      {"id": "retention-child", "type": "paragraph", "data": {"text": "Records for patients under 18 are retained until age 25, or 7 years after last contact, whichever is later."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for procedures, off-label prescribing, and any intervention with significant risks."}},
+      {"id": "prescribing-s4-s8", "type": "paragraph", "data": {"text": "Prescribing of Schedule 4 and Schedule 8 medicines is documented including indication, dose, and review plan."}},
+      {"id": "continuity", "type": "paragraph", "data": {"text": "Discharge / handover summaries and follow-up plans are recorded."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Notes sufficient for handover", "body": "Clinical notes must be clear, accurate, and detailed enough for another doctor to continue care.", "parity": "high"},
+      {"block_id": "retention-adult", "title": "7-year adult retention", "body": "Adult records must be retained at least 7 years after last contact.", "parity": "high"},
+      {"block_id": "retention-child", "title": "Child retention to age 25", "body": "Records for patients under 18 must be retained until 25 or 7 years after last contact, whichever is later.", "parity": "high"},
+      {"block_id": "consent-documented", "title": "Informed consent documented", "body": "Informed consent must be documented for procedures, off-label prescribing, and any intervention with significant risks.", "parity": "high", "source_citation": "Medical Board Good medical practice"},
+      {"block_id": "prescribing-s4-s8", "title": "S4 / S8 prescribing documented", "body": "Prescribing of Schedule 4 and Schedule 8 medicines must be documented including indication, dose, and review plan.", "parity": "high"},
+      {"block_id": "continuity", "title": "Continuity of care documented", "body": "Discharge summaries and follow-up plans must be recorded.", "parity": "medium"}
+    ]
+  }
+]

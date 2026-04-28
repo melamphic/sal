@@ -1,0 +1,56 @@
+[
+  {
+    "_kind": "fewshot.form.aged_care",
+    "name": "Resident Care Plan Review",
+    "description": "Periodic review of the resident's care plan — needs, goals, interventions, sign-off.",
+    "overall_prompt": "Capture the multi-disciplinary review of the resident's care plan. Cover personal goals, daily living needs, behavioural support, medication, and review cadence.",
+    "tags": ["care_plan", "review"],
+    "fields": [
+      {"position": 1, "title": "Reason for review", "type": "select", "config": {"options": [{"label": "Scheduled", "value": "scheduled"}, {"label": "Change in condition", "value": "change"}, {"label": "Family request", "value": "family"}, {"label": "Incident-driven", "value": "incident"}]}, "required": true},
+      {"position": 2, "title": "Resident goals + preferences", "type": "long_text", "required": true, "ai_prompt": "Resident's stated goals and lifestyle preferences."},
+      {"position": 3, "title": "Activities of daily living", "type": "long_text", "ai_prompt": "Mobility, hygiene, continence, eating, dressing — level of assistance required."},
+      {"position": 4, "title": "Cognition + behaviour notes", "type": "long_text"},
+      {"position": 5, "title": "Falls risk + mitigations", "type": "long_text"},
+      {"position": 6, "title": "Pressure injury risk + plan", "type": "long_text"},
+      {"position": 7, "title": "Medication review summary", "type": "long_text"},
+      {"position": 8, "title": "Family / NOK involvement", "type": "long_text"},
+      {"position": 9, "title": "Next review due", "type": "date", "required": true},
+      {"position": 10, "title": "Multi-disciplinary attendees", "type": "long_text", "ai_prompt": "Who attended the review (RN, GP, allied health, family).", "required": true}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.aged_care",
+    "name": "Incident Report",
+    "description": "Resident incident — fall, medication error, behaviour, injury — with notification trail.",
+    "tags": ["incident", "safety"],
+    "fields": [
+      {"position": 1, "title": "Incident type", "type": "select", "config": {"options": [{"label": "Fall", "value": "fall"}, {"label": "Medication error", "value": "medication"}, {"label": "Behaviour incident", "value": "behaviour"}, {"label": "Skin tear / pressure injury", "value": "skin"}, {"label": "Other", "value": "other"}]}, "required": true},
+      {"position": 2, "title": "Date + time of incident", "type": "long_text", "required": true, "allow_inference": false},
+      {"position": 3, "title": "Location", "type": "text"},
+      {"position": 4, "title": "What happened", "type": "long_text", "required": true, "ai_prompt": "Factual account; no judgements or attributions."},
+      {"position": 5, "title": "Injuries / outcome", "type": "long_text", "required": true},
+      {"position": 6, "title": "Immediate actions", "type": "long_text", "required": true},
+      {"position": 7, "title": "Witnesses", "type": "long_text"},
+      {"position": 8, "title": "Family / NOK notified", "type": "button_group", "config": {"options": [{"label": "Yes", "value": "yes"}, {"label": "No — not yet", "value": "no"}, {"label": "Not applicable", "value": "na"}]}, "required": true},
+      {"position": 9, "title": "Regulator notification required?", "type": "button_group", "config": {"options": [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}, {"label": "Under review", "value": "review"}]}, "required": true, "ai_prompt": "Determine based on incident severity + jurisdiction (e.g. SIRS in AU)."},
+      {"position": 10, "title": "Preventive plan", "type": "long_text"}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.aged_care",
+    "name": "Medication Administration Round",
+    "description": "Single medication-pass record with witness for controlled drugs.",
+    "tags": ["medication", "MAR"],
+    "fields": [
+      {"position": 1, "title": "Medication name + strength", "type": "text", "required": true, "allow_inference": false},
+      {"position": 2, "title": "Dose given", "type": "text", "required": true, "allow_inference": false},
+      {"position": 3, "title": "Route", "type": "button_group", "config": {"options": [{"label": "PO", "value": "po"}, {"label": "Topical", "value": "topical"}, {"label": "SC", "value": "sc"}, {"label": "IM", "value": "im"}, {"label": "Inhaled", "value": "inhaled"}, {"label": "Other", "value": "other"}]}, "required": true},
+      {"position": 4, "title": "Time given", "type": "text", "required": true, "allow_inference": false},
+      {"position": 5, "title": "Controlled drug?", "type": "button_group", "config": {"options": [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]}, "required": true},
+      {"position": 6, "title": "Witness signature (if controlled)", "type": "text"},
+      {"position": 7, "title": "Resident response / observation", "type": "long_text"},
+      {"position": 8, "title": "Refused / withheld?", "type": "button_group", "config": {"options": [{"label": "Given", "value": "given"}, {"label": "Refused", "value": "refused"}, {"label": "Withheld", "value": "withheld"}]}, "required": true},
+      {"position": 9, "title": "Reason if refused / withheld", "type": "long_text"}
+    ]
+  }
+]

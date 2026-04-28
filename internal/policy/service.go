@@ -61,6 +61,11 @@ type PolicyClauseResponse struct {
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 	Parity  string `json:"parity"`
+	// SourceCitation is an AI-suggested verbatim regulator quote backing
+	// the clause. The Flutter editor renders this with an explicit
+	// "AI-suggested — verify against [regulator]" badge so reviewers
+	// understand the quote is unverified by the system.
+	SourceCitation *string `json:"source_citation,omitempty"`
 }
 
 // PolicyClauseListResponse is a list of clauses.
@@ -87,6 +92,10 @@ type PolicyVersionResponse struct {
 	PublishedAt   *string         `json:"published_at,omitempty"`
 	PublishedBy   *string         `json:"published_by,omitempty"`
 	CreatedAt     string          `json:"created_at"`
+	// GenerationMetadata is the AI-generation provenance JSONB. NULL/absent
+	// for human-authored versions; present means the editor renders an
+	// "AI drafted — review before publishing" pill.
+	GenerationMetadata json.RawMessage `json:"generation_metadata,omitempty"`
 }
 
 // PolicyVersionListResponse is a list of policy versions.
@@ -206,10 +215,11 @@ type UpsertClausesInput struct {
 
 // ClauseItemInput holds a single clause to upsert.
 type ClauseItemInput struct {
-	BlockID string
-	Title   string
-	Body    string
-	Parity  string
+	BlockID        string
+	Title          string
+	Body           string
+	Parity         string
+	SourceCitation *string
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -740,6 +750,9 @@ func toVersionResponse(v *PolicyVersionRecord) *PolicyVersionResponse {
 		s := v.PublishedBy.String()
 		r.PublishedBy = &s
 	}
+	if len(v.GenerationMetadata) > 0 {
+		r.GenerationMetadata = v.GenerationMetadata
+	}
 	return r
 }
 
@@ -747,11 +760,12 @@ func toClauseListResponse(recs []*PolicyClauseRecord) *PolicyClauseListResponse 
 	items := make([]*PolicyClauseResponse, len(recs))
 	for i, r := range recs {
 		items[i] = &PolicyClauseResponse{
-			ID:      r.ID.String(),
-			BlockID: r.BlockID,
-			Title:   r.Title,
-			Body:    r.Body,
-			Parity:  r.Parity,
+			ID:             r.ID.String(),
+			BlockID:        r.BlockID,
+			Title:          r.Title,
+			Body:           r.Body,
+			Parity:         r.Parity,
+			SourceCitation: r.SourceCitation,
 		}
 	}
 	return &PolicyClauseListResponse{Items: items}

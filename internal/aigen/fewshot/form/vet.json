@@ -1,0 +1,55 @@
+[
+  {
+    "_kind": "fewshot.form.vet",
+    "name": "Routine Consult",
+    "description": "General-purpose veterinary consultation form — small animal.",
+    "overall_prompt": "Capture the consult: presenting complaint, history, exam findings, assessment, plan, follow-up.",
+    "tags": ["consult", "general"],
+    "fields": [
+      {"position": 1, "title": "Presenting complaint", "type": "long_text", "ai_prompt": "Owner's chief concern in their words.", "required": true, "allow_inference": false},
+      {"position": 2, "title": "History (current illness)", "type": "long_text", "ai_prompt": "Onset, duration, progression, treatments tried."},
+      {"position": 3, "title": "Weight (kg)", "type": "decimal", "ai_prompt": "Most recent weight if mentioned in transcript."},
+      {"position": 4, "title": "Temperature (°C)", "type": "decimal"},
+      {"position": 5, "title": "Heart rate (bpm)", "type": "number"},
+      {"position": 6, "title": "Body condition score", "type": "slider", "config": {"min": 1, "max": 9, "step": 1}, "ai_prompt": "1=emaciated, 5=ideal, 9=obese."},
+      {"position": 7, "title": "Physical exam findings", "type": "long_text", "required": true},
+      {"position": 8, "title": "Assessment", "type": "long_text", "ai_prompt": "Differential diagnoses, problem list."},
+      {"position": 9, "title": "Plan", "type": "long_text", "required": true},
+      {"position": 10, "title": "Discharge instructions", "type": "long_text", "ai_prompt": "Owner-facing instructions for home care, monitoring, follow-up."}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.vet",
+    "name": "Vaccination",
+    "description": "Vaccination visit record — captures product, batch, route, site.",
+    "tags": ["vaccination", "preventive"],
+    "fields": [
+      {"position": 1, "title": "Vaccine product", "type": "select", "config": {"options": [{"label": "C3", "value": "c3"}, {"label": "C5", "value": "c5"}, {"label": "F3", "value": "f3"}, {"label": "Other", "value": "other"}]}, "required": true},
+      {"position": 2, "title": "Batch / lot number", "type": "text", "required": true, "allow_inference": false},
+      {"position": 3, "title": "Expiry date", "type": "date", "required": true},
+      {"position": 4, "title": "Route", "type": "button_group", "config": {"options": [{"label": "SC", "value": "sc"}, {"label": "IM", "value": "im"}, {"label": "Intranasal", "value": "in"}]}, "required": true},
+      {"position": 5, "title": "Injection site", "type": "text"},
+      {"position": 6, "title": "Adverse reaction observed in clinic", "type": "button_group", "config": {"options": [{"label": "None", "value": "none"}, {"label": "Mild", "value": "mild"}, {"label": "Moderate", "value": "moderate"}, {"label": "Severe", "value": "severe"}]}, "required": true},
+      {"position": 7, "title": "Next due", "type": "date"},
+      {"position": 8, "title": "Notes", "type": "long_text"}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.vet",
+    "name": "Surgical Discharge",
+    "description": "Post-surgery discharge — anaesthetic, procedure, recovery, instructions.",
+    "tags": ["surgery", "discharge"],
+    "fields": [
+      {"position": 1, "title": "Procedure performed", "type": "text", "required": true},
+      {"position": 2, "title": "Anaesthetic protocol", "type": "long_text"},
+      {"position": 3, "title": "Anaesthetic monitoring summary", "type": "long_text", "ai_prompt": "Vitals trends during anaesthesia (HR, BP, SpO2, ETCO2)."},
+      {"position": 4, "title": "Recovery quality", "type": "button_group", "config": {"options": [{"label": "Smooth", "value": "smooth"}, {"label": "Rough", "value": "rough"}, {"label": "Prolonged", "value": "prolonged"}]}, "required": true},
+      {"position": 5, "title": "Pain score at discharge", "type": "slider", "config": {"min": 0, "max": 10, "step": 1}},
+      {"position": 6, "title": "Take-home medications", "type": "long_text", "ai_prompt": "Drug, dose, frequency, duration, owner instructions."},
+      {"position": 7, "title": "Activity restrictions", "type": "long_text"},
+      {"position": 8, "title": "Suture removal date", "type": "date"},
+      {"position": 9, "title": "Follow-up appointment", "type": "date"},
+      {"position": 10, "title": "Owner verbal confirmation of instructions", "type": "button_group", "config": {"options": [{"label": "Confirmed", "value": "confirmed"}, {"label": "Declined", "value": "declined"}]}, "required": true}
+    ]
+  }
+]

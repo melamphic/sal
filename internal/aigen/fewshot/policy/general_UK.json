@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.general_UK",
+    "name": "Patient Records & Consent (GMC / NHS aligned)",
+    "description": "Reference policy aligned with GMC Good medical practice and the NHS Records Management Code of Practice.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Patient records & consent — GMC / NHS aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Clinical notes are clear, accurate, contemporaneous, and detailed enough for another doctor to continue care."}},
+      {"id": "retention-gp", "type": "paragraph", "data": {"text": "GP records are retained at least 10 years after the last entry; longer retention applies for some scenarios (e.g. children, mental health)."}},
+      {"id": "consent-montgomery", "type": "paragraph", "data": {"text": "Informed consent is documented (Montgomery-style) — risks, benefits, reasonable alternatives, and the patient's decision — for procedures and significant treatment changes."}},
+      {"id": "prescribing", "type": "paragraph", "data": {"text": "Prescribing records identify medicine, dose, frequency, duration, indication, and any controlled-drug requirements."}},
+      {"id": "confidentiality", "type": "paragraph", "data": {"text": "PHI processing complies with UK GDPR, the Data Protection Act 2018, and the common-law duty of confidentiality; lawful bases for sharing are recorded."}},
+      {"id": "continuity", "type": "paragraph", "data": {"text": "Handover and follow-up plans are recorded clearly enough for the receiving clinician."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Notes sufficient for handover", "body": "Clinical notes must be clear, accurate, contemporaneous, and detailed enough for another doctor to continue care.", "parity": "high", "source_citation": "GMC Good medical practice"},
+      {"block_id": "retention-gp", "title": "10-year GP retention", "body": "GP records must be retained at least 10 years after last entry; longer for children and mental-health records.", "parity": "high", "source_citation": "NHS Records Management Code of Practice"},
+      {"block_id": "consent-montgomery", "title": "Montgomery-style consent", "body": "Informed consent must be documented covering risks, benefits, reasonable alternatives, and the patient's decision for procedures and significant treatment changes.", "parity": "high"},
+      {"block_id": "prescribing", "title": "Prescribing records complete", "body": "Prescribing records must identify medicine, dose, frequency, duration, indication, and any controlled-drug requirements.", "parity": "high"},
+      {"block_id": "confidentiality", "title": "Lawful basis for PHI sharing", "body": "PHI processing must comply with UK GDPR, the Data Protection Act 2018, and the common-law duty of confidentiality; lawful bases for sharing must be recorded.", "parity": "high"},
+      {"block_id": "continuity", "title": "Continuity of care documented", "body": "Handover and follow-up plans must be recorded clearly enough for the receiving clinician.", "parity": "medium"}
+    ]
+  }
+]

@@ -1,4 +1,4 @@
-.PHONY: dev build test test-integration lint migrate migrate-down docs docs-api docs-install tidy smoke-billing
+.PHONY: dev restart build test test-integration lint migrate migrate-down docs docs-api docs-install tidy smoke-billing
 SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -12,6 +12,16 @@ watch:
 	docker compose up -d
 	@command -v air > /dev/null || (echo "air not found — installing..." && go install github.com/air-verse/air@latest)
 	$$(go env GOPATH)/bin/air
+
+# Kill any running API server on :8080 then start dev again. Useful when a
+# previous `make dev` was interrupted without releasing the port (or when
+# restarting after a code change since `go run` doesn't auto-reload).
+# The leading dash on the kill line tells make to ignore a non-zero exit
+# (e.g. nothing listening) and continue.
+
+restart:
+	-@lsof -ti :8080 | xargs kill -9 2>/dev/null || true
+	$(MAKE) dev
 
 # Start infrastructure only (no API server).
 infra:

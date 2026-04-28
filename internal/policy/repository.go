@@ -54,6 +54,11 @@ type PolicyVersionRecord struct {
 	PublishedBy   *uuid.UUID
 	CreatedBy     uuid.UUID
 	CreatedAt     time.Time
+	// GenerationMetadata is the AI-generation provenance JSONB written by
+	// aigen-driven flows. NULL for human-authored versions; surfaced via
+	// PolicyVersionResponse.GenerationMetadata so the editor can render an
+	// "AI drafted — review before publishing" pill.
+	GenerationMetadata json.RawMessage
 }
 
 // PolicyClauseRecord is the raw database representation of a policy_clauses row.
@@ -64,7 +69,13 @@ type PolicyClauseRecord struct {
 	Title           string
 	Body            string
 	Parity          string
-	CreatedAt       time.Time
+	// SourceCitation is an optional verbatim quote from the regulator
+	// document backing the clause. AI-generated policies populate this from
+	// the generated payload; manual clauses leave it nil. The Flutter editor
+	// renders citations with an explicit "verify against [regulator]" badge
+	// because the AI-suggested quote is unverified by the system.
+	SourceCitation *string
+	CreatedAt      time.Time
 }
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -151,10 +162,11 @@ type PublishDraftVersionParams struct {
 
 // ClauseInput holds values for a single clause in a replace operation.
 type ClauseInput struct {
-	BlockID string
-	Title   string
-	Body    string
-	Parity  string
+	BlockID        string
+	Title          string
+	Body           string
+	Parity         string
+	SourceCitation *string
 }
 
 // ── Repository ────────────────────────────────────────────────────────────────
@@ -421,7 +433,8 @@ func (r *Repository) RetirePolicy(ctx context.Context, p RetirePolicyParams) (*P
 
 const versionCols = `
 	id, policy_id, status, version_major, version_minor, change_type, change_summary,
-	changes, content, rollback_of, published_at, published_by, created_by, created_at`
+	changes, content, rollback_of, published_at, published_by, created_by, created_at,
+	generation_metadata`
 
 // GetDraftVersion returns the single mutable draft version for a policy.
 func (r *Repository) GetDraftVersion(ctx context.Context, policyID uuid.UUID) (*PolicyVersionRecord, error) {
@@ -624,15 +637,15 @@ func (r *Repository) ReplaceClauses(ctx context.Context, versionID uuid.UUID, cl
 	}
 
 	const insertQ = `
-		INSERT INTO policy_clauses (id, policy_version_id, block_id, title, body, parity)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, policy_version_id, block_id, title, body, parity, created_at`
+		INSERT INTO policy_clauses (id, policy_version_id, block_id, title, body, parity, source_citation)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, policy_version_id, block_id, title, body, parity, source_citation, created_at`
 
 	batch := &pgx.Batch{}
 	ids := make([]uuid.UUID, len(clauses))
 	for i, c := range clauses {
 		ids[i] = domain.NewID()
-		batch.Queue(insertQ, ids[i], versionID, c.BlockID, c.Title, c.Body, c.Parity)
+		batch.Queue(insertQ, ids[i], versionID, c.BlockID, c.Title, c.Body, c.Parity, c.SourceCitation)
 	}
 
 	br := tx.SendBatch(ctx, batch)
@@ -677,7 +690,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 			WHERE policy_id = ANY($1) AND status = 'published'
 			ORDER BY policy_id, published_at DESC
 		)
-		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.body, pc.parity, pc.created_at
+		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.body, pc.parity, pc.source_citation, pc.created_at
 		FROM latest l
 		JOIN policy_clauses pc ON pc.policy_version_id = l.version_id
 		ORDER BY l.policy_id, pc.created_at`
@@ -691,7 +704,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 	var list []*ClauseWithPolicyID
 	for rows.Next() {
 		var c ClauseWithPolicyID
-		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Body, &c.Parity, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Body, &c.Parity, &c.SourceCitation, &c.CreatedAt); err != nil {
 			return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: scan: %w", err)
 		}
 		list = append(list, &c)
@@ -705,7 +718,7 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 // ListClauses returns all clauses for a policy version ordered by creation time.
 func (r *Repository) ListClauses(ctx context.Context, versionID uuid.UUID) ([]*PolicyClauseRecord, error) {
 	const q = `
-		SELECT id, policy_version_id, block_id, title, body, parity, created_at
+		SELECT id, policy_version_id, block_id, title, body, parity, source_citation, created_at
 		FROM policy_clauses
 		WHERE policy_version_id = $1
 		ORDER BY created_at`
@@ -769,6 +782,7 @@ func scanVersion(row scannable) (*PolicyVersionRecord, error) {
 		&r.ID, &r.PolicyID, &r.Status, &r.VersionMajor, &r.VersionMinor,
 		&r.ChangeType, &r.ChangeSummary, &r.Changes, &r.Content, &r.RollbackOf,
 		&r.PublishedAt, &r.PublishedBy, &r.CreatedBy, &r.CreatedAt,
+		&r.GenerationMetadata,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -781,7 +795,7 @@ func scanVersion(row scannable) (*PolicyVersionRecord, error) {
 
 func scanClause(row scannable) (*PolicyClauseRecord, error) {
 	var r PolicyClauseRecord
-	err := row.Scan(&r.ID, &r.PolicyVersionID, &r.BlockID, &r.Title, &r.Body, &r.Parity, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.PolicyVersionID, &r.BlockID, &r.Title, &r.Body, &r.Parity, &r.SourceCitation, &r.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrNotFound
@@ -789,4 +803,26 @@ func scanClause(row scannable) (*PolicyClauseRecord, error) {
 		return nil, fmt.Errorf("scanClause: %w", err)
 	}
 	return &r, nil
+}
+
+// SaveGenerationMetadata persists the AI-generation provenance JSONB on a
+// policy_version row. The version is matched via its parent policy's
+// clinic_id to enforce tenant isolation.
+func (r *Repository) SaveGenerationMetadata(ctx context.Context, versionID, clinicID uuid.UUID, metadata []byte) error {
+	const q = `
+		UPDATE policy_versions pv
+		   SET generation_metadata = $1::JSONB
+		  FROM policies p
+		 WHERE pv.id = $2
+		   AND pv.policy_id = p.id
+		   AND p.clinic_id = $3
+	`
+	tag, err := r.db.Exec(ctx, q, metadata, versionID, clinicID)
+	if err != nil {
+		return fmt.Errorf("policy.repo.SaveGenerationMetadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("policy.repo.SaveGenerationMetadata: %w", domain.ErrNotFound)
+	}
+	return nil
 }

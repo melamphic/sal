@@ -1,0 +1,54 @@
+[
+  {
+    "_kind": "fewshot.form.general",
+    "name": "GP Consultation",
+    "description": "General practice visit — history, exam, assessment, plan, follow-up.",
+    "overall_prompt": "Standard primary-care consultation. Capture presenting complaint, relevant history, exam, working diagnosis, plan, follow-up.",
+    "tags": ["consult", "gp"],
+    "fields": [
+      {"position": 1, "title": "Presenting complaint", "type": "long_text", "ai_prompt": "Reason for visit in patient's own words.", "required": true, "allow_inference": false},
+      {"position": 2, "title": "History of presenting complaint", "type": "long_text", "ai_prompt": "Onset, duration, character, radiation, alleviating/aggravating factors."},
+      {"position": 3, "title": "Past medical history", "type": "long_text"},
+      {"position": 4, "title": "Medications", "type": "long_text", "ai_prompt": "Current medications, doses, frequencies, allergies."},
+      {"position": 5, "title": "Examination", "type": "long_text", "required": true},
+      {"position": 6, "title": "Vitals", "type": "long_text", "ai_prompt": "BP, HR, RR, SpO2, temperature, weight if measured."},
+      {"position": 7, "title": "Assessment / working diagnosis", "type": "long_text", "required": true},
+      {"position": 8, "title": "Plan", "type": "long_text", "required": true},
+      {"position": 9, "title": "Prescriptions", "type": "long_text", "ai_prompt": "Drug, dose, frequency, duration, quantity, refills."},
+      {"position": 10, "title": "Follow-up", "type": "long_text"}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.general",
+    "name": "Telehealth Consultation",
+    "description": "Remote consult — suitability, consent, encounter, plan, escalation criteria.",
+    "tags": ["telehealth", "consult"],
+    "fields": [
+      {"position": 1, "title": "Telehealth modality", "type": "button_group", "config": {"options": [{"label": "Video", "value": "video"}, {"label": "Audio only", "value": "audio"}]}, "required": true},
+      {"position": 2, "title": "Suitability for telehealth", "type": "long_text", "required": true, "ai_prompt": "Why this presentation is suitable for remote review."},
+      {"position": 3, "title": "Patient consent for telehealth", "type": "button_group", "config": {"options": [{"label": "Verbal — recorded", "value": "verbal"}, {"label": "Written", "value": "written"}]}, "required": true, "allow_inference": false},
+      {"position": 4, "title": "Identity confirmation", "type": "long_text", "ai_prompt": "How identity was verified."},
+      {"position": 5, "title": "History + symptoms", "type": "long_text", "required": true},
+      {"position": 6, "title": "Visible exam findings", "type": "long_text"},
+      {"position": 7, "title": "Plan", "type": "long_text", "required": true},
+      {"position": 8, "title": "Escalation criteria for in-person review", "type": "long_text", "required": true, "ai_prompt": "Red flags that should prompt the patient to seek in-person care."},
+      {"position": 9, "title": "Follow-up", "type": "long_text"}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.general",
+    "name": "Mental Health Review",
+    "description": "Mental-health-focused review — risk, mood, treatment, safety planning.",
+    "tags": ["mental_health", "review"],
+    "fields": [
+      {"position": 1, "title": "Reason for review", "type": "long_text", "required": true},
+      {"position": 2, "title": "Mood / affect", "type": "long_text", "required": true},
+      {"position": 3, "title": "Sleep / appetite / energy", "type": "long_text"},
+      {"position": 4, "title": "Suicidal ideation", "type": "select", "config": {"options": [{"label": "None", "value": "none"}, {"label": "Passive thoughts", "value": "passive"}, {"label": "Active without plan", "value": "active_no_plan"}, {"label": "Active with plan", "value": "active_with_plan"}]}, "required": true, "allow_inference": false},
+      {"position": 5, "title": "Risk assessment", "type": "long_text", "required": true},
+      {"position": 6, "title": "Safety plan", "type": "long_text", "ai_prompt": "Triggers, coping strategies, supports, crisis numbers."},
+      {"position": 7, "title": "Current medications + adherence", "type": "long_text"},
+      {"position": 8, "title": "Plan + follow-up", "type": "long_text", "required": true}
+    ]
+  }
+]

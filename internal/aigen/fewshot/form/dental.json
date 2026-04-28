@@ -1,0 +1,54 @@
+[
+  {
+    "_kind": "fewshot.form.dental",
+    "name": "Routine Examination",
+    "description": "Standard dental check-up — exam findings, charting, periodontal status, treatment plan.",
+    "overall_prompt": "Capture the routine dental visit: medical update, oral exam, charting, periodontal screening, plan, recall.",
+    "tags": ["exam", "routine"],
+    "fields": [
+      {"position": 1, "title": "Medical history update", "type": "long_text", "ai_prompt": "Any changes since last visit: new conditions, medications, allergies."},
+      {"position": 2, "title": "Chief complaint", "type": "text", "ai_prompt": "Patient's reason for the visit in their words."},
+      {"position": 3, "title": "Soft tissue exam", "type": "long_text", "required": true, "ai_prompt": "Mucosa, tongue, palate, floor of mouth findings."},
+      {"position": 4, "title": "Periodontal screening", "type": "select", "config": {"options": [{"label": "Healthy", "value": "healthy"}, {"label": "Gingivitis", "value": "gingivitis"}, {"label": "Mild periodontitis", "value": "mild_perio"}, {"label": "Moderate periodontitis", "value": "moderate_perio"}, {"label": "Severe periodontitis", "value": "severe_perio"}]}},
+      {"position": 5, "title": "Tooth charting", "type": "long_text", "ai_prompt": "Caries, restorations, missing, mobility, fractures — use the clinic's notation system."},
+      {"position": 6, "title": "Treatment plan", "type": "long_text", "required": true},
+      {"position": 7, "title": "Treatment items / codes", "type": "long_text", "ai_prompt": "List planned items with their treatment codes (CDT in US, ADA Schedule in AU, etc.)."},
+      {"position": 8, "title": "Recall interval", "type": "select", "config": {"options": [{"label": "3 months", "value": "3m"}, {"label": "6 months", "value": "6m"}, {"label": "12 months", "value": "12m"}]}}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.dental",
+    "name": "Endodontic Treatment",
+    "description": "Root canal therapy record — diagnosis, anaesthesia, instrumentation, obturation, follow-up.",
+    "tags": ["endodontic", "root_canal"],
+    "fields": [
+      {"position": 1, "title": "Tooth (notation + number)", "type": "text", "required": true, "allow_inference": false},
+      {"position": 2, "title": "Pulp diagnosis", "type": "select", "config": {"options": [{"label": "Reversible pulpitis", "value": "reversible"}, {"label": "Irreversible pulpitis", "value": "irreversible"}, {"label": "Necrotic", "value": "necrotic"}, {"label": "Previously treated", "value": "prev_treated"}]}, "required": true},
+      {"position": 3, "title": "Periapical diagnosis", "type": "text"},
+      {"position": 4, "title": "Local anaesthetic", "type": "long_text", "ai_prompt": "Drug, concentration, dose, site."},
+      {"position": 5, "title": "Working length", "type": "text"},
+      {"position": 6, "title": "Instrumentation system + master apical file", "type": "text"},
+      {"position": 7, "title": "Irrigation protocol", "type": "long_text"},
+      {"position": 8, "title": "Obturation material + technique", "type": "long_text", "required": true},
+      {"position": 9, "title": "Restoration placed", "type": "text"},
+      {"position": 10, "title": "Post-op instructions given", "type": "button_group", "config": {"options": [{"label": "Verbal", "value": "verbal"}, {"label": "Written", "value": "written"}, {"label": "Both", "value": "both"}]}, "required": true}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.dental",
+    "name": "Extraction Consent + Record",
+    "description": "Tooth extraction visit — informed consent, procedure, post-op.",
+    "tags": ["surgery", "extraction", "consent"],
+    "fields": [
+      {"position": 1, "title": "Tooth", "type": "text", "required": true, "allow_inference": false},
+      {"position": 2, "title": "Indication", "type": "long_text", "required": true},
+      {"position": 3, "title": "Risks discussed", "type": "long_text", "required": true, "ai_prompt": "Bleeding, infection, dry socket, nerve injury, sinus communication if relevant."},
+      {"position": 4, "title": "Alternatives discussed", "type": "long_text", "required": true},
+      {"position": 5, "title": "Patient consent", "type": "button_group", "config": {"options": [{"label": "Verbal", "value": "verbal"}, {"label": "Written", "value": "written"}]}, "required": true, "allow_inference": false},
+      {"position": 6, "title": "Anaesthetic used", "type": "long_text", "ai_prompt": "Drug, dose, sites."},
+      {"position": 7, "title": "Procedure notes", "type": "long_text", "required": true},
+      {"position": 8, "title": "Post-op instructions given", "type": "long_text", "required": true},
+      {"position": 9, "title": "Follow-up arrangements", "type": "long_text"}
+    ]
+  }
+]

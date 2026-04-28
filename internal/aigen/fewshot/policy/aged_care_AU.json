@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.aged_care_AU",
+    "name": "Resident Care & ACQSC Documentation (AU)",
+    "description": "Reference policy aligned with the Strengthened Aged Care Quality Standards (2026) and the SIRS framework. Documentation here is examined directly by ACQSC assessors.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Resident care & documentation — Strengthened Standards aligned"}},
+      {"id": "care-plan", "type": "paragraph", "data": {"text": "Each resident has an individualised care plan reviewed at admission, on change of condition, and at least every 6 months — with the resident's voice documented."}},
+      {"id": "sirs", "type": "paragraph", "data": {"text": "Reportable incidents under the Serious Incident Response Scheme (SIRS) are documented, escalated, and notified to the ACQSC within statutory timeframes."}},
+      {"id": "restraint", "type": "paragraph", "data": {"text": "Use of restrictive practices is documented including authorisation, rationale, and review; they are used only as a last resort."}},
+      {"id": "med-management", "type": "paragraph", "data": {"text": "Medication management follows the Aged Care Quality Standards: prescribing, administration, reconciliation, and review are recorded."}},
+      {"id": "resident-agreement", "type": "paragraph", "data": {"text": "Resident agreements, fees, and complaints handling are documented and accessible to the resident and their representative."}},
+      {"id": "behaviour-support", "type": "paragraph", "data": {"text": "Behaviour-support plans are documented for residents whose behaviour places them or others at risk; non-pharmacological strategies are tried first."}},
+      {"id": "audit-trail", "type": "paragraph", "data": {"text": "Documentation supporting ACQSC assessments — care plans, incident registers, complaints log, governance minutes, training records — is kept current."}}
+    ],
+    "clauses": [
+      {"block_id": "care-plan", "title": "Individualised, voice-included care plan", "body": "Each resident must have an individualised care plan reviewed at admission, on change of condition, and at least every 6 months — with the resident's voice documented.", "parity": "high", "source_citation": "Strengthened Aged Care Quality Standards"},
+      {"block_id": "sirs", "title": "SIRS notifications recorded", "body": "Reportable incidents under SIRS must be documented, escalated, and notified to ACQSC within statutory timeframes.", "parity": "high"},
+      {"block_id": "restraint", "title": "Restrictive practices authorised + reviewed", "body": "Use of restrictive practices must be documented including authorisation, rationale, and review; used only as a last resort.", "parity": "high"},
+      {"block_id": "med-management", "title": "Medication management recorded", "body": "Prescribing, administration, reconciliation, and review of medication must be recorded per the Aged Care Quality Standards.", "parity": "high"},
+      {"block_id": "resident-agreement", "title": "Resident agreements + complaints handling", "body": "Resident agreements, fees, and complaints handling must be documented and accessible to the resident and their representative.", "parity": "high"},
+      {"block_id": "behaviour-support", "title": "Behaviour-support plans", "body": "Behaviour-support plans must be documented; non-pharmacological strategies tried first.", "parity": "high"},
+      {"block_id": "audit-trail", "title": "Assessment-ready documentation", "body": "Documentation supporting ACQSC assessments must be kept current — care plans, incident registers, complaints log, governance minutes, training records.", "parity": "high"}
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.dental_NZ",
+    "name": "Dental Records & Consent (DCNZ aligned)",
+    "description": "Reference policy aligned with the Dental Council of New Zealand Standards Framework and Practice Standards.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Dental records & consent — DCNZ aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records are clear, contemporaneous, and detailed enough for another dental practitioner to continue care."}},
+      {"id": "retention-10yr", "type": "paragraph", "data": {"text": "Patient records are retained for at least 10 years from the date of last contact."}},
+      {"id": "tooth-charting", "type": "paragraph", "data": {"text": "Tooth charting uses an explicit notation system (FDI or Universal); restorations, caries, mobility, and missing teeth are recorded for every full exam."}},
+      {"id": "perio-screening", "type": "paragraph", "data": {"text": "Periodontal status is recorded at every full exam — screening or full periodontal charting as clinically indicated."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for treatment plans, especially extractions, endodontics, sedation, and prostheses."}},
+      {"id": "signoff", "type": "paragraph", "data": {"text": "Each entry identifies the treating clinician; corrections by addendum only."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep records detailed enough for another dental practitioner to continue care.", "parity": "high", "source_citation": "DCNZ Standards Framework"},
+      {"block_id": "retention-10yr", "title": "10-year retention", "body": "You must retain patient records for at least 10 years from last contact.", "parity": "high"},
+      {"block_id": "tooth-charting", "title": "Tooth charting recorded", "body": "Every full exam must include tooth charting using an explicit notation system.", "parity": "high"},
+      {"block_id": "perio-screening", "title": "Periodontal status recorded", "body": "Every full exam must record periodontal status (screening or full charting).", "parity": "high"},
+      {"block_id": "consent-documented", "title": "Treatment consent documented", "body": "You must document informed consent for treatment plans, especially invasive procedures.", "parity": "high"},
+      {"block_id": "signoff", "title": "Clinician sign-off identified", "body": "Each entry must identify the treating clinician; corrections by addendum only.", "parity": "high"}
+    ]
+  }
+]

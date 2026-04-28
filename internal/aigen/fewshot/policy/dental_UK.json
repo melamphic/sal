@@ -1,0 +1,26 @@
+[
+  {
+    "_kind": "fewshot.policy.dental_UK",
+    "name": "Dental Records & Consent (GDC aligned)",
+    "description": "Reference policy aligned with GDC Standards for the Dental Team and FGDP record-keeping guidance. Documentation is the primary defence in GDC complaints — the policy emphasises completeness.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Dental records & consent — GDC aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records are full, accurate, and contemporaneous — sufficient for another dental professional to continue care and to defend a complaint."}},
+      {"id": "retention-adult", "type": "paragraph", "data": {"text": "Adult records are retained for at least 11 years after the last contact."}},
+      {"id": "retention-child", "type": "paragraph", "data": {"text": "Records for patients under 18 are retained until age 25, or 11 years after last contact, whichever is later."}},
+      {"id": "tooth-charting", "type": "paragraph", "data": {"text": "Tooth charting uses an explicit notation system; restorations, caries, mobility, and missing teeth are recorded at every full exam."}},
+      {"id": "bpe", "type": "paragraph", "data": {"text": "Basic Periodontal Examination (BPE) is recorded at every full exam; full periodontal charting is recorded when indicated."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented (Montgomery-style) — risks, benefits, alternatives, and the patient's stated decision."}},
+      {"id": "complaints-defence", "type": "paragraph", "data": {"text": "Records form the practice's defence in GDC fitness-to-practise proceedings; gaps are treated as standards-of-care concerns."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Full, accurate, contemporaneous", "body": "Records must be full, accurate, and contemporaneous — sufficient for another professional to continue care and to defend a complaint.", "parity": "high", "source_citation": "GDC Standards 4.1"},
+      {"block_id": "retention-adult", "title": "11-year adult retention", "body": "Adult records must be retained at least 11 years from last contact.", "parity": "high"},
+      {"block_id": "retention-child", "title": "Child retention to age 25", "body": "Records for patients under 18 must be retained until 25 or 11 years from last contact, whichever is later.", "parity": "high"},
+      {"block_id": "tooth-charting", "title": "Tooth charting recorded", "body": "Every full exam must include tooth charting using an explicit notation system.", "parity": "high"},
+      {"block_id": "bpe", "title": "BPE recorded", "body": "Every full exam must record a Basic Periodontal Examination.", "parity": "high", "source_citation": "FGDP record-keeping guidance"},
+      {"block_id": "consent-documented", "title": "Montgomery-style consent", "body": "Informed consent must be documented covering risks, benefits, alternatives, and the patient's decision.", "parity": "high"},
+      {"block_id": "complaints-defence", "title": "Records support FtP defence", "body": "Records are the practice's defence in GDC fitness-to-practise proceedings; gaps are treated as standards-of-care concerns.", "parity": "high"}
+    ]
+  }
+]

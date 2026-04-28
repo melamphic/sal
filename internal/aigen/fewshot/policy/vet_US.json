@@ -1,0 +1,24 @@
+[
+  {
+    "_kind": "fewshot.policy.vet_US",
+    "name": "Veterinary Records & DEA Controlled Substances (US)",
+    "description": "Reference policy aligned with state veterinary board record-keeping rules and the DEA controlled-substances framework. Tune retention to the state of practice (3–7 years typical).",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Records & controlled substances — state board / DEA aligned"}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records must be detailed enough for another licensed veterinarian to continue care."}},
+      {"id": "retention-state", "type": "paragraph", "data": {"text": "Patient records are retained per the state of practice — typically 3 to 7 years from the date of the last visit."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented for invasive procedures, anaesthesia, euthanasia, and significant off-label drug use."}},
+      {"id": "dea-controlled-substances", "type": "paragraph", "data": {"text": "Controlled substances are managed in line with DEA requirements: Schedule II receipts kept ≥2 years, biennial inventory, and theft/loss reported on DEA Form 106."}},
+      {"id": "vcpr", "type": "paragraph", "data": {"text": "A valid veterinarian–client–patient relationship (VCPR) is established and documented before prescribing."}},
+      {"id": "signoff-identity", "type": "paragraph", "data": {"text": "Each entry identifies the signing veterinarian; corrections by addendum only."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep records detailed enough for another licensed veterinarian to continue care.", "parity": "high"},
+      {"block_id": "retention-state", "title": "State retention met", "body": "You must retain records for the period required by the state veterinary board (commonly 3–7 years).", "parity": "high"},
+      {"block_id": "consent-documented", "title": "Informed consent documented", "body": "Informed consent must be documented for invasive procedures, anaesthesia, euthanasia, and significant off-label use.", "parity": "high"},
+      {"block_id": "dea-controlled-substances", "title": "DEA controlled-substances rules", "body": "Controlled substances must be tracked per DEA: Schedule II receipts retained ≥2 years, biennial inventory, theft/loss reported on Form 106.", "parity": "high", "source_citation": "21 CFR 1304"},
+      {"block_id": "vcpr", "title": "Valid VCPR before prescribing", "body": "You must establish and document a valid VCPR before prescribing.", "parity": "high"},
+      {"block_id": "signoff-identity", "title": "Veterinarian sign-off identified", "body": "Each entry identifies the signing veterinarian; corrections by addendum only.", "parity": "high"}
+    ]
+  }
+]

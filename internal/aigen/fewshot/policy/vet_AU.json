@@ -1,0 +1,23 @@
+[
+  {
+    "_kind": "fewshot.policy.vet_AU",
+    "name": "Veterinary Records & Controlled Drugs (AU)",
+    "description": "Reference policy aligned with AVA professional conduct expectations and state poisons schedules. Adjust retention by jurisdiction.",
+    "content": [
+      {"id": "intro", "type": "heading", "data": {"text": "Records & controlled drugs — AVA / state aligned"}},
+      {"id": "scope", "type": "paragraph", "data": {"text": "Applies to every clinical encounter recorded by veterinarians and registered nurses in this practice."}},
+      {"id": "record-detail", "type": "paragraph", "data": {"text": "Records must be detailed enough that another veterinarian can continue care without reinterpretation."}},
+      {"id": "retention-7yr", "type": "paragraph", "data": {"text": "Patient records are retained for at least 7 years from the date of the last consultation, or longer where the relevant state requires."}},
+      {"id": "consent-documented", "type": "paragraph", "data": {"text": "Informed consent is documented in writing for invasive procedures, anaesthesia, euthanasia, and off-label drug use."}},
+      {"id": "controlled-drugs-state", "type": "paragraph", "data": {"text": "Schedule 4 and Schedule 8 controlled drugs are entered into the controlled drugs register per the state poisons schedule, with every transaction witnessed and reconciled at least monthly."}},
+      {"id": "signoff-identity", "type": "paragraph", "data": {"text": "Each entry identifies the signing veterinarian; corrections are made by addendum, never by overwrite."}}
+    ],
+    "clauses": [
+      {"block_id": "record-detail", "title": "Records sufficient for handover", "body": "You must keep clinical records detailed enough for another veterinarian to continue care without reinterpretation.", "parity": "high", "source_citation": "AVA Code of Professional Conduct"},
+      {"block_id": "retention-7yr", "title": "Minimum 7-year retention", "body": "You must retain patient records for at least 7 years from the last consultation, or longer if state law requires.", "parity": "high", "source_citation": "AVA Records retention policy"},
+      {"block_id": "consent-documented", "title": "Written consent for invasive care", "body": "You must document informed consent in writing for invasive procedures, anaesthesia, euthanasia, and off-label drug use.", "parity": "high"},
+      {"block_id": "controlled-drugs-state", "title": "Controlled drugs register kept", "body": "You must record S4 / S8 transactions in the controlled drugs register per the state poisons schedule and reconcile monthly with a witness.", "parity": "high"},
+      {"block_id": "signoff-identity", "title": "Veterinarian sign-off identified", "body": "Each record entry must identify the signing veterinarian; corrections are by addendum only.", "parity": "high"}
+    ]
+  }
+]
