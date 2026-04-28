@@ -167,6 +167,11 @@ type FormVersionResponse struct {
 	// — the column has a non-null default — so clients can render the card
 	// without falling back to inferred state.
 	SystemHeader      *SystemHeaderConfig      `json:"system_header,omitempty"`
+	// GenerationMetadata is the AI-generation provenance JSONB
+	// (provider, model, prompt_hash, staff_id, timestamps, repair counts).
+	// NULL/absent for human-authored versions; present means the Flutter
+	// editor renders an "AI drafted — review before publishing" pill.
+	GenerationMetadata json.RawMessage `json:"generation_metadata,omitempty"`
 }
 
 // FormVersionListResponse is a list of form versions.
@@ -1587,6 +1592,9 @@ func toVersionResponse(v *FormVersionRecord, fields []*FieldRecord) *FormVersion
 	}
 	if hdr, err := decodeSystemHeader(v.SystemHeaderConfig); err == nil {
 		r.SystemHeader = hdr
+	}
+	if len(v.GenerationMetadata) > 0 {
+		r.GenerationMetadata = v.GenerationMetadata
 	}
 	return r
 }
