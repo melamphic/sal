@@ -71,6 +71,9 @@ nav:
       - Timeline & Notifications: timeline.md
       - Policy Engine: policy.md
       - Drugs & Controlled Substances: drugs.md
+      - Incidents & SIRS/CQC: incidents.md
+      - Consent & Pain: consent_pain.md
+      - Admin Dashboard & Alerts: admin.md
       - Compliance Reports: reports.md
   - Backlog: backlog.md
   - Compliance: compliance.md
