@@ -28,6 +28,7 @@ import (
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
+	"github.com/melamphic/sal/internal/incidents"
 	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
@@ -258,6 +259,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Reports repo + worker (registered before river.NewClient) ─────────────
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
+	// Compliance PDF worker — uses the lazy data adapter because its
+	// dependencies (drugs / clinic / staff services) are constructed below,
+	// after river.NewClient. The lazy wrapper resolves at job-run time.
+	complianceData := &lazyComplianceData{}
+	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData))
 
 	// ── Notes workers (registered before river.NewClient) ─────────────────────
 	// lazyEnqueuer is set after river.NewClient so workers can enqueue downstream jobs.
@@ -381,6 +387,22 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	)
 	drugsHandler := drugs.NewHandler(drugsSvc)
 
+	// ── Incidents module ─────────────────────────────────────────────────────
+	// Vertical-agnostic. SIRS/CQC classifier auto-stamps regulator deadlines
+	// for aged-care AU/UK; other (vertical, country) combos record without
+	// auto-classification. Reuses the drugs adapters for clinic lookup +
+	// subject-access logging — same shape, same dependencies.
+	incidentsRepo := incidents.NewRepository(db)
+	// drugsClinicLookupAdapter and drugsAccessLogAdapter satisfy
+	// incidents.ClinicLookup / SubjectAccessLogger structurally — same
+	// signatures across both modules, so a single adapter pair serves both.
+	incidentsSvc := incidents.NewService(
+		incidentsRepo,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	incidentsHandler := incidents.NewHandler(incidentsSvc)
+
 	// ── AI generation (forms + policies) ─────────────────────────────────────
 	// Provider is best-effort: missing API keys disable the feature without
 	// failing startup. The corresponding handlers detect a nil provider and
@@ -417,7 +439,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// ── Reports module ────────────────────────────────────────────────────────
-	reportsSvc := reports.NewService(reportsRepo, riverClient)
+	// Build the real compliance data adapter now that drugs / clinic / staff
+	// are all constructed, and resolve the lazy wrapper used by the worker.
+	complianceData.inner = &complianceDataAdapter{
+		clinicSvc: clinicSvc,
+		staffSvc:  staffSvc,
+		drugsSvc:  drugsSvc,
+	}
+	reportsSvc := reports.NewService(reportsRepo, riverClient, complianceData)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
 
 	// ── Marketplace module ───────────────────────────────────────────────────
@@ -492,6 +521,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
 	drugsHandler.Mount(r, api, jwtSecret)
+	incidentsHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
@@ -1179,6 +1209,284 @@ func (a *drugsStaffPermAdapter) HasPermission(ctx context.Context, staffID, clin
 	default:
 		return false, nil
 	}
+}
+
+// lazyComplianceData wraps a reports.ComplianceDataSource that's set after
+// the river client is constructed. The compliance PDF worker is registered
+// before drugs / clinic / staff services exist; this lazy wrapper lets the
+// worker compile-time bind to the data source without forcing all those
+// services to be created earlier.
+type lazyComplianceData struct {
+	inner reports.ComplianceDataSource
+}
+
+func (l *lazyComplianceData) GetClinic(ctx context.Context, clinicID uuid.UUID) (*reports.ClinicSnapshot, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	c, err := l.inner.GetClinic(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.GetClinic: %w", err)
+	}
+	return c, nil
+}
+func (l *lazyComplianceData) GetStaffName(ctx context.Context, clinicID, staffID uuid.UUID) (string, error) {
+	if l.inner == nil {
+		return "", fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	name, err := l.inner.GetStaffName(ctx, clinicID, staffID)
+	if err != nil {
+		return "", fmt.Errorf("app.lazyComplianceData.GetStaffName: %w", err)
+	}
+	return name, nil
+}
+func (l *lazyComplianceData) ListControlledDrugOps(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugOpView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	ops, err := l.inner.ListControlledDrugOps(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListControlledDrugOps: %w", err)
+	}
+	return ops, nil
+}
+func (l *lazyComplianceData) ListReconciliationsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugReconciliationView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	recs, err := l.inner.ListReconciliationsInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListReconciliationsInPeriod: %w", err)
+	}
+	return recs, nil
+}
+func (l *lazyComplianceData) CountNotesByStatus(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (map[string]int, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	counts, err := l.inner.CountNotesByStatus(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.CountNotesByStatus: %w", err)
+	}
+	return counts, nil
+}
+
+// complianceDataAdapter satisfies reports.ComplianceDataSource by wrapping
+// clinic.Service + drugs.Service + staff.Service. Every cross-domain access
+// goes through these public services — reports never queries another
+// domain's tables directly.
+type complianceDataAdapter struct {
+	clinicSvc *clinic.Service
+	staffSvc  *staff.Service
+	drugsSvc  *drugs.Service
+}
+
+func (a *complianceDataAdapter) GetClinic(ctx context.Context, clinicID uuid.UUID) (*reports.ClinicSnapshot, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.complianceDataAdapter.GetClinic: %w", err)
+	}
+	legal := ""
+	if c.LegalName != nil {
+		legal = *c.LegalName
+	}
+	email := c.Email
+	return &reports.ClinicSnapshot{
+		Name:      c.Name,
+		LegalName: legal,
+		Vertical:  string(c.Vertical),
+		Country:   c.Country,
+		Address:   c.Address,
+		Phone:     c.Phone,
+		Email:     &email,
+		License:   c.BusinessRegNo,
+	}, nil
+}
+
+func (a *complianceDataAdapter) GetStaffName(ctx context.Context, clinicID, staffID uuid.UUID) (string, error) {
+	s, err := a.staffSvc.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		// Don't fail the whole report on a single name miss; PDF degrades
+		// to the UUID short form.
+		return staffID.String()[:8], nil
+	}
+	return s.FullName, nil
+}
+
+// ListControlledDrugOps lists every drug operation in the period whose
+// underlying catalog entry is controlled (Schedule != "" + IsControlled
+// implied by witness rule). For v1 we filter inside the loop; future work
+// can push the filter into the drugs service.
+func (a *complianceDataAdapter) ListControlledDrugOps(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugOpView, error) {
+	// Page through the ledger.
+	out := []reports.DrugOpView{}
+	const pageSize = 200
+	offset := 0
+	for {
+		list, err := a.drugsSvc.ListOperations(ctx, clinicID, drugs.ListOperationsInput{
+			Limit:  pageSize,
+			Offset: offset,
+			Since:  &from,
+			Until:  &to,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.ListControlledDrugOps: %w", err)
+		}
+		for _, op := range list.Items {
+			view, ok := a.translateOp(ctx, clinicID, op)
+			if !ok {
+				continue
+			}
+			out = append(out, view)
+		}
+		if len(list.Items) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	return out, nil
+}
+
+// translateOp converts a drugs.OperationResponse into a reports.DrugOpView
+// and resolves shelf label + schedule from the catalog. Returns (_, false)
+// when the underlying drug isn't controlled — the register PDF only shows
+// controlled-drug ops.
+func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.UUID, op *drugs.OperationResponse) (reports.DrugOpView, bool) {
+	shelfID, err := uuid.Parse(op.ShelfID)
+	if err != nil {
+		return reports.DrugOpView{}, false
+	}
+	shelf, err := a.drugsSvc.GetShelfEntry(ctx, shelfID, clinicID)
+	if err != nil {
+		return reports.DrugOpView{}, false
+	}
+	if shelf.CatalogID == nil {
+		// Override drugs aren't controlled in v1.
+		return reports.DrugOpView{}, false
+	}
+	entry, err := a.drugsSvc.LookupCatalogEntry(ctx, clinicID, *shelf.CatalogID)
+	if err != nil || entry == nil || !entry.IsControlled {
+		return reports.DrugOpView{}, false
+	}
+	label := entry.Name
+	if shelf.Strength != nil {
+		label += " " + *shelf.Strength
+	}
+	schedule := entry.Schedule
+
+	createdAt, _ := time.Parse(time.RFC3339, op.CreatedAt)
+
+	administeredBy := op.AdministeredBy
+	if id, err := uuid.Parse(op.AdministeredBy); err == nil {
+		if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+			administeredBy = name
+		}
+	}
+
+	var witnessName *string
+	if op.WitnessedBy != nil {
+		if id, err := uuid.Parse(*op.WitnessedBy); err == nil {
+			if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+				witnessName = &name
+			} else {
+				witnessName = op.WitnessedBy
+			}
+		}
+	}
+
+	return reports.DrugOpView{
+		ID:             op.ID,
+		ShelfID:        op.ShelfID,
+		ShelfLabel:     label,
+		Operation:      op.Operation,
+		Quantity:       op.Quantity,
+		Unit:           op.Unit,
+		BalanceAfter:   op.BalanceAfter,
+		Dose:           op.Dose,
+		Route:          op.Route,
+		Reason:         op.ReasonIndication,
+		Schedule:       schedule,
+		BatchNumber:    shelf.BatchNumber,
+		Location:       shelf.Location,
+		SubjectID:      op.SubjectID,
+		AdministeredBy: administeredBy,
+		WitnessedBy:    witnessName,
+		CreatedAt:      createdAt,
+	}, true
+}
+
+func (a *complianceDataAdapter) ListReconciliationsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugReconciliationView, error) {
+	list, err := a.drugsSvc.ListReconciliations(ctx, clinicID, drugs.ListReconciliationsInput{
+		Limit: 200,
+		Since: &from,
+		Until: &to,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.complianceDataAdapter.ListReconciliations: %w", err)
+	}
+	out := make([]reports.DrugReconciliationView, 0, len(list.Items))
+	for _, r := range list.Items {
+		shelfID, err := uuid.Parse(r.ShelfID)
+		if err != nil {
+			continue
+		}
+		shelf, err := a.drugsSvc.GetShelfEntry(ctx, shelfID, clinicID)
+		if err != nil {
+			continue
+		}
+		label := "(unknown drug)"
+		if shelf.CatalogID != nil {
+			if entry, err := a.drugsSvc.LookupCatalogEntry(ctx, clinicID, *shelf.CatalogID); err == nil && entry != nil {
+				label = entry.Name
+				if shelf.Strength != nil {
+					label += " " + *shelf.Strength
+				}
+			}
+		}
+		periodStart, _ := time.Parse(time.RFC3339, r.PeriodStart)
+		periodEnd, _ := time.Parse(time.RFC3339, r.PeriodEnd)
+		createdAt, _ := time.Parse(time.RFC3339, r.CreatedAt)
+		_ = createdAt
+
+		primary := r.ReconciledByPrimary
+		if id, err := uuid.Parse(r.ReconciledByPrimary); err == nil {
+			if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+				primary = name
+			}
+		}
+		var secondary *string
+		if r.ReconciledBySecondary != nil {
+			if id, err := uuid.Parse(*r.ReconciledBySecondary); err == nil {
+				if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+					secondary = &name
+				} else {
+					secondary = r.ReconciledBySecondary
+				}
+			}
+		}
+
+		out = append(out, reports.DrugReconciliationView{
+			ID:                r.ID,
+			ShelfLabel:        label,
+			PeriodStart:       periodStart,
+			PeriodEnd:         periodEnd,
+			PhysicalCount:     r.PhysicalCount,
+			LedgerCount:       r.LedgerCount,
+			Discrepancy:       r.Discrepancy,
+			Status:            r.Status,
+			PrimarySignedBy:   primary,
+			SecondarySignedBy: secondary,
+			Explanation:       r.DiscrepancyExplanation,
+		})
+	}
+	return out, nil
+}
+
+// CountNotesByStatus is a v1 stub. The notes service doesn't yet expose a
+// status-aggregation method; the audit pack PDF degrades to a "no notes
+// recorded" message when the map is empty. TODO: wire to notes.Service.
+func (a *complianceDataAdapter) CountNotesByStatus(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (map[string]int, error) {
+	return map[string]int{}, nil
 }
 
 // drugsAccessLogAdapter satisfies drugs.SubjectAccessLogger. Wraps the
