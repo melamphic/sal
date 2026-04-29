@@ -331,6 +331,35 @@ func (r *Repository) ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*Not
 	return rec, nil
 }
 
+// ListExtractingNoteIDsByRecording returns IDs of notes in `extracting`
+// status that are bound to the given recording. Used by the
+// audio-transcribe listener to fan out extraction jobs the moment the
+// transcript lands. No clinic scope — the listener is system-internal,
+// triggered by a recording row that the audio module already gated on.
+func (r *Repository) ListExtractingNoteIDsByRecording(ctx context.Context, recordingID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id FROM notes
+		WHERE recording_id = $1 AND status = 'extracting' AND archived_at IS NULL`,
+		recordingID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ListExtractingNoteIDsByRecording: %w", err)
+	}
+	defer rows.Close()
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("notes.repo.ListExtractingNoteIDsByRecording: scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.ListExtractingNoteIDsByRecording: rows: %w", err)
+	}
+	return out, nil
+}
+
 // CountNotesByRecording returns how many notes exist for a recording within a clinic.
 func (r *Repository) CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error) {
 	var count int
