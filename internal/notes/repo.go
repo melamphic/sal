@@ -20,6 +20,12 @@ type repo interface {
 	// Used to enforce the 3-note-per-recording cap at service layer.
 	CountNotesByRecording(ctx context.Context, clinicID, recordingID uuid.UUID) (int, error)
 
+	// ListExtractingNoteIDsByRecording — system-internal lookup used by
+	// the audio-transcribe listener. Returns notes still in `extracting`
+	// status for a recording so they can be re-enqueued for AI extraction
+	// the instant the transcript lands.
+	ListExtractingNoteIDsByRecording(ctx context.Context, recordingID uuid.UUID) ([]uuid.UUID, error)
+
 	// UpdatePolicyAlignment persists the computed alignment score on a note.
 	UpdatePolicyAlignment(ctx context.Context, noteID, clinicID uuid.UUID, pct float64) error
 	// UpdatePolicyCheckResult persists per-clause check results as JSONB on a note.
