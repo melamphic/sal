@@ -80,6 +80,24 @@ func (f *FakeMailer) SendNoteCapCSAlert(_ context.Context, opsEmail, clinicID, c
 	return nil
 }
 
+// SendComplianceReportReady records the scheduled-report email.
+func (f *FakeMailer) SendComplianceReportReady(_ context.Context, to, clinicName, reportType, periodStart, periodEnd, downloadURL string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Sent = append(f.Sent, SentEmail{
+		To:       to,
+		Template: "compliance_report_ready",
+		Data: map[string]string{
+			"clinic":       clinicName,
+			"report_type":  reportType,
+			"period_start": periodStart,
+			"period_end":   periodEnd,
+			"download_url": downloadURL,
+		},
+	})
+	return nil
+}
+
 // Count returns the number of emails sent matching the given template.
 func (f *FakeMailer) Count(template string) int {
 	f.mu.Lock()

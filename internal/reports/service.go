@@ -209,12 +209,24 @@ func (s *Service) GetReportJobRecord(ctx context.Context, jobID, clinicID uuid.U
 var SupportedComplianceReportTypes = []string{
 	"audit_pack",
 	"controlled_drugs_register",
+	"evidence_pack",
+	"records_audit",
+	"incidents_log",
+	"hipaa_disclosure_log",
+	"dea_biennial_inventory",
+	"sentinel_events_log",
 }
 
 // fileFormatForType — every type knows its native output format.
 var fileFormatForType = map[string]string{
 	"audit_pack":                "pdf",
 	"controlled_drugs_register": "pdf",
+	"evidence_pack":             "pdf",
+	"records_audit":             "pdf",
+	"incidents_log":             "pdf",
+	"hipaa_disclosure_log":      "pdf",
+	"dea_biennial_inventory":    "pdf",
+	"sentinel_events_log":       "pdf",
 }
 
 // ComplianceReportResponse is the API-safe representation of a compliance
