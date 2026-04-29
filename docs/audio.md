@@ -38,7 +38,44 @@ POST /recordings/{id}/confirm-upload
                              POST to Deepgram Nova-3 Medical
                           ←  transcript stored
                              status = transcribed
+                             fan-out to TranscriptListeners
 ```
+
+---
+
+## TranscriptListener fan-out
+
+After the transcript is persisted, `TranscribeAudioWorker` invokes every
+registered `audio.TranscriptListener` synchronously. This is the
+mechanism that lets downstream modules react the instant a transcript
+lands rather than polling or guessing at a delay.
+
+```go
+// audio/jobs.go
+type TranscriptListener interface {
+    OnRecordingTranscribed(ctx context.Context, recordingID uuid.UUID) error
+}
+```
+
+Listeners registered today (via `app.go`):
+
+| Module | Implementation | What it does |
+|---|---|---|
+| `notes` | `notes.Service.OnRecordingTranscribed` | Re-enqueues `ExtractNoteArgs` for every note in `extracting` status bound to this recording (UniqueOpts dedupes against the immediate enqueue from CreateNote) |
+| `aidrafts` | `aidrafts.Service.OnRecordingTranscribed` | Enqueues `ExtractAIDraftArgs` for every draft in `pending_transcript` status bound to this recording (incidents + consent today; pain + pre_encounter_brief reserved) |
+
+Listener errors are swallowed inside the audio worker — the transcript
+is the load-bearing side effect. Each listener owns its own retry path
+via River's exponential backoff. Adding a new module to the fan-out is
+two changes: implement the interface in the new module, register it in
+`app.go::audio.NewTranscribeAudioWorker(..., yourListener)`.
+
+This pattern replaces an earlier `river.InsertOpts.ScheduledAt: now+8s`
+hack in `notes.Service.CreateNote` that guessed at "transcribe usually
+finishes in under 8 s." The current design is event-driven (listener)
+with a deterministic retry backstop (worker uses
+`rivertype.JobSnoozeError{Duration: 3*time.Second}` when transcript
+still isn't ready).
 
 ---
 

@@ -80,6 +80,10 @@ func geminiSchemaFor(name string) (*genai.Schema, error) {
 		return geminiFormSchema(), nil
 	case SchemaPolicy:
 		return geminiPolicySchema(), nil
+	case SchemaConsentDraft:
+		return geminiConsentDraftSchema(), nil
+	case SchemaIncidentDraft:
+		return geminiIncidentDraftSchema(), nil
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnknownSchema, name)
 	}

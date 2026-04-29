@@ -1,0 +1,119 @@
+{
+  "vertical": "aged_care",
+  "country": "UK",
+  "version": "2026-04-29",
+  "source": "Curated subset per UK BNF + Misuse of Drugs Regulations 2001. CQC notifications fold in via incidents module for medication errors.",
+  "entries": [
+    {
+      "id": "aged_care.UK.morphine.tablet.10mg",
+      "name": "Morphine sulphate (slow release)",
+      "active_ingredient": "Morphine sulphate",
+      "schedule": "CD2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["MST Continus"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.UK.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "CD2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["OxyContin"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.UK.lorazepam.tablet.1mg",
+      "name": "Lorazepam",
+      "active_ingredient": "Lorazepam",
+      "schedule": "CD4-1",
+      "regulatory_class": "controlled",
+      "common_strengths": ["1 mg"],
+      "form": "tablet",
+      "common_routes": ["PO", "sublingual"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "aged_care.UK.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "GSL",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.UK.donepezil.tablet.5mg",
+      "name": "Donepezil",
+      "active_ingredient": "Donepezil hydrochloride",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.UK.apixaban.tablet.5mg",
+      "name": "Apixaban",
+      "active_ingredient": "Apixaban",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Eliquis"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.UK.furosemide.tablet.40mg",
+      "name": "Furosemide",
+      "active_ingredient": "Furosemide",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.UK.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.UK.lactulose.solution.667mgml",
+      "name": "Lactulose",
+      "active_ingredient": "Lactulose",
+      "schedule": "GSL",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["667 mg/mL"],
+      "form": "solution",
+      "common_routes": ["PO"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

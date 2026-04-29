@@ -40,6 +40,15 @@ const (
 	// SchemaPolicy is the response schema for policy generation. Output
 	// unmarshals into GeneratedPolicy.
 	SchemaPolicy = "policy"
+
+	// SchemaConsentDraft is the response schema for AI-drafted consent
+	// risks + alternatives text. Output unmarshals into GeneratedConsentDraft.
+	SchemaConsentDraft = "consent_draft"
+
+	// SchemaIncidentDraft is the response schema for AI-drafted incident
+	// summaries (typed fields from a free-text or transcribed account).
+	// Output unmarshals into GeneratedIncidentDraft.
+	SchemaIncidentDraft = "incident_draft"
 )
 
 // Sentinel provider errors. Callers can branch with errors.Is.

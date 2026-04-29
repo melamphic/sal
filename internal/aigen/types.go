@@ -117,6 +117,31 @@ type GeneratedClause struct {
 	SourceCitation *string `json:"source_citation,omitempty"`
 }
 
+// GeneratedConsentDraft is the AI's structured output for consent-draft
+// generation: a risks-discussed paragraph and an alternatives-discussed
+// paragraph. The clinician reviews and edits before saving — Salvia never
+// auto-publishes consent text. Mirrors the consent_records.risks_discussed
+// and alternatives_discussed columns one-for-one.
+type GeneratedConsentDraft struct {
+	RisksDiscussed        string `json:"risks_discussed"`
+	AlternativesDiscussed string `json:"alternatives_discussed"`
+}
+
+// GeneratedIncidentDraft is the AI's structured output for incident-draft
+// generation: typed fields harvested from a free-text account or audio
+// transcript. The reporting clinician reviews + edits before submitting —
+// SIRS / CQC classification still happens server-side based on the final
+// values, so AI suggestions never bypass the regulator-decision logic.
+type GeneratedIncidentDraft struct {
+	IncidentType     string  `json:"incident_type"`     // CHECK constraint values
+	Severity         string  `json:"severity"`          // low/medium/high/critical
+	BriefDescription string  `json:"brief_description"`
+	ImmediateActions string  `json:"immediate_actions,omitempty"`
+	WitnessesText    string  `json:"witnesses_text,omitempty"`
+	SubjectOutcome   string  `json:"subject_outcome,omitempty"`
+	Location         string  `json:"location,omitempty"`
+}
+
 // AIMetadata is persisted on form_versions.generation_metadata /
 // policy_versions.generation_metadata (JSONB columns). The Flutter editor
 // reads it to render the "AI drafted" badge; the audit log captures it for

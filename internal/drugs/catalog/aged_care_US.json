@@ -1,0 +1,123 @@
+{
+  "vertical": "aged_care",
+  "country": "US",
+  "version": "2026-04-29",
+  "source": "Curated subset per US SNF formularies + DEA Controlled Substances Act schedules (CII-CV). MDS 3.0 medication tracking; F-tag F758 (unnecessary drugs) applies.",
+  "entries": [
+    {
+      "id": "aged_care.US.morphine.tablet.15mg",
+      "name": "Morphine sulfate (extended release)",
+      "active_ingredient": "Morphine sulfate",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["15 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["MS Contin"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.US.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Roxicodone"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.US.lorazepam.tablet.1mg",
+      "name": "Lorazepam",
+      "active_ingredient": "Lorazepam",
+      "schedule": "CIV",
+      "regulatory_class": "controlled",
+      "common_strengths": ["1 mg"],
+      "form": "tablet",
+      "common_routes": ["PO", "sublingual"],
+      "brand_names": ["Ativan"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "aged_care.US.acetaminophen.tablet.500mg",
+      "name": "Acetaminophen",
+      "active_ingredient": "Acetaminophen",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Tylenol"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.US.donepezil.tablet.5mg",
+      "name": "Donepezil",
+      "active_ingredient": "Donepezil hydrochloride",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Aricept"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.US.apixaban.tablet.5mg",
+      "name": "Apixaban",
+      "active_ingredient": "Apixaban",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Eliquis"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.US.furosemide.tablet.40mg",
+      "name": "Furosemide",
+      "active_ingredient": "Furosemide",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Lasix"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.US.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.US.lactulose.solution.667mgml",
+      "name": "Lactulose",
+      "active_ingredient": "Lactulose",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["667 mg/mL"],
+      "form": "solution",
+      "common_routes": ["PO"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

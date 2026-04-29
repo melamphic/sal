@@ -1,0 +1,122 @@
+{
+  "vertical": "general",
+  "country": "US",
+  "version": "2026-04-29",
+  "source": "Curated subset per FDA + DEA Controlled Substances Act schedules (CII-CV). State PDMP query expected for CII-CV.",
+  "entries": [
+    {
+      "id": "general.US.morphine.injectable.10mgml",
+      "name": "Morphine sulfate",
+      "active_ingredient": "Morphine sulfate",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "SC", "IM"],
+      "default_unit": "mL",
+      "notes": "DEA CII. Two-person witness for inventory.",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.US.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Roxicodone"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.US.fentanyl.patch.25mcgh",
+      "name": "Fentanyl transdermal",
+      "active_ingredient": "Fentanyl",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["25 mcg/h"],
+      "form": "patch",
+      "common_routes": ["transdermal"],
+      "brand_names": ["Duragesic"],
+      "default_unit": "patch",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.US.tramadol.tablet.50mg",
+      "name": "Tramadol",
+      "active_ingredient": "Tramadol hydrochloride",
+      "schedule": "CIV",
+      "regulatory_class": "controlled",
+      "common_strengths": ["50 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "general.US.amoxicillin-clavulanate.tablet.875-125",
+      "name": "Amoxicillin/Clavulanate",
+      "active_ingredient": "Amoxicillin + clavulanic acid",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["875 mg / 125 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Augmentin"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.US.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.US.albuterol.inhaler.90mcg",
+      "name": "Albuterol inhaler",
+      "active_ingredient": "Albuterol sulfate",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["90 mcg/dose"],
+      "form": "inhaler",
+      "common_routes": ["inhalation"],
+      "brand_names": ["ProAir HFA", "Ventolin HFA"],
+      "default_unit": "dose",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.US.prednisone.tablet.5mg",
+      "name": "Prednisone",
+      "active_ingredient": "Prednisone",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.US.acetaminophen.tablet.500mg",
+      "name": "Acetaminophen",
+      "active_ingredient": "Acetaminophen",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Tylenol"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

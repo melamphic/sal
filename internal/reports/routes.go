@@ -84,4 +84,104 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, auditExport},
 	}, h.getExportJob)
+
+	// ── Compliance reports (regulator-facing PDFs) ────────────────────────
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "request-compliance-report",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/reports/compliance",
+		Summary:       "Request a compliance report (PDF / ZIP)",
+		Description:   "Vertical- and country-agnostic regulator-facing report. Type slugs: audit_pack, controlled_drugs_register. The clinic's vertical + country select the right regulator template inside the PDF builder. Returns a queued report row; poll GET /api/v1/reports/compliance/{id} for status.",
+		Tags:          []string{"Reports"},
+		Security:      security,
+		Middlewares:   huma.Middlewares{auth, auditExport},
+		DefaultStatus: http.StatusAccepted,
+	}, h.requestComplianceReport)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-compliance-reports",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance",
+		Summary:     "List compliance reports",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.listComplianceReports)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-compliance-report",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance/{id}",
+		Summary:     "Get one compliance report",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.getComplianceReport)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-compliance-report",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance/{id}/download",
+		Summary:     "Download a completed compliance report",
+		Description: "Returns the report row enriched with a fresh presigned URL valid for 1 hour. Writes an audit row to report_audit.",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.downloadComplianceReport)
+
+	// ── Recurring schedules (D2) ──────────────────────────────────────────
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-report-schedule",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/reports/schedules",
+		Summary:       "Schedule a recurring compliance report",
+		Description:   "Creates a recurring trigger that fires (daily/weekly/monthly/quarterly), generates the configured report, and emails the recipients. The first fire is at the next period boundary after creation.",
+		Tags:          []string{"Reports"},
+		Security:      security,
+		Middlewares:   huma.Middlewares{auth, auditExport},
+		DefaultStatus: http.StatusCreated,
+	}, h.createSchedule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-report-schedules",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/schedules",
+		Summary:     "List recurring report schedules",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.listSchedules)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-report-schedule",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/schedules/{id}",
+		Summary:     "Get one schedule",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.getSchedule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-report-schedule",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/reports/schedules/{id}",
+		Summary:     "Update recipients and/or paused state",
+		Description: "Frequency is immutable; pause + delete + recreate to switch.",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.updateSchedule)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-report-schedule",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/reports/schedules/{id}",
+		Summary:     "Delete a recurring schedule",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.deleteSchedule)
 }

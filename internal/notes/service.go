@@ -75,6 +75,33 @@ func (s *Service) SetVerticalProvider(v VerticalProvider) {
 	s.verticals = v
 }
 
+// OnRecordingTranscribed satisfies audio.TranscriptListener. Called by
+// the audio TranscribeAudioWorker the instant a transcript lands on a
+// recording row. Looks up every note still in `extracting` status
+// bound to the recording and re-enqueues ExtractNoteArgs for each.
+//
+// UniqueOpts ByArgs collapses with the immediate enqueue from
+// CreateNote so the worker only runs once per (kind, NoteID) — the
+// listener is the trigger for the in-flight job to wake up rather
+// than a parallel run.
+func (s *Service) OnRecordingTranscribed(ctx context.Context, recordingID uuid.UUID) error {
+	ids, err := s.repo.ListExtractingNoteIDsByRecording(ctx, recordingID)
+	if err != nil {
+		return fmt.Errorf("notes.service.OnRecordingTranscribed: %w", err)
+	}
+	for _, id := range ids {
+		opts := &river.InsertOpts{
+			UniqueOpts: river.UniqueOpts{ByArgs: true},
+		}
+		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: id}, opts); err != nil {
+			// Log via wrapper, don't fail the whole batch — other notes
+			// for this recording still deserve a chance.
+			_ = err
+		}
+	}
+	return nil
+}
+
 // SetNoteCapEnforcer wires the note-cap pre-check + cascade evaluator.
 // Optional — leaving it nil disables enforcement (used by unit tests
 // that don't care about billing).
@@ -220,12 +247,20 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 	}
 
 	if !input.SkipExtraction {
-		// Delay extraction so the parallel TranscribeAudio job has a head start.
-		// Without this, ExtractNote almost always loses the race and burns its
-		// first attempt finding no transcript yet, then waits ~60s for River's
-		// first retry — a poor first-time UX. 8s is enough that on dev (Gemini
-		// transcribes a 15s clip in ~3-4s) extraction lands after transcription.
-		opts := &river.InsertOpts{ScheduledAt: domain.TimeNow().Add(8 * time.Second)}
+		// Enqueue extraction immediately. Two things keep this from
+		// burning a 60-second River retry on missing transcripts:
+		//   1. The audio TranscribeAudioWorker calls our
+		//      OnRecordingTranscribed listener the moment the transcript
+		//      lands → fires a UniqueOpts-deduplicated re-enqueue.
+		//   2. ExtractNoteWorker uses river.JobSnoozeError(3s) when the
+		//      transcript is missing rather than failing — backstop for
+		//      cases where the listener didn't fire (e.g. transcribe
+		//      worker crashed).
+		// UniqueOpts ByArgs collapses both enqueue paths to a single job
+		// per (kind, NoteID) so the worker only runs once per outcome.
+		opts := &river.InsertOpts{
+			UniqueOpts: river.UniqueOpts{ByArgs: true},
+		}
 		if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, opts); err != nil {
 			return nil, fmt.Errorf("notes.service.CreateNote: enqueue: %w", err)
 		}

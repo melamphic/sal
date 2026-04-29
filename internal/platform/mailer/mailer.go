@@ -35,6 +35,12 @@ type Mailer interface {
 	// SendNoteCapCSAlert pages the ops inbox when a clinic crosses
 	// 110% of its note cap. Fired once per billing period.
 	SendNoteCapCSAlert(ctx context.Context, opsEmail, clinicID, clinicName string, current, capLimit int, plan string) error
+
+	// SendComplianceReportReady delivers a compliance-report download
+	// link. Used by the report-scheduling pipeline once a scheduled
+	// report finishes generation. The download URL is a fresh presigned
+	// URL; the email body warns it expires in an hour.
+	SendComplianceReportReady(ctx context.Context, to, clinicName, reportType, periodStart, periodEnd, downloadURL string) error
 }
 
 // SMTPConfig holds the credentials for an SMTP connection.
@@ -110,6 +116,51 @@ func (m *SMTPMailer) SendNoteCapCSAlert(_ context.Context, opsEmail, clinicID, c
 		return fmt.Errorf("mailer.SendNoteCapCSAlert: send: %w", err)
 	}
 	return nil
+}
+
+// SendComplianceReportReady delivers the scheduled-report email.
+func (m *SMTPMailer) SendComplianceReportReady(_ context.Context, to, clinicName, reportType, periodStart, periodEnd, downloadURL string) error {
+	subject := fmt.Sprintf("Your scheduled %s for %s is ready", humaniseReportType(reportType), clinicName)
+	body, err := render(complianceReportReadyTemplate, map[string]string{
+		"ClinicName":   clinicName,
+		"ReportType":   humaniseReportType(reportType),
+		"PeriodStart":  periodStart,
+		"PeriodEnd":    periodEnd,
+		"DownloadURL":  downloadURL,
+	})
+	if err != nil {
+		return fmt.Errorf("mailer.SendComplianceReportReady: render: %w", err)
+	}
+	if err := m.send(to, subject, body); err != nil {
+		return fmt.Errorf("mailer.SendComplianceReportReady: send: %w", err)
+	}
+	return nil
+}
+
+// humaniseReportType — the report type slug is fine for engineers but
+// reads weirdly in an email. Map the known slugs to friendly names;
+// fallback strips underscores so unknown slugs still look reasonable.
+func humaniseReportType(slug string) string {
+	switch slug {
+	case "audit_pack":
+		return "Compliance Audit Pack"
+	case "controlled_drugs_register":
+		return "Controlled Drugs Register"
+	case "evidence_pack":
+		return "Evidence Pack"
+	case "records_audit":
+		return "Records Audit"
+	case "incidents_log":
+		return "Incidents Log"
+	default:
+		out := []rune(slug)
+		for i, r := range out {
+			if r == '_' {
+				out[i] = ' '
+			}
+		}
+		return string(out)
+	}
 }
 
 // SendInvite sends a clinic invitation email to a new staff member.
@@ -331,6 +382,27 @@ var inviteTemplate = template.Must(template.New("invite").Parse(`<!DOCTYPE html>
     </a>
   </p>
   <p style="color:#666;font-size:13px;">This invitation expires in 7 days.</p>
+  <hr style="border:none;border-top:1px solid #eee;margin:32px 0;">
+  <p style="color:#999;font-size:12px;">Salvia · Melamphic</p>
+</body>
+</html>`))
+
+// complianceReportReadyTemplate — scheduled-report delivery. Same visual
+// system as the invite template; the body call-to-action is a 1-hour
+// presigned download URL minted by the caller.
+var complianceReportReadyTemplate = template.Must(template.New("compliance_report_ready").Parse(`<!DOCTYPE html>
+<html>
+<body style="font-family: sans-serif; max-width: 520px; margin: 40px auto; color: #1a1a1a;">
+  <h2 style="color: #1A3B2A;">Your scheduled {{.ReportType}} is ready</h2>
+  <p>The latest <strong>{{.ReportType}}</strong> for <strong>{{.ClinicName}}</strong> has been generated and is ready to download.</p>
+  <p style="color:#444;">Period: <strong>{{.PeriodStart}}</strong> &mdash; <strong>{{.PeriodEnd}}</strong></p>
+  <p style="margin: 32px 0;">
+    <a href="{{.DownloadURL}}"
+       style="background:#1A3B2A;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600;">
+      Download report
+    </a>
+  </p>
+  <p style="color:#666;font-size:13px;">This download link expires in 1 hour. If it expires, sign in to Salvia and re-download from the Reports tab — the file itself is safely stored and the URL is regenerated on demand.</p>
   <hr style="border:none;border-top:1px solid #eee;margin:32px 0;">
   <p style="color:#999;font-size:12px;">Salvia · Melamphic</p>
 </body>

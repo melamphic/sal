@@ -185,7 +185,14 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 		return fmt.Errorf("extract_note: get transcript: %w", err)
 	}
 	if transcript == nil || *transcript == "" {
-		return fmt.Errorf("extract_note: transcript not ready yet, retrying")
+		// Transcript not yet persisted by the parallel TranscribeAudio
+		// job. Snooze for 3s instead of returning a plain error — River's
+		// default exponential backoff would otherwise wait ~60s for the
+		// first retry, which is a poor first-time UX. The audio worker
+		// also fires a listener that enqueues this job again on transcript
+		// completion (UniqueOpts collapses to a single attempt), so the
+		// snooze is a backstop, not the primary trigger.
+		return &rivertype.JobSnoozeError{Duration: 3 * time.Second}
 	}
 
 	// Fetch ASR word confidence index (nil for GeminiTranscriber — handled gracefully).

@@ -160,6 +160,19 @@ func (f *fakeRepo) CountNotesByRecording(_ context.Context, clinicID, recordingI
 	return count, nil
 }
 
+func (f *fakeRepo) ListExtractingNoteIDsByRecording(_ context.Context, recordingID uuid.UUID) ([]uuid.UUID, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []uuid.UUID
+	for _, n := range f.notes {
+		if n.RecordingID != nil && *n.RecordingID == recordingID &&
+			n.Status == domain.NoteStatusExtracting && n.ArchivedAt == nil {
+			out = append(out, n.ID)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

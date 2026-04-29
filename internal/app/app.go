@@ -23,9 +23,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/melamphic/sal/internal/admin"
+	"github.com/melamphic/sal/internal/aidrafts"
 	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/drugs"
+	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
+	"github.com/melamphic/sal/internal/consent"
+	"github.com/melamphic/sal/internal/incidents"
+	"github.com/melamphic/sal/internal/pain"
 	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
@@ -230,7 +237,34 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// All workers must be registered before river.NewClient is called.
 	workers := river.NewWorkers()
 	audioRepo := audio.NewRepository(db)
-	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, transcriber))
+	// Listeners that fan out the moment a transcript lands. Notes is wired
+	// today (replaces the 8s ScheduledAt race). Future modules — incidents,
+	// consent, pain — register their own AI extractors here. The listeners
+	// are lazy because the underlying services are constructed below; the
+	// inner pointer is set after the matching NewService call.
+	notesTranscriptListener := &lazyTranscriptListener{}
+	aiDraftsTranscriptListener := &lazyTranscriptListener{}
+	river.AddWorker(workers, audio.NewTranscribeAudioWorker(
+		audioRepo, store, transcriber,
+		notesTranscriptListener,
+		aiDraftsTranscriptListener,
+	))
+
+	// AI drafts repo + worker (registered before river.NewClient).
+	// Worker uses lazy adapters because the underlying drafters /
+	// clinic service / audio repo accessor are wired up below.
+	aiDraftsRepo := aidrafts.NewRepository(db)
+	aiDraftsRecordingAdapter := &aiDraftsRecordingAdapter{audioRepo: audioRepo}
+	aiDraftsClinicLookup := &lazyAIDraftsClinicLookup{}
+	aiDraftsIncidentDrafter := &lazyIncidentDrafter{}
+	aiDraftsConsentDrafter := &lazyConsentDrafter{}
+	river.AddWorker(workers, aidrafts.NewExtractAIDraftWorker(
+		aiDraftsRepo,
+		aiDraftsRecordingAdapter,
+		aiDraftsClinicLookup,
+		aiDraftsIncidentDrafter,
+		aiDraftsConsentDrafter,
+	))
 
 	// ── Forms repo (needed by extract worker adapter) ──────────────────────────
 	formsRepo := forms.NewRepository(db)
@@ -256,12 +290,26 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Reports repo + worker (registered before river.NewClient) ─────────────
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
+	// lazyEnqueuer is shared by every worker that needs to enqueue
+	// downstream jobs after river.NewClient binds (notes extraction,
+	// compliance fan-out, schedule firing). One instance, set once below.
+	lazy := &lazyEnqueuer{}
+	// Compliance PDF worker — uses the lazy data adapter because its
+	// dependencies (drugs / clinic / staff services) are constructed below,
+	// after river.NewClient. The lazy wrapper resolves at job-run time.
+	complianceData := &lazyComplianceData{}
+	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData, lazy))
+	// Schedule fire loop + email delivery worker (D2). lazy lets the fire
+	// loop enqueue compliance generation; the email worker depends on
+	// adapters wired after river.NewClient.
+	scheduleEmailMailer := &lazyMailer{}
+	scheduleClinicLookup := &lazyClinicNameLookup{}
+	river.AddWorker(workers, reports.NewFireDueReportSchedulesWorker(reportsRepo, lazy))
+	river.AddWorker(workers, reports.NewSendReportEmailWorker(reportsRepo, store, scheduleEmailMailer, scheduleClinicLookup))
 
 	// ── Notes workers (registered before river.NewClient) ─────────────────────
-	// lazyEnqueuer is set after river.NewClient so workers can enqueue downstream jobs.
 	notesRepo := notes.NewRepository(db)
 	policyRepo := policy.NewRepository(db)
-	lazy := &lazyEnqueuer{}
 	river.AddWorker(workers, notes.NewExtractNoteWorker(
 		notesRepo,
 		&formsFieldAdapter{repo: formsRepo},
@@ -292,16 +340,37 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	)
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(pdfRenderer))
 
+	// Periodic jobs — declared at construction time so River drives them
+	// without an external cron. Currently just the schedule fire-loop;
+	// new periodic work (D3 alerts digest, retention sweeps) registers
+	// alongside.
+	periodicJobs := []*river.PeriodicJob{
+		river.NewPeriodicJob(
+			river.PeriodicInterval(1*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return reports.FireDueReportSchedulesArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+	}
+
 	riverClient, err := river.NewClient(riverpgxv5.New(db), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 10},
 		},
-		Workers: workers,
+		Workers:      workers,
+		PeriodicJobs: periodicJobs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.Build: river client: %w", err)
 	}
 	lazy.client = riverClient
+
+	// Wire the lazy mailer + clinic-name lookup now that the underlying
+	// services exist (mailer is constructed at infra time; clinic.Service
+	// is one of the first domain services built).
+	scheduleEmailMailer.inner = m
+	scheduleClinicLookup.clinicSvc = clinicSvc
 
 	// ── Audio module ──────────────────────────────────────────────────────────
 	audioSvc := audio.NewService(audioRepo, store, riverClient)
@@ -324,6 +393,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Notes module ──────────────────────────────────────────────────────────
 	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
 	notesSvc.SetVerticalProvider(verticalStrings)
+	// Resolve the lazy transcript listener now that notes.Service exists.
+	// audio.TranscribeAudioWorker fans out to this on transcript completion;
+	// notesSvc.OnRecordingTranscribed re-enqueues ExtractNoteArgs (UniqueOpts
+	// dedupes against the immediate enqueue from CreateNote).
+	notesTranscriptListener.inner = notesSvc
 	// Wire per-clause policy checker if available (Gemini only for now).
 	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
 	if err != nil {
@@ -359,15 +433,93 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
 	policyHandler := policy.NewHandler(policySvc)
 
+	// ── Drugs module ──────────────────────────────────────────────────────────
+	// System catalog ships as embedded JSON files (one per vertical × country).
+	// On startup we parse + validate every file; a malformed catalog fails
+	// boot, by design — silently shipping a broken drug list is the wrong
+	// failure mode for a compliance feature.
+	drugCatalog, err := drugscatalog.NewLoader()
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: drugs catalog: %w", err)
+	}
+	log.Info("drugs: catalog loaded", "combos", len(drugCatalog.Manifest()))
+	drugsRepo := drugs.NewRepository(db)
+	drugsSvc := drugs.NewService(
+		drugsRepo,
+		drugCatalog,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsStaffPermAdapter{staffSvc: staffSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	drugsHandler := drugs.NewHandler(drugsSvc)
+
+	// ── Incidents module ─────────────────────────────────────────────────────
+	// Vertical-agnostic. SIRS/CQC classifier auto-stamps regulator deadlines
+	// for aged-care AU/UK; other (vertical, country) combos record without
+	// auto-classification. Reuses the drugs adapters for clinic lookup +
+	// subject-access logging — same shape, same dependencies.
+	incidentsRepo := incidents.NewRepository(db)
+	// drugsClinicLookupAdapter and drugsAccessLogAdapter satisfy
+	// incidents.ClinicLookup / SubjectAccessLogger structurally — same
+	// signatures across both modules, so a single adapter pair serves both.
+	incidentsSvc := incidents.NewService(
+		incidentsRepo,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	incidentsHandler := incidents.NewHandler(incidentsSvc)
+
+	// ── Consent module ───────────────────────────────────────────────────────
+	// Universal across all 16 (vertical × country) combos. Per-type expiry
+	// defaults applied server-side; clinics can override.
+	consentRepo := consent.NewRepository(db)
+	consentSvc := consent.NewService(
+		consentRepo,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	consentHandler := consent.NewHandler(consentSvc)
+
+	// ── Pain module ──────────────────────────────────────────────────────────
+	// Universal. Pain scale support: NRS / FLACC / PainAD / Wong-Baker /
+	// VRS / VAS. Clinicians pick the scale; the service has a recommendation
+	// helper keyed by vertical for the future "auto-select scale" UI.
+	painRepo := pain.NewRepository(db)
+	painSvc := pain.NewService(
+		painRepo,
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	painHandler := pain.NewHandler(painSvc)
+
+	// ── Admin dashboard ──────────────────────────────────────────────────────
+	// Aggregator over patient + drugs + incidents + consent + pain. No
+	// persistent state of its own. Permission gating ManageStaff |
+	// ManageBilling — admin-grade visibility.
+	adminSvc := admin.NewService(patientSvc, drugsSvc, incidentsSvc, consentSvc, painSvc)
+	adminHandler := admin.NewHandler(adminSvc)
+
+	// ── AI drafts module ────────────────────────────────────────────────────
+	// Audio → transcribe → AI fills typed fields. The worker is already
+	// registered above; here we build the service + handler and resolve
+	// the transcript-listener wire.
+	aiDraftsSvc := aidrafts.NewService(aiDraftsRepo, riverClient, aiDraftsRecordingAdapter)
+	aiDraftsHandler := aidrafts.NewHandler(aiDraftsSvc)
+	aiDraftsTranscriptListener.inner = aiDraftsSvc
+
 	// ── AI generation (forms + policies) ─────────────────────────────────────
 	// Provider is best-effort: missing API keys disable the feature without
 	// failing startup. The corresponding handlers detect a nil provider and
 	// skip route registration so the OpenAPI surface only advertises what
 	// will actually answer.
 	aigenClinicLookup := &aigenClinicLookupAdapter{clinicSvc: clinicSvc}
+	// Resolve the lazy clinic lookup used by the aidrafts worker (the
+	// worker was registered before clinicSvc existed).
+	aiDraftsClinicLookup.inner = aigenClinicLookup
 	var (
-		formAIGenHandler   *forms.AIGenHandler
-		policyAIGenHandler *policy.AIGenHandler
+		formAIGenHandler     *forms.AIGenHandler
+		policyAIGenHandler   *policy.AIGenHandler
+		consentAIGenHandler  *consent.AIGenHandler
+		incidentAIGenHandler *incidents.AIGenHandler
 	)
 	aigenProvider, aigenErr := aigen.NewProvider(aigen.FactoryConfig{
 		Provider:     cfg.AIGenProvider,
@@ -381,13 +533,23 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		log.Info("aigen: provider configured", "provider", aigenProvider.Name(), "model", aigenProvider.Model())
 		formGenSvc := aigen.NewFormGenService(aigenProvider, log)
 		policyGenSvc := aigen.NewPolicyGenService(aigenProvider, log)
+		consentDraftSvc := aigen.NewConsentDraftService(aigenProvider, log)
+		incidentDraftSvc := aigen.NewIncidentDraftService(aigenProvider, log)
 		// Per-IP rate limit on /generate. Generation is expensive and
 		// latency-bound; a tight bucket (0.1 rps, burst 3) blocks runaway
 		// scripts while leaving room for legitimate bursts (e.g., user
 		// retries after a typo). Cleanup goroutine reaps idle entries.
+		// Same store is reused across form / policy / consent / incident
+		// AI handlers — one bucket per IP regardless of which AI route is
+		// being hit.
 		aigenRateLimit := mw.NewRateLimiterStore(rate.Every(10*time.Second), 3)
 		formAIGenHandler = forms.NewAIGenHandler(formsSvc, formGenSvc, aigenClinicLookup, aigenRateLimit)
 		policyAIGenHandler = policy.NewAIGenHandler(policySvc, policyGenSvc, aigenClinicLookup, aigenRateLimit)
+		consentAIGenHandler = consent.NewAIGenHandler(consentDraftSvc, aigenClinicLookup, aigenRateLimit)
+		incidentAIGenHandler = incidents.NewAIGenHandler(incidentDraftSvc, aigenClinicLookup, aigenRateLimit)
+		// Resolve the lazy drafters used by the aidrafts River worker.
+		aiDraftsIncidentDrafter.inner = incidentDraftSvc
+		aiDraftsConsentDrafter.inner = consentDraftSvc
 	case errors.Is(aigenErr, aigen.ErrProviderNotConfigured):
 		log.Info("aigen: no provider configured — /generate routes disabled")
 	default:
@@ -395,7 +557,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 
 	// ── Reports module ────────────────────────────────────────────────────────
-	reportsSvc := reports.NewService(reportsRepo, riverClient)
+	// Build the real compliance data adapter now that drugs / clinic / staff
+	// are all constructed, and resolve the lazy wrapper used by the worker.
+	complianceData.inner = &complianceDataAdapter{
+		clinicSvc:    clinicSvc,
+		staffSvc:     staffSvc,
+		drugsSvc:     drugsSvc,
+		incidentsSvc: incidentsSvc,
+		consentSvc:   consentSvc,
+		painSvc:      painSvc,
+		patientRepo:  patientRepo,
+	}
+	reportsSvc := reports.NewService(reportsRepo, riverClient, complianceData)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
 
 	// ── Marketplace module ───────────────────────────────────────────────────
@@ -469,6 +642,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if policyAIGenHandler != nil {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
+	drugsHandler.Mount(r, api, jwtSecret)
+	incidentsHandler.Mount(r, api, jwtSecret)
+	if incidentAIGenHandler != nil {
+		incidentAIGenHandler.Mount(r, api, jwtSecret)
+	}
+	consentHandler.Mount(r, api, jwtSecret)
+	if consentAIGenHandler != nil {
+		consentAIGenHandler.Mount(r, api, jwtSecret)
+	}
+	painHandler.Mount(r, api, jwtSecret)
+	adminHandler.Mount(r, api, jwtSecret)
+	aiDraftsHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
@@ -929,6 +1114,132 @@ func logoExtForContentType(ct string) string {
 	return ""
 }
 
+// aiDraftsRecordingAdapter satisfies aidrafts.RecordingProvider by
+// reading the transcript via the existing system-internal getter on
+// audio.Repository (same one notes ExtractNoteWorker uses via
+// audioTranscriptAdapter — clinic scope is unnecessary here because the
+// worker only fires on a recording it was given by the system itself).
+type aiDraftsRecordingAdapter struct {
+	audioRepo *audio.Repository
+}
+
+func (a *aiDraftsRecordingAdapter) GetTranscript(ctx context.Context, recordingID uuid.UUID) (*string, error) {
+	t, err := a.audioRepo.GetTranscript(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("app.aiDraftsRecordingAdapter: %w", err)
+	}
+	return t, nil
+}
+
+// lazyAIDraftsClinicLookup forwards to an inner aigenClinicLookupAdapter
+// once clinic.Service is constructed. Same pattern as lazyComplianceData.
+type lazyAIDraftsClinicLookup struct {
+	inner *aigenClinicLookupAdapter
+}
+
+func (l *lazyAIDraftsClinicLookup) GetForAIGen(ctx context.Context, clinicID uuid.UUID) (string, string, string, error) {
+	if l.inner == nil {
+		return "", "", "", fmt.Errorf("app.lazyAIDraftsClinicLookup: not yet wired")
+	}
+	v, c, t, err := l.inner.GetForAIGen(ctx, clinicID)
+	if err != nil {
+		return "", "", "", fmt.Errorf("app.lazyAIDraftsClinicLookup: %w", err)
+	}
+	return v, c, t, nil
+}
+
+// lazyIncidentDrafter / lazyConsentDrafter — the aigen draft services
+// are constructed inside the AI-provider switch; nil when no provider
+// is configured. The worker is registered unconditionally but Marks
+// drafts failed when the drafter is nil.
+type lazyIncidentDrafter struct {
+	inner *aigen.IncidentDraftService
+}
+
+func (l *lazyIncidentDrafter) Generate(ctx context.Context, req aigen.IncidentDraftRequest) (*aigen.IncidentDraftResult, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyIncidentDrafter: AI provider not configured")
+	}
+	res, err := l.inner.Generate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyIncidentDrafter: %w", err)
+	}
+	return res, nil
+}
+
+type lazyConsentDrafter struct {
+	inner *aigen.ConsentDraftService
+}
+
+func (l *lazyConsentDrafter) Generate(ctx context.Context, req aigen.ConsentDraftRequest) (*aigen.ConsentDraftResult, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyConsentDrafter: AI provider not configured")
+	}
+	res, err := l.inner.Generate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyConsentDrafter: %w", err)
+	}
+	return res, nil
+}
+
+// lazyTranscriptListener wraps an audio.TranscriptListener for fan-out
+// from the audio TranscribeAudioWorker. The listener (typically
+// notes.Service.OnRecordingTranscribed) doesn't exist when the worker
+// is registered — this lazy wrapper resolves at job-run time.
+//
+// Listener errors are swallowed inside audio so a transient downstream
+// failure can't roll back transcript persistence; we still wrap with a
+// log-friendly error here for visibility in the worker logs.
+type lazyTranscriptListener struct {
+	inner audio.TranscriptListener
+}
+
+func (l *lazyTranscriptListener) OnRecordingTranscribed(ctx context.Context, recordingID uuid.UUID) error {
+	if l.inner == nil {
+		return fmt.Errorf("app.lazyTranscriptListener: not yet wired")
+	}
+	if err := l.inner.OnRecordingTranscribed(ctx, recordingID); err != nil {
+		return fmt.Errorf("app.lazyTranscriptListener.OnRecordingTranscribed: %w", err)
+	}
+	return nil
+}
+
+// lazyMailer wraps a mailer.Mailer for the schedule-email worker. The
+// mailer is part of the early infra construction so we usually have it
+// before workers register; the lazy wrapper exists just to keep the
+// pattern consistent with the other lazyXxx adapters and to give us a
+// place to no-op when scheduled email is disabled.
+type lazyMailer struct {
+	inner reports.EmailWorkerMailer
+}
+
+func (l *lazyMailer) SendComplianceReportReady(ctx context.Context, to, clinicName, reportType, periodStart, periodEnd, downloadURL string) error {
+	if l.inner == nil {
+		return fmt.Errorf("app.lazyMailer: not yet wired")
+	}
+	if err := l.inner.SendComplianceReportReady(ctx, to, clinicName, reportType, periodStart, periodEnd, downloadURL); err != nil {
+		return fmt.Errorf("app.lazyMailer.SendComplianceReportReady: %w", err)
+	}
+	return nil
+}
+
+// lazyClinicNameLookup wraps clinic.Service.GetByID for the email worker
+// to resolve clinic display names. Same pattern as lazyComplianceData.
+type lazyClinicNameLookup struct {
+	clinicSvc *clinic.Service
+}
+
+func (l *lazyClinicNameLookup) GetClinicNameForEmail(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	if l.clinicSvc == nil {
+		return "", fmt.Errorf("app.lazyClinicNameLookup: not yet wired")
+	}
+	c, err := l.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.lazyClinicNameLookup.GetClinicNameForEmail: %w", err)
+	}
+	return c.Name, nil
+}
+
 // lazyEnqueuer wraps a *river.Client that is set after river.NewClient returns.
 // Workers registered before the client is created use this to enqueue downstream jobs.
 type lazyEnqueuer struct {
@@ -1117,6 +1428,615 @@ func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, c
 		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
 	}
 	return c.Vertical, nil
+}
+
+// drugsClinicLookupAdapter satisfies drugs.ClinicLookup. Returns the
+// clinic's vertical + country from clinic.Service.GetByID.
+type drugsClinicLookupAdapter struct {
+	clinicSvc *clinic.Service
+}
+
+func (a *drugsClinicLookupAdapter) GetVerticalAndCountry(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.drugsClinicLookupAdapter: %w", err)
+	}
+	return string(c.Vertical), c.Country, nil
+}
+
+// drugsStaffPermAdapter satisfies drugs.StaffPermLookup. v1 maps every
+// "perm_*_drug*" name back onto the existing domain.Permissions struct
+// fields — the JWT path doesn't yet ship the granular drug perms shipped
+// in migration 00062.
+type drugsStaffPermAdapter struct {
+	staffSvc *staff.Service
+}
+
+func (a *drugsStaffPermAdapter) HasPermission(ctx context.Context, staffID, clinicID uuid.UUID, name string) (bool, error) {
+	s, err := a.staffSvc.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.drugsStaffPermAdapter: %w", err)
+	}
+	switch name {
+	case "perm_witness_controlled_drugs", "perm_dispense_controlled_drugs":
+		return s.Permissions.Dispense, nil
+	case "perm_manage_drug_shelf":
+		return s.Permissions.ManagePatients, nil
+	case "perm_reconcile_drugs":
+		return s.Permissions.GenerateAuditExport, nil
+	default:
+		return false, nil
+	}
+}
+
+// lazyComplianceData wraps a reports.ComplianceDataSource that's set after
+// the river client is constructed. The compliance PDF worker is registered
+// before drugs / clinic / staff services exist; this lazy wrapper lets the
+// worker compile-time bind to the data source without forcing all those
+// services to be created earlier.
+type lazyComplianceData struct {
+	inner reports.ComplianceDataSource
+}
+
+func (l *lazyComplianceData) GetClinic(ctx context.Context, clinicID uuid.UUID) (*reports.ClinicSnapshot, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	c, err := l.inner.GetClinic(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.GetClinic: %w", err)
+	}
+	return c, nil
+}
+func (l *lazyComplianceData) GetStaffName(ctx context.Context, clinicID, staffID uuid.UUID) (string, error) {
+	if l.inner == nil {
+		return "", fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	name, err := l.inner.GetStaffName(ctx, clinicID, staffID)
+	if err != nil {
+		return "", fmt.Errorf("app.lazyComplianceData.GetStaffName: %w", err)
+	}
+	return name, nil
+}
+func (l *lazyComplianceData) ListControlledDrugOps(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugOpView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	ops, err := l.inner.ListControlledDrugOps(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListControlledDrugOps: %w", err)
+	}
+	return ops, nil
+}
+func (l *lazyComplianceData) ListReconciliationsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugReconciliationView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	recs, err := l.inner.ListReconciliationsInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListReconciliationsInPeriod: %w", err)
+	}
+	return recs, nil
+}
+func (l *lazyComplianceData) CountNotesByStatus(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (map[string]int, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	counts, err := l.inner.CountNotesByStatus(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.CountNotesByStatus: %w", err)
+	}
+	return counts, nil
+}
+
+func (l *lazyComplianceData) ListIncidentsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.IncidentView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	out, err := l.inner.ListIncidentsInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListIncidentsInPeriod: %w", err)
+	}
+	return out, nil
+}
+
+func (l *lazyComplianceData) ConsentSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*reports.ConsentSummary, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	out, err := l.inner.ConsentSummaryInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ConsentSummaryInPeriod: %w", err)
+	}
+	return out, nil
+}
+
+func (l *lazyComplianceData) PainSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*reports.PainSummary, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	out, err := l.inner.PainSummaryInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.PainSummaryInPeriod: %w", err)
+	}
+	return out, nil
+}
+
+func (l *lazyComplianceData) ListSubjectAccessInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.SubjectAccessView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	out, err := l.inner.ListSubjectAccessInPeriod(ctx, clinicID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListSubjectAccessInPeriod: %w", err)
+	}
+	return out, nil
+}
+
+func (l *lazyComplianceData) ListControlledShelfSnapshot(ctx context.Context, clinicID uuid.UUID) ([]reports.ShelfSnapshotView, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyComplianceData: not yet wired")
+	}
+	out, err := l.inner.ListControlledShelfSnapshot(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyComplianceData.ListControlledShelfSnapshot: %w", err)
+	}
+	return out, nil
+}
+
+// complianceDataAdapter satisfies reports.ComplianceDataSource by wrapping
+// clinic.Service + drugs.Service + staff.Service + incidents.Service +
+// consent.Service + pain.Service + patient.Repository. Every cross-domain
+// access goes through these public services — reports never queries
+// another domain's tables directly. Subject_access_log is the one place
+// we fall through to the patient.Repository (no service-level read API)
+// because the HIPAA disclosure-log report is the only consumer.
+type complianceDataAdapter struct {
+	clinicSvc    *clinic.Service
+	staffSvc     *staff.Service
+	drugsSvc     *drugs.Service
+	incidentsSvc *incidents.Service
+	consentSvc   *consent.Service
+	painSvc      *pain.Service
+	patientRepo  *patient.Repository
+}
+
+func (a *complianceDataAdapter) GetClinic(ctx context.Context, clinicID uuid.UUID) (*reports.ClinicSnapshot, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.complianceDataAdapter.GetClinic: %w", err)
+	}
+	legal := ""
+	if c.LegalName != nil {
+		legal = *c.LegalName
+	}
+	email := c.Email
+	return &reports.ClinicSnapshot{
+		Name:      c.Name,
+		LegalName: legal,
+		Vertical:  string(c.Vertical),
+		Country:   c.Country,
+		Address:   c.Address,
+		Phone:     c.Phone,
+		Email:     &email,
+		License:   c.BusinessRegNo,
+	}, nil
+}
+
+func (a *complianceDataAdapter) GetStaffName(ctx context.Context, clinicID, staffID uuid.UUID) (string, error) {
+	s, err := a.staffSvc.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		// Don't fail the whole report on a single name miss; PDF degrades
+		// to the UUID short form.
+		return staffID.String()[:8], nil
+	}
+	return s.FullName, nil
+}
+
+// ListControlledDrugOps lists every drug operation in the period whose
+// underlying catalog entry is controlled (Schedule != "" + IsControlled
+// implied by witness rule). For v1 we filter inside the loop; future work
+// can push the filter into the drugs service.
+func (a *complianceDataAdapter) ListControlledDrugOps(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugOpView, error) {
+	// Page through the ledger.
+	out := []reports.DrugOpView{}
+	const pageSize = 200
+	offset := 0
+	for {
+		list, err := a.drugsSvc.ListOperations(ctx, clinicID, drugs.ListOperationsInput{
+			Limit:  pageSize,
+			Offset: offset,
+			Since:  &from,
+			Until:  &to,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.ListControlledDrugOps: %w", err)
+		}
+		for _, op := range list.Items {
+			view, ok := a.translateOp(ctx, clinicID, op)
+			if !ok {
+				continue
+			}
+			out = append(out, view)
+		}
+		if len(list.Items) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	return out, nil
+}
+
+// translateOp converts a drugs.OperationResponse into a reports.DrugOpView
+// and resolves shelf label + schedule from the catalog. Returns (_, false)
+// when the underlying drug isn't controlled — the register PDF only shows
+// controlled-drug ops.
+func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.UUID, op *drugs.OperationResponse) (reports.DrugOpView, bool) {
+	shelfID, err := uuid.Parse(op.ShelfID)
+	if err != nil {
+		return reports.DrugOpView{}, false
+	}
+	shelf, err := a.drugsSvc.GetShelfEntry(ctx, shelfID, clinicID)
+	if err != nil {
+		return reports.DrugOpView{}, false
+	}
+	if shelf.CatalogID == nil {
+		// Override drugs aren't controlled in v1.
+		return reports.DrugOpView{}, false
+	}
+	entry, err := a.drugsSvc.LookupCatalogEntry(ctx, clinicID, *shelf.CatalogID)
+	if err != nil || entry == nil || !entry.IsControlled {
+		return reports.DrugOpView{}, false
+	}
+	label := entry.Name
+	if shelf.Strength != nil {
+		label += " " + *shelf.Strength
+	}
+	schedule := entry.Schedule
+
+	createdAt, _ := time.Parse(time.RFC3339, op.CreatedAt)
+
+	administeredBy := op.AdministeredBy
+	if id, err := uuid.Parse(op.AdministeredBy); err == nil {
+		if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+			administeredBy = name
+		}
+	}
+
+	var witnessName *string
+	if op.WitnessedBy != nil {
+		if id, err := uuid.Parse(*op.WitnessedBy); err == nil {
+			if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+				witnessName = &name
+			} else {
+				witnessName = op.WitnessedBy
+			}
+		}
+	}
+
+	return reports.DrugOpView{
+		ID:             op.ID,
+		ShelfID:        op.ShelfID,
+		ShelfLabel:     label,
+		Operation:      op.Operation,
+		Quantity:       op.Quantity,
+		Unit:           op.Unit,
+		BalanceAfter:   op.BalanceAfter,
+		Dose:           op.Dose,
+		Route:          op.Route,
+		Reason:         op.ReasonIndication,
+		Schedule:       schedule,
+		BatchNumber:    shelf.BatchNumber,
+		Location:       shelf.Location,
+		SubjectID:      op.SubjectID,
+		AdministeredBy: administeredBy,
+		WitnessedBy:    witnessName,
+		CreatedAt:      createdAt,
+	}, true
+}
+
+func (a *complianceDataAdapter) ListReconciliationsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.DrugReconciliationView, error) {
+	list, err := a.drugsSvc.ListReconciliations(ctx, clinicID, drugs.ListReconciliationsInput{
+		Limit: 200,
+		Since: &from,
+		Until: &to,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.complianceDataAdapter.ListReconciliations: %w", err)
+	}
+	out := make([]reports.DrugReconciliationView, 0, len(list.Items))
+	for _, r := range list.Items {
+		shelfID, err := uuid.Parse(r.ShelfID)
+		if err != nil {
+			continue
+		}
+		shelf, err := a.drugsSvc.GetShelfEntry(ctx, shelfID, clinicID)
+		if err != nil {
+			continue
+		}
+		label := "(unknown drug)"
+		if shelf.CatalogID != nil {
+			if entry, err := a.drugsSvc.LookupCatalogEntry(ctx, clinicID, *shelf.CatalogID); err == nil && entry != nil {
+				label = entry.Name
+				if shelf.Strength != nil {
+					label += " " + *shelf.Strength
+				}
+			}
+		}
+		periodStart, _ := time.Parse(time.RFC3339, r.PeriodStart)
+		periodEnd, _ := time.Parse(time.RFC3339, r.PeriodEnd)
+		createdAt, _ := time.Parse(time.RFC3339, r.CreatedAt)
+		_ = createdAt
+
+		primary := r.ReconciledByPrimary
+		if id, err := uuid.Parse(r.ReconciledByPrimary); err == nil {
+			if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+				primary = name
+			}
+		}
+		var secondary *string
+		if r.ReconciledBySecondary != nil {
+			if id, err := uuid.Parse(*r.ReconciledBySecondary); err == nil {
+				if name, err := a.GetStaffName(ctx, clinicID, id); err == nil {
+					secondary = &name
+				} else {
+					secondary = r.ReconciledBySecondary
+				}
+			}
+		}
+
+		out = append(out, reports.DrugReconciliationView{
+			ID:                r.ID,
+			ShelfLabel:        label,
+			PeriodStart:       periodStart,
+			PeriodEnd:         periodEnd,
+			PhysicalCount:     r.PhysicalCount,
+			LedgerCount:       r.LedgerCount,
+			Discrepancy:       r.Discrepancy,
+			Status:            r.Status,
+			PrimarySignedBy:   primary,
+			SecondarySignedBy: secondary,
+			Explanation:       r.DiscrepancyExplanation,
+		})
+	}
+	return out, nil
+}
+
+// CountNotesByStatus is a v1 stub. The notes service doesn't yet expose a
+// status-aggregation method; the audit pack PDF degrades to a "no notes
+// recorded" message when the map is empty. TODO: wire to notes.Service.
+func (a *complianceDataAdapter) CountNotesByStatus(_ context.Context, _ uuid.UUID, _, _ time.Time) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
+// ListSubjectAccessInPeriod feeds the HIPAA disclosure-log report by
+// pulling the subject_access_log directly. Reports gets a clean view
+// type (no patient internals).
+func (a *complianceDataAdapter) ListSubjectAccessInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.SubjectAccessView, error) {
+	out := []reports.SubjectAccessView{}
+	const pageSize = 200
+	offset := 0
+	for {
+		page, err := a.patientRepo.ListSubjectAccessLog(ctx, clinicID, from, to, pageSize, offset)
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.ListSubjectAccessInPeriod: %w", err)
+		}
+		for _, rec := range page {
+			name, _ := a.GetStaffName(ctx, clinicID, rec.StaffID)
+			out = append(out, reports.SubjectAccessView{
+				SubjectID: rec.SubjectID.String(),
+				StaffName: name,
+				Action:    string(rec.Action),
+				Purpose:   rec.Purpose,
+				At:        rec.At,
+			})
+		}
+		if len(page) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	return out, nil
+}
+
+// ListControlledShelfSnapshot feeds the DEA biennial-inventory report.
+// Filters the clinic's shelf to controlled-drug entries via the catalog
+// + projects the report-local view (label + schedule + balance).
+func (a *complianceDataAdapter) ListControlledShelfSnapshot(ctx context.Context, clinicID uuid.UUID) ([]reports.ShelfSnapshotView, error) {
+	list, err := a.drugsSvc.ListShelfEntries(ctx, clinicID, drugs.ListShelfInput{Limit: 200})
+	if err != nil {
+		return nil, fmt.Errorf("app.complianceDataAdapter.ListControlledShelfSnapshot: %w", err)
+	}
+	out := []reports.ShelfSnapshotView{}
+	for _, e := range list.Items {
+		if e.CatalogID == nil {
+			continue // override drugs aren't controlled in v1
+		}
+		entry, err := a.drugsSvc.LookupCatalogEntry(ctx, clinicID, *e.CatalogID)
+		if err != nil || entry == nil || !entry.IsControlled {
+			continue
+		}
+		label := entry.Name
+		if e.Strength != nil {
+			label += " " + *e.Strength
+		}
+		out = append(out, reports.ShelfSnapshotView{
+			DrugLabel:   label,
+			Schedule:    entry.Schedule,
+			Location:    e.Location,
+			BatchNumber: e.BatchNumber,
+			ExpiryDate:  e.ExpiryDate,
+			Balance:     e.Balance,
+			Unit:        e.Unit,
+			ParLevel:    e.ParLevel,
+		})
+	}
+	return out, nil
+}
+
+// ListIncidentsInPeriod pulls incidents from incidents.Service.ListIncidents
+// scoped to the period; translates the response shape into reports-local
+// IncidentView so the reports package never imports incidents internals.
+func (a *complianceDataAdapter) ListIncidentsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]reports.IncidentView, error) {
+	out := []reports.IncidentView{}
+	const pageSize = 200
+	offset := 0
+	for {
+		// staffID 0 → service skips the per-subject access log on bulk reads.
+		list, err := a.incidentsSvc.ListIncidents(ctx, clinicID, uuid.Nil, incidents.ListIncidentsParams{
+			Limit:  pageSize,
+			Offset: offset,
+			Since:  &from,
+			Until:  &to,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.ListIncidentsInPeriod: %w", err)
+		}
+		for _, inc := range list.Items {
+			out = append(out, translateIncident(inc))
+		}
+		if len(list.Items) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	return out, nil
+}
+
+func translateIncident(inc *incidents.IncidentResponse) reports.IncidentView {
+	occurred, _ := time.Parse(time.RFC3339, inc.OccurredAt)
+	view := reports.IncidentView{
+		ID:            inc.ID,
+		IncidentType:  inc.IncidentType,
+		Severity:      inc.Severity,
+		Status:        inc.Status,
+		OccurredAt:    occurred,
+		CQCNotifiable: inc.CQCNotifiable,
+	}
+	if inc.SIRSPriority != nil {
+		view.SIRSPriority = *inc.SIRSPriority
+	}
+	if inc.NotificationDeadline != nil {
+		t, _ := time.Parse(time.RFC3339, *inc.NotificationDeadline)
+		view.NotificationDeadline = &t
+	}
+	if inc.RegulatorNotifiedAt != nil {
+		t, _ := time.Parse(time.RFC3339, *inc.RegulatorNotifiedAt)
+		view.RegulatorNotifiedAt = &t
+	}
+	return view
+}
+
+// ConsentSummaryInPeriod aggregates consent activity for the period from
+// consent.Service.ListConsents. Pages through the result set so the
+// summary scales beyond the default page size.
+func (a *complianceDataAdapter) ConsentSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*reports.ConsentSummary, error) {
+	summary := &reports.ConsentSummary{ByType: map[string]int{}}
+	now := time.Now()
+	expiringCutoff := now.Add(30 * 24 * time.Hour)
+
+	const pageSize = 200
+	offset := 0
+	for {
+		list, err := a.consentSvc.ListConsents(ctx, clinicID, uuid.Nil, consent.ListConsentParams{
+			Limit:  pageSize,
+			Offset: offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.ConsentSummaryInPeriod: %w", err)
+		}
+		for _, c := range list.Items {
+			captured, err := time.Parse(time.RFC3339, c.CapturedAt)
+			if err != nil {
+				continue
+			}
+			if captured.Before(from) || captured.After(to) {
+				continue
+			}
+			summary.Total++
+			summary.ByType[c.ConsentType]++
+			if c.WithdrawalAt != nil {
+				summary.Withdrawn++
+			}
+			if c.CapturedVia == "verbal_clinic" && c.WitnessID != nil {
+				summary.VerbalWitnessed++
+			}
+			if c.ExpiresAt != nil {
+				if t, err := time.Parse(time.RFC3339, *c.ExpiresAt); err == nil {
+					if t.After(now) && t.Before(expiringCutoff) {
+						summary.ExpiringIn30d++
+					}
+				}
+			}
+		}
+		if len(list.Items) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	return summary, nil
+}
+
+// PainSummaryInPeriod aggregates pain assessments via pain.Service.
+func (a *complianceDataAdapter) PainSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*reports.PainSummary, error) {
+	summary := &reports.PainSummary{ScalesUsed: map[string]int{}}
+	const pageSize = 200
+	offset := 0
+	var totalScore int
+	for {
+		list, err := a.painSvc.ListPainScores(ctx, clinicID, uuid.Nil, pain.ListPainScoresInput{
+			Limit:  pageSize,
+			Offset: offset,
+			Since:  &from,
+			Until:  &to,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("app.complianceDataAdapter.PainSummaryInPeriod: %w", err)
+		}
+		for _, p := range list.Items {
+			summary.Count++
+			totalScore += p.Score
+			if p.Score > summary.HighestScore {
+				summary.HighestScore = p.Score
+			}
+			summary.ScalesUsed[p.PainScaleUsed]++
+		}
+		if len(list.Items) < pageSize {
+			break
+		}
+		offset += pageSize
+	}
+	if summary.Count > 0 {
+		summary.AvgScore = float64(totalScore) / float64(summary.Count)
+	}
+	return summary, nil
+}
+
+// drugsAccessLogAdapter satisfies drugs.SubjectAccessLogger. Wraps the
+// patient repository's CreateSubjectAccessLog so the drugs service can
+// trace every drug-history view + every administer/dispense touch on
+// PII without importing patient types directly.
+type drugsAccessLogAdapter struct {
+	patientRepo *patient.Repository
+}
+
+func (a *drugsAccessLogAdapter) LogAccess(ctx context.Context, clinicID, subjectID, staffID uuid.UUID, action, purpose string) error {
+	var purposePtr *string
+	if purpose != "" {
+		purposePtr = &purpose
+	}
+	_, err := a.patientRepo.CreateSubjectAccessLog(ctx, patient.CreateSubjectAccessLogParams{
+		ID:        domain.NewID(),
+		SubjectID: subjectID,
+		StaffID:   staffID,
+		ClinicID:  clinicID,
+		Action:    domain.SubjectAccessAction(action),
+		Purpose:   purposePtr,
+	})
+	if err != nil {
+		return fmt.Errorf("app.drugsAccessLogAdapter: %w", err)
+	}
+	return nil
 }
 
 // aigenClinicLookupAdapter satisfies forms.AIGenClinicLookup AND

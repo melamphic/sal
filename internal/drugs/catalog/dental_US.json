@@ -1,0 +1,107 @@
+{
+  "vertical": "dental",
+  "country": "US",
+  "version": "2026-04-29",
+  "source": "Curated subset per FDA + DEA Controlled Substances Act schedules (CII-CV). State licensure required for prescriptive authority.",
+  "entries": [
+    {
+      "id": "dental.US.lidocaine-epinephrine.injectable.20mg",
+      "name": "Lidocaine 2% with Epinephrine",
+      "active_ingredient": "Lidocaine HCl + Epinephrine",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["20 mg/mL + 1:100,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration", "block"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.US.articaine-epinephrine.injectable.40mg",
+      "name": "Articaine 4% with Epinephrine",
+      "active_ingredient": "Articaine HCl + Epinephrine",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg/mL + 1:100,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration"],
+      "brand_names": ["Septocaine"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.US.midazolam.injectable.5mgml",
+      "name": "Midazolam",
+      "active_ingredient": "Midazolam hydrochloride",
+      "schedule": "CIV",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "intranasal"],
+      "default_unit": "mL",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "dental.US.diazepam.tablet.5mg",
+      "name": "Diazepam",
+      "active_ingredient": "Diazepam",
+      "schedule": "CIV",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "dental.US.hydrocodone-acetaminophen.tablet.5-325",
+      "name": "Hydrocodone/Acetaminophen",
+      "active_ingredient": "Hydrocodone bitartrate + Acetaminophen",
+      "schedule": "CII",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg / 325 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Norco", "Vicodin"],
+      "default_unit": "tablet",
+      "notes": "DEA CII. Two-person witness for inventory; state PDMP query required.",
+      "controls": {"witness_required": true, "witnesses_required_count": 2, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "dental.US.amoxicillin.capsule.500mg",
+      "name": "Amoxicillin",
+      "active_ingredient": "Amoxicillin",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "default_unit": "capsule",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.US.clindamycin.capsule.300mg",
+      "name": "Clindamycin",
+      "active_ingredient": "Clindamycin hydrochloride",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["300 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "default_unit": "capsule",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.US.ibuprofen.tablet.600mg",
+      "name": "Ibuprofen",
+      "active_ingredient": "Ibuprofen",
+      "schedule": "Rx",
+      "regulatory_class": "prescription",
+      "common_strengths": ["600 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

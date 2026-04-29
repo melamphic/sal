@@ -90,8 +90,47 @@ func openaiSchemaFor(name string) (any, string, error) {
 		return openaiFormSchema(), "GeneratedForm", nil
 	case SchemaPolicy:
 		return openaiPolicySchema(), "GeneratedPolicy", nil
+	case SchemaConsentDraft:
+		return openaiConsentDraftSchema(), "GeneratedConsentDraft", nil
+	case SchemaIncidentDraft:
+		return openaiIncidentDraftSchema(), "GeneratedIncidentDraft", nil
 	default:
 		return nil, "", fmt.Errorf("%w: %s", ErrUnknownSchema, name)
+	}
+}
+
+func openaiConsentDraftSchema() jsonSchema {
+	return jsonSchema{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             []string{"risks_discussed", "alternatives_discussed"},
+		"properties": jsonSchema{
+			"risks_discussed":        jsonSchema{"type": "string", "maxLength": 4000},
+			"alternatives_discussed": jsonSchema{"type": "string", "maxLength": 4000},
+		},
+	}
+}
+
+func openaiIncidentDraftSchema() jsonSchema {
+	return jsonSchema{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required": []string{
+			"incident_type", "severity", "brief_description",
+			"immediate_actions", "witnesses_text", "subject_outcome", "location",
+		},
+		"properties": jsonSchema{
+			// Strict-mode JSON schema requires every property to be in
+			// `required`; nullable optional fields use the [type, "null"]
+			// shape (matches the form schema pattern).
+			"incident_type":     jsonSchema{"type": "string", "maxLength": 64},
+			"severity":          jsonSchema{"type": "string", "maxLength": 16},
+			"brief_description": jsonSchema{"type": "string", "maxLength": 2000},
+			"immediate_actions": jsonSchema{"type": []string{"string", "null"}, "maxLength": 2000},
+			"witnesses_text":    jsonSchema{"type": []string{"string", "null"}, "maxLength": 2000},
+			"subject_outcome":   jsonSchema{"type": []string{"string", "null"}, "maxLength": 64},
+			"location":          jsonSchema{"type": []string{"string", "null"}, "maxLength": 200},
+		},
 	}
 }
 

@@ -1,0 +1,105 @@
+{
+  "vertical": "dental",
+  "country": "AU",
+  "version": "2026-04-29",
+  "source": "Curated subset per AU Poisons Standard schedules (S2/S3/S4/S8). DBA / TGA aligned.",
+  "entries": [
+    {
+      "id": "dental.AU.lidocaine-adrenaline.injectable.20mg",
+      "name": "Lidocaine 2% with Adrenaline",
+      "active_ingredient": "Lidocaine HCl + Adrenaline",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["20 mg/mL + 1:80,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration", "block"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.AU.articaine-adrenaline.injectable.40mg",
+      "name": "Articaine 4% with Adrenaline",
+      "active_ingredient": "Articaine HCl + Adrenaline",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg/mL + 1:100,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.AU.midazolam.injectable.5mgml",
+      "name": "Midazolam",
+      "active_ingredient": "Midazolam hydrochloride",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "intranasal"],
+      "default_unit": "mL",
+      "notes": "S4 in AU (S8 only when used for prolonged sedation in some states — verify state schedule).",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "dental.AU.diazepam.tablet.5mg",
+      "name": "Diazepam",
+      "active_ingredient": "Diazepam",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "dental.AU.amoxicillin.capsule.500mg",
+      "name": "Amoxicillin",
+      "active_ingredient": "Amoxicillin",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "default_unit": "capsule",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.AU.metronidazole.tablet.400mg",
+      "name": "Metronidazole",
+      "active_ingredient": "Metronidazole",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.AU.ibuprofen.tablet.400mg",
+      "name": "Ibuprofen",
+      "active_ingredient": "Ibuprofen",
+      "schedule": "S2",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.AU.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "Unscheduled",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

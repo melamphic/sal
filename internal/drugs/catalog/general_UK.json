@@ -1,0 +1,120 @@
+{
+  "vertical": "general",
+  "country": "UK",
+  "version": "2026-04-29",
+  "source": "Curated subset per UK BNF + Misuse of Drugs Regulations 2001 (CD2-CD5).",
+  "entries": [
+    {
+      "id": "general.UK.morphine.injectable.10mgml",
+      "name": "Morphine sulphate",
+      "active_ingredient": "Morphine sulphate",
+      "schedule": "CD2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "SC", "IM"],
+      "default_unit": "mL",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.UK.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "CD2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["OxyContin", "OxyNorm"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.UK.fentanyl.patch.25mcgh",
+      "name": "Fentanyl transdermal",
+      "active_ingredient": "Fentanyl",
+      "schedule": "CD2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["25 mcg/h"],
+      "form": "patch",
+      "common_routes": ["transdermal"],
+      "default_unit": "patch",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.UK.tramadol.capsule.50mg",
+      "name": "Tramadol",
+      "active_ingredient": "Tramadol hydrochloride",
+      "schedule": "CD3",
+      "regulatory_class": "controlled",
+      "common_strengths": ["50 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "default_unit": "capsule",
+      "notes": "Schedule 3 CD per MDR 2001 (reclassified 2014). CD register required.",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "general.UK.amoxicillin-clavulanate.tablet.625mg",
+      "name": "Co-amoxiclav",
+      "active_ingredient": "Amoxicillin + clavulanic acid",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["625 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Augmentin"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.UK.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.UK.salbutamol.inhaler.100mcg",
+      "name": "Salbutamol inhaler",
+      "active_ingredient": "Salbutamol sulphate",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["100 mcg/dose"],
+      "form": "inhaler",
+      "common_routes": ["inhalation"],
+      "brand_names": ["Ventolin"],
+      "default_unit": "dose",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.UK.prednisolone.tablet.5mg",
+      "name": "Prednisolone",
+      "active_ingredient": "Prednisolone",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.UK.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "GSL",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

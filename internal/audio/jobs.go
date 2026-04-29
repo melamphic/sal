@@ -26,6 +26,22 @@ type TranscribeAudioArgs struct {
 // Kind returns the unique job kind string River uses to route jobs to workers.
 func (TranscribeAudioArgs) Kind() string { return "transcribe_audio" }
 
+// TranscriptListener is fired by the TranscribeAudioWorker the moment a
+// transcript lands on the recording row. Downstream modules (notes,
+// incidents, consent, pain) implement this to enqueue their own AI
+// extraction without polling. Replaces the 8-second-guess-and-race
+// pattern that lived in notes.Service.CreateNote.
+//
+// Listeners run synchronously inside the worker — keep the impl narrow
+// (typically: look up "is there a draft of mine waiting for this
+// recording?" and Insert a downstream River job). Listener errors are
+// swallowed so a downstream registration failure doesn't roll back the
+// transcript persistence; downstream modules are responsible for their
+// own retry path via River.
+type TranscriptListener interface {
+	OnRecordingTranscribed(ctx context.Context, recordingID uuid.UUID) error
+}
+
 // TranscribeAudioWorker is the River worker that transcribes an uploaded audio
 // file and stores the result on the recording row.
 // The transcription provider is injected — Deepgram in production, Gemini in dev.
@@ -37,13 +53,15 @@ type TranscribeAudioWorker struct {
 	river.WorkerDefaults[TranscribeAudioArgs]
 	repo        repo
 	store       blobStore
-	transcriber Transcriber // nil = skip transcription (no provider configured)
+	transcriber Transcriber          // nil = skip transcription (no provider configured)
+	listeners   []TranscriptListener // fan-out after transcript is persisted
 }
 
 // NewTranscribeAudioWorker constructs a TranscribeAudioWorker.
 // Pass nil for transcriber to skip transcription gracefully (dev without any API key).
-func NewTranscribeAudioWorker(r repo, store blobStore, transcriber Transcriber) *TranscribeAudioWorker {
-	return &TranscribeAudioWorker{repo: r, store: store, transcriber: transcriber}
+// Listeners can be empty; downstream extractors register via app.go wiring.
+func NewTranscribeAudioWorker(r repo, store blobStore, transcriber Transcriber, listeners ...TranscriptListener) *TranscribeAudioWorker {
+	return &TranscribeAudioWorker{repo: r, store: store, transcriber: transcriber, listeners: listeners}
 }
 
 // Work is called by River for each TranscribeAudio job.
@@ -75,6 +93,14 @@ func (w *TranscribeAudioWorker) Work(ctx context.Context, job *river.Job[Transcr
 
 	if _, err := w.repo.UpdateRecordingTranscript(ctx, recID, result.Transcript, result.DurationSeconds, result.WordConfidences); err != nil {
 		return fmt.Errorf("transcribe_audio: save transcript: %w", err)
+	}
+
+	// Fan-out to downstream listeners (notes / incidents / consent / pain
+	// AI extractors). The transcript is the load-bearing side effect —
+	// listener errors don't roll back transcription. Each listener owns
+	// its own retry path via River.
+	for _, l := range w.listeners {
+		_ = l.OnRecordingTranscribed(ctx, recID)
 	}
 
 	return nil
