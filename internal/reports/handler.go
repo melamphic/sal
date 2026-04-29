@@ -368,6 +368,108 @@ func (h *Handler) downloadComplianceReport(ctx context.Context, input *complianc
 	}, nil
 }
 
+// ── Schedule handlers ────────────────────────────────────────────────────────
+
+type scheduleHTTPResponse struct {
+	Body *ReportScheduleResponse
+}
+
+type scheduleListHTTPResponse struct {
+	Body *ReportScheduleListResponse
+}
+
+type createScheduleBody struct {
+	Body struct {
+		ReportType string   `json:"report_type" doc:"Slug — see SupportedComplianceReportTypes."`
+		Frequency  string   `json:"frequency"   enum:"daily,weekly,monthly,quarterly"`
+		Recipients []string `json:"recipients"  minItems:"1" doc:"At least one email address."`
+	}
+}
+
+func (h *Handler) createSchedule(ctx context.Context, input *createScheduleBody) (*scheduleHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+	resp, err := h.svc.CreateReportSchedule(ctx, CreateReportScheduleInput{
+		ClinicID:   clinicID,
+		StaffID:    staffID,
+		ReportType: input.Body.ReportType,
+		Frequency:  input.Body.Frequency,
+		Recipients: input.Body.Recipients,
+	})
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &scheduleHTTPResponse{Body: resp}, nil
+}
+
+type schedulesEmptyInput struct{}
+
+func (h *Handler) listSchedules(ctx context.Context, _ *schedulesEmptyInput) (*scheduleListHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	resp, err := h.svc.ListReportSchedules(ctx, clinicID)
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &scheduleListHTTPResponse{Body: resp}, nil
+}
+
+type scheduleIDPath struct {
+	ID string `path:"id"`
+}
+
+func (h *Handler) getSchedule(ctx context.Context, input *scheduleIDPath) (*scheduleHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	resp, err := h.svc.GetReportSchedule(ctx, id, clinicID)
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &scheduleHTTPResponse{Body: resp}, nil
+}
+
+type updateScheduleBody struct {
+	ID   string `path:"id"`
+	Body struct {
+		Recipients *[]string `json:"recipients,omitempty"`
+		Paused     *bool     `json:"paused,omitempty"`
+	}
+}
+
+func (h *Handler) updateSchedule(ctx context.Context, input *updateScheduleBody) (*scheduleHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	resp, err := h.svc.UpdateReportSchedule(ctx, UpdateReportScheduleInput{
+		ID:         id,
+		ClinicID:   clinicID,
+		Recipients: input.Body.Recipients,
+		Paused:     input.Body.Paused,
+	})
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &scheduleHTTPResponse{Body: resp}, nil
+}
+
+type deleteScheduleEmpty struct{}
+
+func (h *Handler) deleteSchedule(ctx context.Context, input *scheduleIDPath) (*deleteScheduleEmpty, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	if err := h.svc.DeleteReportSchedule(ctx, id, clinicID); err != nil {
+		return nil, mapReportError(err)
+	}
+	return &deleteScheduleEmpty{}, nil
+}
+
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
 func mapReportError(err error) error {
