@@ -73,6 +73,42 @@ func geminiFormSchema() *genai.Schema {
 	}
 }
 
+// geminiConsentDraftSchema returns the Gemini ResponseSchema for
+// SchemaConsentDraft. Two free-text fields — risks and alternatives.
+// Tiny state-count footprint, no enum / array / length bounds needed.
+// The clinician edits both before submit; this is a draft surface only.
+func geminiConsentDraftSchema() *genai.Schema {
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"risks_discussed":        {Type: genai.TypeString},
+			"alternatives_discussed": {Type: genai.TypeString},
+		},
+		Required: []string{"risks_discussed", "alternatives_discussed"},
+	}
+}
+
+// geminiIncidentDraftSchema returns the Gemini ResponseSchema for
+// SchemaIncidentDraft. Output is a typed sketch of the incident — type,
+// severity, brief description, and optional context fields. No enum
+// constraints in the schema itself (state-cap budget); the incidents
+// service validates the type + severity strings before persisting.
+func geminiIncidentDraftSchema() *genai.Schema {
+	return &genai.Schema{
+		Type: genai.TypeObject,
+		Properties: map[string]*genai.Schema{
+			"incident_type":     {Type: genai.TypeString},
+			"severity":          {Type: genai.TypeString},
+			"brief_description": {Type: genai.TypeString},
+			"immediate_actions": {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+			"witnesses_text":    {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+			"subject_outcome":   {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+			"location":          {Type: genai.TypeString, Nullable: genai.Ptr(true)},
+		},
+		Required: []string{"incident_type", "severity", "brief_description"},
+	}
+}
+
 // geminiPolicySchema returns the Gemini ResponseSchema for SchemaPolicy.
 // Same constraint-budget reasoning as geminiFormSchema — see that doc.
 // Parity enum is enforced by the validator (policy/schema.IsValidParity),
