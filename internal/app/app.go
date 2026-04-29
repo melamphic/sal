@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/melamphic/sal/internal/admin"
+	"github.com/melamphic/sal/internal/aidrafts"
 	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
@@ -236,7 +237,34 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// All workers must be registered before river.NewClient is called.
 	workers := river.NewWorkers()
 	audioRepo := audio.NewRepository(db)
-	river.AddWorker(workers, audio.NewTranscribeAudioWorker(audioRepo, store, transcriber))
+	// Listeners that fan out the moment a transcript lands. Notes is wired
+	// today (replaces the 8s ScheduledAt race). Future modules — incidents,
+	// consent, pain — register their own AI extractors here. The listeners
+	// are lazy because the underlying services are constructed below; the
+	// inner pointer is set after the matching NewService call.
+	notesTranscriptListener := &lazyTranscriptListener{}
+	aiDraftsTranscriptListener := &lazyTranscriptListener{}
+	river.AddWorker(workers, audio.NewTranscribeAudioWorker(
+		audioRepo, store, transcriber,
+		notesTranscriptListener,
+		aiDraftsTranscriptListener,
+	))
+
+	// AI drafts repo + worker (registered before river.NewClient).
+	// Worker uses lazy adapters because the underlying drafters /
+	// clinic service / audio repo accessor are wired up below.
+	aiDraftsRepo := aidrafts.NewRepository(db)
+	aiDraftsRecordingAdapter := &aiDraftsRecordingAdapter{audioRepo: audioRepo}
+	aiDraftsClinicLookup := &lazyAIDraftsClinicLookup{}
+	aiDraftsIncidentDrafter := &lazyIncidentDrafter{}
+	aiDraftsConsentDrafter := &lazyConsentDrafter{}
+	river.AddWorker(workers, aidrafts.NewExtractAIDraftWorker(
+		aiDraftsRepo,
+		aiDraftsRecordingAdapter,
+		aiDraftsClinicLookup,
+		aiDraftsIncidentDrafter,
+		aiDraftsConsentDrafter,
+	))
 
 	// ── Forms repo (needed by extract worker adapter) ──────────────────────────
 	formsRepo := forms.NewRepository(db)
@@ -365,6 +393,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Notes module ──────────────────────────────────────────────────────────
 	notesSvc := notes.NewService(notesRepo, riverClient, eventAdapter, &formsFieldAdapter{repo: formsRepo})
 	notesSvc.SetVerticalProvider(verticalStrings)
+	// Resolve the lazy transcript listener now that notes.Service exists.
+	// audio.TranscribeAudioWorker fans out to this on transcript completion;
+	// notesSvc.OnRecordingTranscribed re-enqueues ExtractNoteArgs (UniqueOpts
+	// dedupes against the immediate enqueue from CreateNote).
+	notesTranscriptListener.inner = notesSvc
 	// Wire per-clause policy checker if available (Gemini only for now).
 	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
 	if err != nil {
@@ -465,12 +498,23 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	adminSvc := admin.NewService(patientSvc, drugsSvc, incidentsSvc, consentSvc, painSvc)
 	adminHandler := admin.NewHandler(adminSvc)
 
+	// ── AI drafts module ────────────────────────────────────────────────────
+	// Audio → transcribe → AI fills typed fields. The worker is already
+	// registered above; here we build the service + handler and resolve
+	// the transcript-listener wire.
+	aiDraftsSvc := aidrafts.NewService(aiDraftsRepo, riverClient, aiDraftsRecordingAdapter)
+	aiDraftsHandler := aidrafts.NewHandler(aiDraftsSvc)
+	aiDraftsTranscriptListener.inner = aiDraftsSvc
+
 	// ── AI generation (forms + policies) ─────────────────────────────────────
 	// Provider is best-effort: missing API keys disable the feature without
 	// failing startup. The corresponding handlers detect a nil provider and
 	// skip route registration so the OpenAPI surface only advertises what
 	// will actually answer.
 	aigenClinicLookup := &aigenClinicLookupAdapter{clinicSvc: clinicSvc}
+	// Resolve the lazy clinic lookup used by the aidrafts worker (the
+	// worker was registered before clinicSvc existed).
+	aiDraftsClinicLookup.inner = aigenClinicLookup
 	var (
 		formAIGenHandler     *forms.AIGenHandler
 		policyAIGenHandler   *policy.AIGenHandler
@@ -503,6 +547,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		policyAIGenHandler = policy.NewAIGenHandler(policySvc, policyGenSvc, aigenClinicLookup, aigenRateLimit)
 		consentAIGenHandler = consent.NewAIGenHandler(consentDraftSvc, aigenClinicLookup, aigenRateLimit)
 		incidentAIGenHandler = incidents.NewAIGenHandler(incidentDraftSvc, aigenClinicLookup, aigenRateLimit)
+		// Resolve the lazy drafters used by the aidrafts River worker.
+		aiDraftsIncidentDrafter.inner = incidentDraftSvc
+		aiDraftsConsentDrafter.inner = consentDraftSvc
 	case errors.Is(aigenErr, aigen.ErrProviderNotConfigured):
 		log.Info("aigen: no provider configured — /generate routes disabled")
 	default:
@@ -606,6 +653,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 	painHandler.Mount(r, api, jwtSecret)
 	adminHandler.Mount(r, api, jwtSecret)
+	aiDraftsHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
@@ -1064,6 +1112,96 @@ func logoExtForContentType(ct string) string {
 		return ".svg"
 	}
 	return ""
+}
+
+// aiDraftsRecordingAdapter satisfies aidrafts.RecordingProvider by
+// reading the transcript via the existing system-internal getter on
+// audio.Repository (same one notes ExtractNoteWorker uses via
+// audioTranscriptAdapter — clinic scope is unnecessary here because the
+// worker only fires on a recording it was given by the system itself).
+type aiDraftsRecordingAdapter struct {
+	audioRepo *audio.Repository
+}
+
+func (a *aiDraftsRecordingAdapter) GetTranscript(ctx context.Context, recordingID uuid.UUID) (*string, error) {
+	t, err := a.audioRepo.GetTranscript(ctx, recordingID)
+	if err != nil {
+		return nil, fmt.Errorf("app.aiDraftsRecordingAdapter: %w", err)
+	}
+	return t, nil
+}
+
+// lazyAIDraftsClinicLookup forwards to an inner aigenClinicLookupAdapter
+// once clinic.Service is constructed. Same pattern as lazyComplianceData.
+type lazyAIDraftsClinicLookup struct {
+	inner *aigenClinicLookupAdapter
+}
+
+func (l *lazyAIDraftsClinicLookup) GetForAIGen(ctx context.Context, clinicID uuid.UUID) (string, string, string, error) {
+	if l.inner == nil {
+		return "", "", "", fmt.Errorf("app.lazyAIDraftsClinicLookup: not yet wired")
+	}
+	v, c, t, err := l.inner.GetForAIGen(ctx, clinicID)
+	if err != nil {
+		return "", "", "", fmt.Errorf("app.lazyAIDraftsClinicLookup: %w", err)
+	}
+	return v, c, t, nil
+}
+
+// lazyIncidentDrafter / lazyConsentDrafter — the aigen draft services
+// are constructed inside the AI-provider switch; nil when no provider
+// is configured. The worker is registered unconditionally but Marks
+// drafts failed when the drafter is nil.
+type lazyIncidentDrafter struct {
+	inner *aigen.IncidentDraftService
+}
+
+func (l *lazyIncidentDrafter) Generate(ctx context.Context, req aigen.IncidentDraftRequest) (*aigen.IncidentDraftResult, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyIncidentDrafter: AI provider not configured")
+	}
+	res, err := l.inner.Generate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyIncidentDrafter: %w", err)
+	}
+	return res, nil
+}
+
+type lazyConsentDrafter struct {
+	inner *aigen.ConsentDraftService
+}
+
+func (l *lazyConsentDrafter) Generate(ctx context.Context, req aigen.ConsentDraftRequest) (*aigen.ConsentDraftResult, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyConsentDrafter: AI provider not configured")
+	}
+	res, err := l.inner.Generate(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyConsentDrafter: %w", err)
+	}
+	return res, nil
+}
+
+// lazyTranscriptListener wraps an audio.TranscriptListener for fan-out
+// from the audio TranscribeAudioWorker. The listener (typically
+// notes.Service.OnRecordingTranscribed) doesn't exist when the worker
+// is registered — this lazy wrapper resolves at job-run time.
+//
+// Listener errors are swallowed inside audio so a transient downstream
+// failure can't roll back transcript persistence; we still wrap with a
+// log-friendly error here for visibility in the worker logs.
+type lazyTranscriptListener struct {
+	inner audio.TranscriptListener
+}
+
+func (l *lazyTranscriptListener) OnRecordingTranscribed(ctx context.Context, recordingID uuid.UUID) error {
+	if l.inner == nil {
+		return fmt.Errorf("app.lazyTranscriptListener: not yet wired")
+	}
+	if err := l.inner.OnRecordingTranscribed(ctx, recordingID); err != nil {
+		return fmt.Errorf("app.lazyTranscriptListener.OnRecordingTranscribed: %w", err)
+	}
+	return nil
 }
 
 // lazyMailer wraps a mailer.Mailer for the schedule-email worker. The
