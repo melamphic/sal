@@ -99,6 +99,32 @@ type PainSummary struct {
 	ScalesUsed   map[string]int // pain_scale_used -> count
 }
 
+// SubjectAccessView — local view of a subject_access_log row. Used by
+// the HIPAA disclosure log report (US healthcare). Identifies the
+// subject + actor + action without leaking encrypted PII.
+type SubjectAccessView struct {
+	SubjectID string
+	StaffName string
+	Action    string
+	Purpose   *string
+	At        time.Time
+}
+
+// ShelfSnapshotView — point-in-time snapshot of one shelf entry. Used
+// by the DEA biennial-inventory report. Snapshot is the current balance
+// at report-generation time; the regulator wants the count, not a
+// historical reconstruction.
+type ShelfSnapshotView struct {
+	DrugLabel    string  // catalog name + strength
+	Schedule     string  // CII / CIII / CIV / etc.
+	Location     string
+	BatchNumber  *string
+	ExpiryDate   *string // YYYY-MM-DD
+	Balance      float64
+	Unit         string
+	ParLevel     *float64
+}
+
 // ComplianceDataSource is the dependency the PDF builders need. Implementers
 // (app.go adapters) wrap drugs.Service + clinic.Service + staff.Service and
 // translate to reports-local view types.
@@ -116,6 +142,10 @@ type ComplianceDataSource interface {
 	ListIncidentsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]IncidentView, error)
 	ConsentSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*ConsentSummary, error)
 	PainSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*PainSummary, error)
+
+	// Sources for Round-2 reports (hipaa_disclosure_log + dea_biennial_inventory).
+	ListSubjectAccessInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]SubjectAccessView, error)
+	ListControlledShelfSnapshot(ctx context.Context, clinicID uuid.UUID) ([]ShelfSnapshotView, error)
 }
 
 // ── Regulator context ────────────────────────────────────────────────────────
