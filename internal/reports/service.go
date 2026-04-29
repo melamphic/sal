@@ -21,11 +21,14 @@ type jobEnqueuer interface {
 type Service struct {
 	repo    *Repository
 	enqueue jobEnqueuer
+	data    ComplianceDataSource // optional — only required for compliance PDFs
 }
 
-// NewService constructs a reports Service.
-func NewService(repo *Repository, enqueue jobEnqueuer) *Service {
-	return &Service{repo: repo, enqueue: enqueue}
+// NewService constructs a reports Service. The compliance data source can be
+// nil for callers that only need the legacy CSV exports; compliance PDF
+// methods will return ErrValidation if invoked without it.
+func NewService(repo *Repository, enqueue jobEnqueuer, data ComplianceDataSource) *Service {
+	return &Service{repo: repo, enqueue: enqueue, data: data}
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -185,6 +188,250 @@ func (s *Service) GetReportJobRecord(ctx context.Context, jobID, clinicID uuid.U
 		return nil, fmt.Errorf("reports.service.GetReportJobRecord: %w", err)
 	}
 	return rec, nil
+}
+
+// ── Compliance reports (regulator-facing PDFs) ───────────────────────────────
+//
+// These methods drive the new `reports` table introduced by migration 00061.
+// One generic flow: clinic requests a typed report, a River job builds the
+// PDF, the report row stores file_key + sha256 hash. Download endpoint mints
+// a presigned URL and writes a row to report_audit.
+//
+// Report types are vertical- and country-agnostic by design — the (vertical,
+// country) the report is generated against is a property of the clinic, not
+// of the type. The PDF builder pulls regulator-specific labels from the
+// regulatorContexts registry in pdf.go.
+
+// SupportedComplianceReportTypes lists the report-type strings accepted by
+// RequestComplianceReport. Adding a new type means: pick a slug here, add a
+// case in the worker dispatch, optionally add a new builder. UI uses this
+// list to render the "request a report" picker.
+var SupportedComplianceReportTypes = []string{
+	"audit_pack",
+	"controlled_drugs_register",
+}
+
+// fileFormatForType — every type knows its native output format.
+var fileFormatForType = map[string]string{
+	"audit_pack":                "pdf",
+	"controlled_drugs_register": "pdf",
+}
+
+// ComplianceReportResponse is the API-safe representation of a compliance
+// report row.
+//
+//nolint:revive
+type ComplianceReportResponse struct {
+	ID            string  `json:"id"`
+	Type          string  `json:"type"`
+	Vertical      string  `json:"vertical"`
+	Country       string  `json:"country"`
+	PeriodStart   string  `json:"period_start"`
+	PeriodEnd     string  `json:"period_end"`
+	Status        string  `json:"status"`
+	FileFormat    string  `json:"file_format"`
+	FileSizeBytes *int64  `json:"file_size_bytes,omitempty"`
+	ReportHash    *string `json:"report_hash,omitempty"`
+	RequestedBy   string  `json:"requested_by"`
+	RequestedAt   string  `json:"requested_at"`
+	StartedAt     *string `json:"started_at,omitempty"`
+	CompletedAt   *string `json:"completed_at,omitempty"`
+	ErrorMessage  *string `json:"error_message,omitempty"`
+	DownloadURL   *string `json:"download_url,omitempty"` // present on download endpoint
+}
+
+// ComplianceReportListResponse — paginated.
+//
+//nolint:revive
+type ComplianceReportListResponse struct {
+	Items  []*ComplianceReportResponse `json:"items"`
+	Total  int                         `json:"total"`
+	Limit  int                         `json:"limit"`
+	Offset int                         `json:"offset"`
+}
+
+// RequestComplianceReportInput — service input for creating a new report.
+type RequestComplianceReportInput struct {
+	ClinicID    uuid.UUID
+	StaffID     uuid.UUID
+	Type        string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+}
+
+// ListComplianceReportsInput — filters.
+type ListComplianceReportsInput struct {
+	Limit  int
+	Offset int
+	Type   *string
+	Status *string
+	From   *time.Time
+	To     *time.Time
+}
+
+// RequestComplianceReport validates input, inserts a queued report row, and
+// enqueues a River job to generate the PDF asynchronously.
+func (s *Service) RequestComplianceReport(ctx context.Context, in RequestComplianceReportInput) (*ComplianceReportResponse, error) {
+	if s.data == nil {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: compliance data source not configured: %w", domain.ErrValidation)
+	}
+	if !isSupportedComplianceType(in.Type) {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: unsupported type %q: %w", in.Type, domain.ErrValidation)
+	}
+	if !in.PeriodEnd.After(in.PeriodStart) {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: period_end must be after period_start: %w", domain.ErrValidation)
+	}
+
+	clinic, err := s.data.GetClinic(ctx, in.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: clinic lookup: %w", err)
+	}
+
+	id := domain.NewID()
+	rec, err := s.repo.CreateComplianceReport(ctx, CreateComplianceReportParams{
+		ID:          id,
+		ClinicID:    in.ClinicID,
+		Type:        in.Type,
+		Vertical:    clinic.Vertical,
+		Country:     clinic.Country,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		FileFormat:  fileFormatFor(in.Type),
+		RequestedBy: in.StaffID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: insert: %w", err)
+	}
+
+	if _, err := s.enqueue.Insert(ctx, GenerateCompliancePDFArgs{
+		ReportID: id,
+		ClinicID: in.ClinicID,
+	}, nil); err != nil {
+		return nil, fmt.Errorf("reports.service.RequestComplianceReport: enqueue: %w", err)
+	}
+
+	// Append-only audit: who requested what.
+	if err := s.repo.LogReportAudit(ctx, LogReportAuditParams{
+		ID:       domain.NewID(),
+		ReportID: id,
+		ClinicID: in.ClinicID,
+		StaffID:  in.StaffID,
+		Action:   "generated",
+	}); err != nil {
+		// Don't fail the request — audit failure is loud-logged in repo.
+		_ = err
+	}
+
+	return complianceRecordToResponse(rec, nil), nil
+}
+
+// GetComplianceReport — single row read, clinic-scoped.
+func (s *Service) GetComplianceReport(ctx context.Context, id, clinicID uuid.UUID) (*ComplianceReportResponse, error) {
+	rec, err := s.repo.GetComplianceReport(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.GetComplianceReport: %w", err)
+	}
+	return complianceRecordToResponse(rec, nil), nil
+}
+
+// GetComplianceReportRecord — raw row for the handler download flow.
+func (s *Service) GetComplianceReportRecord(ctx context.Context, id, clinicID uuid.UUID) (*ComplianceReportRecord, error) {
+	rec, err := s.repo.GetComplianceReport(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.GetComplianceReportRecord: %w", err)
+	}
+	return rec, nil
+}
+
+// ListComplianceReports — paginated list for a clinic.
+func (s *Service) ListComplianceReports(ctx context.Context, clinicID uuid.UUID, in ListComplianceReportsInput) (*ComplianceReportListResponse, error) {
+	if in.Limit <= 0 || in.Limit > 200 {
+		in.Limit = 50
+	}
+	recs, total, err := s.repo.ListComplianceReports(ctx, clinicID, ListComplianceReportsParams(in))
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.ListComplianceReports: %w", err)
+	}
+	out := make([]*ComplianceReportResponse, len(recs))
+	for i, r := range recs {
+		out[i] = complianceRecordToResponse(r, nil)
+	}
+	return &ComplianceReportListResponse{
+		Items:  out,
+		Total:  total,
+		Limit:  in.Limit,
+		Offset: in.Offset,
+	}, nil
+}
+
+// LogComplianceReportDownload appends a `downloaded` row to report_audit.
+// Handler calls this just before returning the presigned URL.
+func (s *Service) LogComplianceReportDownload(ctx context.Context, reportID, clinicID, staffID uuid.UUID) error {
+	if err := s.repo.LogReportAudit(ctx, LogReportAuditParams{
+		ID:       domain.NewID(),
+		ReportID: reportID,
+		ClinicID: clinicID,
+		StaffID:  staffID,
+		Action:   "downloaded",
+	}); err != nil {
+		return fmt.Errorf("reports.service.LogComplianceReportDownload: %w", err)
+	}
+	return nil
+}
+
+// ── Compliance helpers ────────────────────────────────────────────────────────
+
+func isSupportedComplianceType(t string) bool {
+	for _, s := range SupportedComplianceReportTypes {
+		if s == t {
+			return true
+		}
+	}
+	return false
+}
+
+func fileFormatFor(t string) string {
+	if f, ok := fileFormatForType[t]; ok {
+		return f
+	}
+	return "pdf"
+}
+
+func complianceRecordToResponse(r *ComplianceReportRecord, downloadURL *string) *ComplianceReportResponse {
+	// Suppress stale error_message on done rows. Older rows that succeeded
+	// after a prior failure still carry the failure text in the column;
+	// once a row is done the message is no longer meaningful.
+	var errMsg *string
+	if r.Status != "done" {
+		errMsg = r.ErrorMessage
+	}
+	resp := &ComplianceReportResponse{
+		ID:            r.ID.String(),
+		Type:          r.Type,
+		Vertical:      r.Vertical,
+		Country:       r.Country,
+		PeriodStart:   r.PeriodStart.Format(time.RFC3339),
+		PeriodEnd:     r.PeriodEnd.Format(time.RFC3339),
+		Status:        r.Status,
+		FileFormat:    r.FileFormat,
+		FileSizeBytes: r.FileSizeBytes,
+		ReportHash:    r.ReportHash,
+		RequestedBy:   r.RequestedBy.String(),
+		RequestedAt:   r.RequestedAt.Format(time.RFC3339),
+		ErrorMessage:  errMsg,
+	}
+	if r.StartedAt != nil {
+		s := r.StartedAt.Format(time.RFC3339)
+		resp.StartedAt = &s
+	}
+	if r.CompletedAt != nil {
+		s := r.CompletedAt.Format(time.RFC3339)
+		resp.CompletedAt = &s
+	}
+	if downloadURL != nil {
+		resp.DownloadURL = downloadURL
+	}
+	return resp
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
