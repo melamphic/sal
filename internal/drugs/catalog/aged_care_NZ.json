@@ -1,0 +1,118 @@
+{
+  "vertical": "aged_care",
+  "country": "NZ",
+  "version": "2026-04-29",
+  "source": "Curated subset of NZ Pharmac-funded aged-care medications + Misuse of Drugs Act 1975. MAR (Medication Administration Record) tracked per shift.",
+  "entries": [
+    {
+      "id": "aged_care.NZ.morphine.tablet.10mg",
+      "name": "Morphine sulphate (slow release)",
+      "active_ingredient": "Morphine sulphate",
+      "schedule": "S2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["MST Continus"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.NZ.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "S2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "aged_care.NZ.lorazepam.tablet.1mg",
+      "name": "Lorazepam",
+      "active_ingredient": "Lorazepam",
+      "schedule": "S3",
+      "regulatory_class": "controlled",
+      "common_strengths": ["1 mg"],
+      "form": "tablet",
+      "common_routes": ["PO", "sublingual"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "aged_care.NZ.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.NZ.donepezil.tablet.5mg",
+      "name": "Donepezil",
+      "active_ingredient": "Donepezil hydrochloride",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.NZ.warfarin.tablet.3mg",
+      "name": "Warfarin",
+      "active_ingredient": "Warfarin sodium",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["3 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "notes": "INR monitoring required.",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.NZ.furosemide.tablet.40mg",
+      "name": "Furosemide",
+      "active_ingredient": "Furosemide",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.NZ.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "aged_care.NZ.lactulose.solution.667mgml",
+      "name": "Lactulose",
+      "active_ingredient": "Lactulose",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["667 mg/mL"],
+      "form": "solution",
+      "common_routes": ["PO"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

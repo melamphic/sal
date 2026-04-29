@@ -1,0 +1,119 @@
+{
+  "vertical": "general",
+  "country": "AU",
+  "version": "2026-04-29",
+  "source": "Curated subset per AU PBS + AU Poisons Standard schedules (S2/S3/S4/S8).",
+  "entries": [
+    {
+      "id": "general.AU.morphine.injectable.10mgml",
+      "name": "Morphine sulphate",
+      "active_ingredient": "Morphine sulphate",
+      "schedule": "S8",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "SC", "IM"],
+      "default_unit": "mL",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.AU.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "S8",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Endone"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.AU.fentanyl.patch.25mcgh",
+      "name": "Fentanyl transdermal",
+      "active_ingredient": "Fentanyl",
+      "schedule": "S8",
+      "regulatory_class": "controlled",
+      "common_strengths": ["25 mcg/h"],
+      "form": "patch",
+      "common_routes": ["transdermal"],
+      "default_unit": "patch",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.AU.tramadol.tablet.50mg",
+      "name": "Tramadol",
+      "active_ingredient": "Tramadol hydrochloride",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["50 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "general.AU.amoxicillin-clavulanate.tablet.875-125",
+      "name": "Amoxicillin/Clavulanate",
+      "active_ingredient": "Amoxicillin + clavulanic acid",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["875 mg / 125 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Augmentin Duo Forte"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.AU.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.AU.salbutamol.inhaler.100mcg",
+      "name": "Salbutamol inhaler",
+      "active_ingredient": "Salbutamol sulphate",
+      "schedule": "S3",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["100 mcg/dose"],
+      "form": "inhaler",
+      "common_routes": ["inhalation"],
+      "brand_names": ["Ventolin"],
+      "default_unit": "dose",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.AU.prednisolone.tablet.5mg",
+      "name": "Prednisolone",
+      "active_ingredient": "Prednisolone",
+      "schedule": "S4",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.AU.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "Unscheduled",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

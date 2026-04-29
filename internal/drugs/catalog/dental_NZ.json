@@ -1,0 +1,107 @@
+{
+  "vertical": "dental",
+  "country": "NZ",
+  "version": "2026-04-29",
+  "source": "Curated subset of NZ Pharmac-listed dental medicines + Misuse of Drugs Act 1975 schedules.",
+  "entries": [
+    {
+      "id": "dental.NZ.lidocaine-adrenaline.injectable.20mg",
+      "name": "Lidocaine 2% with Adrenaline",
+      "active_ingredient": "Lidocaine HCl + Adrenaline",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["20 mg/mL + 1:80,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration", "block"],
+      "common_doses": {"adult": "1.8 mL cartridge per site"},
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.NZ.articaine-adrenaline.injectable.40mg",
+      "name": "Articaine 4% with Adrenaline",
+      "active_ingredient": "Articaine HCl + Adrenaline",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg/mL + 1:100,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.NZ.midazolam.injectable.5mgml",
+      "name": "Midazolam",
+      "active_ingredient": "Midazolam hydrochloride",
+      "schedule": "S3",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "intranasal"],
+      "default_unit": "mL",
+      "notes": "Class C controlled drug NZ.",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "dental.NZ.diazepam.tablet.5mg",
+      "name": "Diazepam",
+      "active_ingredient": "Diazepam",
+      "schedule": "S3",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 1}
+    },
+    {
+      "id": "dental.NZ.amoxicillin.capsule.500mg",
+      "name": "Amoxicillin",
+      "active_ingredient": "Amoxicillin",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "common_doses": {"adult": "500 mg PO TID 5 days"},
+      "default_unit": "capsule",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.NZ.metronidazole.tablet.400mg",
+      "name": "Metronidazole",
+      "active_ingredient": "Metronidazole",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.NZ.ibuprofen.tablet.400mg",
+      "name": "Ibuprofen",
+      "active_ingredient": "Ibuprofen",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.NZ.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

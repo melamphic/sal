@@ -1,0 +1,105 @@
+{
+  "vertical": "dental",
+  "country": "UK",
+  "version": "2026-04-29",
+  "source": "Curated subset per UK BNF / MHRA + Misuse of Drugs Regulations 2001 (CD2/CD3) for sedation.",
+  "entries": [
+    {
+      "id": "dental.UK.lidocaine-adrenaline.injectable.20mg",
+      "name": "Lidocaine 2% with Adrenaline",
+      "active_ingredient": "Lidocaine HCl + Adrenaline",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["20 mg/mL + 1:80,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration", "block"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.UK.articaine-adrenaline.injectable.40mg",
+      "name": "Articaine 4% with Adrenaline",
+      "active_ingredient": "Articaine HCl + Adrenaline",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["40 mg/mL + 1:100,000"],
+      "form": "injectable",
+      "common_routes": ["infiltration"],
+      "default_unit": "mL",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.UK.midazolam.injectable.5mgml",
+      "name": "Midazolam",
+      "active_ingredient": "Midazolam hydrochloride",
+      "schedule": "CD3",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "intranasal"],
+      "default_unit": "mL",
+      "notes": "Schedule 3 CD per MDR 2001. CD register entry required.",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "dental.UK.diazepam.tablet.5mg",
+      "name": "Diazepam",
+      "active_ingredient": "Diazepam",
+      "schedule": "CD4-1",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "dental.UK.amoxicillin.capsule.500mg",
+      "name": "Amoxicillin",
+      "active_ingredient": "Amoxicillin",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "capsule",
+      "common_routes": ["PO"],
+      "default_unit": "capsule",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.UK.metronidazole.tablet.400mg",
+      "name": "Metronidazole",
+      "active_ingredient": "Metronidazole",
+      "schedule": "POM",
+      "regulatory_class": "prescription",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.UK.ibuprofen.tablet.400mg",
+      "name": "Ibuprofen",
+      "active_ingredient": "Ibuprofen",
+      "schedule": "P",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["400 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "dental.UK.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "GSL",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}

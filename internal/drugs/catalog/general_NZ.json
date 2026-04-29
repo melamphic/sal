@@ -1,0 +1,120 @@
+{
+  "vertical": "general",
+  "country": "NZ",
+  "version": "2026-04-29",
+  "source": "Curated subset of NZ Pharmac-funded medicines + Misuse of Drugs Act 1975 schedules.",
+  "entries": [
+    {
+      "id": "general.NZ.morphine.injectable.10mgml",
+      "name": "Morphine sulphate",
+      "active_ingredient": "Morphine sulphate",
+      "schedule": "S2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["10 mg/mL"],
+      "form": "injectable",
+      "common_routes": ["IV", "SC", "IM"],
+      "default_unit": "mL",
+      "notes": "Class B controlled drug NZ. Witness required.",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.NZ.oxycodone.tablet.5mg",
+      "name": "Oxycodone",
+      "active_ingredient": "Oxycodone hydrochloride",
+      "schedule": "S2",
+      "regulatory_class": "controlled",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["OxyNorm"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": true, "witnesses_required_count": 1, "register_required": true, "storage_restriction_level": 2}
+    },
+    {
+      "id": "general.NZ.tramadol.tablet.50mg",
+      "name": "Tramadol",
+      "active_ingredient": "Tramadol hydrochloride",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["50 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 1}
+    },
+    {
+      "id": "general.NZ.amoxicillin-clavulanate.tablet.625mg",
+      "name": "Amoxicillin/Clavulanate",
+      "active_ingredient": "Amoxicillin + clavulanic acid",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["625 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "brand_names": ["Augmentin"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.NZ.metformin.tablet.500mg",
+      "name": "Metformin",
+      "active_ingredient": "Metformin hydrochloride",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.NZ.salbutamol.inhaler.100mcg",
+      "name": "Salbutamol inhaler",
+      "active_ingredient": "Salbutamol sulphate",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["100 mcg/dose"],
+      "form": "inhaler",
+      "common_routes": ["inhalation"],
+      "brand_names": ["Ventolin"],
+      "default_unit": "dose",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.NZ.prednisone.tablet.5mg",
+      "name": "Prednisone",
+      "active_ingredient": "Prednisone",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.NZ.amlodipine.tablet.5mg",
+      "name": "Amlodipine",
+      "active_ingredient": "Amlodipine besylate",
+      "schedule": "Prescription",
+      "regulatory_class": "prescription",
+      "common_strengths": ["5 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    },
+    {
+      "id": "general.NZ.paracetamol.tablet.500mg",
+      "name": "Paracetamol",
+      "active_ingredient": "Paracetamol",
+      "schedule": "OTC",
+      "regulatory_class": "general_sale",
+      "common_strengths": ["500 mg"],
+      "form": "tablet",
+      "common_routes": ["PO"],
+      "default_unit": "tablet",
+      "controls": {"witness_required": false, "register_required": false, "storage_restriction_level": 0}
+    }
+  ]
+}
