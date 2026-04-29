@@ -29,6 +29,45 @@ type AuditEventRecord struct {
 	OccurredAt time.Time
 }
 
+// ComplianceReportRecord is the raw DB representation of a row in the new
+// `reports` table introduced by migration 00061. Distinct from the older
+// ReportJobRecord (which queues simple CSV exports off the audit log) — this
+// row backs the regulator-facing PDF / ZIP outputs (audit pack,
+// VCNZ-controlled-drugs, etc.).
+type ComplianceReportRecord struct {
+	ID                  uuid.UUID
+	ClinicID            uuid.UUID
+	Type                string
+	Vertical            string
+	Country             string
+	PeriodStart         time.Time
+	PeriodEnd           time.Time
+	Status              string
+	FileKey             *string
+	FileSizeBytes       *int64
+	FileFormat          string
+	ReportHash          *string
+	RequestedBy         uuid.UUID
+	RequestedAt         time.Time
+	StartedAt           *time.Time
+	CompletedAt         *time.Time
+	ErrorMessage        *string
+	GenerationMetadata  *string // JSONB as text
+	DeliveredAt         *time.Time
+	DeliveredToEmails   []string
+}
+
+// ReportAuditRecord is one row of the report_audit append-only log.
+type ReportAuditRecord struct {
+	ID       uuid.UUID
+	ReportID uuid.UUID
+	ClinicID uuid.UUID
+	StaffID  uuid.UUID
+	Action   string
+	At       time.Time
+	Details  *string
+}
+
 // ReportJobRecord is the raw DB representation of a report_jobs row.
 type ReportJobRecord struct {
 	ID          uuid.UUID
@@ -60,6 +99,41 @@ type ReportFilters struct {
 type ListParams struct {
 	Limit  int
 	Offset int
+}
+
+// CreateComplianceReportParams holds values for creating a new compliance
+// report row (the regulator-facing kind, not the simple CSV export).
+type CreateComplianceReportParams struct {
+	ID          uuid.UUID
+	ClinicID    uuid.UUID
+	Type        string
+	Vertical    string
+	Country     string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	FileFormat  string // "pdf" | "zip" | "csv"
+	RequestedBy uuid.UUID
+}
+
+// ListComplianceReportsParams holds pagination + filters for listing
+// compliance reports for a clinic.
+type ListComplianceReportsParams struct {
+	Limit  int
+	Offset int
+	Type   *string
+	Status *string
+	From   *time.Time
+	To     *time.Time
+}
+
+// LogReportAuditParams holds values for logging a report audit action.
+type LogReportAuditParams struct {
+	ID       uuid.UUID
+	ReportID uuid.UUID
+	ClinicID uuid.UUID
+	StaffID  uuid.UUID
+	Action   string  // "generated" | "downloaded" | "shared_externally" | "deleted"
+	Details  *string // JSON-encoded
 }
 
 // InsertReportJobParams holds values for creating a new report job row.
@@ -295,6 +369,197 @@ func scanAuditEvent(row scannable) (*AuditEventRecord, error) {
 		return nil, fmt.Errorf("scanAuditEvent: %w", err)
 	}
 	return &e, nil
+}
+
+// ── Compliance reports CRUD (new `reports` + `report_audit` tables) ─────────
+
+const complianceReportCols = `id, clinic_id, type, vertical, country,
+	period_start, period_end, status,
+	file_key, file_size_bytes, file_format, report_hash,
+	requested_by, requested_at, started_at, completed_at,
+	error_message, generation_metadata::text,
+	delivered_at, delivered_to_emails`
+
+// CreateComplianceReport inserts a queued compliance report row.
+func (r *Repository) CreateComplianceReport(ctx context.Context, p CreateComplianceReportParams) (*ComplianceReportRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		INSERT INTO reports (
+			id, clinic_id, type, vertical, country,
+			period_start, period_end, file_format, requested_by, status
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued')
+		RETURNING %s`, complianceReportCols),
+		p.ID, p.ClinicID, p.Type, p.Vertical, p.Country,
+		p.PeriodStart, p.PeriodEnd, p.FileFormat, p.RequestedBy,
+	)
+	rec, err := scanComplianceReport(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.CreateComplianceReport: %w", err)
+	}
+	return rec, nil
+}
+
+// GetComplianceReport fetches one report scoped to clinic.
+func (r *Repository) GetComplianceReport(ctx context.Context, id, clinicID uuid.UUID) (*ComplianceReportRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s FROM reports WHERE id = $1 AND clinic_id = $2`, complianceReportCols),
+		id, clinicID,
+	)
+	rec, err := scanComplianceReport(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.GetComplianceReport: %w", err)
+	}
+	return rec, nil
+}
+
+// GetComplianceReportInternal — without clinic scope; used by the worker.
+func (r *Repository) GetComplianceReportInternal(ctx context.Context, id uuid.UUID) (*ComplianceReportRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s FROM reports WHERE id = $1`, complianceReportCols),
+		id,
+	)
+	rec, err := scanComplianceReport(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.GetComplianceReportInternal: %w", err)
+	}
+	return rec, nil
+}
+
+// ListComplianceReports — paginated + filterable listing for a clinic.
+func (r *Repository) ListComplianceReports(ctx context.Context, clinicID uuid.UUID, p ListComplianceReportsParams) ([]*ComplianceReportRecord, int, error) {
+	args := []any{clinicID}
+	where := "clinic_id = $1"
+	if p.Type != nil {
+		args = append(args, *p.Type)
+		where += fmt.Sprintf(" AND type = $%d", len(args))
+	}
+	if p.Status != nil {
+		args = append(args, *p.Status)
+		where += fmt.Sprintf(" AND status = $%d", len(args))
+	}
+	if p.From != nil {
+		args = append(args, *p.From)
+		where += fmt.Sprintf(" AND requested_at >= $%d", len(args))
+	}
+	if p.To != nil {
+		args = append(args, *p.To)
+		where += fmt.Sprintf(" AND requested_at <= $%d", len(args))
+	}
+
+	var total int
+	if err := r.db.QueryRow(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM reports WHERE %s", where), args...,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("reports.repo.ListComplianceReports: count: %w", err)
+	}
+
+	args = append(args, p.Limit, p.Offset)
+	q := fmt.Sprintf(`
+		SELECT %s FROM reports WHERE %s
+		ORDER BY requested_at DESC
+		LIMIT $%d OFFSET $%d`, complianceReportCols, where, len(args)-1, len(args))
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("reports.repo.ListComplianceReports: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*ComplianceReportRecord
+	for rows.Next() {
+		rec, err := scanComplianceReport(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("reports.repo.ListComplianceReports: %w", err)
+		}
+		list = append(list, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("reports.repo.ListComplianceReports: rows: %w", err)
+	}
+	return list, total, nil
+}
+
+// MarkComplianceReportRunning flips status to running and stamps started_at.
+func (r *Repository) MarkComplianceReportRunning(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE reports
+		SET status = 'running', started_at = NOW()
+		WHERE id = $1 AND status = 'queued'`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.MarkComplianceReportRunning: %w", err)
+	}
+	return nil
+}
+
+// MarkComplianceReportDone — successful generation; stores file metadata.
+// Also nulls error_message so a row that retried after a prior failure
+// doesn't keep showing the stale error in the UI.
+func (r *Repository) MarkComplianceReportDone(ctx context.Context, id uuid.UUID, fileKey string, fileSize int64, hash string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE reports
+		SET status = 'done',
+		    file_key = $2,
+		    file_size_bytes = $3,
+		    report_hash = $4,
+		    error_message = NULL,
+		    completed_at = NOW()
+		WHERE id = $1`,
+		id, fileKey, fileSize, hash,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.MarkComplianceReportDone: %w", err)
+	}
+	return nil
+}
+
+// MarkComplianceReportFailed — generation failure path.
+func (r *Repository) MarkComplianceReportFailed(ctx context.Context, id uuid.UUID, errMsg string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE reports
+		SET status = 'failed',
+		    error_message = $2,
+		    completed_at = NOW()
+		WHERE id = $1`,
+		id, errMsg,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.MarkComplianceReportFailed: %w", err)
+	}
+	return nil
+}
+
+// LogReportAudit appends a row to report_audit. Append-only by design.
+func (r *Repository) LogReportAudit(ctx context.Context, p LogReportAuditParams) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO report_audit (id, report_id, clinic_id, staff_id, action, details)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+		p.ID, p.ReportID, p.ClinicID, p.StaffID, p.Action, p.Details,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.LogReportAudit: %w", err)
+	}
+	return nil
+}
+
+func scanComplianceReport(row scannable) (*ComplianceReportRecord, error) {
+	var c ComplianceReportRecord
+	err := row.Scan(
+		&c.ID, &c.ClinicID, &c.Type, &c.Vertical, &c.Country,
+		&c.PeriodStart, &c.PeriodEnd, &c.Status,
+		&c.FileKey, &c.FileSizeBytes, &c.FileFormat, &c.ReportHash,
+		&c.RequestedBy, &c.RequestedAt, &c.StartedAt, &c.CompletedAt,
+		&c.ErrorMessage, &c.GenerationMetadata,
+		&c.DeliveredAt, &c.DeliveredToEmails,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanComplianceReport: %w", err)
+	}
+	return &c, nil
 }
 
 func scanJob(row scannable) (*ReportJobRecord, error) {
