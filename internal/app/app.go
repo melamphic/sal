@@ -26,6 +26,8 @@ import (
 	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/drugs"
+	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
 	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
@@ -359,6 +361,26 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
 	policyHandler := policy.NewHandler(policySvc)
 
+	// ── Drugs module ──────────────────────────────────────────────────────────
+	// System catalog ships as embedded JSON files (one per vertical × country).
+	// On startup we parse + validate every file; a malformed catalog fails
+	// boot, by design — silently shipping a broken drug list is the wrong
+	// failure mode for a compliance feature.
+	drugCatalog, err := drugscatalog.NewLoader()
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: drugs catalog: %w", err)
+	}
+	log.Info("drugs: catalog loaded", "combos", len(drugCatalog.Manifest()))
+	drugsRepo := drugs.NewRepository(db)
+	drugsSvc := drugs.NewService(
+		drugsRepo,
+		drugCatalog,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsStaffPermAdapter{staffSvc: staffSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	drugsHandler := drugs.NewHandler(drugsSvc)
+
 	// ── AI generation (forms + policies) ─────────────────────────────────────
 	// Provider is best-effort: missing API keys disable the feature without
 	// failing startup. The corresponding handlers detect a nil provider and
@@ -469,6 +491,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if policyAIGenHandler != nil {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
+	drugsHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
@@ -1117,6 +1140,72 @@ func (a *clinicVerticalProviderAdapter) GetClinicVertical(ctx context.Context, c
 		return "", fmt.Errorf("app.clinicVerticalProviderAdapter: %w", err)
 	}
 	return c.Vertical, nil
+}
+
+// drugsClinicLookupAdapter satisfies drugs.ClinicLookup. Returns the
+// clinic's vertical + country from clinic.Service.GetByID.
+type drugsClinicLookupAdapter struct {
+	clinicSvc *clinic.Service
+}
+
+func (a *drugsClinicLookupAdapter) GetVerticalAndCountry(ctx context.Context, clinicID uuid.UUID) (string, string, error) {
+	c, err := a.clinicSvc.GetByID(ctx, clinicID)
+	if err != nil {
+		return "", "", fmt.Errorf("app.drugsClinicLookupAdapter: %w", err)
+	}
+	return string(c.Vertical), c.Country, nil
+}
+
+// drugsStaffPermAdapter satisfies drugs.StaffPermLookup. v1 maps every
+// "perm_*_drug*" name back onto the existing domain.Permissions struct
+// fields — the JWT path doesn't yet ship the granular drug perms shipped
+// in migration 00062.
+type drugsStaffPermAdapter struct {
+	staffSvc *staff.Service
+}
+
+func (a *drugsStaffPermAdapter) HasPermission(ctx context.Context, staffID, clinicID uuid.UUID, name string) (bool, error) {
+	s, err := a.staffSvc.GetByID(ctx, staffID, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("app.drugsStaffPermAdapter: %w", err)
+	}
+	switch name {
+	case "perm_witness_controlled_drugs", "perm_dispense_controlled_drugs":
+		return s.Permissions.Dispense, nil
+	case "perm_manage_drug_shelf":
+		return s.Permissions.ManagePatients, nil
+	case "perm_reconcile_drugs":
+		return s.Permissions.GenerateAuditExport, nil
+	default:
+		return false, nil
+	}
+}
+
+// drugsAccessLogAdapter satisfies drugs.SubjectAccessLogger. Wraps the
+// patient repository's CreateSubjectAccessLog so the drugs service can
+// trace every drug-history view + every administer/dispense touch on
+// PII without importing patient types directly.
+type drugsAccessLogAdapter struct {
+	patientRepo *patient.Repository
+}
+
+func (a *drugsAccessLogAdapter) LogAccess(ctx context.Context, clinicID, subjectID, staffID uuid.UUID, action, purpose string) error {
+	var purposePtr *string
+	if purpose != "" {
+		purposePtr = &purpose
+	}
+	_, err := a.patientRepo.CreateSubjectAccessLog(ctx, patient.CreateSubjectAccessLogParams{
+		ID:        domain.NewID(),
+		SubjectID: subjectID,
+		StaffID:   staffID,
+		ClinicID:  clinicID,
+		Action:    domain.SubjectAccessAction(action),
+		Purpose:   purposePtr,
+	})
+	if err != nil {
+		return fmt.Errorf("app.drugsAccessLogAdapter: %w", err)
+	}
+	return nil
 }
 
 // aigenClinicLookupAdapter satisfies forms.AIGenClinicLookup AND
