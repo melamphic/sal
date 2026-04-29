@@ -226,14 +226,160 @@ func (h *Handler) getExportJob(ctx context.Context, input *exportJobInput) (*job
 	return &jobHTTPResponse{Body: resp}, nil
 }
 
+// ── Compliance report handlers ───────────────────────────────────────────────
+
+type complianceReportHTTPResponse struct {
+	Body *ComplianceReportResponse
+}
+
+type complianceReportListHTTPResponse struct {
+	Body *ComplianceReportListResponse
+}
+
+type requestComplianceReportInput struct {
+	Body struct {
+		Type        string `json:"type"         doc:"Report type slug — see SupportedComplianceReportTypes."`
+		PeriodStart string `json:"period_start" doc:"RFC3339 inclusive."`
+		PeriodEnd   string `json:"period_end"   doc:"RFC3339 inclusive."`
+	}
+}
+
+// requestComplianceReport handles POST /api/v1/reports/compliance.
+func (h *Handler) requestComplianceReport(ctx context.Context, input *requestComplianceReportInput) (*complianceReportHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	start, err := time.Parse(time.RFC3339, input.Body.PeriodStart)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid period_start: use RFC3339")
+	}
+	end, err := time.Parse(time.RFC3339, input.Body.PeriodEnd)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid period_end: use RFC3339")
+	}
+
+	resp, err := h.svc.RequestComplianceReport(ctx, RequestComplianceReportInput{
+		ClinicID:    clinicID,
+		StaffID:     staffID,
+		Type:        input.Body.Type,
+		PeriodStart: start,
+		PeriodEnd:   end,
+	})
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &complianceReportHTTPResponse{Body: resp}, nil
+}
+
+type listComplianceReportsInput struct {
+	reportPaginationInput
+	Type   string `query:"type"`
+	Status string `query:"status"`
+	From   string `query:"from"`
+	To     string `query:"to"`
+}
+
+// listComplianceReports handles GET /api/v1/reports/compliance.
+func (h *Handler) listComplianceReports(ctx context.Context, input *listComplianceReportsInput) (*complianceReportListHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	in := ListComplianceReportsInput{
+		Limit:  input.Limit,
+		Offset: input.Offset,
+	}
+	if input.Type != "" {
+		in.Type = &input.Type
+	}
+	if input.Status != "" {
+		in.Status = &input.Status
+	}
+	if input.From != "" {
+		t, err := time.Parse(time.RFC3339, input.From)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid from: use RFC3339")
+		}
+		in.From = &t
+	}
+	if input.To != "" {
+		t, err := time.Parse(time.RFC3339, input.To)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid to: use RFC3339")
+		}
+		in.To = &t
+	}
+
+	resp, err := h.svc.ListComplianceReports(ctx, clinicID, in)
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &complianceReportListHTTPResponse{Body: resp}, nil
+}
+
+type complianceReportIDPath struct {
+	ID string `path:"id" doc:"The report UUID."`
+}
+
+// getComplianceReport handles GET /api/v1/reports/compliance/{id}.
+func (h *Handler) getComplianceReport(ctx context.Context, input *complianceReportIDPath) (*complianceReportHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	resp, err := h.svc.GetComplianceReport(ctx, id, clinicID)
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &complianceReportHTTPResponse{Body: resp}, nil
+}
+
+// downloadComplianceReport handles GET /api/v1/reports/compliance/{id}/download.
+// Returns the report row enriched with a fresh presigned URL valid for 1h,
+// and writes a `downloaded` row to report_audit.
+func (h *Handler) downloadComplianceReport(ctx context.Context, input *complianceReportIDPath) (*complianceReportHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+
+	rec, err := h.svc.GetComplianceReportRecord(ctx, id, clinicID)
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	if rec.Status != "done" || rec.FileKey == nil {
+		return nil, huma.Error409Conflict("report is not ready yet")
+	}
+
+	url, err := h.store.PresignDownload(ctx, *rec.FileKey, time.Hour)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("could not mint download URL")
+	}
+
+	if err := h.svc.LogComplianceReportDownload(ctx, id, clinicID, staffID); err != nil {
+		// Audit failure is loud-logged in repo; don't block the user.
+		_ = err
+	}
+
+	return &complianceReportHTTPResponse{
+		Body: complianceRecordToResponse(rec, &url),
+	}, nil
+}
+
 // ── Error mapping ─────────────────────────────────────────────────────────────
 
 func mapReportError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return huma.Error404NotFound("resource not found")
+	case errors.Is(err, domain.ErrConflict):
+		return huma.Error409Conflict("operation not allowed in current state")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
+	case errors.Is(err, domain.ErrValidation):
+		return huma.Error422UnprocessableEntity(err.Error())
 	default:
 		return huma.Error500InternalServerError("internal server error")
 	}
