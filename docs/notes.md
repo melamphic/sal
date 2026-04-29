@@ -49,6 +49,34 @@ If no extractor is configured (no API key), the worker skips AI and immediately 
 so staff can fill fields manually. In both cases a `ComputePolicyAlignmentArgs` job is
 enqueued immediately after so the alignment score appears in the review screen.
 
+### Race-free transcript handoff
+
+Extraction needs the transcript that the parallel `TranscribeAudioWorker`
+produces. Earlier versions papered over the race with
+`river.InsertOpts{ScheduledAt: now + 8s}` — a guess at "transcribe usually
+finishes faster than that". The current design replaces the guess with two
+deterministic backstops:
+
+1. **Audio-side fan-out.** `audio.TranscribeAudioWorker` accepts a slice
+   of `audio.TranscriptListener` and calls every listener after persisting
+   the transcript. `notes.Service.OnRecordingTranscribed` re-enqueues
+   `ExtractNoteArgs` for any note in `extracting` status bound to that
+   recording. The wiring lives in `app.go` via a `lazyTranscriptListener`
+   because the audio worker is registered before notes.Service exists.
+2. **Worker-side snooze.** When `ExtractNoteWorker` runs and the
+   transcript still isn't ready, it returns
+   `&rivertype.JobSnoozeError{Duration: 3 * time.Second}` rather than a
+   plain error — fast retry, ~3 s instead of the default ~60 s exponential
+   backoff. Backstop for cases where the listener didn't fire (e.g.
+   transcribe worker crashed mid-fan-out).
+
+`river.InsertOpts.UniqueOpts{ByArgs: true}` collapses both enqueue paths
+to a single in-flight job per `(kind, NoteID)`, so the worker only runs
+once per outcome.
+
+The listener interface is shared with the AI drafts module (incidents,
+consent) — see `docs/ai_drafts.md`.
+
 ### Deterministic confidence scoring
 
 After the LLM returns results, the worker computes a deterministic confidence score for each
