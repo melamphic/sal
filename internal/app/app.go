@@ -28,7 +28,9 @@ import (
 	"github.com/melamphic/sal/internal/auth"
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
+	"github.com/melamphic/sal/internal/consent"
 	"github.com/melamphic/sal/internal/incidents"
+	"github.com/melamphic/sal/internal/pain"
 	"github.com/melamphic/sal/internal/billing"
 	"github.com/melamphic/sal/internal/clinic"
 	"github.com/melamphic/sal/internal/domain"
@@ -403,6 +405,28 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	)
 	incidentsHandler := incidents.NewHandler(incidentsSvc)
 
+	// ── Consent module ───────────────────────────────────────────────────────
+	// Universal across all 16 (vertical × country) combos. Per-type expiry
+	// defaults applied server-side; clinics can override.
+	consentRepo := consent.NewRepository(db)
+	consentSvc := consent.NewService(
+		consentRepo,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	consentHandler := consent.NewHandler(consentSvc)
+
+	// ── Pain module ──────────────────────────────────────────────────────────
+	// Universal. Pain scale support: NRS / FLACC / PainAD / Wong-Baker /
+	// VRS / VAS. Clinicians pick the scale; the service has a recommendation
+	// helper keyed by vertical for the future "auto-select scale" UI.
+	painRepo := pain.NewRepository(db)
+	painSvc := pain.NewService(
+		painRepo,
+		&drugsAccessLogAdapter{patientRepo: patientRepo},
+	)
+	painHandler := pain.NewHandler(painSvc)
+
 	// ── AI generation (forms + policies) ─────────────────────────────────────
 	// Provider is best-effort: missing API keys disable the feature without
 	// failing startup. The corresponding handlers detect a nil provider and
@@ -522,6 +546,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 	drugsHandler.Mount(r, api, jwtSecret)
 	incidentsHandler.Mount(r, api, jwtSecret)
+	consentHandler.Mount(r, api, jwtSecret)
+	painHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
