@@ -232,10 +232,16 @@ every (vertical, country) we ship.
 
 ### Type registry
 
-| Type slug | Output | What it contains |
-|-----------|--------|------------------|
-| `audit_pack` | PDF | Cover, records-activity counts, controlled-drug ledger highlights, reconciliations |
-| `controlled_drugs_register` | PDF | Cover, per-drug shelf sections with ledger, reconciliations, statutory declaration |
+| Type slug | Output | Combos | What it contains |
+|-----------|--------|--------|------------------|
+| `audit_pack` | PDF | universal | Cover, records activity, controlled-drug ledger highlights, reconciliations |
+| `controlled_drugs_register` | PDF | universal | Cover, per-drug shelf sections with ledger, reconciliations, statutory declaration |
+| `evidence_pack` | PDF | universal — section list pinned per `(vertical, country)` | ACQSC pack (AU aged care) · CQC pack (UK aged care) · GDC FGDP audit (UK dental) · 13 more |
+| `records_audit` | PDF | universal | Notes activity · consent summary · pain summary · drug ledger highlights · incidents summary |
+| `incidents_log` | PDF | universal | Cover · regulator framework · full incidents table for the period |
+| `sentinel_events_log` | PDF | universal — emphasised in aged care | Same data as incidents_log filtered to SIRS-P1 ∪ CQC-notifiable ∪ critical ∪ hospitalised/deceased |
+| `hipaa_disclosure_log` | PDF | US healthcare | PHI access log per HIPAA §164.528 — every `subject_access_log` row in period |
+| `dea_biennial_inventory` | PDF | US drug-handling | Snapshot of every controlled-drug shelf entry per 21 CFR 1304.11 |
 
 Adding a new type is a one-line addition to
 `SupportedComplianceReportTypes` plus a `case` in the worker dispatch
@@ -370,6 +376,36 @@ Migration: `00061_create_reports.sql`. Two tables:
 | `GET` | `/api/v1/reports/compliance/{id}` | Get one report. |
 | `GET` | `/api/v1/reports/compliance/{id}/download` | Row + 1h presigned URL; appends to `report_audit`. |
 
+### Recurring schedules + email delivery
+
+The `report_schedules` table (migration `00063`) drives recurring
+generation. A River periodic job (`fire_due_report_schedules`, hourly)
+sweeps for due rows, creates a queued report, stamps the recipients
+on `reports.delivered_to_emails`, and enqueues the generation worker.
+When generation finishes, the dispatch in `GenerateCompliancePDFWorker`
+checks `delivered_to_emails`; if non-empty it fans out a
+`SendReportEmailArgs` that mints a fresh 1-hour presigned URL per
+recipient and emails via `mailer.SendComplianceReportReady`.
+
+Frequencies + period alignment:
+
+| Frequency | Bumps `next_run_at` to | Period covered by report |
+|---|---|---|
+| `daily` | tomorrow 00:00 UTC | yesterday 00:00–23:59:59 |
+| `weekly` | next Monday 00:00 UTC | previous 7 days |
+| `monthly` | 1st of next month 00:00 UTC | previous calendar month |
+| `quarterly` | 1st of next quarter 00:00 UTC | previous calendar quarter |
+
+Schedule API:
+
+```
+POST   /api/v1/reports/schedules           (create)
+GET    /api/v1/reports/schedules           (list for clinic)
+GET    /api/v1/reports/schedules/{id}      (single)
+PATCH  /api/v1/reports/schedules/{id}      (recipients ± paused; frequency immutable)
+DELETE /api/v1/reports/schedules/{id}      (delete)
+```
+
 ### What's not done yet
 
 - `download_url` on the list endpoint is empty — only the explicit
@@ -377,7 +413,6 @@ Migration: `00061_create_reports.sql`. Two tables:
   on every list response would log spurious "downloaded" rows.
 - AI-narrated reports (e.g. period summary with claimed insights) —
   belongs to the C3 phase.
-- Email delivery + scheduled regeneration — D2 / D3.
 - Notes-by-status counts in the Audit Pack are a v1 stub (returns an
   empty map). Wire to a `notes.Service.CountByStatus` method once the
   notes module exposes one.
