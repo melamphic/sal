@@ -1,8 +1,20 @@
 # Compliance Reports
 
-The reports module provides compliance officers and clinic administrators with queryable audit views over the `note_events` table, plus asynchronous CSV export via a River background job.
+The reports module sits in two layers, both gated on the
+`generate_audit_export` permission:
 
-All report endpoints require the `generate_audit_export` permission.
+1. **CSV exports** (the original layer, documented below). Asynchronous
+   queries over the `note_events` audit log → CSV file in storage.
+   Backed by the `report_jobs` table.
+2. **Compliance PDFs** (added in A4 — see [Compliance reports
+   (regulator-facing PDFs)](#compliance-reports-regulator-facing-pdfs)).
+   Vertical- and country-agnostic, regulator-formatted artefacts (Audit
+   Pack, Controlled Drugs Register). Backed by the `reports` +
+   `report_audit` tables (migration 00061).
+
+Both layers live in the same Go package (`internal/reports`) and share
+the same handler / service / repo files; the routes split under
+`/api/v1/reports/...` (CSV) and `/api/v1/reports/compliance/...` (PDFs).
 
 ---
 
@@ -207,3 +219,168 @@ CREATE TABLE report_jobs (
 | `GET` | `/api/v1/reports/consent-log` | Paginated consent/submission log |
 | `POST` | `/api/v1/reports/export` | Request async CSV export (202) |
 | `GET` | `/api/v1/reports/export/{job_id}` | Poll export status + get download URL |
+
+---
+
+## Compliance reports (regulator-facing PDFs)
+
+The PDF layer produces single-document artefacts a clinic can hand to
+its regulator: an **Audit Pack** that summarises everything in one place,
+and a **Controlled Drugs Register** in the format the regulator inspects.
+Both are vertical- and country-agnostic by design — every type works for
+every (vertical, country) we ship.
+
+### Type registry
+
+| Type slug | Output | What it contains |
+|-----------|--------|------------------|
+| `audit_pack` | PDF | Cover, records-activity counts, controlled-drug ledger highlights, reconciliations |
+| `controlled_drugs_register` | PDF | Cover, per-drug shelf sections with ledger, reconciliations, statutory declaration |
+
+Adding a new type is a one-line addition to
+`SupportedComplianceReportTypes` plus a `case` in the worker dispatch
+(`jobs.go::GenerateCompliancePDFWorker.buildPDF`) and an optional new
+builder in `pdf.go`. No CHECK constraint on the DB column — the
+allow-list is enforced in the service layer.
+
+### Vertical-agnostic regulator context
+
+The Controlled Drugs Register is **one universal builder** that adapts
+to every regulator via a registry (`pdf.go::regulatorContexts`). The
+register reads the clinic's `(vertical, country)` and looks up:
+
+- `RegisterTitle` — cover title (e.g. *"VCNZ Controlled Drugs Register"*,
+  *"Schedule 8 Drugs Register (AU Dental)"*).
+- `RegulatorName` — full name in the declaration body.
+- `CodeReference` — the legal citation (e.g. *"VCNZ Code of Professional
+  Conduct + Misuse of Drugs Act 1975"*, *"21 CFR 1304"*, *"UK Misuse of
+  Drugs Regulations 2001"*).
+- `SignatoryRole` — who signs (e.g. *authorised veterinarian*, *DEA-registered
+  prescriber*, *registered nurse manager*).
+- `LicenseLabel` — what the practitioner number is called (e.g. *VCNZ
+  Registration #*, *DEA #*, *AHPRA #*).
+
+16 combos ship today (vet/dental/general/aged_care × NZ/AU/UK/US). New
+combos are a one-line registry entry in `pdf.go` — no code path per
+country.
+
+### Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued : POST /api/v1/reports/compliance
+    queued --> running : worker picks up
+    running --> done : PDF uploaded + sha256 stored
+    running --> failed : builder error
+    done --> [*]
+    failed --> [*]
+```
+
+### Endpoints
+
+```http
+POST /api/v1/reports/compliance
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "type": "controlled_drugs_register",
+  "period_start": "2026-04-01T00:00:00Z",
+  "period_end":   "2026-04-30T23:59:59Z"
+}
+```
+
+Returns `202 Accepted` with the queued report row. Vertical + country
+are stamped from the clinic record; clients don't (and can't) pass
+them.
+
+```http
+GET  /api/v1/reports/compliance                  # paginated list
+GET  /api/v1/reports/compliance/{id}             # single row
+GET  /api/v1/reports/compliance/{id}/download    # row + presigned URL (1h)
+```
+
+The download endpoint:
+
+1. Re-reads the row.
+2. Returns `409 Conflict` if `status != "done"`.
+3. Mints a fresh presigned URL via `storage.PresignDownload(key, 1h)`.
+4. Appends a `downloaded` row to `report_audit` (append-only, regulator
+   visibility).
+5. Returns the row enriched with `download_url`.
+
+### Worker pipeline
+
+```
+POST /api/v1/reports/compliance
+  → CreateComplianceReport (status=queued)
+  → river.Insert(GenerateCompliancePDFArgs{ReportID, ClinicID})
+
+GenerateCompliancePDFWorker.Work()
+  → GetComplianceReportInternal(id)
+  → MarkComplianceReportRunning
+  → ComplianceDataSource.GetClinic(clinicID) → ClinicSnapshot
+  → dispatch by type:
+      controlled_drugs_register:
+        ListControlledDrugOps(period)
+        ListReconciliationsInPeriod(period)
+        BuildControlledDrugsRegisterPDF(...)
+      audit_pack:
+        ListControlledDrugOps + ListReconciliationsInPeriod + CountNotesByStatus
+        BuildAuditPackPDF(...)
+  → store.Upload("compliance-reports/{clinic_id}/{report_id}.pdf")
+  → MarkComplianceReportDone(id, key, size, sha256)
+```
+
+`ComplianceDataSource` is a narrow adapter interface (in
+`reports/pdf.go`) — `clinic.Service`, `staff.Service`, and `drugs.Service`
+are wrapped behind it so reports doesn't import their types directly.
+The reports-local view types (`DrugOpView`, `DrugReconciliationView`,
+`ClinicSnapshot`) are reports' own. The wiring is in
+`app.go::complianceDataAdapter` plus `lazyComplianceData` (the worker
+is registered before the underlying services exist).
+
+### Tamper detection
+
+Every generated PDF is hashed (`sha256`) at build time. The hash is
+stored in `reports.report_hash` and rendered in the cover page footer.
+Anyone holding the file can re-hash it and compare against the row to
+detect mutation. Combined with the append-only `report_audit` (which
+captures every download), this gives the regulator a chain of custody
+without us holding the file plaintext outside the storage tier.
+
+### Database
+
+Migration: `00061_create_reports.sql`. Two tables:
+
+- `reports` — one row per compliance report. Status state machine
+  (`queued`/`running`/`done`/`failed`) + denormalised vertical/country
+  + file metadata (key, size, sha256). External-share token columns
+  exist but are unused in v1.
+- `report_audit` — append-only log of `generated`/`downloaded`/
+  `shared_externally`/`deleted` events per report. UPDATE forbidden;
+  the insert is the only mutation.
+
+### Endpoint summary
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/reports/compliance` | Request a PDF (queued). Returns 202 + report row. |
+| `GET` | `/api/v1/reports/compliance` | List clinic reports (filter by type / status / period). |
+| `GET` | `/api/v1/reports/compliance/{id}` | Get one report. |
+| `GET` | `/api/v1/reports/compliance/{id}/download` | Row + 1h presigned URL; appends to `report_audit`. |
+
+### What's not done yet
+
+- `download_url` on the list endpoint is empty — only the explicit
+  `/download` route mints + audits one. Intentional: surfacing a URL
+  on every list response would log spurious "downloaded" rows.
+- AI-narrated reports (e.g. period summary with claimed insights) —
+  belongs to the C3 phase.
+- Email delivery + scheduled regeneration — D2 / D3.
+- Notes-by-status counts in the Audit Pack are a v1 stub (returns an
+  empty map). Wire to a `notes.Service.CountByStatus` method once the
+  notes module exposes one.
+- Override drugs aren't included in the Controlled Drugs Register —
+  override entries don't carry `Controls` metadata yet (drugs module v1
+  treats them as non-controlled).
