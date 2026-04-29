@@ -57,6 +57,23 @@ type ComplianceReportRecord struct {
 	DeliveredToEmails   []string
 }
 
+// ReportScheduleRecord — one row of report_schedules. Recurring trigger
+// for compliance-report generation + email delivery.
+type ReportScheduleRecord struct {
+	ID           uuid.UUID
+	ClinicID     uuid.UUID
+	ReportType   string
+	Frequency    string // daily | weekly | monthly | quarterly
+	Recipients   []string
+	Paused       bool
+	NextRunAt    time.Time
+	LastRunAt    *time.Time
+	LastReportID *uuid.UUID
+	CreatedBy    uuid.UUID
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 // ReportAuditRecord is one row of the report_audit append-only log.
 type ReportAuditRecord struct {
 	ID       uuid.UUID
@@ -124,6 +141,26 @@ type ListComplianceReportsParams struct {
 	Status *string
 	From   *time.Time
 	To     *time.Time
+}
+
+// CreateReportScheduleParams holds values for creating a recurring schedule.
+type CreateReportScheduleParams struct {
+	ID         uuid.UUID
+	ClinicID   uuid.UUID
+	ReportType string
+	Frequency  string
+	Recipients []string
+	NextRunAt  time.Time
+	CreatedBy  uuid.UUID
+}
+
+// UpdateReportScheduleParams — caller can pause / resume + edit recipients.
+// Frequency is immutable once set; pause + delete + recreate to switch.
+type UpdateReportScheduleParams struct {
+	ID         uuid.UUID
+	ClinicID   uuid.UUID
+	Recipients *[]string
+	Paused     *bool
 }
 
 // LogReportAuditParams holds values for logging a report audit action.
@@ -530,6 +567,50 @@ func (r *Repository) MarkComplianceReportFailed(ctx context.Context, id uuid.UUI
 	return nil
 }
 
+// SetReportRecipients writes the delivered_to_emails column on a queued
+// report. Used by the schedule-fire worker to stamp recipients before
+// generation; the email worker reads them on completion.
+func (r *Repository) SetReportRecipients(ctx context.Context, id uuid.UUID, recipients []string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE reports
+		SET delivered_to_emails = $2
+		WHERE id = $1`,
+		id, recipients,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.SetReportRecipients: %w", err)
+	}
+	return nil
+}
+
+// GetReportRecipients returns the email list staged for a report's
+// scheduled delivery, or an empty slice for ad-hoc reports.
+func (r *Repository) GetReportRecipients(ctx context.Context, id uuid.UUID) ([]string, error) {
+	var recipients []string
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(delivered_to_emails, ARRAY[]::TEXT[])
+		FROM reports WHERE id = $1`,
+		id,
+	).Scan(&recipients)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.GetReportRecipients: %w", err)
+	}
+	return recipients, nil
+}
+
+// MarkReportDelivered stamps the delivered_at timestamp on a report after
+// the email worker has sent the link to every recipient.
+func (r *Repository) MarkReportDelivered(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE reports SET delivered_at = NOW() WHERE id = $1`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.MarkReportDelivered: %w", err)
+	}
+	return nil
+}
+
 // LogReportAudit appends a row to report_audit. Append-only by design.
 func (r *Repository) LogReportAudit(ctx context.Context, p LogReportAuditParams) error {
 	_, err := r.db.Exec(ctx, `
@@ -541,6 +622,176 @@ func (r *Repository) LogReportAudit(ctx context.Context, p LogReportAuditParams)
 		return fmt.Errorf("reports.repo.LogReportAudit: %w", err)
 	}
 	return nil
+}
+
+// ── Report schedules CRUD (recurring trigger) ───────────────────────────────
+
+const reportScheduleCols = `id, clinic_id, report_type, frequency,
+	recipients, paused, next_run_at, last_run_at, last_report_id,
+	created_by, created_at, updated_at`
+
+func (r *Repository) CreateReportSchedule(ctx context.Context, p CreateReportScheduleParams) (*ReportScheduleRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		INSERT INTO report_schedules (
+			id, clinic_id, report_type, frequency, recipients, next_run_at, created_by
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING %s`, reportScheduleCols),
+		p.ID, p.ClinicID, p.ReportType, p.Frequency, p.Recipients, p.NextRunAt, p.CreatedBy,
+	)
+	rec, err := scanReportSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.CreateReportSchedule: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *Repository) GetReportSchedule(ctx context.Context, id, clinicID uuid.UUID) (*ReportScheduleRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s FROM report_schedules WHERE id = $1 AND clinic_id = $2`, reportScheduleCols),
+		id, clinicID,
+	)
+	rec, err := scanReportSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.GetReportSchedule: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *Repository) ListReportSchedules(ctx context.Context, clinicID uuid.UUID) ([]*ReportScheduleRecord, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT %s FROM report_schedules WHERE clinic_id = $1
+		ORDER BY created_at DESC`, reportScheduleCols),
+		clinicID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.ListReportSchedules: %w", err)
+	}
+	defer rows.Close()
+	var out []*ReportScheduleRecord
+	for rows.Next() {
+		rec, err := scanReportSchedule(rows)
+		if err != nil {
+			return nil, fmt.Errorf("reports.repo.ListReportSchedules: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reports.repo.ListReportSchedules: rows: %w", err)
+	}
+	return out, nil
+}
+
+// ListDueReportSchedules returns every active schedule whose next_run_at
+// has passed. The fire-loop calls this every hour and enqueues a report
+// generation for each. Internal — no clinic scope.
+func (r *Repository) ListDueReportSchedules(ctx context.Context, before time.Time) ([]*ReportScheduleRecord, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT %s FROM report_schedules
+		WHERE paused = FALSE AND next_run_at <= $1
+		ORDER BY next_run_at ASC
+		LIMIT 200`, reportScheduleCols),
+		before,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.ListDueReportSchedules: %w", err)
+	}
+	defer rows.Close()
+	var out []*ReportScheduleRecord
+	for rows.Next() {
+		rec, err := scanReportSchedule(rows)
+		if err != nil {
+			return nil, fmt.Errorf("reports.repo.ListDueReportSchedules: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reports.repo.ListDueReportSchedules: rows: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repository) UpdateReportSchedule(ctx context.Context, p UpdateReportScheduleParams) (*ReportScheduleRecord, error) {
+	sets := []string{"updated_at = NOW()"}
+	args := []any{p.ID, p.ClinicID}
+	if p.Recipients != nil {
+		args = append(args, *p.Recipients)
+		sets = append(sets, fmt.Sprintf("recipients = $%d", len(args)))
+	}
+	if p.Paused != nil {
+		args = append(args, *p.Paused)
+		sets = append(sets, fmt.Sprintf("paused = $%d", len(args)))
+	}
+	q := fmt.Sprintf(`
+		UPDATE report_schedules SET %s
+		WHERE id = $1 AND clinic_id = $2
+		RETURNING %s`, joinScheduleSets(sets), reportScheduleCols)
+	row := r.db.QueryRow(ctx, q, args...)
+	rec, err := scanReportSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("reports.repo.UpdateReportSchedule: %w", err)
+	}
+	return rec, nil
+}
+
+func (r *Repository) DeleteReportSchedule(ctx context.Context, id, clinicID uuid.UUID) error {
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM report_schedules WHERE id = $1 AND clinic_id = $2`,
+		id, clinicID,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.DeleteReportSchedule: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("reports.repo.DeleteReportSchedule: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
+// MarkScheduleFired stamps the schedule with last_run_at + last_report_id
+// and bumps next_run_at to the start of the next period. Called by the
+// fire-loop right after enqueuing the report generation.
+func (r *Repository) MarkScheduleFired(ctx context.Context, id uuid.UUID, lastReportID uuid.UUID, nextRunAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE report_schedules
+		SET last_run_at = NOW(),
+		    last_report_id = $2,
+		    next_run_at = $3,
+		    updated_at = NOW()
+		WHERE id = $1`,
+		id, lastReportID, nextRunAt,
+	)
+	if err != nil {
+		return fmt.Errorf("reports.repo.MarkScheduleFired: %w", err)
+	}
+	return nil
+}
+
+func scanReportSchedule(row scannable) (*ReportScheduleRecord, error) {
+	var s ReportScheduleRecord
+	err := row.Scan(
+		&s.ID, &s.ClinicID, &s.ReportType, &s.Frequency,
+		&s.Recipients, &s.Paused, &s.NextRunAt, &s.LastRunAt, &s.LastReportID,
+		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanReportSchedule: %w", err)
+	}
+	return &s, nil
+}
+
+func joinScheduleSets(sets []string) string {
+	out := ""
+	for i, s := range sets {
+		if i > 0 {
+			out += ", "
+		}
+		out += s
+	}
+	return out
 }
 
 func scanComplianceReport(row scannable) (*ComplianceReportRecord, error) {
