@@ -66,6 +66,39 @@ type ClinicSnapshot struct {
 	License   *string // regulator license number, if known
 }
 
+// IncidentView — local view over one incident row. Carries enough for
+// summary tables (no full description body — the audit pack PDF cites
+// counts + notifiable status, not paragraphs).
+type IncidentView struct {
+	ID                  string
+	IncidentType        string
+	Severity            string
+	Status              string
+	OccurredAt          time.Time
+	SubjectName         *string
+	SIRSPriority        string // priority_1 / priority_2 / "" — empty means non-SIRS
+	CQCNotifiable       bool
+	NotificationDeadline *time.Time
+	RegulatorNotifiedAt *time.Time
+}
+
+// ConsentSummary — aggregate snapshot of consent activity in the period.
+type ConsentSummary struct {
+	Total           int
+	ByType          map[string]int // consent_type -> count
+	Withdrawn       int
+	ExpiringIn30d   int
+	VerbalWitnessed int // verbal_clinic captures with witness
+}
+
+// PainSummary — aggregate snapshot of pain assessments in the period.
+type PainSummary struct {
+	Count        int
+	AvgScore     float64
+	HighestScore int
+	ScalesUsed   map[string]int // pain_scale_used -> count
+}
+
 // ComplianceDataSource is the dependency the PDF builders need. Implementers
 // (app.go adapters) wrap drugs.Service + clinic.Service + staff.Service and
 // translate to reports-local view types.
@@ -76,6 +109,13 @@ type ComplianceDataSource interface {
 	ListControlledDrugOps(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]DrugOpView, error)
 	ListReconciliationsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]DrugReconciliationView, error)
 	CountNotesByStatus(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (map[string]int, error)
+
+	// Sources for the unified evidence-pack / records-audit / incidents-log
+	// PDFs (B3 + C1 + C2 + universal Records Audit). Each adapter converts
+	// the sister-domain response types into the reports-local view above.
+	ListIncidentsInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) ([]IncidentView, error)
+	ConsentSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*ConsentSummary, error)
+	PainSummaryInPeriod(ctx context.Context, clinicID uuid.UUID, from, to time.Time) (*PainSummary, error)
 }
 
 // ── Regulator context ────────────────────────────────────────────────────────
