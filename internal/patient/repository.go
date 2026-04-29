@@ -1637,6 +1637,37 @@ func (r *Repository) CreateSubjectAccessLog(ctx context.Context, p CreateSubject
 	return rec, nil
 }
 
+// ListSubjectAccessLog returns the subject access-log entries for a
+// clinic within [from, to]. Used by the HIPAA disclosure-log report
+// builder. Append-only table → no need for Total / pagination
+// safeguards; the report worker pages explicitly.
+func (r *Repository) ListSubjectAccessLog(ctx context.Context, clinicID uuid.UUID, from, to time.Time, limit, offset int) ([]*SubjectAccessLogRecord, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, subject_id, staff_id, clinic_id, action, purpose, at
+		FROM subject_access_log
+		WHERE clinic_id = $1 AND at >= $2 AND at <= $3
+		ORDER BY at DESC
+		LIMIT $4 OFFSET $5`,
+		clinicID, from, to, limit, offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.ListSubjectAccessLog: %w", err)
+	}
+	defer rows.Close()
+	var out []*SubjectAccessLogRecord
+	for rows.Next() {
+		var rec SubjectAccessLogRecord
+		if err := rows.Scan(&rec.ID, &rec.SubjectID, &rec.StaffID, &rec.ClinicID, &rec.Action, &rec.Purpose, &rec.At); err != nil {
+			return nil, fmt.Errorf("patient.repo.ListSubjectAccessLog: scan: %w", err)
+		}
+		out = append(out, &rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("patient.repo.ListSubjectAccessLog: rows: %w", err)
+	}
+	return out, nil
+}
+
 // CreateSubjectContact inserts a (subject, contact, role) binding.
 // Returns ErrConflict if the same role already exists for this pair.
 func (r *Repository) CreateSubjectContact(
