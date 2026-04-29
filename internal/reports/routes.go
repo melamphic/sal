@@ -84,4 +84,49 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, auditExport},
 	}, h.getExportJob)
+
+	// ── Compliance reports (regulator-facing PDFs) ────────────────────────
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "request-compliance-report",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/reports/compliance",
+		Summary:       "Request a compliance report (PDF / ZIP)",
+		Description:   "Vertical- and country-agnostic regulator-facing report. Type slugs: audit_pack, controlled_drugs_register. The clinic's vertical + country select the right regulator template inside the PDF builder. Returns a queued report row; poll GET /api/v1/reports/compliance/{id} for status.",
+		Tags:          []string{"Reports"},
+		Security:      security,
+		Middlewares:   huma.Middlewares{auth, auditExport},
+		DefaultStatus: http.StatusAccepted,
+	}, h.requestComplianceReport)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-compliance-reports",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance",
+		Summary:     "List compliance reports",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.listComplianceReports)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-compliance-report",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance/{id}",
+		Summary:     "Get one compliance report",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.getComplianceReport)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "download-compliance-report",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/reports/compliance/{id}/download",
+		Summary:     "Download a completed compliance report",
+		Description: "Returns the report row enriched with a fresh presigned URL valid for 1 hour. Writes an audit row to report_audit.",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.downloadComplianceReport)
 }
