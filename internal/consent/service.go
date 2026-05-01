@@ -98,6 +98,7 @@ type CaptureConsentInput struct {
 	StaffID                     uuid.UUID
 	SubjectID                   uuid.UUID
 	NoteID                      *uuid.UUID
+	NoteFieldID                 *uuid.UUID
 	ConsentType                 string
 	Scope                       string
 	ProcedureOrFormID           *uuid.UUID
@@ -186,6 +187,7 @@ func (s *Service) CaptureConsent(ctx context.Context, in CaptureConsentInput) (*
 		ClinicID:                    in.ClinicID,
 		SubjectID:                   in.SubjectID,
 		NoteID:                      in.NoteID,
+		NoteFieldID:                 in.NoteFieldID,
 		ConsentType:                 in.ConsentType,
 		Scope:                       in.Scope,
 		ProcedureOrFormID:           in.ProcedureOrFormID,
@@ -222,6 +224,18 @@ func (s *Service) GetConsent(ctx context.Context, id, clinicID, staffID uuid.UUI
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, clinicID, rec.SubjectID, staffID,
 			"consent_view", "consent.service.GetConsent")
+	}
+	return recordToResponse(rec), nil
+}
+
+// SummariseForNote returns the public ConsentResponse for an id without
+// writing an access log. Called when the parent note is being rendered —
+// the note itself is the access event, so logging a separate
+// `consent_view` would double-count and clutter the audit trail.
+func (s *Service) SummariseForNote(ctx context.Context, id, clinicID uuid.UUID) (*ConsentResponse, error) {
+	rec, err := s.repo.GetConsent(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("consent.service.SummariseForNote: %w", err)
 	}
 	return recordToResponse(rec), nil
 }

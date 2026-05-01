@@ -479,6 +479,23 @@ func (h *Handler) getOperation(ctx context.Context, input *idPathInput) (*operat
 	return &operationHTTPResponse{Body: resp}, nil
 }
 
+// confirmOperation flips a pending_confirm drug op (created via a
+// system.drug_op widget on a note's form) to confirmed. The clinician
+// must explicitly tap Confirm before the linked note can be submitted.
+func (h *Handler) confirmOperation(ctx context.Context, input *idPathInput) (*operationHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+	id, err := uuid.Parse(input.ID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid id")
+	}
+	resp, err := h.svc.ConfirmOperation(ctx, id, clinicID, staffID)
+	if err != nil {
+		return nil, mapDrugsError(err)
+	}
+	return &operationHTTPResponse{Body: resp}, nil
+}
+
 type listSubjectMedsQueryInput struct {
 	paginationInput
 	SubjectID string `path:"subject_id"`

@@ -52,5 +52,31 @@
       {"position": 8, "title": "Refused / withheld?", "type": "button_group", "config": {"options": [{"label": "Given", "value": "given"}, {"label": "Refused", "value": "refused"}, {"label": "Withheld", "value": "withheld"}]}, "required": true},
       {"position": 9, "title": "Reason if refused / withheld", "type": "long_text"}
     ]
+  },
+  {
+    "_kind": "fewshot.form.aged_care",
+    "name": "PRN Opioid Round",
+    "description": "Daily PRN opioid administration for palliative residents. System widgets auto-populate the CD register + pain trend on submit; opioid op stays pending_confirm until the second RN confirms.",
+    "tags": ["palliative", "controlled_drug", "prn"],
+    "fields": [
+      {"position": 1, "title": "Pain assessment before dose", "type": "system.pain_score", "config": {"scale_id": "painad"}, "required": true, "ai_prompt": "PainAD score — observation-based for residents with dementia. 0-10."},
+      {"position": 2, "title": "Standing order reference", "type": "text", "required": true, "ai_prompt": "Reference number / GP-issued standing-order ID."},
+      {"position": 3, "title": "PRN opioid given", "type": "system.drug_op", "config": {"operation": "administer", "controlled_only": true}, "required": true, "ai_prompt": "Controlled-drug administration (morphine / fentanyl patch / oxycodone). Two-RN witness per Poisons Standard. Stays pending until confirmed."},
+      {"position": 4, "title": "Reassessment 60 min post-dose", "type": "system.pain_score", "config": {"scale_id": "painad"}, "ai_prompt": "Re-score using same scale to capture analgesic effect."},
+      {"position": 5, "title": "Side effects observed", "type": "button_group", "config": {"options": [{"label": "None", "value": "none"}, {"label": "Sedation", "value": "sedation"}, {"label": "Nausea", "value": "nausea"}, {"label": "Resp depression", "value": "resp_depression"}, {"label": "Constipation", "value": "constipation"}]}},
+      {"position": 6, "title": "Notes", "type": "long_text"}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.aged_care",
+    "name": "Resident Fall",
+    "description": "Fall incident report — auto-classifies to SIRS / CQC and starts the regulator clock on submit.",
+    "tags": ["incident", "fall"],
+    "fields": [
+      {"position": 1, "title": "Fall details", "type": "system.incident", "config": {"incident_type": "fall"}, "required": true, "ai_prompt": "Severity from observation: any apparent injury, was head impact suspected, post-fall obs."},
+      {"position": 2, "title": "Pain after fall", "type": "system.pain_score", "config": {"scale_id": "painad"}, "ai_prompt": "Score on movement post-fall."},
+      {"position": 3, "title": "Witness account", "type": "long_text"},
+      {"position": 4, "title": "NoK notified", "type": "button_group", "config": {"options": [{"label": "Yes", "value": "yes"}, {"label": "No (in progress)", "value": "no"}, {"label": "Resident has no NoK", "value": "none"}]}, "required": true}
+    ]
   }
 ]

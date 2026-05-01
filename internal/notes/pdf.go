@@ -78,7 +78,21 @@ type PDFInput struct {
 }
 
 // PDFField is a label/value pair for rendering in the PDF body.
+//
+// SystemSummary, when non-nil, replaces the raw [Value] with a small
+// labelled table — used for materialised system widgets (drug op, pain
+// score, …) so the PDF surfaces what was captured rather than the raw
+// id-pointer JSON in note_fields.value.
 type PDFField struct {
+	Label         string
+	Value         string
+	SystemSummary []PDFSummaryItem
+}
+
+// PDFSummaryItem mirrors notes.NoteFieldSystemSummaryItem — kept in
+// this package's vocabulary so the renderer doesn't import service
+// types.
+type PDFSummaryItem struct {
 	Label string
 	Value string
 }
@@ -147,11 +161,20 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 
 		pdf.SetFont(bodyFont, "", baseSize)
 		pdf.SetTextColor(int(r), int(g), int(b))
-		val := f.Value
-		if strings.TrimSpace(val) == "" {
-			val = "—"
+		if len(f.SystemSummary) > 0 {
+			// Materialised system widget — render as a labelled table so
+			// the captured data (drug name + qty, score, …) shows
+			// instead of the raw id-pointer.
+			drawSystemSummary(pdf, f.SystemSummary,
+				int(mr), int(mg), int(mb), int(r), int(g), int(b),
+				headingFont, bodyFont, baseSize, lineHeight)
+		} else {
+			val := f.Value
+			if strings.TrimSpace(val) == "" {
+				val = "—"
+			}
+			pdf.MultiCell(0, baseSize*lineHeight*0.55, val, "", "L", false)
 		}
-		pdf.MultiCell(0, baseSize*lineHeight*0.55, val, "", "L", false)
 		pdf.Ln(2)
 	}
 
@@ -362,6 +385,48 @@ func drawWatermark(pdf *fpdf.Fpdf, theme *DocTheme, mutedColor, fontName string,
 	pdf.CellFormat(pageW, 30, *w.Text, "", 0, "C", false, 0, "")
 	pdf.TransformEnd()
 	pdf.SetAlpha(1.0, "Normal")
+}
+
+// drawSystemSummary renders the labelled key/value rows produced by a
+// materialised system widget. Two columns: caps label on the left, body
+// value on the right. Wraps long values onto multiple lines.
+func drawSystemSummary(
+	pdf *fpdf.Fpdf,
+	items []PDFSummaryItem,
+	mR, mG, mB, tR, tG, tB int,
+	headingFont, bodyFont string,
+	baseSize, lineHeight float64,
+) {
+	pageW, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	contentW := pageW - left - right
+	labelW := contentW * 0.32
+	valueW := contentW - labelW
+	for _, it := range items {
+		startY := pdf.GetY()
+		// Label cell.
+		pdf.SetFont(headingFont, "B", baseSize-1)
+		pdf.SetTextColor(mR, mG, mB)
+		pdf.SetXY(left, startY)
+		pdf.MultiCell(labelW, baseSize*lineHeight*0.55, strings.ToUpper(it.Label), "", "L", false)
+		labelEndY := pdf.GetY()
+		// Value cell — top-aligned with label.
+		pdf.SetFont(bodyFont, "", baseSize)
+		pdf.SetTextColor(tR, tG, tB)
+		pdf.SetXY(left+labelW, startY)
+		val := it.Value
+		if strings.TrimSpace(val) == "" {
+			val = "—"
+		}
+		pdf.MultiCell(valueW, baseSize*lineHeight*0.55, val, "", "L", false)
+		valueEndY := pdf.GetY()
+		// Move cursor below the taller of the two cells.
+		if valueEndY > labelEndY {
+			pdf.SetY(valueEndY)
+		} else {
+			pdf.SetY(labelEndY)
+		}
+	}
 }
 
 // ── System header card ──────────────────────────────────────────────────────

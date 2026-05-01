@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -344,7 +345,7 @@ func (h *Handler) retryNoteExtraction(ctx context.Context, input *noteIDInput) (
 func mapNoteError(err error) error {
 	switch {
 	case errors.Is(err, domain.ErrValidation):
-		return huma.Error422UnprocessableEntity(err.Error())
+		return huma.Error422UnprocessableEntity(leafMessage(err))
 	case errors.Is(err, domain.ErrNotFound):
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrConflict):
@@ -355,4 +356,44 @@ func mapNoteError(err error) error {
 		slog.Error("notes: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
+}
+
+// leafMessage extracts the cause text from a wrapped error chain, strip-
+// ping the "pkg.layer.func: " prefixes added by fmt.Errorf("...: %w").
+// The full chain stays in logs (via slog) — this is purely the
+// user-facing string returned in the HTTP error body.
+//
+// Example: "notes.service.materialiseTyped: app.drugOpAdapter: drugs.
+// service.LogOperation: witness required for controlled drug: validation
+// error" → "witness required for controlled drug".
+func leafMessage(err error) string {
+	msg := err.Error()
+	// Drop trailing sentinel — domain.ErrValidation prints "validation error"
+	// after the last colon. Keep what comes before it.
+	const sentinel = ": validation error"
+	if idx := strings.LastIndex(msg, sentinel); idx > 0 {
+		msg = msg[:idx]
+	}
+	// Take everything after the last "<pkg>.<layer>.<func>: " prefix.
+	// The shape is `lower.lower.lower: ` or `lower.lower: ` — at least one dot.
+	// We split on ": " and walk forward until a segment doesn't look like
+	// a wrapper prefix.
+	parts := strings.Split(msg, ": ")
+	for i := 0; i < len(parts)-1; i++ {
+		p := parts[i]
+		if !looksLikeWrapPrefix(p) {
+			return strings.Join(parts[i:], ": ")
+		}
+	}
+	return parts[len(parts)-1]
+}
+
+// looksLikeWrapPrefix returns true for tokens that look like Go package
+// path qualifiers (e.g. "notes.service.materialiseTyped"). Used to
+// decide where the user-facing portion of an error chain starts.
+func looksLikeWrapPrefix(s string) bool {
+	if s == "" || strings.ContainsAny(s, " ") {
+		return false
+	}
+	return strings.Contains(s, ".")
 }

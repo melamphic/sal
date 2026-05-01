@@ -170,6 +170,17 @@ func (h *Handler) Mount(_ chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.getOperation)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "confirm-drug-operation",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/drugs/operations/{id}/confirm",
+		Summary:     "Confirm a pending drug operation",
+		Description: "system.drug_op widgets create rows in 'pending_confirm' until the clinician explicitly confirms — note submission is blocked while any drug op linked to the note is unconfirmed. This endpoint is idempotent: re-calling on a confirmed row returns it unchanged.",
+		Tags:        []string{"Drugs"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, dispense},
+	}, h.confirmOperation)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "list-subject-drug-history",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/drugs/subjects/{subject_id}/medications",

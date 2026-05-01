@@ -50,5 +50,20 @@
       {"position": 7, "title": "Current medications + adherence", "type": "long_text"},
       {"position": 8, "title": "Plan + follow-up", "type": "long_text", "required": true}
     ]
+  },
+  {
+    "_kind": "fewshot.form.general",
+    "name": "Minor Procedure",
+    "description": "GP-led minor procedure (excision, IUD, joint injection). System widget captures consent so the typed record lands in the patient's compliance ledger automatically.",
+    "tags": ["procedure", "minor_surgery"],
+    "fields": [
+      {"position": 1, "title": "Procedure", "type": "text", "required": true},
+      {"position": 2, "title": "Pre-procedure consent", "type": "system.consent", "config": {"consent_type": "invasive_procedure"}, "required": true, "ai_prompt": "Risks (perforation, expulsion, infection, scarring) + alternatives discussed and patient agreement."},
+      {"position": 3, "title": "Local anaesthetic", "type": "text", "ai_prompt": "Agent + volume + concentration (e.g. 2.2 mL lignocaine 1%)."},
+      {"position": 4, "title": "Procedure note", "type": "long_text", "required": true},
+      {"position": 5, "title": "Post-procedure pain", "type": "system.pain_score", "config": {"scale_id": "nrs"}, "ai_prompt": "0-10 NRS at end of procedure."},
+      {"position": 6, "title": "Adverse event during procedure", "type": "system.incident", "config": {"min_severity": "low"}, "ai_prompt": "Only emit if something unexpected happened (vasovagal, allergic reaction, equipment failure). Otherwise leave null."},
+      {"position": 7, "title": "Follow-up plan", "type": "long_text", "required": true}
+    ]
   }
 ]

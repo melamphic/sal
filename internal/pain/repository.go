@@ -27,6 +27,7 @@ type PainScoreRecord struct {
 	ClinicID      uuid.UUID
 	SubjectID     uuid.UUID
 	NoteID        *uuid.UUID
+	NoteFieldID   *uuid.UUID
 	Score         int
 	Note          *string
 	Method        string
@@ -41,6 +42,7 @@ type CreatePainScoreParams struct {
 	ClinicID      uuid.UUID
 	SubjectID     uuid.UUID
 	NoteID        *uuid.UUID
+	NoteFieldID   *uuid.UUID
 	Score         int
 	Note          *string
 	Method        string
@@ -65,19 +67,20 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-const painCols = `id, clinic_id, subject_id, note_id, score, note,
+const painCols = `id, clinic_id, subject_id, note_id, note_field_id,
+	score, note,
 	method, pain_scale_used, assessed_by, assessed_at, created_at`
 
 func (r *Repository) CreatePainScore(ctx context.Context, p CreatePainScoreParams) (*PainScoreRecord, error) {
 	row := r.db.QueryRow(ctx, fmt.Sprintf(`
 		INSERT INTO pain_scores (
-			id, clinic_id, subject_id, note_id,
+			id, clinic_id, subject_id, note_id, note_field_id,
 			score, note, method, pain_scale_used,
 			assessed_by, assessed_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING %s`, painCols),
-		p.ID, p.ClinicID, p.SubjectID, p.NoteID,
+		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.Score, p.Note, p.Method, p.PainScaleUsed,
 		p.AssessedBy, p.AssessedAt,
 	)
@@ -115,6 +118,10 @@ func (r *Repository) ListPainScores(ctx context.Context, clinicID uuid.UUID, p L
 		args = append(args, *p.Until)
 		where += fmt.Sprintf(" AND assessed_at <= $%d", len(args))
 	}
+	// Hide draft-bound pain scores from list views (patient trend,
+	// timeline). Per-id GET still works so the note review surface
+	// can show its own pending materialisations.
+	where += " AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))"
 
 	var total int
 	if err := r.db.QueryRow(ctx,
@@ -163,6 +170,9 @@ type SubjectTrend struct {
 }
 
 func (r *Repository) SubjectTrend(ctx context.Context, clinicID, subjectID uuid.UUID, since, until time.Time) (*SubjectTrend, error) {
+	// Same submitted-or-standalone gate as ListPainScores so the
+	// patient trend doesn't include scores still pending a note submit.
+	const submittedFilter = `AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))`
 	row := r.db.QueryRow(ctx, `
 		SELECT
 			COUNT(*),
@@ -171,26 +181,27 @@ func (r *Repository) SubjectTrend(ctx context.Context, clinicID, subjectID uuid.
 			MAX(score)
 		FROM pain_scores
 		WHERE clinic_id = $1 AND subject_id = $2
-		  AND assessed_at >= $3 AND assessed_at <= $4`,
+		  AND assessed_at >= $3 AND assessed_at <= $4
+		  `+submittedFilter,
 		clinicID, subjectID, since, until,
 	)
 	var (
-		count    int
-		avg      float64
-		latest   *time.Time
-		highest  *int
+		count   int
+		avg     float64
+		latest  *time.Time
+		highest *int
 	)
 	if err := row.Scan(&count, &avg, &latest, &highest); err != nil {
 		return nil, fmt.Errorf("pain.repo.SubjectTrend: %w", err)
 	}
 	out := &SubjectTrend{
-		SubjectID: subjectID,
-		Count:     count,
-		AvgScore:  avg,
-		LatestAt:  latest,
+		SubjectID:    subjectID,
+		Count:        count,
+		AvgScore:     avg,
+		LatestAt:     latest,
 		HighestScore: highest,
-		Since:     since,
-		Until:     until,
+		Since:        since,
+		Until:        until,
 	}
 	if count > 0 {
 		// Need the score at LatestAt — small follow-up query.
@@ -198,6 +209,7 @@ func (r *Repository) SubjectTrend(ctx context.Context, clinicID, subjectID uuid.
 		err := r.db.QueryRow(ctx, `
 			SELECT score FROM pain_scores
 			WHERE clinic_id = $1 AND subject_id = $2 AND assessed_at = $3
+			  `+submittedFilter+`
 			ORDER BY created_at DESC LIMIT 1`,
 			clinicID, subjectID, latest,
 		).Scan(&latestScore)
@@ -217,7 +229,7 @@ type scannable interface {
 func scanPain(row scannable) (*PainScoreRecord, error) {
 	var p PainScoreRecord
 	err := row.Scan(
-		&p.ID, &p.ClinicID, &p.SubjectID, &p.NoteID,
+		&p.ID, &p.ClinicID, &p.SubjectID, &p.NoteID, &p.NoteFieldID,
 		&p.Score, &p.Note, &p.Method, &p.PainScaleUsed,
 		&p.AssessedBy, &p.AssessedAt, &p.CreatedAt,
 	)

@@ -188,6 +188,7 @@ type LogOperationInput struct {
 	ShelfID          uuid.UUID
 	SubjectID        *uuid.UUID
 	NoteID           *uuid.UUID
+	NoteFieldID      *uuid.UUID
 	Operation        string
 	Quantity         float64
 	Unit             string
@@ -198,6 +199,12 @@ type LogOperationInput struct {
 	WitnessedBy      *uuid.UUID
 	PrescribedBy     *uuid.UUID
 	AddendsTo        *uuid.UUID
+	// Status — 'confirmed' (default) for explicit user actions; pass
+	// 'pending_confirm' from auto-materialisation flows that require a
+	// downstream user tap (e.g. AI auto-creating drug ops without
+	// review). The submit gate refuses to ship a note with any
+	// pending_confirm rows linked to it.
+	Status string
 }
 
 // OperationResponse — one ledger row on the wire.
@@ -208,6 +215,7 @@ type OperationResponse struct {
 	ShelfID           string  `json:"shelf_id"`
 	SubjectID         *string `json:"subject_id,omitempty"`
 	NoteID            *string `json:"note_id,omitempty"`
+	NoteFieldID       *string `json:"note_field_id,omitempty"`
 	Operation         string  `json:"operation"`
 	Quantity          float64 `json:"quantity"`
 	Unit              string  `json:"unit"`
@@ -221,6 +229,12 @@ type OperationResponse struct {
 	BalanceAfter      float64 `json:"balance_after"`
 	ReconciliationID  *string `json:"reconciliation_id,omitempty"`
 	AddendsTo         *string `json:"addends_to,omitempty"`
+	// Status — 'pending_confirm' until a clinician confirms (only set
+	// for system.drug_op widget creates). Always 'confirmed' for ops
+	// created via the manual modal.
+	Status            string  `json:"status"`
+	ConfirmedBy       *string `json:"confirmed_by,omitempty"`
+	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
 	CreatedAt         string  `json:"created_at"`
 }
 
@@ -620,6 +634,7 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		ShelfID:           in.ShelfID,
 		SubjectID:         in.SubjectID,
 		NoteID:            in.NoteID,
+		NoteFieldID:       in.NoteFieldID,
 		Operation:         in.Operation,
 		Quantity:          in.Quantity,
 		Unit:              in.Unit,
@@ -632,6 +647,7 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		BalanceBefore:     balanceBefore,
 		BalanceAfter:      balanceAfter,
 		AddendsTo:         in.AddendsTo,
+		Status:            in.Status,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
@@ -722,6 +738,35 @@ func (s *Service) GetOperation(ctx context.Context, id, clinicID uuid.UUID) (*Op
 		return nil, fmt.Errorf("drugs.service.GetOperation: %w", err)
 	}
 	return operationRecordToResponse(rec), nil
+}
+
+// ConfirmOperation flips a pending_confirm row created via a
+// system.drug_op widget to confirmed. Idempotent: re-calling on an
+// already-confirmed row returns it unchanged. Witness must be the same
+// staff_id rules apply at LogOperation time — this method does NOT
+// re-validate witness because the row already exists; it ONLY records
+// the clinician's explicit acknowledgement that the AI-prefilled values
+// are correct.
+//
+// Note submission is gated by ListPendingConfirmForNote — any
+// unconfirmed system.drug_op row blocks submission.
+func (s *Service) ConfirmOperation(ctx context.Context, id, clinicID, staffID uuid.UUID) (*OperationResponse, error) {
+	rec, err := s.repo.ConfirmOperation(ctx, id, clinicID, staffID)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.ConfirmOperation: %w", err)
+	}
+	return operationRecordToResponse(rec), nil
+}
+
+// HasPendingConfirmForNote reports whether any drug op linked to the
+// given note still needs confirmation. The note-submit pipeline calls
+// this before allowing submission.
+func (s *Service) HasPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) (bool, error) {
+	pending, err := s.repo.ListPendingConfirmForNote(ctx, noteID, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("drugs.service.HasPendingConfirmForNote: %w", err)
+	}
+	return len(pending) > 0, nil
 }
 
 // ListOperations — paginated ledger.
@@ -991,6 +1036,7 @@ func operationRecordToResponse(r *OperationRecord) *OperationResponse {
 		AdministeredBy:    r.AdministeredBy.String(),
 		BalanceBefore:     r.BalanceBefore,
 		BalanceAfter:      r.BalanceAfter,
+		Status:            r.Status,
 		CreatedAt:         r.CreatedAt.Format(time.RFC3339),
 	}
 	if r.SubjectID != nil {
@@ -1000,6 +1046,10 @@ func operationRecordToResponse(r *OperationRecord) *OperationResponse {
 	if r.NoteID != nil {
 		s := r.NoteID.String()
 		resp.NoteID = &s
+	}
+	if r.NoteFieldID != nil {
+		s := r.NoteFieldID.String()
+		resp.NoteFieldID = &s
 	}
 	if r.WitnessedBy != nil {
 		s := r.WitnessedBy.String()
@@ -1016,6 +1066,14 @@ func operationRecordToResponse(r *OperationRecord) *OperationResponse {
 	if r.AddendsTo != nil {
 		s := r.AddendsTo.String()
 		resp.AddendsTo = &s
+	}
+	if r.ConfirmedBy != nil {
+		s := r.ConfirmedBy.String()
+		resp.ConfirmedBy = &s
+	}
+	if r.ConfirmedAt != nil {
+		s := r.ConfirmedAt.Format(time.RFC3339)
+		resp.ConfirmedAt = &s
 	}
 	return resp
 }

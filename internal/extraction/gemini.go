@@ -150,6 +150,68 @@ func buildPrompt(vertical, transcript, overallPrompt string, fields []FieldSpec)
 - Do not add fields not in the list. Do not omit any field from the list.
 - For required fields with no evidence, set value to null and confidence to 0.0.
 
+## System widget fields — typed compliance entities
+Some fields have a type starting with "system." — these are typed
+compliance widgets. The note-submit pipeline will materialise each as a
+real ledger row (consent / drug op / incident / pain). Emit value as a
+JSON-encoded OBJECT (not a free-text string) with the keys below. If the
+transcript doesn't mention the relevant event, value = null.
+
+system.consent → emit object with keys:
+    consent_type    one of: audio_recording, ai_processing, telemedicine,
+                    sedation, euthanasia, invasive_procedure, mhr_write,
+                    photography, data_sharing,
+                    controlled_drug_administration, treatment_plan, other
+    scope           1-2 sentence plain-English summary of what was consented to
+    captured_via    one of: verbal_clinic, verbal_telehealth,
+                    written_signature, electronic_signature, guardian
+    consenting_party_name   name of the signer if not the patient (vet =
+                    owner, aged-care = SDM/EPOA, etc.) — null if self
+    consenting_party_relationship  one of: self, owner, guardian, epoa,
+                    nok, authorised_representative, other
+    risks_discussed_summary       short — what was explained
+    alternatives_discussed_summary short — what alternatives were named
+    witness_name    free-text name if a witness is mentioned (will be
+                    matched against the staff list later) — null otherwise
+
+system.drug_op → emit object with keys:
+    operation       one of: administer, dispense, discard, receive,
+                    transfer, adjust
+    drug_name       drug as stated in transcript (will be matched
+                    against the shelf catalog)
+    quantity        numeric (no unit string)
+    unit            mg / mL / g / tab / cap / unit
+    dose            free-text dose phrase (e.g. "5 mg/kg")
+    route           IV / IM / PO / SC / IN / topical / etc.
+    reason_indication  free-text indication
+    witness_name    free-text — null if not mentioned
+    NOTE: AI emits this only as a SUGGESTION. The clinician must
+    explicitly confirm before the row is logged to the ledger.
+
+system.incident → emit object with keys:
+    incident_type   short kind (fall, medication_error, pressure_injury,
+                    near_miss, abuse_allegation, infection_outbreak,
+                    elopement, other)
+    severity        one of: low, medium, high, critical
+    brief_description  one-sentence summary
+    immediate_actions  short list / sentence of what was done in response
+    location        room / area if mentioned, null otherwise
+    witnesses_text  free-text mention of any witnesses, null otherwise
+    subject_outcome one of: no_harm, minor_injury, moderate_injury,
+                    hospitalised, deceased, complaint_resolved, unknown
+
+system.pain_score → emit object with keys:
+    score           integer 0-10
+    pain_scale_used one of: nrs, flacc, painad, wong_baker, vrs, vas
+                    (infer from the population mentioned in transcript:
+                    cat/dog/animal → flacc; dementia resident → painad;
+                    young child → wong_baker; otherwise nrs)
+    note            free-text supporting context
+
+For all system fields: still set source_quote to the verbatim transcript
+text that backs the values. Set transformation_type to "direct" if every
+key is verbatim, "inference" if you derived any of them from context.
+
 Respond with ONLY the JSON array. No markdown fences.
 `)
 

@@ -39,6 +39,12 @@ type repo interface {
 	LogOperation(ctx context.Context, p CreateOperationParams) (*OperationRecord, error)
 	GetOperationByID(ctx context.Context, id, clinicID uuid.UUID) (*OperationRecord, error)
 	ListOperations(ctx context.Context, clinicID uuid.UUID, p ListOperationsParams) ([]*OperationRecord, int, error)
+	// ConfirmOperation flips a pending_confirm row (created via a
+	// system.drug_op widget) to confirmed. Idempotent.
+	ConfirmOperation(ctx context.Context, id, clinicID, staffID uuid.UUID) (*OperationRecord, error)
+	// ListPendingConfirmForNote returns ops linked to a note that are
+	// still in pending_confirm. Used by the note-submit gate.
+	ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error)
 	// SumLedgerForShelfPeriod returns the net balance change over a period
 	// (receive adds, administer/dispense/discard subtracts, transfer is 0).
 	// Used by the reconciliation flow to compute expected ledger_count.

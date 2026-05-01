@@ -89,6 +89,7 @@ type CreateIncidentInput struct {
 	StaffID          uuid.UUID
 	SubjectID        uuid.UUID
 	NoteID           *uuid.UUID
+	NoteFieldID      *uuid.UUID
 	IncidentType     string
 	Severity         string
 	OccurredAt       time.Time
@@ -187,6 +188,7 @@ func (s *Service) CreateIncident(ctx context.Context, in CreateIncidentInput) (*
 		ClinicID:             in.ClinicID,
 		SubjectID:            in.SubjectID,
 		NoteID:               in.NoteID,
+		NoteFieldID:          in.NoteFieldID,
 		IncidentType:         in.IncidentType,
 		Severity:             in.Severity,
 		OccurredAt:           in.OccurredAt,
@@ -231,6 +233,16 @@ func (s *Service) GetIncident(ctx context.Context, id, clinicID, staffID uuid.UU
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, clinicID, rec.SubjectID, staffID,
 			"incident_view", "incidents.service.GetIncident")
+	}
+	return s.hydrate(ctx, rec)
+}
+
+// SummariseForNote — fetches a hydrated incident without writing a
+// separate access log. The parent note render is the access event.
+func (s *Service) SummariseForNote(ctx context.Context, id, clinicID uuid.UUID) (*IncidentResponse, error) {
+	rec, err := s.repo.GetIncident(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("incidents.service.SummariseForNote: %w", err)
 	}
 	return s.hydrate(ctx, rec)
 }

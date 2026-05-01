@@ -14,6 +14,15 @@ import (
 func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	auth := mw.AuthenticateHuma(api, jwtSecret)
 	submitForms := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.SubmitForms })
+	managePatients := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool {
+		return p.ManagePatients
+	})
+	dispense := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool {
+		return p.Dispense
+	})
+	managePatientsOrDispense := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool {
+		return p.ManagePatients || p.Dispense
+	})
 	security := []map[string][]string{{"bearerAuth": {}}}
 
 	huma.Register(api, huma.Operation{
@@ -125,4 +134,61 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, submitForms},
 	}, h.archiveNote)
+
+	// ── System widget materialisation ───────────────────────────────────
+	// Each system.* form field can carry an AI-extracted JSON payload
+	// in note_fields.value. The clinician reviews the typed card and
+	// taps Confirm — that POST hits one of the four endpoints below.
+	// The endpoint is per-field-type so:
+	//   - permissions are precise (Dispense for drug op, ManagePatients
+	//     for consent / incident, either for pain)
+	//   - request bodies are typed (no any-of dispatch)
+	//   - regulator-binding rails (drug witness, incident classifier,
+	//     consent expiry default) live in the right service
+	// All four are idempotent — calling on an already-materialised
+	// field returns the existing entity reference.
+
+	huma.Register(api, huma.Operation{
+		OperationID: "materialise-consent-field",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/fields/{field_id}/materialise-consent",
+		Summary:     "Materialise a system.consent field",
+		Description: "Creates a consent_records row for a system.consent form field and writes the id-pointer into note_fields.value. Idempotent.",
+		Tags:        []string{"Notes", "Consent"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.materialiseConsent)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "materialise-drug-op-field",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/fields/{field_id}/materialise-drug-op",
+		Summary:     "Confirm and log a system.drug_op field",
+		Description: "Creates a drug_operations_log row (status='confirmed') for a system.drug_op form field. The clinician's tap on this endpoint IS the regulator-binding action — AI suggestions never auto-create CD ledger rows.",
+		Tags:        []string{"Notes", "Drugs"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, dispense},
+	}, h.materialiseDrugOp)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "materialise-incident-field",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/fields/{field_id}/materialise-incident",
+		Summary:     "Materialise a system.incident field",
+		Description: "Creates an incident_events row for a system.incident form field. The SIRS / CQC classifier runs server-side as today; the regulator deadline starts on creation.",
+		Tags:        []string{"Notes", "Incidents"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.materialiseIncident)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "materialise-pain-score-field",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/fields/{field_id}/materialise-pain-score",
+		Summary:     "Materialise a system.pain_score field",
+		Description: "Creates a pain_scores row for a system.pain_score form field. Adds to the patient's pain trend.",
+		Tags:        []string{"Notes", "Pain"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatientsOrDispense},
+	}, h.materialisePain)
 }
