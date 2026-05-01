@@ -90,8 +90,49 @@ Sets `archived_at` on the form and records an optional `retire_reason`. In-fligh
 | `blocks` | `{"count": 10, "labels": ["none","max"]}` |
 | `image` | `{"allow_annotation": true}` |
 | `date` | `{}` |
+| `system.consent` | `{"consent_type": "treatment_plan", "require_witness": false}` |
+| `system.drug_op` | `{"operation": "administer", "controlled_only": false, "confirm_required": true}` |
+| `system.incident` | `{"incident_type": "fall", "min_severity": "low"}` |
+| `system.pain_score` | `{"scale_id": "flacc"}` |
 
 Adding a new type never requires a migration — just update the Flutter builder.
+
+### System widgets
+
+The `system.*` types are **typed compliance fields** — they don't store
+free text, they capture into the `consent_records` /
+`drug_operations_log` / `incident_events` / `pain_scores` ledger tables
+and store the resulting entity id back into `note_fields.value` as an
+id-pointer (e.g. `{"pain_score_id":"<uuid>"}`).
+
+The flow:
+
+1. AI extracts a typed JSON suggestion into `note_fields.value` (or
+   leaves it empty if it didn't hear one — clinician captures
+   manually).
+2. Clinician reviews / edits the suggestion in the rich capture panel
+   on the note review surface.
+3. Submit lands on a per-type materialise endpoint which creates the
+   ledger row + writes the id-pointer back. See `notes.md` →
+   "System widgets".
+
+Per-type config schemas live in `internal/forms/schema/registry.go`:
+
+- `SystemConsentConfig` — pin a `consent_type`; `require_witness`
+  forces a witness regardless of capture mode.
+- `SystemDrugOpConfig` — pin an `operation`; `controlled_only` filters
+  the shelf picker to controlled drugs; `confirm_required` (default
+  true) keeps the row in `pending_confirm` until the clinician taps
+  Confirm. **Cannot be disabled for `administer` / `dispense`** — the
+  validator rejects that as a regulator-binding override.
+- `SystemIncidentConfig` — pin an `incident_type`; `min_severity` floors
+  AI's extracted severity so an incident-specific form (e.g.
+  fall-only) always lands at ≥ that level.
+- `SystemPainScoreConfig` — pin a `scale_id` (`nrs`/`flacc`/`painad`/
+  `wong_baker`/`vrs`/`vas`).
+
+`schema.IsSystemFieldType` is the canonical check; `ValidateConfig`
+enforces the per-type schemas at form publish time.
 
 ### Field flags
 
