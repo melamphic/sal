@@ -1,9 +1,18 @@
 # Drug Register Compliance v2 — Design
 
-**Status:** Design · 2026-05-01
-**Owner:** drugs module + new `mar` module
+**Status:** Phases 1 + 2 + 3a shipped · 2026-05-01 · **rest backlogged** (see §13)
+**Owner:** drugs module + dormant `mar` module
 **Supersedes:** complements [drugs.md](drugs.md) — does not replace
 **Pre-reads:** `drugs.md`, `BACKEND_PLAN.md`, `CLAUDE.md`
+
+> **Stopping line decision · 2026-05-01.** Pivoting to Patients module +
+> Stripe in-app to ship NZ vet pilot. v2 work paused at end of Phase 3a.
+> Phases 1+2 (drug chain + validators + retention) live behind feature
+> flag `drug_register.compliance_v2`, **flag stays off for NZ vet pilot**
+> (v1 module ships unchanged). Phase 3a MAR scaffold left dormant —
+> migration 00072 creates 4 empty tables, package compiles but routes
+> unwired. Phases 3b–6b moved to backlog (§13). Reactivation trigger:
+> first UK/US/aged-care customer in pipeline.
 
 This document records the design + decisions for making Salvia's controlled-drug
 module legally compliant across **4 verticals** (vet, GP, dental, aged care)
