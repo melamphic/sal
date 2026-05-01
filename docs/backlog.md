@@ -191,3 +191,38 @@ with a shared reason field — matters when a clinic re-structures its policy se
 Backend already accepts override-with-justification on high-parity violations
 (task #63, shipped). UI to prompt the clinician at submit time is still pending —
 without it the backend capability is unreachable.
+
+---
+
+## Pending: Compliance aggregator + register tabs (deferred from BUILD_PLAN Phase 2/3)
+
+**Status:** Phase 0 stub UIs (`ComplianceInboxPage`, `RegistersPage`) were removed from
+the Flutter app on 2026-05-01 — they had been empty scaffolds since they shipped. The
+underlying IA goal stands (see `salvia/COMPLIANCE_IA.md` and `salvia/BUILD_PLAN.md`),
+but the surfacing flipped: registers fold into existing Drugs / Incidents activities
+as tabs, and the inbox folds into home-dashboard watchcards.
+
+**Backend work needed before re-introducing the UI:**
+
+- `GET /compliance/today` aggregator endpoint — returns counts + top-3 items per
+  bucket (deadlines, witness pending, reconciliations due, expiring consents,
+  missing ACDs aged-care-only, near-misses awaiting review)
+- Per-bucket list endpoints behind the watchcards' "see all" deep links —
+  these largely already exist (incidents list, drug ops list, consents list)
+  but need filters: `?has_deadline=true&hours_remaining_lt=N`, `?awaiting_witness=true`,
+  `?reconciliation_overdue=true`, `?expires_within_days=30`
+- CD register reconciliation export: regulator-format CSV/PDF per (vertical, country) —
+  ship NZ + UK first, AU per-state later. New endpoint
+  `POST /drugs/reconciliation/export` driven by River job + S3, similar to
+  the existing audit pack export.
+- Incident register de-identification + regulator-format export — similar pattern.
+
+**Why deferred:** the inline capture (system widgets) is what generates regulator-
+binding rows in the first place; that shipped in 2026-04. The aggregator + export
+formats are cheaper to build now that the data shape is real, and there's no
+external pressure (no clinic has hit a regulator deadline yet) to ship before
+real customers tell us which bucket they need first.
+
+**Dependencies:** existing `consent_records`, `drug_operations_log`, `incident_events`
+tables ✅. Per-vertical / per-country regulator export formats need a small spike
+to confirm shape (CQC SIRS PDF, VCNZ format, etc).
