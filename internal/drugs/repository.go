@@ -96,6 +96,7 @@ type OperationRecord struct {
 	ShelfID           uuid.UUID
 	SubjectID         *uuid.UUID
 	NoteID            *uuid.UUID
+	NoteFieldID       *uuid.UUID
 	Operation         string // administer | dispense | discard | receive | transfer | adjust
 	Quantity          float64
 	Unit              string
@@ -109,6 +110,14 @@ type OperationRecord struct {
 	BalanceAfter      float64
 	ReconciliationID  *uuid.UUID
 	AddendsTo         *uuid.UUID
+	// Status: 'pending_confirm' | 'confirmed'. Set to 'pending_confirm'
+	// when the row is created via a system.drug_op widget on a form;
+	// flipped to 'confirmed' when the clinician confirms via the note
+	// review surface. Manual modal-driven creates default to 'confirmed'
+	// (always an explicit user action).
+	Status            string
+	ConfirmedBy       *uuid.UUID
+	ConfirmedAt       *time.Time
 	CreatedAt         time.Time
 }
 
@@ -201,6 +210,7 @@ type CreateOperationParams struct {
 	ShelfID           uuid.UUID
 	SubjectID         *uuid.UUID
 	NoteID            *uuid.UUID
+	NoteFieldID       *uuid.UUID
 	Operation         string
 	Quantity          float64
 	Unit              string
@@ -213,6 +223,11 @@ type CreateOperationParams struct {
 	BalanceBefore     float64
 	BalanceAfter      float64
 	AddendsTo         *uuid.UUID
+	// Status — 'pending_confirm' for system.drug_op widget creates,
+	// 'confirmed' for manual modal creates. Empty string is treated as
+	// 'confirmed' for backwards compat with callers that haven't been
+	// updated.
+	Status            string
 }
 
 // ListShelfParams — filters for the shelf listing.
@@ -351,11 +366,13 @@ const shelfCols = `
 func scanOperation(row scannable) (*OperationRecord, error) {
 	var r OperationRecord
 	err := row.Scan(
-		&r.ID, &r.ClinicID, &r.ShelfID, &r.SubjectID, &r.NoteID,
+		&r.ID, &r.ClinicID, &r.ShelfID, &r.SubjectID, &r.NoteID, &r.NoteFieldID,
 		&r.Operation, &r.Quantity, &r.Unit, &r.Dose, &r.Route, &r.ReasonIndication,
 		&r.AdministeredBy, &r.WitnessedBy, &r.PrescribedBy,
 		&r.BalanceBefore, &r.BalanceAfter,
-		&r.ReconciliationID, &r.AddendsTo, &r.CreatedAt,
+		&r.ReconciliationID, &r.AddendsTo,
+		&r.Status, &r.ConfirmedBy, &r.ConfirmedAt,
+		&r.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -367,11 +384,13 @@ func scanOperation(row scannable) (*OperationRecord, error) {
 }
 
 const operationCols = `
-	id, clinic_id, shelf_id, subject_id, note_id,
+	id, clinic_id, shelf_id, subject_id, note_id, note_field_id,
 	operation, quantity, unit, dose, route, reason_indication,
 	administered_by, witnessed_by, prescribed_by,
 	balance_before, balance_after,
-	reconciliation_id, addends_to, created_at`
+	reconciliation_id, addends_to,
+	status, confirmed_by, confirmed_at,
+	created_at`
 
 func scanReconciliation(row scannable) (*ReconciliationRecord, error) {
 	var r ReconciliationRecord
@@ -652,20 +671,29 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 			p.BalanceBefore, currentBalance, domain.ErrConflict)
 	}
 
+	// Default status to 'confirmed' for backwards-compat with the manual
+	// modal-driven path; system.drug_op widgets pass 'pending_confirm'.
+	status := p.Status
+	if status == "" {
+		status = "confirmed"
+	}
+
 	// Insert the operation row.
 	insertQ := fmt.Sprintf(`
 		INSERT INTO drug_operations_log (
-			id, clinic_id, shelf_id, subject_id, note_id,
+			id, clinic_id, shelf_id, subject_id, note_id, note_field_id,
 			operation, quantity, unit, dose, route, reason_indication,
 			administered_by, witnessed_by, prescribed_by,
-			balance_before, balance_after, addends_to
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			balance_before, balance_after, addends_to,
+			status
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING %s`, operationCols)
 	row := tx.QueryRow(ctx, insertQ,
-		p.ID, p.ClinicID, p.ShelfID, p.SubjectID, p.NoteID,
+		p.ID, p.ClinicID, p.ShelfID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.Operation, p.Quantity, p.Unit, p.Dose, p.Route, p.ReasonIndication,
 		p.AdministeredBy, p.WitnessedBy, p.PrescribedBy,
 		p.BalanceBefore, p.BalanceAfter, p.AddendsTo,
+		status,
 	)
 	rec, err := scanOperation(row)
 	if err != nil {
@@ -696,6 +724,64 @@ func (r *Repository) GetOperationByID(ctx context.Context, id, clinicID uuid.UUI
 		return nil, fmt.Errorf("drugs.repo.GetOperationByID: %w", err)
 	}
 	return rec, nil
+}
+
+// ConfirmOperation flips a pending_confirm row to confirmed, stamping
+// confirmed_by + confirmed_at. Idempotent on already-confirmed rows
+// (returns the existing row unchanged) so the note-submit pipeline can
+// re-call without trouble.
+func (r *Repository) ConfirmOperation(ctx context.Context, id, clinicID, staffID uuid.UUID) (*OperationRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE drug_operations_log
+		   SET status = 'confirmed',
+		       confirmed_by = $3,
+		       confirmed_at = NOW()
+		 WHERE id = $1 AND clinic_id = $2 AND status = 'pending_confirm'
+		 RETURNING %s`, operationCols)
+	row := r.db.QueryRow(ctx, q, id, clinicID, staffID)
+	rec, err := scanOperation(row)
+	if err != nil {
+		// No row updated → either it didn't exist or it was already
+		// confirmed. Fall back to a plain Get to disambiguate; treat
+		// already-confirmed as success (idempotent).
+		if errors.Is(err, domain.ErrNotFound) {
+			existing, getErr := r.GetOperationByID(ctx, id, clinicID)
+			if getErr != nil {
+				return nil, fmt.Errorf("drugs.repo.ConfirmOperation: %w", getErr)
+			}
+			if existing.Status == "confirmed" {
+				return existing, nil
+			}
+			return nil, fmt.Errorf("drugs.repo.ConfirmOperation: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("drugs.repo.ConfirmOperation: %w", err)
+	}
+	return rec, nil
+}
+
+// ListPendingConfirmForNote returns drug ops linked to a note that still
+// need clinician confirmation. Used by the note-submit gate.
+func (r *Repository) ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error) {
+	q := fmt.Sprintf(`SELECT %s FROM drug_operations_log
+		WHERE note_id = $1 AND clinic_id = $2 AND status = 'pending_confirm'
+		ORDER BY created_at`, operationCols)
+	rows, err := r.db.Query(ctx, q, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListPendingConfirmForNote: %w", err)
+	}
+	defer rows.Close()
+	var out []*OperationRecord
+	for rows.Next() {
+		rec, err := scanOperation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("drugs.repo.ListPendingConfirmForNote: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListPendingConfirmForNote: %w", err)
+	}
+	return out, nil
 }
 
 // ListOperations returns the operations ledger with the requested filters.
@@ -729,6 +815,14 @@ func (r *Repository) ListOperations(ctx context.Context, clinicID uuid.UUID, p L
 	}
 	if p.OnlyPendingRecon {
 		where += " AND o.reconciliation_id IS NULL"
+	}
+	// Caller can ask for a specific note's ledger (note review surface
+	// uses this with NoteID set, regardless of submit state). All other
+	// list queries — patient ledger, reconciliation pending list, the
+	// drug history page — exclude rows tied to a draft note so
+	// unfinished work doesn't pollute the regulator-facing ledger.
+	if p.NoteID == nil {
+		where += " AND (o.note_id IS NULL OR o.note_id IN (SELECT id FROM notes WHERE status = 'submitted'))"
 	}
 
 	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM drug_operations_log o WHERE %s`, where)
@@ -778,7 +872,8 @@ func (r *Repository) SumLedgerForShelfPeriod(ctx context.Context, shelfID, clini
 		  AND clinic_id = $2
 		  AND created_at >= $3
 		  AND created_at <= $4
-		  AND reconciliation_id IS NULL`
+		  AND reconciliation_id IS NULL
+		  AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))`
 	var sum float64
 	if err := r.db.QueryRow(ctx, q, shelfID, clinicID, periodStart, periodEnd).Scan(&sum); err != nil {
 		return 0, fmt.Errorf("drugs.repo.SumLedgerForShelfPeriod: %w", err)
