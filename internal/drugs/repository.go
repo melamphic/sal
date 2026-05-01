@@ -1101,6 +1101,129 @@ func (r *Repository) ListReconciliations(ctx context.Context, clinicID uuid.UUID
 	return out, total, nil
 }
 
+// RetentionPolicy carries the per-clinic retention years from
+// clinic_drug_retention_policy.
+type RetentionPolicy struct {
+	ClinicID     uuid.UUID
+	LedgerYears  int
+	ReconYears   int
+	MARYears     int
+}
+
+// BackfillChainRowParams stamps chain fields onto a legacy row.
+type BackfillChainRowParams struct {
+	ID              uuid.UUID
+	ClinicID        uuid.UUID
+	DrugName        string
+	DrugStrength    string
+	DrugForm        string
+	ChainKey        []byte
+	EntrySeqInChain int64
+	PrevRowHash     []byte
+	RowHash         []byte
+	RetentionUntil  *time.Time
+}
+
+// GetRetentionPolicy reads the per-clinic retention policy. Returns
+// ErrNotFound if the clinic was created before migration 00068 and no
+// row was seeded — caller should fall back to country defaults.
+func (r *Repository) GetRetentionPolicy(ctx context.Context, clinicID uuid.UUID) (*RetentionPolicy, error) {
+	const q = `
+		SELECT clinic_id, ledger_years, recon_years, mar_years
+		  FROM clinic_drug_retention_policy
+		 WHERE clinic_id = $1`
+	var p RetentionPolicy
+	err := r.db.QueryRow(ctx, q, clinicID).Scan(
+		&p.ClinicID, &p.LedgerYears, &p.ReconYears, &p.MARYears,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("drugs.repo.GetRetentionPolicy: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("drugs.repo.GetRetentionPolicy: %w", err)
+	}
+	return &p, nil
+}
+
+// SoftDeleteOpsPastRetention sets archived_at on every active ledger
+// row whose retention_until has passed. Append-only is preserved
+// (rows still exist + still verify in the chain). Physical purge
+// happens via a separate admin endpoint with grace window — see
+// design doc §5.5.
+func (r *Repository) SoftDeleteOpsPastRetention(ctx context.Context, asOf time.Time) (int64, error) {
+	const q = `
+		UPDATE drug_operations_log
+		   SET archived_at = NOW()
+		 WHERE retention_until IS NOT NULL
+		   AND retention_until < $1::date
+		   AND archived_at IS NULL`
+	tag, err := r.db.Exec(ctx, q, asOf)
+	if err != nil {
+		return 0, fmt.Errorf("drugs.repo.SoftDeleteOpsPastRetention: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// ListLegacyOpsForBackfill returns rows in (clinic, created_at) order
+// that lack chain_key — i.e. inserted before Phase 2 wired up the
+// chain. Bounded by limit + a since cursor (use the previous page's
+// last created_at as the next page's `since`).
+func (r *Repository) ListLegacyOpsForBackfill(ctx context.Context, clinicID uuid.UUID, since time.Time, limit int) ([]*OperationRecord, error) {
+	q := fmt.Sprintf(`
+		SELECT %s
+		  FROM drug_operations_log
+		 WHERE clinic_id = $1
+		   AND chain_key IS NULL
+		   AND created_at >= $2
+		 ORDER BY created_at ASC
+		 LIMIT $3`, operationCols)
+	rows, err := r.db.Query(ctx, q, clinicID, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: %w", err)
+	}
+	defer rows.Close()
+	var out []*OperationRecord
+	for rows.Next() {
+		rec, err := scanOperation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: rows: %w", err)
+	}
+	return out, nil
+}
+
+// BackfillChainRow stamps chain fields onto one legacy row. Idempotent:
+// skips when chain_key is already set.
+func (r *Repository) BackfillChainRow(ctx context.Context, p BackfillChainRowParams) error {
+	const q = `
+		UPDATE drug_operations_log
+		   SET drug_name           = $3,
+		       drug_strength       = $4,
+		       drug_form           = $5,
+		       chain_key           = $6,
+		       entry_seq_in_chain  = $7,
+		       prev_row_hash       = $8,
+		       row_hash            = $9,
+		       retention_until     = COALESCE(retention_until, $10)
+		 WHERE id = $1
+		   AND clinic_id = $2
+		   AND chain_key IS NULL`
+	if _, err := r.db.Exec(ctx, q,
+		p.ID, p.ClinicID,
+		nullIfEmpty(p.DrugName), nullIfEmpty(p.DrugStrength), nullIfEmpty(p.DrugForm),
+		nullableBytes(p.ChainKey), p.EntrySeqInChain,
+		nullableBytes(p.PrevRowHash), nullableBytes(p.RowHash),
+		p.RetentionUntil,
+	); err != nil {
+		return fmt.Errorf("drugs.repo.BackfillChainRow: %w", err)
+	}
+	return nil
+}
+
 // ChainStatus is the result of repo.VerifyChain.
 type ChainStatus struct {
 	Intact            bool
