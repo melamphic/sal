@@ -580,7 +580,18 @@ type PDFRenderer struct {
 	subjects   SubjectProvider      // nil = no subject lookups (manual-only)
 	store      pdfStore
 	events     EventEmitter
+	// service ref used to resolve system widget summaries for the
+	// "what was captured" rows in the PDF body. nil = renderer falls
+	// back to the raw value (id-pointer JSON), which is unhelpful but
+	// non-fatal.
+	svc *Service
 }
+
+// SetService wires the parent Service so the renderer can resolve
+// materialised system field summaries (drug name + qty, score + scale,
+// …) when laying out the PDF body. Called from app.go right after the
+// Service is constructed.
+func (r *PDFRenderer) SetService(s *Service) { r.svc = s }
 
 // NewPDFRenderer constructs a PDFRenderer. Pass nil for events to disable the
 // post-render notification (tests where the realtime bus isn't wired).
@@ -645,8 +656,10 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		return fmt.Errorf("notes.pdf.Render: get form fields: %w", err)
 	}
 	titleByID := make(map[uuid.UUID]string, len(formFields))
+	typeByID := make(map[uuid.UUID]string, len(formFields))
 	for _, f := range formFields {
 		titleByID[f.ID] = f.Title
+		typeByID[f.ID] = f.Type
 	}
 
 	var theme *DocTheme
@@ -695,7 +708,27 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		if label == "" {
 			label = f.FieldID.String()
 		}
-		pdfFields = append(pdfFields, PDFField{Label: label, Value: val})
+		// Materialised system widget? Resolve to a labelled summary.
+		// On any error, fall back to raw value rendering — we'd rather
+		// ship the PDF with an id-pointer than fail the render.
+		var summary []PDFSummaryItem
+		if r.svc != nil && strings.HasPrefix(typeByID[f.FieldID], "system.") {
+			entityID, kind := decodeIDPointer(val)
+			if kind != "" {
+				s, sErr := r.svc.summariseByKind(ctx, kind, entityID, note.ClinicID)
+				if sErr == nil && s != nil {
+					summary = make([]PDFSummaryItem, len(s.Items))
+					for i, it := range s.Items {
+						summary[i] = PDFSummaryItem(it)
+					}
+				}
+			}
+		}
+		pdfFields = append(pdfFields, PDFField{
+			Label:         label,
+			Value:         val,
+			SystemSummary: summary,
+		})
 	}
 
 	var submittedAt time.Time
