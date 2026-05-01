@@ -276,6 +276,21 @@ func (f *fakeRepo) UpdatePDFKey(_ context.Context, id, clinicID uuid.UUID, key s
 	return nil
 }
 
+func (f *fakeRepo) GetNoteFieldWithType(_ context.Context, _, _, _ uuid.UUID) (*NoteFieldWithType, error) {
+	// System widget tests don't run through fakeRepo today; live tests
+	// hit the real repository against postgres. Return ErrNotFound so
+	// any accidental call surfaces clearly.
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRepo) ListSystemFieldStates(_ context.Context, _, _ uuid.UUID) ([]NoteFieldWithType, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) WriteMaterialisedPointer(_ context.Context, _, _, _ uuid.UUID, _ string) error {
+	return domain.ErrNotFound
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func cloneNote(n *NoteRecord) *NoteRecord {
