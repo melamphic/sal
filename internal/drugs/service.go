@@ -668,6 +668,18 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		chainK = chainKey(in.ClinicID, cc.DrugName, cc.Strength, cc.Form)
 	}
 
+	// Compliance v2: derive retention floor from per-clinic policy.
+	// Failure to fetch the policy is non-fatal — we'd rather log + leave
+	// retention_until NULL (effectively keep-forever) than block the op.
+	var retentionUntil *time.Time
+	if pol, err := s.repo.GetRetentionPolicy(ctx, in.ClinicID); err == nil {
+		ru := domainTimeNow().AddDate(pol.LedgerYears, 0, 0)
+		retentionUntil = &ru
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		slog.Warn("drugs.service.LogOperation: retention policy lookup failed; row keeps forever",
+			"clinic_id", in.ClinicID, "error", err.Error())
+	}
+
 	rec, err := s.repo.LogOperation(ctx, CreateOperationParams{
 		ID:                domain.NewID(),
 		ClinicID:          in.ClinicID,
@@ -694,7 +706,7 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		DrugStrength:   cc.Strength,
 		DrugForm:       cc.Form,
 		ChainKey:       chainK,
-		RetentionUntil: nil, // Phase 2c: derive from clinic_drug_retention_policy
+		RetentionUntil: retentionUntil,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
