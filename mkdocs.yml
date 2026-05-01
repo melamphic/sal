@@ -71,6 +71,7 @@ nav:
       - Timeline & Notifications: timeline.md
       - Policy Engine: policy.md
       - Drugs & Controlled Substances: drugs.md
+      - Drug Register Compliance v2 (design): drug-register-compliance-v2.md
       - Incidents & SIRS/CQC: incidents.md
       - Consent & Pain: consent_pain.md
       - AI Drafts (audio → AI fill): ai_drafts.md
