@@ -707,6 +707,34 @@ non-NULL row_hash). Run from `make backfill-drug-chain`.
 - Open API for incumbent migrations (PointClickCare, ezyVet) — defer
   until at least one customer asks.
 
+## 13. Backlog — Phases 3b, 3c, 4, 5, 6a, 6b (paused 2026-05-01)
+
+Pivoted to Patients module + Stripe in-app to ship NZ vet pilot. Drug v1
+covers the beachhead. Reactivate this lane only when the trigger
+condition for the corresponding phase fires — until then, do **not**
+ground-up redesign or restart these. The locked decisions in §3 still
+hold; pick up where the design left off.
+
+| Phase | Reactivation trigger | What's already done | What remains |
+|---|---|---|---|
+| **3b** MAR service logic | First aged-care customer in pipeline | `mar_*` schema (mig 00072) live but empty · repo CRUD compiled but unwired · `internal/mar/{repo,repository,service,handler,routes}.go` scaffold exists | Add `drugs.Service.LogOperationTx` for tx sharing · `mar.Service.RecordAdministration` writing both rows in one tx · `mar.Service.GenerateScheduledDoses` nightly River job · per-resident-per-prescription chain on `mar_administration_events` · per-event witness rule for CDs in service (DB CHECK already there) · outcome-reason validation per outcome enum value |
+| **3c** MAR HTTP surface | After 3b green | Routes scaffold lists endpoints in comment block | `POST/GET/PATCH /api/v1/mar/prescriptions` · `POST /prescriptions/{id}/discontinue` · `GET /scheduled-doses` · `POST /rounds` + `/rounds/{id}/complete` · `POST/GET /administration-events` · `POST /administration-events/{id}/correct` · permission gates per route · integration tests with real DB |
+| **4** Vet procedure grouping + species/weight snapshot | NZ vet pilot asks for it OR UK/AU vet customer needs it | None | New `vet_procedures` link table or `procedure_id` column on drug_op · weight_kg + species snapshot at op time · UI grouping of multi-drug procedures (induction + maintenance + analgesia) · partial-vial waste already shipped in mig 00067 |
+| **5** Dental gas sub-module | First dental customer in pipeline | None | `gas_cylinders` table (N₂O / O₂ tracking) · cylinder operations (receive / connect / disconnect / return-empty) · cylinder-level chain (different page-identity than drugs — per cylinder, not per drug-strength-form) · dental-specific validators |
+| **6a** Regulator export endpoint | First regulator audit request OR UK CQC pre-inspection | Schema fields all present (counterparty, prescriber, collector, container model, DEA reg) | Per-country export shapes: UK Sch 6 Part I/II PDF · US 1304 + Form 222 reconciliation · NZ Reg 40 register dump · AU per-state schedules · CSV + PDF · permission-gated to admin only · audit-logged |
+| **6b** Biennial inventory + monthly recon | US customer (21 CFR 1304.11 mandate) OR aged-care (CQC monthly recon expectation) | None | `inventory_snapshots` table · scheduled job (biennial for US, monthly recon for aged-care) · variance report (expected vs counted) · sign-off workflow with witness for CDs |
+
+**Hand-off checklist when reactivating any phase:**
+1. Re-read §3 (locked decisions) — do **not** re-litigate hash chain scope, retention table, AU table-driven rules, MAR module separation, DEA registration table, phase order
+2. Read source citations in Appendix A — regulations may have changed; re-verify before relying on
+3. Check if `drug_register.compliance_v2` flag has been turned on for any clinic — if yes, schema is committed and migrations must be additive
+4. Run `make test` + `make lint` first to confirm baseline still green before adding new code
+
+**Do NOT** when reactivating:
+- Re-design scope, schema, or architecture without re-reading §3 first
+- Mix phase work (e.g. don't tack regulator export onto MAR PR) — phases ship independently for a reason
+- Turn the feature flag on for NZ vet pilot just because v2 is "more complete" — v1 is sufficient for the beachhead
+
 ## Appendix A — Source citations
 
 - UK Misuse of Drugs Regulations 2001 — Reg 19, Reg 20, Schedule 6 — https://www.legislation.gov.uk/uksi/2001/3998
