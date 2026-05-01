@@ -247,3 +247,96 @@ Authorization: Bearer <token>
 
 Poll until `status` is `draft` or `failed`. Response includes `fields` array with AI values
 and confidence scores.
+
+## System widgets — typed compliance fields
+
+Forms can include `system.*` fields that capture into typed ledger
+tables instead of free-text. Four kinds today:
+
+| Field type | Ledger table | id-pointer key |
+|---|---|---|
+| `system.consent` | `consent_records` | `consent_id` |
+| `system.drug_op` | `drug_operations_log` | `operation_id` |
+| `system.incident` | `incident_events` | `incident_id` |
+| `system.pain_score` | `pain_scores` | `pain_score_id` |
+
+The AI extracts a typed JSON suggestion (drug name, score, severity, …)
+into `note_fields.value`. The clinician then **materialises** the field
+via a per-type endpoint — that creates the ledger row and writes an
+id-pointer JSON (e.g. `{"pain_score_id":"<uuid>"}`) back into
+`note_fields.value`. The id-pointer marks the field as materialised;
+`IsMaterialisedValue` in `notes/materialise.go` is the canonical check.
+
+Architecturally:
+
+- `notes/materialise.go` defines four adapter interfaces — `Consent`,
+  `DrugOp`, `Incident`, `Pain` `Materialiser` — wired via
+  `Service.SetSystemMaterialisers` from `app.go`. Notes never imports
+  the entity packages directly; the adapters bridge into each domain's
+  service.
+- A parallel set of read-side interfaces — `*Summariser` — wired via
+  `Service.SetSystemSummarisers` resolves a materialised
+  `note_fields.value` into a small labelled summary
+  (`SystemSummaryItem{label,value}` rows). `GetNote` enriches every
+  materialised field's `system_summary` so the FE card and the PDF
+  render captured data instead of raw id JSON.
+- The PDF renderer (`notes/pdf.go`, `notes/jobs.go`) calls back into
+  the same summarisers and emits a labelled key/value block in place
+  of the raw value for any `system.*` field.
+
+### Materialise endpoints
+
+All four are idempotent — calling on an already-materialised field
+returns the existing entity reference without re-creating.
+
+| Method | Path | Permission |
+|---|---|---|
+| POST | `/api/v1/notes/{note_id}/fields/{field_id}/materialise-consent` | ManagePatients |
+| POST | `/api/v1/notes/{note_id}/fields/{field_id}/materialise-drug-op` | Dispense |
+| POST | `/api/v1/notes/{note_id}/fields/{field_id}/materialise-incident` | ManagePatients |
+| POST | `/api/v1/notes/{note_id}/fields/{field_id}/materialise-pain-score` | ManagePatients OR Dispense |
+
+Each request body is the typed payload for that entity (see
+`handler_materialise.go`). The handler validates path UUIDs, the service
+loads the form field via `GetNoteFieldWithType` (LEFT JOIN on
+`note_fields` so a never-extracted system widget can still be captured
+manually), checks the field type matches the expected `system.*` kind,
+calls the adapter, and writes the id-pointer back via
+`WriteMaterialisedPointer` (UPSERT — creates the `note_fields` row when
+the AI didn't produce one).
+
+### Submit gate
+
+`POST /api/v1/notes/{note_id}/submit` rejects when any `system.*` field
+on the note holds a non-id-pointer value. The error name lists the
+pending widgets so the FE can highlight them. Standalone field with no
+value at all is allowed (the user simply chose not to capture); only a
+non-null **AI payload** (the pre-materialise JSON) blocks submit.
+
+### Patient-timeline gating
+
+Compliance entities are visible on the patient timeline / 30-day trend
+/ reconciliation math only when their parent note is `submitted` (or
+when there is no parent note at all — standalone capture). The
+list/aggregate repos in `consent`, `drugs`, `incidents`, `pain` enforce:
+
+```sql
+AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))
+```
+
+Per-id GETs are unconditional so the note review surface can still
+render its own pending materialisations. The gate covers
+`ListConsents`, `ListOperations`, `ListIncidents`, `ListPainScores`,
+`SubjectTrend`, and `SumLedgerForShelfPeriod`.
+
+### Caller responsibilities
+
+- **Submit-gate awareness:** the FE must surface the
+  `unmaterialised system widgets` validation error and route the user
+  back to the cards before submit is retried.
+- **Idempotency:** retrying materialise after a transient error is
+  safe — the second call returns the existing id-pointer.
+- **Tenant safety:** `GetNoteFieldWithType` short-circuits with
+  `ErrNotFound` when the note doesn't belong to the caller's clinic.
+  All adapter interfaces receive `clinic_id` from the service so each
+  domain can re-validate.
