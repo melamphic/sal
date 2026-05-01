@@ -27,6 +27,7 @@
 package drugs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -228,6 +229,25 @@ type CreateOperationParams struct {
 	// 'confirmed' for backwards compat with callers that haven't been
 	// updated.
 	Status            string
+
+	// ── Compliance v2 fields (Phase 2b) ────────────────────────────────
+	//
+	// Page-identity snapshot — service populates from
+	// catalogContext at insert time. Used by the repo to compute
+	// chain_key + entry_seq_in_chain inside the same tx.
+	DrugName     string
+	DrugStrength string
+	DrugForm     string
+
+	// ChainKey — deterministic SHA256 over (clinic, drug_name,
+	// strength, form). Empty when service didn't provide it (legacy
+	// caller); repo skips chain compute in that case so v1 callers
+	// keep working.
+	ChainKey []byte
+
+	// RetentionUntil — derived from clinic country at the service
+	// layer; nil for legacy callers.
+	RetentionUntil *time.Time
 }
 
 // ListShelfParams — filters for the shelf listing.
@@ -678,15 +698,76 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		status = "confirmed"
 	}
 
-	// Insert the operation row.
+	// Compliance v2: compute chain fields when the service supplied a
+	// chain key. Legacy callers (v1) leave ChainKey empty and the row
+	// inserts without chain fields — keeps existing flows working
+	// while we backfill legacy rows out-of-band.
+	var (
+		entrySeqInChain *int64
+		prevRowHash     []byte
+		rowHash         []byte
+	)
+	if len(p.ChainKey) > 0 {
+		// Advisory lock per chain — serialises concurrent inserts on
+		// the same drug-strength-form page within the txn lifetime.
+		lockID := chainAdvisoryLockID(p.ChainKey)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+			return nil, fmt.Errorf("drugs.repo.LogOperation: chain advisory lock: %w", err)
+		}
+
+		const headQ = `
+			SELECT row_hash, entry_seq_in_chain
+			  FROM drug_operations_log
+			 WHERE clinic_id = $1 AND chain_key = $2
+			   AND entry_seq_in_chain IS NOT NULL
+			 ORDER BY entry_seq_in_chain DESC
+			 LIMIT 1`
+		var prevSeq int64
+		err := tx.QueryRow(ctx, headQ, p.ClinicID, p.ChainKey).Scan(&prevRowHash, &prevSeq)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// First row in this chain.
+			prevRowHash = ZeroHash()
+			prevSeq = 0
+		case err != nil:
+			return nil, fmt.Errorf("drugs.repo.LogOperation: read chain head: %w", err)
+		}
+
+		nextSeq := prevSeq + 1
+		entrySeqInChain = &nextSeq
+
+		canonical := canonicalRowBytes(
+			p.ID, p.ClinicID, p.ChainKey, nextSeq,
+			p.Operation, p.Quantity, p.Unit,
+			p.DrugName, p.DrugStrength, p.DrugForm,
+			p.BalanceAfter, prevRowHash,
+		)
+		rowHash = computeRowHash(canonical, prevRowHash)
+	}
+
+	// Insert the operation row. Chain fields + page-identity snapshots
+	// + retention_until ride along with v1 fields; all are NULLABLE so
+	// legacy callers (ChainKey empty) get NULLs.
 	insertQ := fmt.Sprintf(`
 		INSERT INTO drug_operations_log (
 			id, clinic_id, shelf_id, subject_id, note_id, note_field_id,
 			operation, quantity, unit, dose, route, reason_indication,
 			administered_by, witnessed_by, prescribed_by,
 			balance_before, balance_after, addends_to,
-			status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			status,
+			drug_name, drug_strength, drug_form,
+			chain_key, entry_seq_in_chain, prev_row_hash, row_hash,
+			retention_until
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12,
+			$13, $14, $15,
+			$16, $17, $18,
+			$19,
+			$20, $21, $22,
+			$23, $24, $25, $26,
+			$27
+		)
 		RETURNING %s`, operationCols)
 	row := tx.QueryRow(ctx, insertQ,
 		p.ID, p.ClinicID, p.ShelfID, p.SubjectID, p.NoteID, p.NoteFieldID,
@@ -694,6 +775,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		p.AdministeredBy, p.WitnessedBy, p.PrescribedBy,
 		p.BalanceBefore, p.BalanceAfter, p.AddendsTo,
 		status,
+		nullIfEmpty(p.DrugName), nullIfEmpty(p.DrugStrength), nullIfEmpty(p.DrugForm),
+		nullableBytes(p.ChainKey), entrySeqInChain, nullableBytes(prevRowHash), nullableBytes(rowHash),
+		p.RetentionUntil,
 	)
 	rec, err := scanOperation(row)
 	if err != nil {
@@ -1015,6 +1099,98 @@ func (r *Repository) ListReconciliations(ctx context.Context, clinicID uuid.UUID
 		return nil, 0, fmt.Errorf("drugs.repo.ListReconciliations: rows: %w", err)
 	}
 	return out, total, nil
+}
+
+// ChainStatus is the result of repo.VerifyChain.
+type ChainStatus struct {
+	Intact            bool
+	Length            int64
+	FirstBrokenSeq    *int64
+	FirstBrokenReason string
+}
+
+// VerifyChain reads every row in (clinic, chain_key) ordered by
+// entry_seq_in_chain and recomputes the canonical hash for each. The
+// first row whose stored row_hash differs from the recomputed hash is
+// reported as broken; the walk stops there.
+//
+// A chain with zero rows is considered Intact (length 0, no row to
+// fail). Sequence gaps (e.g. 1, 2, 4) are reported as broken at the
+// first missing seq.
+func (r *Repository) VerifyChain(ctx context.Context, clinicID uuid.UUID, chainK []byte) (*ChainStatus, error) {
+	const q = `
+		SELECT id, entry_seq_in_chain, operation, quantity, unit,
+		       drug_name, drug_strength, drug_form, balance_after,
+		       prev_row_hash, row_hash
+		  FROM drug_operations_log
+		 WHERE clinic_id = $1
+		   AND chain_key = $2
+		   AND entry_seq_in_chain IS NOT NULL
+		 ORDER BY entry_seq_in_chain ASC`
+	rows, err := r.db.Query(ctx, q, clinicID, chainK)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.VerifyChain: query: %w", err)
+	}
+	defer rows.Close()
+
+	status := &ChainStatus{Intact: true}
+	prevHash := ZeroHash()
+	expectedSeq := int64(1)
+
+	for rows.Next() {
+		var (
+			id                              uuid.UUID
+			seq                             int64
+			operation, unit                 string
+			drugName, strength, form        string
+			quantity, balanceAfter          float64
+			storedPrevHash, storedRowHash   []byte
+		)
+		if err := rows.Scan(&id, &seq, &operation, &quantity, &unit,
+			&drugName, &strength, &form, &balanceAfter,
+			&storedPrevHash, &storedRowHash); err != nil {
+			return nil, fmt.Errorf("drugs.repo.VerifyChain: scan: %w", err)
+		}
+		status.Length++
+
+		if seq != expectedSeq {
+			status.Intact = false
+			missingSeq := expectedSeq
+			status.FirstBrokenSeq = &missingSeq
+			status.FirstBrokenReason = fmt.Sprintf("sequence gap at %d (next row was %d)", expectedSeq, seq)
+			return status, nil
+		}
+
+		// Stored prev_row_hash must match the running prevHash we're
+		// carrying forward — catches reorderings.
+		if !bytes.Equal(storedPrevHash, prevHash) {
+			status.Intact = false
+			status.FirstBrokenSeq = &seq
+			status.FirstBrokenReason = "stored prev_row_hash does not match the previous row's row_hash"
+			return status, nil
+		}
+
+		canonical := canonicalRowBytes(
+			id, clinicID, chainK, seq,
+			operation, quantity, unit,
+			drugName, strength, form,
+			balanceAfter, prevHash,
+		)
+		recomputed := computeRowHash(canonical, prevHash)
+		if !bytes.Equal(recomputed, storedRowHash) {
+			status.Intact = false
+			status.FirstBrokenSeq = &seq
+			status.FirstBrokenReason = "stored row_hash does not match recomputed hash"
+			return status, nil
+		}
+
+		prevHash = storedRowHash
+		expectedSeq++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.VerifyChain: rows: %w", err)
+	}
+	return status, nil
 }
 
 // HasOpenReconciliation reports whether there's already an unreported
