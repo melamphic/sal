@@ -24,6 +24,7 @@ type IncidentRecord struct {
 	ClinicID                 uuid.UUID
 	SubjectID                uuid.UUID
 	NoteID                   *uuid.UUID
+	NoteFieldID              *uuid.UUID
 	IncidentType             string
 	SIRSPriority             *string
 	CQCNotifiable            bool
@@ -69,6 +70,7 @@ type CreateIncidentParams struct {
 	ClinicID             uuid.UUID
 	SubjectID            uuid.UUID
 	NoteID               *uuid.UUID
+	NoteFieldID          *uuid.UUID
 	IncidentType         string
 	Severity             string
 	OccurredAt           time.Time
@@ -139,7 +141,8 @@ type CreateAddendumParams struct {
 
 // ── Repository ──────────────────────────────────────────────────────────────
 
-const incidentCols = `id, clinic_id, subject_id, note_id, incident_type,
+const incidentCols = `id, clinic_id, subject_id, note_id, note_field_id,
+	incident_type,
 	sirs_priority, cqc_notifiable, cqc_notification_type, severity,
 	occurred_at, location, brief_description, immediate_actions, witnesses_text,
 	subject_outcome,
@@ -165,15 +168,15 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) CreateIncident(ctx context.Context, p CreateIncidentParams) (*IncidentRecord, error) {
 	row := r.db.QueryRow(ctx, fmt.Sprintf(`
 		INSERT INTO incident_events (
-			id, clinic_id, subject_id, note_id,
+			id, clinic_id, subject_id, note_id, note_field_id,
 			incident_type, severity, occurred_at, location,
 			brief_description, immediate_actions, witnesses_text, subject_outcome,
 			reported_by,
 			sirs_priority, cqc_notifiable, cqc_notification_type, notification_deadline
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING %s`, incidentCols),
-		p.ID, p.ClinicID, p.SubjectID, p.NoteID,
+		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.IncidentType, p.Severity, p.OccurredAt, p.Location,
 		p.BriefDescription, p.ImmediateActions, p.WitnessesText, p.SubjectOutcome,
 		p.ReportedBy,
@@ -226,6 +229,10 @@ func (r *Repository) ListIncidents(ctx context.Context, clinicID uuid.UUID, p Li
 	if p.OnlyOpen {
 		where += " AND status NOT IN ('closed','reported_to_regulator')"
 	}
+	// Hide draft-bound incidents from list views — patient timeline +
+	// compliance inbox should only show finalized incidents. Per-id
+	// GET stays unconditional for note review.
+	where += " AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))"
 
 	var total int
 	if err := r.db.QueryRow(ctx,
@@ -469,7 +476,8 @@ type scannable interface {
 func scanIncident(row scannable) (*IncidentRecord, error) {
 	var i IncidentRecord
 	err := row.Scan(
-		&i.ID, &i.ClinicID, &i.SubjectID, &i.NoteID, &i.IncidentType,
+		&i.ID, &i.ClinicID, &i.SubjectID, &i.NoteID, &i.NoteFieldID,
+		&i.IncidentType,
 		&i.SIRSPriority, &i.CQCNotifiable, &i.CQCNotificationType, &i.Severity,
 		&i.OccurredAt, &i.Location, &i.BriefDescription, &i.ImmediateActions, &i.WitnessesText,
 		&i.SubjectOutcome,
