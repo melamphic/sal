@@ -24,6 +24,7 @@ type ConsentRecord struct {
 	ClinicID                    uuid.UUID
 	SubjectID                   uuid.UUID
 	NoteID                      *uuid.UUID
+	NoteFieldID                 *uuid.UUID
 	ConsentType                 string
 	Scope                       string
 	ProcedureOrFormID           *uuid.UUID
@@ -53,6 +54,7 @@ type CreateConsentParams struct {
 	ClinicID                    uuid.UUID
 	SubjectID                   uuid.UUID
 	NoteID                      *uuid.UUID
+	NoteFieldID                 *uuid.UUID
 	ConsentType                 string
 	Scope                       string
 	ProcedureOrFormID           *uuid.UUID
@@ -113,7 +115,8 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-const consentCols = `id, clinic_id, subject_id, note_id, consent_type, scope,
+const consentCols = `id, clinic_id, subject_id, note_id, note_field_id,
+	consent_type, scope,
 	procedure_or_form_id, risks_discussed, alternatives_discussed,
 	captured_via, signature_image_key, transcript_recording_id,
 	consenting_party_relationship, consenting_party_name,
@@ -124,7 +127,7 @@ const consentCols = `id, clinic_id, subject_id, note_id, consent_type, scope,
 func (r *Repository) CreateConsent(ctx context.Context, p CreateConsentParams) (*ConsentRecord, error) {
 	row := r.db.QueryRow(ctx, fmt.Sprintf(`
 		INSERT INTO consent_records (
-			id, clinic_id, subject_id, note_id,
+			id, clinic_id, subject_id, note_id, note_field_id,
 			consent_type, scope, procedure_or_form_id,
 			risks_discussed, alternatives_discussed,
 			captured_via, signature_image_key, transcript_recording_id,
@@ -132,10 +135,10 @@ func (r *Repository) CreateConsent(ctx context.Context, p CreateConsentParams) (
 			capacity_assessment_id, captured_by, captured_at, witness_id,
 			expires_at, renewal_due_at, ai_assistance_metadata
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-		        $13, $14, $15, $16, $17, $18, $19, $20, $21::jsonb)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+		        $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb)
 		RETURNING %s`, consentCols),
-		p.ID, p.ClinicID, p.SubjectID, p.NoteID,
+		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.ConsentType, p.Scope, p.ProcedureOrFormID,
 		p.RisksDiscussed, p.AlternativesDiscussed,
 		p.CapturedVia, p.SignatureImageKey, p.TranscriptRecordingID,
@@ -180,6 +183,12 @@ func (r *Repository) ListConsents(ctx context.Context, clinicID uuid.UUID, p Lis
 		args = append(args, *p.ExpiringWithin)
 		where += fmt.Sprintf(" AND withdrawal_at IS NULL AND expires_at IS NOT NULL AND expires_at <= NOW() + $%d::interval", len(args))
 	}
+	// Hide draft-bound consents from list queries so the patient
+	// timeline / consent ledger only show records that are either
+	// standalone (note_id NULL) or attached to a submitted note. The
+	// per-id GET stays unconditional — note review needs to see its
+	// own pending materialisations.
+	where += " AND (note_id IS NULL OR note_id IN (SELECT id FROM notes WHERE status = 'submitted'))"
 
 	var total int
 	if err := r.db.QueryRow(ctx,
@@ -278,7 +287,8 @@ type scannable interface {
 func scanConsent(row scannable) (*ConsentRecord, error) {
 	var c ConsentRecord
 	err := row.Scan(
-		&c.ID, &c.ClinicID, &c.SubjectID, &c.NoteID, &c.ConsentType, &c.Scope,
+		&c.ID, &c.ClinicID, &c.SubjectID, &c.NoteID, &c.NoteFieldID,
+		&c.ConsentType, &c.Scope,
 		&c.ProcedureOrFormID, &c.RisksDiscussed, &c.AlternativesDiscussed,
 		&c.CapturedVia, &c.SignatureImageKey, &c.TranscriptRecordingID,
 		&c.ConsentingPartyRelationship, &c.ConsentingPartyName,
