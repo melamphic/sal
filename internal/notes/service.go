@@ -39,6 +39,14 @@ type NoteCapEnforcer interface {
 	Evaluate(ctx context.Context, clinicID uuid.UUID) error
 }
 
+// DrugConfirmChecker checks whether any drug op linked to the note still
+// needs explicit clinician confirmation. Implemented by drugs.Service.
+// Set via SetDrugConfirmChecker; nil means the gate is skipped (used in
+// tests and clinics without controlled-drug capture).
+type DrugConfirmChecker interface {
+	HasPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) (bool, error)
+}
+
 // Service handles business logic for the notes module.
 type Service struct {
 	repo          repo
@@ -50,6 +58,23 @@ type Service struct {
 	verticals     VerticalProvider                 // nil = generic (vertical-neutral) prompts
 	noteCap       NoteCapEnforcer                  // nil = cap not enforced (tests, local dev)
 	pdf           *PDFRenderer                     // nil = skip sync PDF render (defer to worker)
+	drugConfirm   DrugConfirmChecker               // nil = skip drug-confirm gate
+	// System widget materialisers — wired via SetSystemMaterialisers
+	// from app.go. Each adapter forwards into the relevant entity
+	// service. nil = that materialiser path is unavailable; submit
+	// gate still rejects unmaterialised fields.
+	consentMat  ConsentMaterialiser
+	drugOpMat   DrugOpMaterialiser
+	incidentMat IncidentMaterialiser
+	painMat     PainMaterialiser
+	// Read-side summarisers — wired via SetSystemSummarisers. Used by
+	// GetNote to enrich materialised system fields with a short
+	// labelled summary the FE card + PDF render. Nil = no summary, the
+	// surfaces fall back to a "linked" pill without details.
+	consentSum  ConsentSummariser
+	drugOpSum   DrugOpSummariser
+	incidentSum IncidentSummariser
+	painSum     PainSummariser
 }
 
 // NewService constructs a notes Service.
@@ -73,6 +98,18 @@ func (s *Service) SetPolicyChecker(checker extraction.PolicyDetailedChecker, cla
 // check still runs with a generic "clinic type not specified" preamble.
 func (s *Service) SetVerticalProvider(v VerticalProvider) {
 	s.verticals = v
+}
+
+// SetDrugConfirmChecker wires the drug-op confirm-gate. When set, SubmitNote
+// rejects submission if any system.drug_op widget on the form still has an
+// unconfirmed (pending_confirm) drug operation linked to the note.
+//
+// The drug op confirm-gate is the regulator-binding rail on system.drug_op
+// widgets — AI pre-fills the dose / route / witness, but the row stays
+// pending_confirm until the clinician explicitly taps Confirm via the
+// drugs /confirm endpoint.
+func (s *Service) SetDrugConfirmChecker(c DrugConfirmChecker) {
+	s.drugConfirm = c
 }
 
 // OnRecordingTranscribed satisfies audio.TranscriptListener. Called by
@@ -129,6 +166,19 @@ type NoteFieldResponse struct {
 	TransformationType *string  `json:"transformation_type,omitempty"`
 	OverriddenBy       *string  `json:"overridden_by,omitempty"`
 	OverriddenAt       *string  `json:"overridden_at,omitempty"`
+	// SystemSummary — populated for materialised system widgets only.
+	// A short labelled list of the entity's key fields (drug name +
+	// quantity for a drug op, score + scale for pain, etc) so the FE
+	// card / PDF can render what was captured instead of just an id.
+	// Resolved server-side from the typed entity table on GetNote.
+	SystemSummary []NoteFieldSystemSummaryItem `json:"system_summary,omitempty"`
+}
+
+// NoteFieldSystemSummaryItem is one row in the system widget summary —
+// a labelled value rendered on the materialised card / PDF.
+type NoteFieldSystemSummaryItem struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // NoteResponse is the API-safe representation of a clinical note.
@@ -300,7 +350,108 @@ func (s *Service) GetNote(ctx context.Context, id, clinicID uuid.UUID) (*NoteRes
 		return nil, fmt.Errorf("notes.service.GetNote: fields: %w", err)
 	}
 
-	return toNoteResponse(note, fields), nil
+	resp := toNoteResponse(note, fields)
+	s.enrichSystemSummaries(ctx, clinicID, resp.Fields)
+	return resp, nil
+}
+
+// enrichSystemSummaries fills NoteFieldResponse.SystemSummary for any
+// system.* field whose value is an id-pointer. Failures are non-fatal —
+// the field stays without a summary so the FE shows "linked" without
+// details rather than failing the whole GetNote call.
+func (s *Service) enrichSystemSummaries(
+	ctx context.Context,
+	clinicID uuid.UUID,
+	fields []*NoteFieldResponse,
+) {
+	for _, f := range fields {
+		if f.Value == nil {
+			continue
+		}
+		entityID, kind := decodeIDPointer(*f.Value)
+		if kind == "" {
+			continue
+		}
+		summary, err := s.summariseByKind(ctx, kind, entityID, clinicID)
+		if err != nil || summary == nil {
+			continue
+		}
+		f.SystemSummary = make([]NoteFieldSystemSummaryItem, len(summary.Items))
+		for i, it := range summary.Items {
+			f.SystemSummary[i] = NoteFieldSystemSummaryItem(it)
+		}
+	}
+}
+
+// summariseByKind dispatches to the per-kind summariser based on the
+// id-pointer key (consent_id / operation_id / incident_id / pain_score_id).
+func (s *Service) summariseByKind(
+	ctx context.Context,
+	kind string,
+	entityID, clinicID uuid.UUID,
+) (*SystemSummary, error) {
+	switch kind {
+	case "consent_id":
+		if s.consentSum == nil {
+			return nil, nil //nolint:nilnil
+		}
+		out, err := s.consentSum.SummariseConsent(ctx, entityID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.summariseByKind: %w", err)
+		}
+		return out, nil
+	case "operation_id":
+		if s.drugOpSum == nil {
+			return nil, nil //nolint:nilnil
+		}
+		out, err := s.drugOpSum.SummariseDrugOp(ctx, entityID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.summariseByKind: %w", err)
+		}
+		return out, nil
+	case "incident_id":
+		if s.incidentSum == nil {
+			return nil, nil //nolint:nilnil
+		}
+		out, err := s.incidentSum.SummariseIncident(ctx, entityID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.summariseByKind: %w", err)
+		}
+		return out, nil
+	case "pain_score_id":
+		if s.painSum == nil {
+			return nil, nil //nolint:nilnil
+		}
+		out, err := s.painSum.SummarisePain(ctx, entityID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.summariseByKind: %w", err)
+		}
+		return out, nil
+	}
+	return nil, nil //nolint:nilnil
+}
+
+// decodeIDPointer reads a {"<kind>":"<uuid>"} JSON value. Returns the
+// id and the kind key, or zero/empty when the value isn't a valid
+// id-pointer (AI payload, plain text, null, …).
+func decodeIDPointer(raw string) (uuid.UUID, string) {
+	s := strings.TrimSpace(raw)
+	if s == "" || s == "null" {
+		return uuid.Nil, ""
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		return uuid.Nil, ""
+	}
+	for _, k := range []string{"consent_id", "operation_id", "incident_id", "pain_score_id"} {
+		if v, ok := m[k]; ok && v != "" {
+			id, err := uuid.Parse(v)
+			if err == nil {
+				return id, k
+			}
+		}
+	}
+	return uuid.Nil, ""
 }
 
 // ListNotes returns a paginated list of notes for a clinic.
@@ -388,7 +539,8 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 		overrideReason = nil
 	}
 
-	// Pre-submit validation: required fields + policy check (unless overridden).
+	// Pre-submit validation: required fields + policy check (unless overridden) +
+	// drug-op confirm gate (always — never override-able).
 	{
 		preNote, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 		if err != nil {
@@ -403,6 +555,41 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 			if err := s.validatePolicyCheck(preNote); err != nil {
 				return nil, err
 			}
+		}
+		// Regulator rail #1: every drug op linked to this note via a
+		// system.drug_op widget must be explicitly confirmed before
+		// submission. Override does NOT bypass — the gate is for
+		// regulator-binding records (CD register), not policy alignment.
+		if s.drugConfirm != nil {
+			pending, err := s.drugConfirm.HasPendingConfirmForNote(ctx, noteID, clinicID)
+			if err != nil {
+				return nil, fmt.Errorf("notes.service.SubmitNote: drug-confirm check: %w", err)
+			}
+			if pending {
+				return nil, fmt.Errorf("notes.service.SubmitNote: cannot submit while drug operations are pending confirmation: %w", domain.ErrValidation)
+			}
+		}
+		// Regulator rail #2: every system.* field with an AI-extracted
+		// JSON payload must be materialised into its typed ledger row
+		// before submit. Raw JSON in note_fields.value means the
+		// clinician hasn't tapped Confirm — block submission with a
+		// list of titles so the UI can highlight which cards remain.
+		unmaterialised, err := s.ListUnmaterialisedSystemFields(ctx, noteID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("notes.service.SubmitNote: system-field check: %w", err)
+		}
+		if len(unmaterialised) > 0 {
+			titles := make([]string, len(unmaterialised))
+			for i, f := range unmaterialised {
+				titles[i] = f.Title
+			}
+			return nil, fmt.Errorf(
+				"notes.service.SubmitNote: %d system widget%s pending confirmation: %s: %w",
+				len(unmaterialised),
+				pluralS(len(unmaterialised)),
+				strings.Join(titles, ", "),
+				domain.ErrValidation,
+			)
 		}
 	}
 
