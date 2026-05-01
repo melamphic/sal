@@ -80,11 +80,12 @@ type SubjectTrendResponse struct {
 
 // ── Service inputs ────────────────────────────────────────────────────────────
 
-type RecordPainScoreInput struct {
+type RecordPainScoreInput struct { //nolint:revive // mirrored to repo
 	ClinicID      uuid.UUID
 	StaffID       uuid.UUID
 	SubjectID     uuid.UUID
 	NoteID        *uuid.UUID
+	NoteFieldID   *uuid.UUID
 	Score         int
 	Note          *string
 	Method        string
@@ -137,6 +138,7 @@ func (s *Service) RecordPainScore(ctx context.Context, in RecordPainScoreInput) 
 		ClinicID:      in.ClinicID,
 		SubjectID:     in.SubjectID,
 		NoteID:        in.NoteID,
+		NoteFieldID:   in.NoteFieldID,
 		Score:         in.Score,
 		Note:          in.Note,
 		Method:        in.Method,
@@ -162,6 +164,16 @@ func (s *Service) GetPainScore(ctx context.Context, id, clinicID, staffID uuid.U
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, clinicID, rec.SubjectID, staffID,
 			"pain_score_view", "pain.service.GetPainScore")
+	}
+	return recordToResponse(rec), nil
+}
+
+// SummariseForNote — see consent.Service.SummariseForNote. Used to
+// render a materialised note widget without double-logging the view.
+func (s *Service) SummariseForNote(ctx context.Context, id, clinicID uuid.UUID) (*PainScoreResponse, error) {
+	rec, err := s.repo.GetPainScore(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("pain.service.SummariseForNote: %w", err)
 	}
 	return recordToResponse(rec), nil
 }
