@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/drugs/catalog"
+	"github.com/melamphic/sal/internal/drugs/validators"
 )
 
 // ── Service dependencies (small interfaces, satisfied by app.go adapters) ──
@@ -17,8 +19,15 @@ import (
 // ClinicLookup resolves vertical + country for a clinic — needed to scope
 // the system catalog and to drive witnessing rules. Implemented by app.go
 // via a thin wrapper over clinic.Service.
+//
+// GetClinicState is optional: AU clinics need it for state-aware
+// validation (NSW/VIC/QLD/WA/...); other countries return empty
+// string. Adapters that don't carry state may always return "" — the
+// AU validator falls back to WA-strict, which is the safe default for
+// shadow mode.
 type ClinicLookup interface {
 	GetVerticalAndCountry(ctx context.Context, clinicID uuid.UUID) (vertical, country string, err error)
+	GetClinicState(ctx context.Context, clinicID uuid.UUID) (state string, err error)
 }
 
 // StaffPermLookup checks runtime perm flags for a staff member. The drugs
@@ -205,6 +214,13 @@ type LogOperationInput struct {
 	// review). The submit gate refuses to ship a note with any
 	// pending_confirm rows linked to it.
 	Status string
+
+	// Compliance — optional jurisdiction-specific fields populated by
+	// callers that have them (UK Sch 6, US 1304, NZ Reg 40, AU state).
+	// Phase 2a (shadow mode): validators inspect these and log
+	// findings; the operation always proceeds. Phase 2c flips to
+	// enforce mode for clinics on compliance_v2.
+	Compliance validators.ComplianceInput
 }
 
 // OperationResponse — one ledger row on the wire.
@@ -603,6 +619,13 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
 	}
 
+	// Compliance v2 shadow check — runs the per-country validator and
+	// logs any findings. Operation is NOT blocked in shadow mode; we
+	// gather telemetry to validate rule coverage against real traffic
+	// before flipping to enforce. See docs/drug-register-compliance-v2.md
+	// §3.8 + §5.1.
+	s.runComplianceCheckShadow(ctx, in, shelf, requiresWitness)
+
 	// Witness validation — controlled drugs MUST have a witness who is not
 	// the administering staff. If the underlying drug is non-controlled,
 	// witnessed_by may be nil.
@@ -628,6 +651,23 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
 	}
 
+	// Compliance v2 chain: page-identity + chain key for the new row.
+	// Legacy callers (catalog drift, override drugs without metadata)
+	// fall back to empty values; repo skips chain compute then.
+	cc, err := s.loadCatalogContext(ctx, in.ClinicID, shelf)
+	if err != nil {
+		// Don't block the op on a catalog lookup failure — log and
+		// proceed with empty page identity (repo will skip the chain).
+		slog.Warn("drugs.service.LogOperation: catalog context load failed; chain disabled for this row",
+			"clinic_id", in.ClinicID, "shelf_id", in.ShelfID, "error", err.Error())
+		cc = &catalogContext{}
+	}
+
+	var chainK []byte
+	if cc.DrugName != "" && cc.Strength != "" && cc.Form != "" {
+		chainK = chainKey(in.ClinicID, cc.DrugName, cc.Strength, cc.Form)
+	}
+
 	rec, err := s.repo.LogOperation(ctx, CreateOperationParams{
 		ID:                domain.NewID(),
 		ClinicID:          in.ClinicID,
@@ -648,6 +688,13 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		BalanceAfter:      balanceAfter,
 		AddendsTo:         in.AddendsTo,
 		Status:            in.Status,
+
+		// Compliance v2: page-identity + chain key + retention floor.
+		DrugName:       cc.DrugName,
+		DrugStrength:   cc.Strength,
+		DrugForm:       cc.Form,
+		ChainKey:       chainK,
+		RetentionUntil: nil, // Phase 2c: derive from clinic_drug_retention_policy
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
@@ -659,6 +706,133 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 	}
 
 	return operationRecordToResponse(rec), nil
+}
+
+// runComplianceCheckShadow runs the per-country compliance validator
+// and logs any findings. Operation is NOT blocked — Phase 2a ships in
+// shadow mode so we can measure rule coverage against real traffic
+// before flipping to enforce. Errors loading catalog/state never block
+// either; they're logged for ops visibility.
+func (s *Service) runComplianceCheckShadow(ctx context.Context, in LogOperationInput, shelf *ShelfRecord, requiresWitness bool) {
+	cc, err := s.loadCatalogContext(ctx, in.ClinicID, shelf)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: catalog context load failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		return
+	}
+	_, country, err := s.clinics.GetVerticalAndCountry(ctx, in.ClinicID)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: clinic country lookup failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		return
+	}
+	state, err := s.clinics.GetClinicState(ctx, in.ClinicID)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: clinic state lookup failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		// continue — state is optional; AU falls back to WA-strict.
+	}
+
+	in.Compliance.Witnessed = in.WitnessedBy != nil
+
+	octx := validators.OperationContext{
+		Operation:     validators.Operation(in.Operation),
+		Schedule:      cc.Schedule,
+		IsControlled:  cc.IsControlled || requiresWitness,
+		ClinicCountry: country,
+		ClinicState:   state,
+		Compliance:    in.Compliance,
+	}
+
+	v := validators.Dispatch(country)
+	issues := v.Validate(octx)
+	if len(issues) == 0 {
+		return
+	}
+	for _, issue := range issues {
+		slog.Info("drugs.compliance.shadow",
+			"clinic_id", in.ClinicID,
+			"shelf_id", in.ShelfID,
+			"operation", in.Operation,
+			"country", country,
+			"state", state,
+			"schedule", cc.Schedule,
+			"field", issue.Field,
+			"code", issue.Code,
+			"severity", severityLabel(issue.Severity),
+			"message", issue.Message,
+		)
+	}
+}
+
+func severityLabel(s validators.Severity) string {
+	if s == validators.Error {
+		return "error"
+	}
+	return "warning"
+}
+
+// catalogContext bundles the regulator-relevant catalog facts for one
+// shelf row: page-identity (drug name + strength + form) plus the
+// schedule + control-flag the validators need.
+//
+// Returned even for override drugs (catalog metadata may be empty for
+// clinic-defined drugs — the override path returns ScheduleEmpty +
+// IsControlled=false today; controls metadata for overrides is a
+// known v1 limitation called out in shelfRequiresWitness).
+type catalogContext struct {
+	DrugName     string
+	Strength     string
+	Form         string
+	Schedule     string
+	IsControlled bool
+}
+
+// loadCatalogContext joins the shelf row to the system catalog (or
+// override) and returns the page-identity + control facts. Used by
+// LogOperation to build the validator OperationContext + (Phase 2b)
+// the chain key.
+func (s *Service) loadCatalogContext(ctx context.Context, clinicID uuid.UUID, shelf *ShelfRecord) (*catalogContext, error) {
+	cc := &catalogContext{}
+	if shelf.Strength != nil {
+		cc.Strength = *shelf.Strength
+	}
+	if shelf.Form != nil {
+		cc.Form = *shelf.Form
+	}
+
+	if shelf.CatalogID != nil {
+		vertical, country, err := s.clinics.GetVerticalAndCountry(ctx, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("clinic lookup: %w", err)
+		}
+		entry := s.cat.Lookup(vertical, country, *shelf.CatalogID)
+		if entry != nil {
+			cc.DrugName = entry.Name
+			cc.Schedule = entry.Schedule
+			cc.IsControlled = entry.RequiresWitness() || entry.Controls.RegisterRequired
+			if cc.Form == "" {
+				cc.Form = entry.Form
+			}
+			return cc, nil
+		}
+	}
+
+	if shelf.OverrideDrugID != nil {
+		ov, err := s.repo.GetOverrideDrugByID(ctx, *shelf.OverrideDrugID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("override lookup: %w", err)
+		}
+		cc.DrugName = ov.Name
+		if ov.Schedule != nil {
+			cc.Schedule = *ov.Schedule
+		}
+		// Override drugs don't carry Controls metadata in v1; treat as
+		// non-controlled. (See shelfRequiresWitness for the same v1
+		// limitation.)
+	}
+
+	return cc, nil
 }
 
 // shelfRequiresWitness consults the catalog (or override) for the
@@ -1111,6 +1285,50 @@ func reconciliationRecordToResponse(r *ReconciliationRecord) *ReconciliationResp
 // also makes it trivial to mock in tests via SetTimeNow.
 func domainTimeNow() time.Time {
 	return domain.TimeNow()
+}
+
+// ── Compliance v2: chain verification ─────────────────────────────────────
+
+// VerifyChainInput identifies a chain to verify by its page-identity
+// tuple. Service derives the chain_key from these — callers don't need
+// to know the SHA256 detail.
+type VerifyChainInput struct {
+	ClinicID     uuid.UUID
+	DrugName     string
+	DrugStrength string
+	DrugForm     string
+}
+
+// VerifyChainResponse mirrors repo.ChainStatus on the wire.
+//
+//nolint:revive
+type VerifyChainResponse struct {
+	Intact            bool   `json:"intact"`
+	Length            int64  `json:"length"`
+	FirstBrokenSeq    *int64 `json:"first_broken_seq,omitempty"`
+	FirstBrokenReason string `json:"first_broken_reason,omitempty"`
+}
+
+// VerifyChain walks the (clinic, drug, strength, form) chain and
+// reports whether every row's row_hash recomputes correctly. Used by
+// the regulator-export endpoint + on-demand inspection by clinic
+// admins.
+func (s *Service) VerifyChain(ctx context.Context, in VerifyChainInput) (*VerifyChainResponse, error) {
+	if in.DrugName == "" || in.DrugStrength == "" || in.DrugForm == "" {
+		return nil, fmt.Errorf("drugs.service.VerifyChain: drug_name + strength + form required: %w", domain.ErrValidation)
+	}
+	chainK := chainKey(in.ClinicID, in.DrugName, in.DrugStrength, in.DrugForm)
+
+	status, err := s.repo.VerifyChain(ctx, in.ClinicID, chainK)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.VerifyChain: %w", err)
+	}
+	return &VerifyChainResponse{
+		Intact:            status.Intact,
+		Length:            status.Length,
+		FirstBrokenSeq:    status.FirstBrokenSeq,
+		FirstBrokenReason: status.FirstBrokenReason,
+	}, nil
 }
 
 // Sentinel: ensure errors.Is(err, domain.ErrXxx) works through our wrapping
