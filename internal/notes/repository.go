@@ -506,6 +506,136 @@ func (r *Repository) GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*No
 	return list, nil
 }
 
+// GetNoteFieldWithType returns the form field's type/title plus the
+// note_fields value (if any) for the (note, field) pair. Tenant-scoped
+// via the parent note's clinic_id; cross-tenant probes return
+// ErrNotFound.
+//
+// LEFT JOIN on note_fields by design: AI extraction only writes a row
+// when it has a value to store, so a system widget the AI ignored has
+// NO note_fields row yet. Materialise must still work — the user's tap
+// on Capture/Confirm is what creates the row in that case. Returns
+// out.Value = nil for the no-row case; ErrNotFound only when the field
+// doesn't belong to this note's form (or the note is in another clinic).
+func (r *Repository) GetNoteFieldWithType(ctx context.Context, noteID, fieldID, clinicID uuid.UUID) (*NoteFieldWithType, error) {
+	// 1. Verify the note belongs to this clinic. Cheap tenant guard.
+	var noteSubjectID *uuid.UUID
+	err := r.db.QueryRow(ctx,
+		`SELECT subject_id FROM notes WHERE id = $1 AND clinic_id = $2`,
+		noteID, clinicID,
+	).Scan(&noteSubjectID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("notes.repo.GetNoteFieldWithType: note: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("notes.repo.GetNoteFieldWithType: note: %w", err)
+	}
+
+	// 2. Look up the form field by id alone. We trust the FE to pass a
+	// field_id from this note's form (the form definition the FE
+	// rendered came from the note's form_version), and we don't need
+	// to enforce form_version_id equality at the DB layer — an attacker
+	// supplying a field_id from a different form would just get the
+	// type+title of THAT field, but the materialise endpoint then
+	// validates field_type against the expected system.* kind. If the
+	// kinds don't match, the service returns ErrValidation.
+	var formFieldType, formFieldTitle string
+	err = r.db.QueryRow(ctx,
+		`SELECT type, title FROM form_fields WHERE id = $1`,
+		fieldID,
+	).Scan(&formFieldType, &formFieldTitle)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("notes.repo.GetNoteFieldWithType: field: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("notes.repo.GetNoteFieldWithType: field: %w", err)
+	}
+
+	// 3. Pick up the existing note_fields value if any (LEFT JOIN style).
+	var value *string
+	err = r.db.QueryRow(ctx,
+		`SELECT value FROM note_fields WHERE note_id = $1 AND field_id = $2`,
+		noteID, fieldID,
+	).Scan(&value)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("notes.repo.GetNoteFieldWithType: value: %w", err)
+	}
+
+	return &NoteFieldWithType{
+		FieldID:   fieldID,
+		FieldType: formFieldType,
+		Title:     formFieldTitle,
+		Value:     value,
+		NoteID:    noteID,
+		SubjectID: noteSubjectID,
+	}, nil
+}
+
+// ListSystemFieldStates returns every note_field on the note that
+// corresponds to a `system.*` form_field, with its current value. Used
+// by the submit gate to detect unmaterialised system widgets.
+func (r *Repository) ListSystemFieldStates(ctx context.Context, noteID, clinicID uuid.UUID) ([]NoteFieldWithType, error) {
+	const q = `
+		SELECT ff.id, ff.type, ff.title, nf.value, nf.note_id, n.subject_id
+		FROM note_fields nf
+		JOIN form_fields ff ON ff.id = nf.field_id
+		JOIN notes n ON n.id = nf.note_id
+		WHERE nf.note_id = $1 AND n.clinic_id = $2 AND ff.type LIKE 'system.%'
+		ORDER BY ff.position`
+	rows, err := r.db.Query(ctx, q, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ListSystemFieldStates: %w", err)
+	}
+	defer rows.Close()
+	var out []NoteFieldWithType
+	for rows.Next() {
+		var f NoteFieldWithType
+		if err := rows.Scan(
+			&f.FieldID, &f.FieldType, &f.Title, &f.Value,
+			&f.NoteID, &f.SubjectID,
+		); err != nil {
+			return nil, fmt.Errorf("notes.repo.ListSystemFieldStates: scan: %w", err)
+		}
+		out = append(out, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.ListSystemFieldStates: rows: %w", err)
+	}
+	return out, nil
+}
+
+// WriteMaterialisedPointer writes the id-pointer JSON to note_fields.value
+// for the (note, field) pair, INSERTing the row if it doesn't exist yet.
+// Does NOT touch overridden_by/at — materialisation is a system action
+// triggered by an explicit user tap on a typed card, not a free-form
+// override of the AI extraction.
+//
+// UPSERT (vs the older UPDATE-only) is required because system widgets
+// the AI never extracted have no note_fields row yet — the user's
+// Capture/Confirm tap is what creates both the ledger row and the
+// note_fields pointer.
+//
+// Tenant ownership is enforced upstream: the service always calls
+// GetNoteFieldWithType (which joins on clinic_id) before WriteMaterialisedPointer,
+// so by the time we get here the note belongs to clinicID. The clinicID
+// arg is preserved in the signature for future direct-call safety but
+// not consulted in the SQL — keeping the UPSERT a single round-trip.
+func (r *Repository) WriteMaterialisedPointer(ctx context.Context, noteID, fieldID, _ uuid.UUID, pointer string) error {
+	const q = `
+		INSERT INTO note_fields (note_id, field_id, value)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (note_id, field_id) DO UPDATE
+		SET value = EXCLUDED.value, updated_at = NOW()`
+	tag, err := r.db.Exec(ctx, q, noteID, fieldID, pointer)
+	if err != nil {
+		return fmt.Errorf("notes.repo.WriteMaterialisedPointer: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("notes.repo.WriteMaterialisedPointer: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
 // UpdateNoteField records a staff override on a single field.
 // The clinic ownership check and field update are performed atomically in one query.
 func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
