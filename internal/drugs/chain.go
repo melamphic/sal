@@ -130,6 +130,45 @@ func computeRowHash(canonical, prevHash []byte) []byte {
 	return h.Sum(nil)
 }
 
+// ── Exported wrappers for the cmd/backfill-drug-chain one-shot ────────
+//
+// Backfill runs outside the service layer (a CLI tool); these wrappers
+// expose the chain primitives without forcing the rest of the code to
+// import the unexported helpers. They MUST stay in lock-step with the
+// in-package versions used by repo.LogOperation — same canonical bytes
+// + same hash function. Test coverage lives in chain_test.go.
+
+// ChainKeyForBackfill returns the chain key for one page-identity. Same
+// algorithm as the in-package chainKey().
+func ChainKeyForBackfill(clinicID uuid.UUID, drugName, strength, form string) []byte {
+	return chainKey(clinicID, drugName, strength, form)
+}
+
+// CanonicalRowBytesForBackfill exposes canonicalRowBytes to the
+// backfill cmd. Argument order MUST match canonicalRowBytes — both are
+// the public ABI for the chain.
+func CanonicalRowBytesForBackfill(
+	id, clinicID uuid.UUID,
+	chainK []byte,
+	entrySeqInChain int64,
+	operation string,
+	quantity float64,
+	unit string,
+	drugName, strength, form string,
+	balanceAfter float64,
+	prevHash []byte,
+) []byte {
+	return canonicalRowBytes(id, clinicID, chainK, entrySeqInChain,
+		operation, quantity, unit,
+		drugName, strength, form,
+		balanceAfter, prevHash)
+}
+
+// ComputeRowHashForBackfill exposes computeRowHash to the backfill cmd.
+func ComputeRowHashForBackfill(canonical, prevHash []byte) []byte {
+	return computeRowHash(canonical, prevHash)
+}
+
 // nullIfEmpty maps an empty string to a nil-valued pgx parameter so
 // the NOT NULL constraint shapes and the legacy backfill path stay
 // orthogonal — a v1 caller passing zero-value DrugName lands as a SQL
