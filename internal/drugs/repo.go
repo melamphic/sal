@@ -60,4 +60,36 @@ type repo interface {
 	LockOperationsToReconciliation(ctx context.Context, p LockOperationsParams) (int64, error)
 	ListReconciliations(ctx context.Context, clinicID uuid.UUID, p ListReconciliationsParams) ([]*ReconciliationRecord, int, error)
 	HasOpenReconciliation(ctx context.Context, shelfID uuid.UUID, periodEnd time.Time) (bool, error)
+
+	// ── Compliance v2 chain verification ────────────────────────────────────
+
+	// VerifyChain walks every row in a chain in order, recomputing the
+	// canonical hash for each and comparing to the stored row_hash.
+	// Returns the first broken row's entry_seq_in_chain (and a
+	// human-readable reason) or Intact=true if every hash matches.
+	VerifyChain(ctx context.Context, clinicID uuid.UUID, chainKey []byte) (*ChainStatus, error)
+
+	// ── Compliance v2 retention ──────────────────────────────────────────────
+
+	// GetRetentionPolicy returns the per-clinic retention years for
+	// the ledger / reconciliation / MAR. Seeded from country at clinic
+	// creation by migration 00068.
+	GetRetentionPolicy(ctx context.Context, clinicID uuid.UUID) (*RetentionPolicy, error)
+
+	// SoftDeleteOpsPastRetention soft-deletes (sets archived_at) any
+	// drug_operations_log row whose retention_until has passed. Returns
+	// the number of rows deleted. Used by the daily retention purge
+	// worker.
+	SoftDeleteOpsPastRetention(ctx context.Context, asOf time.Time) (int64, error)
+
+	// ── Compliance v2 backfill (one-shot, called by cmd/backfill-drug-chain) ─
+
+	// ListLegacyOpsForBackfill returns rows missing chain_key, ordered
+	// by created_at ASC, in pages. Pass a zero `since` for the first
+	// call.
+	ListLegacyOpsForBackfill(ctx context.Context, clinicID uuid.UUID, since time.Time, limit int) ([]*OperationRecord, error)
+
+	// BackfillChainRow stamps chain fields onto a legacy row in a
+	// transaction. Idempotent — skips rows where chain_key is already set.
+	BackfillChainRow(ctx context.Context, p BackfillChainRowParams) error
 }
