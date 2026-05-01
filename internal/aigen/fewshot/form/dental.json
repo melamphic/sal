@@ -50,5 +50,19 @@
       {"position": 8, "title": "Post-op instructions given", "type": "long_text", "required": true},
       {"position": 9, "title": "Follow-up arrangements", "type": "long_text"}
     ]
+  },
+  {
+    "_kind": "fewshot.form.dental",
+    "name": "Treatment Plan Acceptance",
+    "description": "Patient accepts the written treatment plan + cost estimate. System widget creates a typed treatment_plan consent record (6-month default re-quote window).",
+    "tags": ["treatment_plan", "consent"],
+    "fields": [
+      {"position": 1, "title": "Plan summary", "type": "long_text", "required": true},
+      {"position": 2, "title": "Estimated cost", "type": "decimal", "required": true},
+      {"position": 3, "title": "Patient acceptance", "type": "system.consent", "config": {"consent_type": "treatment_plan"}, "required": true, "ai_prompt": "Verbal + written acceptance. Captured_via written_signature when the patient signs the estimate."},
+      {"position": 4, "title": "Materials discussed", "type": "long_text", "ai_prompt": "Material choices presented: amalgam vs composite, denture vs bridge vs implant."},
+      {"position": 5, "title": "Phasing notes", "type": "long_text"},
+      {"position": 6, "title": "Plan validity", "type": "select", "config": {"options": [{"label": "6 months", "value": "6m"}, {"label": "12 months", "value": "12m"}]}, "required": true}
+    ]
   }
 ]

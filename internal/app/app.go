@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -419,6 +420,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	)
 	notesSvc.SetNoteCapEnforcer(noteCapSvc)
 	notesSvc.SetPDFRenderer(pdfRenderer)
+	pdfRenderer.SetService(notesSvc)
 	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
@@ -452,6 +454,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&drugsAccessLogAdapter{patientRepo: patientRepo},
 	)
 	drugsHandler := drugs.NewHandler(drugsSvc)
+
+	// Wire the drug-op confirm-gate into notes submission. system.drug_op
+	// widgets create rows in pending_confirm; the gate refuses to submit
+	// the host note while any are still pending. Override flag does NOT
+	// bypass — drug ops are regulator-binding.
+	notesSvc.SetDrugConfirmChecker(drugsSvc)
+	// Note: SetSystemMaterialisers is wired below after incidents and
+	// pain services are constructed (forward-declared dependency).
 
 	// ── Incidents module ─────────────────────────────────────────────────────
 	// Vertical-agnostic. SIRS/CQC classifier auto-stamps regulator deadlines
@@ -490,6 +500,25 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&drugsAccessLogAdapter{patientRepo: patientRepo},
 	)
 	painHandler := pain.NewHandler(painSvc)
+
+	// Wire the system widget materialisers now that all four entity
+	// services are constructed. Notes calls into these adapters when a
+	// clinician taps Confirm on a system.* card during note review.
+	notesSvc.SetSystemMaterialisers(
+		&consentMaterialiserAdapter{svc: consentSvc},
+		&drugOpMaterialiserAdapter{svc: drugsSvc},
+		&incidentMaterialiserAdapter{svc: incidentsSvc},
+		&painMaterialiserAdapter{svc: painSvc},
+	)
+	// Read-side bridges — let notes.GetNote enrich materialised system
+	// fields with a typed summary (drug name + qty, score + scale, …) so
+	// the FE card and the PDF render what was captured.
+	notesSvc.SetSystemSummarisers(
+		&consentSummariserAdapter{svc: consentSvc},
+		&drugOpSummariserAdapter{svc: drugsSvc},
+		&incidentSummariserAdapter{svc: incidentsSvc},
+		&painSummariserAdapter{svc: painSvc},
+	)
 
 	// ── Admin dashboard ──────────────────────────────────────────────────────
 	// Aggregator over patient + drugs + incidents + consent + pain. No
@@ -2010,6 +2039,300 @@ func (a *complianceDataAdapter) PainSummaryInPeriod(ctx context.Context, clinicI
 		summary.AvgScore = float64(totalScore) / float64(summary.Count)
 	}
 	return summary, nil
+}
+
+// ── notes system widget materialiser adapters ─────────────────────────
+//
+// notes.Service calls into 4 typed adapter interfaces to materialise
+// AI-extracted JSON payloads into real ledger rows. The concrete
+// services (consent / drugs / incidents / pain) each have a Capture /
+// Log / Create / Record method already; these adapters translate from
+// notes-package types into each service's input shape.
+//
+// Defined here (not in the entity packages) to avoid an import cycle —
+// notes can't import the entity packages, the entity packages don't
+// import notes.
+
+type consentMaterialiserAdapter struct{ svc *consent.Service }
+
+func (a *consentMaterialiserAdapter) MaterialiseConsentForNote(ctx context.Context, in notes.MaterialiseConsentInput) (*notes.MaterialisedRef, error) {
+	noteID := in.NoteID
+	noteFieldID := in.NoteFieldID
+	resp, err := a.svc.CaptureConsent(ctx, consent.CaptureConsentInput{
+		ClinicID:                    in.ClinicID,
+		StaffID:                     in.StaffID,
+		SubjectID:                   in.SubjectID,
+		NoteID:                      &noteID,
+		NoteFieldID:                 &noteFieldID,
+		ConsentType:                 in.ConsentType,
+		Scope:                       in.Scope,
+		CapturedVia:                 in.CapturedVia,
+		RisksDiscussed:              in.RisksDiscussed,
+		AlternativesDiscussed:       in.AlternativesDiscussed,
+		ConsentingPartyName:         in.ConsentingPartyName,
+		ConsentingPartyRelationship: in.ConsentingPartyRelationship,
+		WitnessID:                   in.WitnessID,
+		ExpiresAt:                   in.ExpiresAt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.consentMaterialiserAdapter: %w", err)
+	}
+	id, err := uuid.Parse(resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.consentMaterialiserAdapter: bad id: %w", err)
+	}
+	return &notes.MaterialisedRef{EntityID: id}, nil
+}
+
+type drugOpMaterialiserAdapter struct{ svc *drugs.Service }
+
+func (a *drugOpMaterialiserAdapter) MaterialiseDrugOpForNote(ctx context.Context, in notes.MaterialiseDrugOpInput) (*notes.MaterialisedRef, error) {
+	noteID := in.NoteID
+	noteFieldID := in.NoteFieldID
+	// Clinician's tap on Confirm IS the regulator-binding action;
+	// status='confirmed' (the default), not pending.
+	resp, err := a.svc.LogOperation(ctx, drugs.LogOperationInput{
+		ClinicID:         in.ClinicID,
+		StaffID:          in.StaffID,
+		ShelfID:          in.ShelfID,
+		SubjectID:        in.SubjectID,
+		NoteID:           &noteID,
+		NoteFieldID:      &noteFieldID,
+		Operation:        in.Operation,
+		Quantity:         in.Quantity,
+		Unit:             in.Unit,
+		Dose:             in.Dose,
+		Route:            in.Route,
+		ReasonIndication: in.ReasonIndication,
+		AdministeredBy:   in.StaffID,
+		WitnessedBy:      in.WitnessedBy,
+		Status:           "confirmed",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.drugOpMaterialiserAdapter: %w", err)
+	}
+	id, err := uuid.Parse(resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.drugOpMaterialiserAdapter: bad id: %w", err)
+	}
+	return &notes.MaterialisedRef{EntityID: id}, nil
+}
+
+type incidentMaterialiserAdapter struct{ svc *incidents.Service }
+
+func (a *incidentMaterialiserAdapter) MaterialiseIncidentForNote(ctx context.Context, in notes.MaterialiseIncidentInput) (*notes.MaterialisedRef, error) {
+	noteID := in.NoteID
+	noteFieldID := in.NoteFieldID
+	resp, err := a.svc.CreateIncident(ctx, incidents.CreateIncidentInput{
+		ClinicID:         in.ClinicID,
+		StaffID:          in.StaffID,
+		SubjectID:        in.SubjectID,
+		NoteID:           &noteID,
+		NoteFieldID:      &noteFieldID,
+		IncidentType:     in.IncidentType,
+		Severity:         in.Severity,
+		OccurredAt:       in.OccurredAt,
+		Location:         in.Location,
+		BriefDescription: in.BriefDescription,
+		ImmediateActions: in.ImmediateActions,
+		WitnessesText:    in.WitnessesText,
+		SubjectOutcome:   in.SubjectOutcome,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.incidentMaterialiserAdapter: %w", err)
+	}
+	id, err := uuid.Parse(resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.incidentMaterialiserAdapter: bad id: %w", err)
+	}
+	return &notes.MaterialisedRef{EntityID: id}, nil
+}
+
+type painMaterialiserAdapter struct{ svc *pain.Service }
+
+func (a *painMaterialiserAdapter) MaterialisePainForNote(ctx context.Context, in notes.MaterialisePainInput) (*notes.MaterialisedRef, error) {
+	noteID := in.NoteID
+	noteFieldID := in.NoteFieldID
+	resp, err := a.svc.RecordPainScore(ctx, pain.RecordPainScoreInput{
+		ClinicID:      in.ClinicID,
+		StaffID:       in.StaffID,
+		SubjectID:     in.SubjectID,
+		NoteID:        &noteID,
+		NoteFieldID:   &noteFieldID,
+		Score:         in.Score,
+		PainScaleUsed: in.PainScaleUsed,
+		Method:        in.Method,
+		Note:          in.Note,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.painMaterialiserAdapter: %w", err)
+	}
+	id, err := uuid.Parse(resp.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.painMaterialiserAdapter: bad id: %w", err)
+	}
+	return &notes.MaterialisedRef{EntityID: id}, nil
+}
+
+// ── Read-side summariser adapters ────────────────────────────────────────
+// Materialised system widgets need a "what's in here" preview on the
+// FE card and the PDF row. These adapters bridge from each domain
+// service's SummariseForNote method into the small (label, value) list
+// notes.GetNote attaches to NoteFieldResponse.SystemSummary.
+
+type consentSummariserAdapter struct{ svc *consent.Service }
+
+func (a *consentSummariserAdapter) SummariseConsent(ctx context.Context, id, clinicID uuid.UUID) (*notes.SystemSummary, error) {
+	r, err := a.svc.SummariseForNote(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.consentSummariserAdapter: %w", err)
+	}
+	items := []notes.SystemSummaryItem{
+		{Label: "Type", Value: humaniseConsentType(r.ConsentType)},
+		{Label: "Scope", Value: r.Scope},
+		{Label: "Captured via", Value: humaniseSnake(r.CapturedVia)},
+	}
+	if r.ConsentingPartyName != nil && *r.ConsentingPartyName != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Signer", Value: *r.ConsentingPartyName})
+	}
+	if r.ConsentingPartyRelationship != nil && *r.ConsentingPartyRelationship != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Relationship", Value: humaniseSnake(*r.ConsentingPartyRelationship)})
+	}
+	items = append(items, notes.SystemSummaryItem{Label: "Captured at", Value: humaniseTimestamp(r.CapturedAt)})
+	if r.ExpiresAt != nil && *r.ExpiresAt != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Expires", Value: humaniseTimestamp(*r.ExpiresAt)})
+	}
+	id2, err := uuid.Parse(r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.consentSummariserAdapter: bad id: %w", err)
+	}
+	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+}
+
+type drugOpSummariserAdapter struct{ svc *drugs.Service }
+
+func (a *drugOpSummariserAdapter) SummariseDrugOp(ctx context.Context, id, clinicID uuid.UUID) (*notes.SystemSummary, error) {
+	r, err := a.svc.GetOperation(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.drugOpSummariserAdapter: %w", err)
+	}
+	items := []notes.SystemSummaryItem{
+		{Label: "Operation", Value: humaniseSnake(r.Operation)},
+		{Label: "Quantity", Value: fmt.Sprintf("%s %s", trimZeros(r.Quantity), r.Unit)},
+	}
+	if r.Dose != nil && *r.Dose != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Dose", Value: *r.Dose})
+	}
+	if r.Route != nil && *r.Route != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Route", Value: *r.Route})
+	}
+	if r.ReasonIndication != nil && *r.ReasonIndication != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Reason", Value: *r.ReasonIndication})
+	}
+	items = append(items, notes.SystemSummaryItem{Label: "Status", Value: humaniseSnake(r.Status)})
+	items = append(items, notes.SystemSummaryItem{Label: "Logged at", Value: humaniseTimestamp(r.CreatedAt)})
+	id2, err := uuid.Parse(r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.drugOpSummariserAdapter: bad id: %w", err)
+	}
+	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+}
+
+type incidentSummariserAdapter struct{ svc *incidents.Service }
+
+func (a *incidentSummariserAdapter) SummariseIncident(ctx context.Context, id, clinicID uuid.UUID) (*notes.SystemSummary, error) {
+	r, err := a.svc.SummariseForNote(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.incidentSummariserAdapter: %w", err)
+	}
+	items := []notes.SystemSummaryItem{
+		{Label: "Type", Value: humaniseSnake(r.IncidentType)},
+		{Label: "Severity", Value: humaniseSnake(r.Severity)},
+		{Label: "Summary", Value: r.BriefDescription},
+	}
+	if r.Location != nil && *r.Location != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Location", Value: *r.Location})
+	}
+	if r.SubjectOutcome != nil && *r.SubjectOutcome != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Outcome", Value: humaniseSnake(*r.SubjectOutcome)})
+	}
+	items = append(items, notes.SystemSummaryItem{Label: "Occurred at", Value: humaniseTimestamp(r.OccurredAt)})
+	id2, err := uuid.Parse(r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.incidentSummariserAdapter: bad id: %w", err)
+	}
+	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+}
+
+type painSummariserAdapter struct{ svc *pain.Service }
+
+func (a *painSummariserAdapter) SummarisePain(ctx context.Context, id, clinicID uuid.UUID) (*notes.SystemSummary, error) {
+	r, err := a.svc.SummariseForNote(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.painSummariserAdapter: %w", err)
+	}
+	items := []notes.SystemSummaryItem{
+		{Label: "Score", Value: fmt.Sprintf("%d / 10", r.Score)},
+		{Label: "Scale", Value: humaniseSnake(r.PainScaleUsed)},
+		{Label: "Method", Value: humaniseSnake(r.Method)},
+	}
+	if r.Note != nil && *r.Note != "" {
+		items = append(items, notes.SystemSummaryItem{Label: "Note", Value: *r.Note})
+	}
+	items = append(items, notes.SystemSummaryItem{Label: "Recorded at", Value: humaniseTimestamp(r.CreatedAt)})
+	id2, err := uuid.Parse(r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("app.painSummariserAdapter: bad id: %w", err)
+	}
+	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+}
+
+// humaniseSnake — "verbal_clinic" → "Verbal clinic".
+func humaniseSnake(s string) string {
+	if s == "" {
+		return ""
+	}
+	parts := strings.Split(s, "_")
+	for i, p := range parts {
+		if i == 0 && len(p) > 0 {
+			parts[i] = strings.ToUpper(p[:1]) + p[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// humaniseConsentType — small allow-list to convert known kinds to a
+// proper label; falls back to humaniseSnake for unknown values.
+func humaniseConsentType(t string) string {
+	switch t {
+	case "controlled_drug_administration":
+		return "Controlled-drug administration"
+	case "ai_processing":
+		return "AI processing"
+	case "mhr_write":
+		return "My Health Record write"
+	}
+	return humaniseSnake(t)
+}
+
+// humaniseTimestamp — RFC3339 → "2026-05-01 14:32" (clinic-local rendering
+// happens client-side; this is the "compact" UTC fallback used when
+// summaries leave the server).
+func humaniseTimestamp(s string) string {
+	if s == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return s
+	}
+	return t.UTC().Format("2006-01-02 15:04")
+}
+
+// trimZeros — "1.50" → "1.5", "2.00" → "2".
+func trimZeros(n float64) string {
+	s := strconv.FormatFloat(n, 'f', -1, 64)
+	return s
 }
 
 // drugsAccessLogAdapter satisfies drugs.SubjectAccessLogger. Wraps the

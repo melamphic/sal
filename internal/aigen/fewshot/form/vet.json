@@ -44,12 +44,27 @@
       {"position": 2, "title": "Anaesthetic protocol", "type": "long_text"},
       {"position": 3, "title": "Anaesthetic monitoring summary", "type": "long_text", "ai_prompt": "Vitals trends during anaesthesia (HR, BP, SpO2, ETCO2)."},
       {"position": 4, "title": "Recovery quality", "type": "button_group", "config": {"options": [{"label": "Smooth", "value": "smooth"}, {"label": "Rough", "value": "rough"}, {"label": "Prolonged", "value": "prolonged"}]}, "required": true},
-      {"position": 5, "title": "Pain score at discharge", "type": "slider", "config": {"min": 0, "max": 10, "step": 1}},
+      {"position": 5, "title": "Pain score at discharge", "type": "system.pain_score", "config": {"scale_id": "flacc"}, "ai_prompt": "Score from observation in recovery. Use FLACC (animal observational scale)."},
       {"position": 6, "title": "Take-home medications", "type": "long_text", "ai_prompt": "Drug, dose, frequency, duration, owner instructions."},
       {"position": 7, "title": "Activity restrictions", "type": "long_text"},
       {"position": 8, "title": "Suture removal date", "type": "date"},
       {"position": 9, "title": "Follow-up appointment", "type": "date"},
       {"position": 10, "title": "Owner verbal confirmation of instructions", "type": "button_group", "config": {"options": [{"label": "Confirmed", "value": "confirmed"}, {"label": "Declined", "value": "declined"}]}, "required": true}
+    ]
+  },
+  {
+    "_kind": "fewshot.form.vet",
+    "name": "Euthanasia",
+    "description": "Owner consent + procedure record for euthanasia. Uses system widgets so the consent record + controlled-drug ledger entry are created automatically on note submit (drug op stays pending until vet confirms).",
+    "tags": ["euthanasia", "end_of_life"],
+    "fields": [
+      {"position": 1, "title": "Reason for euthanasia", "type": "long_text", "required": true, "ai_prompt": "Quality-of-life assessment, refractory disease, owner decision."},
+      {"position": 2, "title": "Owner consent", "type": "system.consent", "config": {"consent_type": "euthanasia", "require_witness": true}, "required": true, "ai_prompt": "Verbal or written consent — irreversibility was acknowledged. Witness (vet nurse) co-signs per NZVA / AVA / BVA practice templates."},
+      {"position": 3, "title": "Pre-euthanasia sedation", "type": "system.drug_op", "config": {"operation": "administer"}, "ai_prompt": "Sedative drug given before euthanasia (e.g. medetomidine, butorphanol)."},
+      {"position": 4, "title": "Euthanasia agent", "type": "system.drug_op", "config": {"operation": "administer", "controlled_only": true}, "required": true, "ai_prompt": "Controlled-drug administration (typically pentobarbitone IV). Witness required."},
+      {"position": 5, "title": "Method", "type": "button_group", "config": {"options": [{"label": "IV bolus", "value": "iv"}, {"label": "Intracardiac (sedated)", "value": "ic"}, {"label": "Intraperitoneal (small animal)", "value": "ip"}]}, "required": true},
+      {"position": 6, "title": "Time of death (confirmed)", "type": "text", "ai_prompt": "Time and method of confirmation (auscultation, no corneal reflex)."},
+      {"position": 7, "title": "Body care arrangements", "type": "button_group", "config": {"options": [{"label": "Owner takes home", "value": "home"}, {"label": "Communal cremation", "value": "communal"}, {"label": "Individual cremation", "value": "individual"}, {"label": "Burial at clinic", "value": "burial"}]}, "required": true}
     ]
   }
 ]
