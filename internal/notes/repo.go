@@ -37,4 +37,26 @@ type repo interface {
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
 	GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error)
 	UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error)
+
+	// System widget materialise support — joins note_fields with
+	// form_fields.type + form_fields.title.
+	GetNoteFieldWithType(ctx context.Context, noteID, fieldID, clinicID uuid.UUID) (*NoteFieldWithType, error)
+	ListSystemFieldStates(ctx context.Context, noteID, clinicID uuid.UUID) ([]NoteFieldWithType, error)
+	// WriteMaterialisedPointer updates note_fields.value to the
+	// id-pointer JSON without touching overridden_by/at — this is a
+	// system action, not a staff override.
+	WriteMaterialisedPointer(ctx context.Context, noteID, fieldID, clinicID uuid.UUID, pointer string) error
+}
+
+// NoteFieldWithType is a denormalised join — the row from note_fields +
+// the field's type and title from form_fields. Used by the materialise
+// flow to validate field type without a second round-trip and by the
+// submit gate to surface the field title in error messages.
+type NoteFieldWithType struct {
+	FieldID   uuid.UUID
+	FieldType string
+	Title     string
+	Value     *string
+	NoteID    uuid.UUID
+	SubjectID *uuid.UUID
 }
