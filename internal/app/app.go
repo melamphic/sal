@@ -291,6 +291,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Reports repo + worker (registered before river.NewClient) ─────────────
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
+
+	// ── Drugs repo (early — its retention-purge worker registers here) ───────
+	// drugsSvc + drugsHandler are constructed below alongside the rest of the
+	// drugs domain (catalog loader, adapters); we just need the repo here so
+	// the periodic purge worker can be wired before river.NewClient.
+	drugsRepo := drugs.NewRepository(db)
+	river.AddWorker(workers, drugs.NewPurgeRetentionExpiredWorker(drugsRepo))
 	// lazyEnqueuer is shared by every worker that needs to enqueue
 	// downstream jobs after river.NewClient binds (notes extraction,
 	// compliance fan-out, schedule firing). One instance, set once below.
@@ -352,6 +359,15 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 				return reports.FireDueReportSchedulesArgs{}, nil
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+		// Compliance v2: daily soft-delete of drug ops past retention.
+		// See docs/drug-register-compliance-v2.md §5.5.
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return drugs.PurgeRetentionExpiredArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 	}
 
@@ -445,7 +461,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app.Build: drugs catalog: %w", err)
 	}
 	log.Info("drugs: catalog loaded", "combos", len(drugCatalog.Manifest()))
-	drugsRepo := drugs.NewRepository(db)
+	// drugsRepo was constructed earlier so its periodic worker could be
+	// registered before river.NewClient. Reuse the same instance here.
 	drugsSvc := drugs.NewService(
 		drugsRepo,
 		drugCatalog,
@@ -1471,6 +1488,17 @@ func (a *drugsClinicLookupAdapter) GetVerticalAndCountry(ctx context.Context, cl
 		return "", "", fmt.Errorf("app.drugsClinicLookupAdapter: %w", err)
 	}
 	return string(c.Vertical), c.Country, nil
+}
+
+// GetClinicState — AU sub-state for state-aware compliance validation.
+// Returns "" today (clinic record does not yet carry an AU state); the
+// AU validator falls back to WA-strict in shadow mode, which is the
+// safe over-validation default. When AU clinics onboard, add a state
+// column to clinics + return it here.
+func (a *drugsClinicLookupAdapter) GetClinicState(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	_ = ctx
+	_ = clinicID
+	return "", nil
 }
 
 // drugsStaffPermAdapter satisfies drugs.StaffPermLookup. v1 maps every
