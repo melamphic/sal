@@ -308,6 +308,15 @@ func (s *Service) ListPending(ctx context.Context, clinicID, staffID uuid.UUID, 
 	return out, nil
 }
 
+// ListPendingForSubject — see Repository.ListPendingForSubject.
+func (s *Service) ListPendingForSubject(ctx context.Context, clinicID, subjectID uuid.UUID, limit int) ([]*Record, error) {
+	out, err := s.repo.ListPendingForSubject(ctx, clinicID, subjectID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("approvals.service.ListPendingForSubject: %w", err)
+	}
+	return out, nil
+}
+
 // CountPendingForDecider — see Repository.CountPendingForDecider.
 func (s *Service) CountPendingForDecider(ctx context.Context, clinicID, staffID uuid.UUID) (int, error) {
 	n, err := s.repo.CountPendingForDecider(ctx, clinicID, staffID)
