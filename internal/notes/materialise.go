@@ -399,6 +399,14 @@ func (s *Service) ListUnmaterialisedSystemFields(ctx context.Context, noteID, cl
 		if IsMaterialisedValue(ft, r.Value) {
 			continue
 		}
+		// Optional system widgets fall through the gate. The clinician
+		// can still confirm one if they choose, but if the AI extracted
+		// a payload they don't care about, they shouldn't be forced to
+		// commit it to the regulator-binding ledger before submitting
+		// the note. Required system widgets remain hard-gated.
+		if !r.Required {
+			continue
+		}
 		out = append(out, UnmaterialisedField{
 			FieldID:   r.FieldID,
 			FieldType: r.FieldType,
