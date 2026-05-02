@@ -233,6 +233,53 @@ const (
 	NoteStatusOverriding NoteStatus = "overriding"
 )
 
+// ApprovalStatus is the state of a second-pair-of-eyes approval row.
+// Pending → approved | challenged. Challenged rows leave the entity
+// unsigned-off so the original signer can amend via addendum.
+type ApprovalStatus string
+
+const (
+	// ApprovalStatusPending — submitted but no decision yet. The
+	// queue page lists every row in this state for the qualifying
+	// staff member to act on.
+	ApprovalStatusPending ApprovalStatus = "pending"
+	// ApprovalStatusApproved — a qualified second person reviewed
+	// and signed off. The entity's *_status snapshot column flips
+	// to 'approved'; regulator reports treat the row as fully
+	// witnessed/reviewed.
+	ApprovalStatusApproved ApprovalStatus = "approved"
+	// ApprovalStatusChallenged — a qualified second person reviewed
+	// and rejected the entry (wrong drug, wrong patient, wrong qty).
+	// The entity's *_status flips to 'challenged' and the original
+	// signer is notified to file an addendum.
+	ApprovalStatusChallenged ApprovalStatus = "challenged"
+)
+
+// ApprovalEntityKind picks which system widget the approval row is
+// reviewing. Generic so one queue + one service handles them all.
+type ApprovalEntityKind string
+
+const (
+	ApprovalKindDrugOp     ApprovalEntityKind = "drug_op"
+	ApprovalKindConsent    ApprovalEntityKind = "consent"
+	ApprovalKindIncident   ApprovalEntityKind = "incident"
+	ApprovalKindPainScore  ApprovalEntityKind = "pain_score"
+)
+
+// EntityReviewStatus is the snapshot value carried on each consuming
+// entity (drug_operations_log.witness_status, consent_records.review_status,
+// etc). Ranges over the approval lifecycle plus a 'not_required' state
+// for entities that don't need a second pair of eyes (e.g. non-controlled
+// drug ops, low-acuity pain scores).
+type EntityReviewStatus string
+
+const (
+	EntityReviewNotRequired EntityReviewStatus = "not_required"
+	EntityReviewPending     EntityReviewStatus = "pending"
+	EntityReviewApproved    EntityReviewStatus = "approved"
+	EntityReviewChallenged  EntityReviewStatus = "challenged"
+)
+
 // TransformationType describes how an AI-extracted field value was derived.
 type TransformationType string
 
