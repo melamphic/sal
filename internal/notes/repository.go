@@ -471,6 +471,18 @@ func (r *Repository) UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUI
 	return nil
 }
 
+// ClearPDFKey nulls out pdf_storage_key so the next render produces a
+// fresh artifact. Used by the force-rerender path so a backend renderer
+// fix (Unicode handling, system widget cards, theme tweak) reaches an
+// already-rendered submitted note without re-submitting it.
+func (r *Repository) ClearPDFKey(ctx context.Context, noteID, clinicID uuid.UUID) error {
+	const q = `UPDATE notes SET pdf_storage_key = NULL WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID); err != nil {
+		return fmt.Errorf("notes.repo.ClearPDFKey: %w", err)
+	}
+	return nil
+}
+
 // UpdatePolicyCheckResult sets the policy_check_result JSONB on a note.
 func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
 	const q = `UPDATE notes SET policy_check_result = $3::jsonb WHERE id = $1 AND clinic_id = $2`
