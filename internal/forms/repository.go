@@ -417,16 +417,103 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 	return formRec, verRec, nil
 }
 
-// DeleteDraftVersion deletes the current draft version of a form. Cascading
-// FKs remove draft fields. Returns domain.ErrNotFound if no draft exists.
+// DeleteDraftVersion deletes the current draft version of a form. Returns
+// domain.ErrNotFound if no draft exists. The form_fields rows owned by the
+// draft are removed first (no FK cascade is configured) so this works as a
+// single statement only when there's nothing referencing the version row;
+// for never-published forms callers should prefer [DeleteFormCascade].
 func (r *Repository) DeleteDraftVersion(ctx context.Context, formID uuid.UUID) error {
-	const q = `DELETE FROM form_versions WHERE form_id = $1 AND status = 'draft'`
-	tag, err := r.db.Exec(ctx, q, formID)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM form_fields
+		WHERE form_version_id IN (
+			SELECT id FROM form_versions WHERE form_id = $1 AND status = 'draft'
+		)`, formID); err != nil {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: fields: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM form_versions WHERE form_id = $1 AND status = 'draft'`, formID)
 	if err != nil {
 		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("forms.repo.DeleteDraftVersion: %w", domain.ErrNotFound)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("forms.repo.DeleteDraftVersion: commit: %w", err)
+	}
+	return nil
+}
+
+// DeleteFormCascade hard-deletes a form along with all of its versions, the
+// fields owned by those versions, and the form_policies links pointing at
+// it. Marketplace `imported_form_id` references are NULLed out so an
+// imported-then-discarded draft doesn't strand a marketplace install row.
+//
+// Used by Service.DiscardDraft when the form has never been published —
+// "discard draft" then collapses the entire form record rather than
+// leaving a zombie row with no usable version.
+//
+// Returns domain.ErrNotFound when no form row matches (id, clinic_id). All
+// steps run in a single transaction.
+func (r *Repository) DeleteFormCascade(ctx context.Context, formID, clinicID uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 1. Many-to-many link to policies — no FK cascade.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM form_policies WHERE form_id = $1`, formID); err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: form_policies: %w", err)
+	}
+
+	// 2. Form fields owned by ANY version of this form (no FK cascade).
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM form_fields
+		WHERE form_version_id IN (
+			SELECT id FROM form_versions WHERE form_id = $1
+		)`, formID); err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: form_fields: %w", err)
+	}
+
+	// 3. NULL out marketplace_acquisitions.imported_form_id so the
+	//    acquisition tombstone survives — the linkage is gone but the
+	//    marketplace history remains. Marketplace tables ship via
+	//    migration 00032; if they're missing we expect the migration to
+	//    have failed earlier and prefer to surface that here.
+	if _, err := tx.Exec(ctx,
+		`UPDATE marketplace_acquisitions SET imported_form_id = NULL WHERE imported_form_id = $1`,
+		formID); err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: marketplace null-out: %w", err)
+	}
+
+	// 4. Form versions.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM form_versions WHERE form_id = $1`, formID); err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: form_versions: %w", err)
+	}
+
+	// 5. The form itself.
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM forms WHERE id = $1 AND clinic_id = $2`, formID, clinicID)
+	if err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: forms: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: %w", domain.ErrNotFound)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("forms.repo.DeleteFormCascade: commit: %w", err)
 	}
 	return nil
 }
