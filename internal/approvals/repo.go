@@ -36,6 +36,10 @@ type repo interface {
 	// member could act on. Drives the dashboard "N approvals waiting"
 	// chip.
 	CountPendingForDecider(ctx context.Context, clinicID, staffID uuid.UUID) (int, error)
+	// ListPendingForSubject returns pending rows scoped to one subject.
+	// Powers the subject-hub "Pending compliance" card so a clinician
+	// reviewing a patient sees what is still waiting on someone.
+	ListPendingForSubject(ctx context.Context, clinicID, subjectID uuid.UUID, limit int) ([]*Record, error)
 }
 
 // Record is the raw DB representation of a compliance_approvals row.
