@@ -172,6 +172,13 @@ type NoteFieldResponse struct {
 	// card / PDF can render what was captured instead of just an id.
 	// Resolved server-side from the typed entity table on GetNote.
 	SystemSummary []NoteFieldSystemSummaryItem `json:"system_summary,omitempty"`
+
+	// SystemReviewStatus — populated for materialised system widgets that
+	// participate in the compliance approval queue. Values:
+	// "not_required" / "pending" / "approved" / "challenged". Empty for
+	// non-system or non-reviewable fields. Drives the witness pill on
+	// the FE card and the equivalent PDF footer line.
+	SystemReviewStatus string `json:"system_review_status,omitempty"`
 }
 
 // NoteFieldSystemSummaryItem is one row in the system widget summary —
@@ -387,6 +394,7 @@ func (s *Service) enrichSystemSummaries(
 		for i, it := range summary.Items {
 			f.SystemSummary[i] = NoteFieldSystemSummaryItem(it)
 		}
+		f.SystemReviewStatus = summary.ReviewStatus
 	}
 }
 
