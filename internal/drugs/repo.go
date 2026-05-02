@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/melamphic/sal/internal/domain"
 )
 
 // repo is the internal data-access interface for the drugs module. The
@@ -42,6 +43,10 @@ type repo interface {
 	// ConfirmOperation flips a pending_confirm row (created via a
 	// system.drug_op widget) to confirmed. Idempotent.
 	ConfirmOperation(ctx context.Context, id, clinicID, staffID uuid.UUID) (*OperationRecord, error)
+	// UpdateWitnessStatus flips the witness_status snapshot column on
+	// the ledger row. Called by the approvals service when an async
+	// review transitions pending → approved | challenged.
+	UpdateWitnessStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error
 	// ListPendingConfirmForNote returns ops linked to a note that are
 	// still in pending_confirm. Used by the note-submit gate.
 	ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error)
