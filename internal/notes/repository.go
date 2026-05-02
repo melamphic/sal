@@ -576,7 +576,7 @@ func (r *Repository) GetNoteFieldWithType(ctx context.Context, noteID, fieldID, 
 // by the submit gate to detect unmaterialised system widgets.
 func (r *Repository) ListSystemFieldStates(ctx context.Context, noteID, clinicID uuid.UUID) ([]NoteFieldWithType, error) {
 	const q = `
-		SELECT ff.id, ff.type, ff.title, nf.value, nf.note_id, n.subject_id
+		SELECT ff.id, ff.type, ff.title, ff.required, nf.value, nf.note_id, n.subject_id
 		FROM note_fields nf
 		JOIN form_fields ff ON ff.id = nf.field_id
 		JOIN notes n ON n.id = nf.note_id
@@ -591,7 +591,7 @@ func (r *Repository) ListSystemFieldStates(ctx context.Context, noteID, clinicID
 	for rows.Next() {
 		var f NoteFieldWithType
 		if err := rows.Scan(
-			&f.FieldID, &f.FieldType, &f.Title, &f.Value,
+			&f.FieldID, &f.FieldType, &f.Title, &f.Required, &f.Value,
 			&f.NoteID, &f.SubjectID,
 		); err != nil {
 			return nil, fmt.Errorf("notes.repo.ListSystemFieldStates: scan: %w", err)
