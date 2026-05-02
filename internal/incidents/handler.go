@@ -57,6 +57,11 @@ type createIncidentBody struct {
 		ImmediateActions *string `json:"immediate_actions,omitempty"`
 		WitnessesText    *string `json:"witnesses_text,omitempty"`
 		SubjectOutcome   *string `json:"subject_outcome,omitempty" enum:"no_harm,minor_injury,moderate_injury,hospitalised,deceased,complaint_resolved,unknown"`
+		// SubmitForReview, when true, queues the row for second sign-off
+		// in the witness queue. Used for high/critical severity, mandatory
+		// reportable incidents, or when the original signer wants verification.
+		SubmitForReview bool    `json:"submit_for_review,omitempty"`
+		ReviewNote      *string `json:"review_note,omitempty" doc:"Optional context for the approver — surfaces in the queue + timeline."`
 	}
 }
 
@@ -75,6 +80,7 @@ func (h *Handler) createIncident(ctx context.Context, input *createIncidentBody)
 	in := CreateIncidentInput{
 		ClinicID:         clinicID,
 		StaffID:          staffID,
+		StaffRole:        string(mw.RoleFromContext(ctx)),
 		SubjectID:        subjectID,
 		IncidentType:     input.Body.IncidentType,
 		Severity:         input.Body.Severity,
@@ -84,6 +90,8 @@ func (h *Handler) createIncident(ctx context.Context, input *createIncidentBody)
 		ImmediateActions: input.Body.ImmediateActions,
 		WitnessesText:    input.Body.WitnessesText,
 		SubjectOutcome:   input.Body.SubjectOutcome,
+		SubmitForReview:  input.Body.SubmitForReview,
+		ReviewNote:       input.Body.ReviewNote,
 	}
 	if input.Body.NoteID != nil && *input.Body.NoteID != "" {
 		id, err := uuid.Parse(*input.Body.NoteID)
