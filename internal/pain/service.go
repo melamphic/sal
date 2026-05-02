@@ -227,6 +227,16 @@ func (s *Service) SubjectTrend(ctx context.Context, clinicID, subjectID, staffID
 	return resp, nil
 }
 
+// UpdateReviewStatus is the entry point used by the approvals service
+// when a pain score's pending/approved/challenged state changes. Pure
+// passthrough so cross-domain callers go through the typed surface.
+func (s *Service) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	if err := s.repo.UpdateReviewStatus(ctx, id, clinicID, status); err != nil {
+		return fmt.Errorf("pain.service.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // ── Validators ───────────────────────────────────────────────────────────────
 
 func validMethod(m string) bool {
