@@ -102,6 +102,30 @@ type countResponse struct {
 	}
 }
 
+type listSubjectPendingInput struct {
+	SubjectID string `path:"subject_id" doc:"The subject UUID."`
+	Limit     int    `query:"limit"     doc:"Max rows. Default 50, max 200."`
+}
+
+func (h *Handler) listSubjectPending(ctx context.Context, input *listSubjectPendingInput) (*approvalListHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	subjectID, err := uuid.Parse(input.SubjectID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid subject_id")
+	}
+	out, err := h.svc.ListPendingForSubject(ctx, clinicID, subjectID, input.Limit)
+	if err != nil {
+		return nil, mapApprovalError(err)
+	}
+	resp := &ApprovalListResponse{
+		Items: make([]*ApprovalResponse, len(out)),
+	}
+	for i, r := range out {
+		resp.Items[i] = toResponse(r)
+	}
+	return &approvalListHTTPResponse{Body: resp}, nil
+}
+
 func (h *Handler) countPending(ctx context.Context, _ *struct{}) (*countResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 	staffID := mw.StaffIDFromContext(ctx)
