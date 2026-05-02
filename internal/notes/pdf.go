@@ -91,12 +91,19 @@ type PDFInput struct {
 // unconfirmed payload — the renderer adds a "PENDING CONFIRMATION"
 // banner so the regulator/auditor can tell at a glance it isn't
 // ledger-bound yet.
+//
+// SystemReviewStatus, when non-empty, drives the witness/approval
+// footer banner on the card. Values: "not_required" / "pending" /
+// "approved" / "challenged". Empty for cards without an approval
+// lifecycle (non-controlled drug ops, plain incidents in a country
+// where regulator review isn't wired).
 type PDFField struct {
-	Label         string
-	Value         string
-	SystemSummary []PDFSummaryItem
-	SystemKind    string
-	SystemPending bool
+	Label              string
+	Value              string
+	SystemSummary      []PDFSummaryItem
+	SystemKind         string
+	SystemPending      bool
+	SystemReviewStatus string
 }
 
 // PDFSummaryItem mirrors notes.NoteFieldSystemSummaryItem — kept in
@@ -478,6 +485,15 @@ func drawSystemCard(
 	pillLabel := "LINKED"
 	if field.SystemPending {
 		pillLabel = "PENDING CONFIRMATION"
+	} else {
+		switch field.SystemReviewStatus {
+		case "pending":
+			pillLabel = "LINKED · PENDING WITNESS"
+		case "approved":
+			pillLabel = "LINKED · WITNESSED"
+		case "challenged":
+			pillLabel = "LINKED · CHALLENGED"
+		}
 	}
 	pdf.SetFont(bodyFont, "B", baseSize-3)
 	pdf.SetXY(left+pad, startY+1.6)
@@ -518,14 +534,26 @@ func drawSystemCard(
 	// Footer caption — short, kind-specific, sets expectation of what
 	// happens next ("captured at submit" for pending, "logged" for
 	// linked) so the reader knows whether the row is regulator-bound.
+	// When a review lifecycle applies, the footer is repainted in the
+	// review-status colour and the caption swaps to a status-specific
+	// line so a regulator can scan straight to the witness state.
 	footerY := bodyEndY
-	pdf.SetFillColor(int(ar), int(ag), int(ab))
+	footerR, footerG, footerB := int(ar), int(ag), int(ab)
+	switch field.SystemReviewStatus {
+	case "pending":
+		footerR, footerG, footerB = hexToRGBInt("D97706") // amber 600
+	case "approved":
+		footerR, footerG, footerB = hexToRGBInt("0F8B5C") // success green
+	case "challenged":
+		footerR, footerG, footerB = hexToRGBInt("B91C1C") // destructive red
+	}
+	pdf.SetFillColor(footerR, footerG, footerB)
 	pdf.Rect(left, footerY, contentW, footerH, "F")
 	pdf.SetTextColor(255, 255, 255)
 	pdf.SetFont(bodyFont, "I", baseSize-3)
 	pdf.SetXY(left+pad+railW, footerY+1.2)
 	pdf.CellFormat(contentW-pad*2-railW, footerH-2,
-		tx(systemCardFooter(kind, field.SystemPending)),
+		tx(systemCardFooter(kind, field.SystemPending, field.SystemReviewStatus)),
 		"", 0, "L", false, 0, "")
 
 	// Outer hairline frame around the whole card to make it feel
@@ -547,8 +575,10 @@ func mixToward(sR, sG, sB, tR, tG, tB int, t float64) (int, int, int) {
 // systemCardFooter returns the short caption shown at the bottom of a
 // system widget card. Pending payloads tell the reader the row will be
 // committed at submit; materialised payloads remind the reader the row
-// is already in the regulator-binding ledger.
-func systemCardFooter(kind string, pending bool) string {
+// is already in the regulator-binding ledger. When a witness/approval
+// lifecycle applies, the caption swaps to a status-specific line so a
+// regulator can scan straight to the witness state.
+func systemCardFooter(kind string, pending bool, reviewStatus string) string {
 	if pending {
 		switch kind {
 		case "drug_op":
@@ -563,6 +593,47 @@ func systemCardFooter(kind string, pending bool) string {
 			return "AI suggestion · clinician confirmation required"
 		}
 	}
+	switch reviewStatus {
+	case "pending":
+		switch kind {
+		case "drug_op":
+			return "Logged · awaiting second-pair-of-eyes sign-off in the witness queue"
+		case "consent":
+			return "Logged · awaiting compliance review in the approval queue"
+		case "incident":
+			return "Logged · awaiting senior clinician sign-off"
+		case "pain_score":
+			return "Logged · awaiting review"
+		default:
+			return "Logged · awaiting witness sign-off"
+		}
+	case "approved":
+		switch kind {
+		case "drug_op":
+			return "Linked to controlled-drug register · witness signed off"
+		case "consent":
+			return "Linked to patient consent ledger · reviewed and signed"
+		case "incident":
+			return "Linked to incident register · reviewed and signed"
+		case "pain_score":
+			return "Linked to patient pain trend · reviewed and signed"
+		default:
+			return "Linked to compliance ledger · reviewed and signed"
+		}
+	case "challenged":
+		switch kind {
+		case "drug_op":
+			return "Logged · WITNESS CHALLENGED — see timeline for the reviewer's note"
+		case "consent":
+			return "Logged · CONSENT CHALLENGED — see timeline for the reviewer's note"
+		case "incident":
+			return "Logged · INCIDENT CHALLENGED — see timeline for the reviewer's note"
+		case "pain_score":
+			return "Logged · SCORE CHALLENGED — see timeline for the reviewer's note"
+		default:
+			return "Logged · CHALLENGED — see timeline for the reviewer's note"
+		}
+	}
 	switch kind {
 	case "drug_op":
 		return "Linked to controlled-drug register · shelf balance updated"
@@ -575,6 +646,13 @@ func systemCardFooter(kind string, pending bool) string {
 	default:
 		return "Linked to compliance ledger"
 	}
+}
+
+// hexToRGBInt is a thin wrapper around hexToRGB that returns int channels —
+// fpdf's colour setters are int-typed.
+func hexToRGBInt(hex string) (int, int, int) {
+	r, g, b := hexToRGB(hex)
+	return int(r), int(g), int(b)
 }
 
 // systemCardChrome returns the human-readable title + accent colour
