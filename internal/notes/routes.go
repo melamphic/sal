@@ -74,11 +74,22 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/notes/{note_id}/submit",
 		Summary:     "Submit a note",
-		Description: "Transitions the note from draft to submitted. Sets reviewed_by and submitted_by to the authenticated staff member. If the linked form version has been decommissioned, form_version_context is set automatically.",
+		Description: "Transitions the note from draft to submitted. Sets reviewed_by and submitted_by to the authenticated staff member. If the linked form version has been decommissioned, form_version_context is set automatically. Re-submit is also accepted from a note that's been re-opened via override-unlock — in that case override_count increments and the timeline records a `note.override_committed` event instead of `note.submitted`.",
 		Tags:        []string{"Notes"},
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, submitForms},
 	}, h.submitNote)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "unlock-note-override",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/override-unlock",
+		Summary:     "Re-open a submitted note for correction",
+		Description: "Transitions a submitted note to 'overriding' so its fields can be edited again, then re-submitted. Permission gate: the note's original creator OR any staff member with manage_staff. The required `reason` is persisted on the note and surfaced in the patient timeline as a `note.override_unlocked` event for audit. Returns 409 if the note isn't in 'submitted' status.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.unlockNoteOverride)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "check-note-policy",
