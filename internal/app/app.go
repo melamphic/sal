@@ -556,6 +556,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	approvalsSvc.SetStatusUpdater(domain.ApprovalKindIncident, &incidentStatusUpdater{svc: incidentsSvc})
 	approvalsSvc.SetStatusUpdater(domain.ApprovalKindPainScore, &painStatusUpdater{svc: painSvc})
 	drugsSvc.SetApprovals(&drugsApprovalsAdapter{svc: approvalsSvc})
+	incidentsSvc.SetApprovals(&incidentsApprovalsAdapter{svc: approvalsSvc})
+	consentSvc.SetApprovals(&consentApprovalsAdapter{svc: approvalsSvc})
+	painSvc.SetApprovals(&painApprovalsAdapter{svc: approvalsSvc})
 	approvalsHandler := approvals.NewHandler(approvalsSvc)
 
 	// ── Admin dashboard ──────────────────────────────────────────────────────
@@ -849,6 +852,66 @@ func (a *drugsApprovalsAdapter) Submit(ctx context.Context, in drugs.ApprovalSub
 		NoteID:      in.NoteID,
 	}); err != nil {
 		return fmt.Errorf("app.drugsApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// incidentsApprovalsAdapter — same pattern, for the incident kind.
+type incidentsApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *incidentsApprovalsAdapter) Submit(ctx context.Context, in incidents.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindIncident,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.incidentsApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// consentApprovalsAdapter — same pattern, for the consent kind.
+type consentApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *consentApprovalsAdapter) Submit(ctx context.Context, in consent.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindConsent,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.consentApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// painApprovalsAdapter — same pattern, for the pain_score kind.
+type painApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *painApprovalsAdapter) Submit(ctx context.Context, in pain.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindPainScore,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.painApprovalsAdapter: %w", err)
 	}
 	return nil
 }
