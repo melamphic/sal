@@ -83,6 +83,7 @@ type SubjectTrendResponse struct {
 type RecordPainScoreInput struct { //nolint:revive // mirrored to repo
 	ClinicID      uuid.UUID
 	StaffID       uuid.UUID
+	StaffRole     string
 	SubjectID     uuid.UUID
 	NoteID        *uuid.UUID
 	NoteFieldID   *uuid.UUID
@@ -91,6 +92,29 @@ type RecordPainScoreInput struct { //nolint:revive // mirrored to repo
 	Method        string
 	PainScaleUsed string
 	AssessedAt    time.Time
+
+	// SubmitForReview queues the pain score for second-rater
+	// verification. Common for PainAD scoring (aged-care non-verbal
+	// residents) and for high-score (≥7) entries in any vertical.
+	SubmitForReview bool
+	ReviewNote      *string
+}
+
+// ApprovalSubmitter is the small surface pain.Service consumes from
+// the approvals package. Wired by app.go.
+type ApprovalSubmitter interface {
+	Submit(ctx context.Context, in ApprovalSubmitInput) error
+}
+
+type ApprovalSubmitInput struct {
+	ClinicID    uuid.UUID
+	EntityID    uuid.UUID
+	EntityOp    *string
+	SubmittedBy uuid.UUID
+	StaffRole   string
+	Note        *string
+	SubjectID   *uuid.UUID
+	NoteID      *uuid.UUID
 }
 
 type ListPainScoresInput struct {
@@ -106,10 +130,17 @@ type ListPainScoresInput struct {
 type Service struct {
 	repo         *Repository
 	accessLogger SubjectAccessLogger
+	approvals    ApprovalSubmitter
 }
 
 func NewService(r *Repository, accessLogger SubjectAccessLogger) *Service {
 	return &Service{repo: r, accessLogger: accessLogger}
+}
+
+// SetApprovals wires the second-pair-of-eyes submitter. nil disables
+// the async path so RecordPainScore with submit_for_review=true rejects.
+func (s *Service) SetApprovals(a ApprovalSubmitter) {
+	s.approvals = a
 }
 
 func (s *Service) RecordPainScore(ctx context.Context, in RecordPainScoreInput) (*PainScoreResponse, error) {
@@ -152,6 +183,23 @@ func (s *Service) RecordPainScore(ctx context.Context, in RecordPainScoreInput) 
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, in.ClinicID, in.SubjectID, in.StaffID,
 			"pain_score_record", "pain.service.RecordPainScore")
+	}
+	if in.SubmitForReview {
+		if s.approvals == nil {
+			return nil, fmt.Errorf("pain.service.RecordPainScore: async approvals not configured: %w", domain.ErrValidation)
+		}
+		subjectID := in.SubjectID
+		if err := s.approvals.Submit(ctx, ApprovalSubmitInput{
+			ClinicID:    in.ClinicID,
+			EntityID:    rec.ID,
+			SubmittedBy: in.StaffID,
+			StaffRole:   in.StaffRole,
+			Note:        in.ReviewNote,
+			SubjectID:   &subjectID,
+			NoteID:      in.NoteID,
+		}); err != nil {
+			return nil, fmt.Errorf("pain.service.RecordPainScore: approval submit: %w", err)
+		}
 	}
 	return recordToResponse(rec), nil
 }
