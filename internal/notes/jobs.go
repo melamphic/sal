@@ -708,26 +708,40 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		if label == "" {
 			label = f.FieldID.String()
 		}
-		// Materialised system widget? Resolve to a labelled summary.
-		// On any error, fall back to raw value rendering — we'd rather
-		// ship the PDF with an id-pointer than fail the render.
+		fieldType := typeByID[f.FieldID]
+
+		// System widget: surface as a typed card. Two states:
+		//   - materialised: id-pointer resolves to a real ledger row,
+		//     summariseByKind returns the friendly Items; pending=false
+		//   - unmaterialised: AI extracted a payload but the clinician
+		//     hasn't tapped Confirm. Parse the raw JSON into items and
+		//     mark pending=true so the card shows a banner instead of
+		//     raw {"operation":"administer", ...} text in the PDF.
 		var summary []PDFSummaryItem
-		if r.svc != nil && strings.HasPrefix(typeByID[f.FieldID], "system.") {
-			entityID, kind := decodeIDPointer(val)
-			if kind != "" {
-				s, sErr := r.svc.summariseByKind(ctx, kind, entityID, note.ClinicID)
-				if sErr == nil && s != nil {
+		var systemKind string
+		var systemPending bool
+		if strings.HasPrefix(fieldType, "system.") {
+			systemKind = strings.TrimPrefix(fieldType, "system.")
+			entityID, ptrKind := decodeIDPointer(val)
+			if ptrKind != "" && r.svc != nil {
+				if s, sErr := r.svc.summariseByKind(ctx, ptrKind, entityID, note.ClinicID); sErr == nil && s != nil {
 					summary = make([]PDFSummaryItem, len(s.Items))
 					for i, it := range s.Items {
 						summary[i] = PDFSummaryItem(it)
 					}
 				}
 			}
+			if summary == nil && val != "" {
+				summary = parseUnmaterialisedSystemPayload(systemKind, val)
+				systemPending = len(summary) > 0
+			}
 		}
 		pdfFields = append(pdfFields, PDFField{
 			Label:         label,
 			Value:         val,
 			SystemSummary: summary,
+			SystemKind:    systemKind,
+			SystemPending: systemPending,
 		})
 	}
 
