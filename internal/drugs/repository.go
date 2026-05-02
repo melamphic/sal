@@ -119,7 +119,20 @@ type OperationRecord struct {
 	Status            string
 	ConfirmedBy       *uuid.UUID
 	ConfirmedAt       *time.Time
-	CreatedAt         time.Time
+
+	// Witness shape (00074 + 00075). WitnessKind is nil while a
+	// pending row awaits async approval; populated to one of
+	// {staff, external, self} once the witness lands.
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	// WitnessStatus snapshot — not_required | pending | approved |
+	// challenged. Reads as the source of truth for regulator reports
+	// + queue UIs without a join into compliance_approvals.
+	WitnessStatus *string
+
+	CreatedAt time.Time
 }
 
 // ReconciliationRecord closes a (shelf, period) with two-staff signoff.
@@ -229,6 +242,16 @@ type CreateOperationParams struct {
 	// 'confirmed' for backwards compat with callers that haven't been
 	// updated.
 	Status            string
+
+	// Witness shape — added in migration 00074. WitnessKind ∈
+	// {nil,'staff','external','self'}. WitnessStatus is the snapshot
+	// column (added in 00075) — set at insert so the queue / regulator
+	// report can read it without joining compliance_approvals.
+	WitnessKind          *string
+	ExternalWitnessName  *string
+	ExternalWitnessRole  *string
+	WitnessAttestation   *string
+	WitnessStatus        *string
 
 	// ── Compliance v2 fields (Phase 2b) ────────────────────────────────
 	//
@@ -392,6 +415,8 @@ func scanOperation(row scannable) (*OperationRecord, error) {
 		&r.BalanceBefore, &r.BalanceAfter,
 		&r.ReconciliationID, &r.AddendsTo,
 		&r.Status, &r.ConfirmedBy, &r.ConfirmedAt,
+		&r.WitnessKind, &r.ExternalWitnessName, &r.ExternalWitnessRole,
+		&r.WitnessAttestation, &r.WitnessStatus,
 		&r.CreatedAt,
 	)
 	if err != nil {
@@ -410,6 +435,8 @@ const operationCols = `
 	balance_before, balance_after,
 	reconciliation_id, addends_to,
 	status, confirmed_by, confirmed_at,
+	witness_kind, external_witness_name, external_witness_role,
+	witness_attestation, witness_status,
 	created_at`
 
 func scanReconciliation(row scannable) (*ReconciliationRecord, error) {
@@ -747,7 +774,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 
 	// Insert the operation row. Chain fields + page-identity snapshots
 	// + retention_until ride along with v1 fields; all are NULLABLE so
-	// legacy callers (ChainKey empty) get NULLs.
+	// legacy callers (ChainKey empty) get NULLs. Witness shape columns
+	// (00074 + 00075) are also NULLable so the legacy synchronous-only
+	// path keeps working for callers that haven't been updated.
 	insertQ := fmt.Sprintf(`
 		INSERT INTO drug_operations_log (
 			id, clinic_id, shelf_id, subject_id, note_id, note_field_id,
@@ -757,7 +786,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 			status,
 			drug_name, drug_strength, drug_form,
 			chain_key, entry_seq_in_chain, prev_row_hash, row_hash,
-			retention_until
+			retention_until,
+			witness_kind, external_witness_name, external_witness_role, witness_attestation,
+			witness_status
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
@@ -766,7 +797,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 			$19,
 			$20, $21, $22,
 			$23, $24, $25, $26,
-			$27
+			$27,
+			$28, $29, $30, $31,
+			$32
 		)
 		RETURNING %s`, operationCols)
 	row := tx.QueryRow(ctx, insertQ,
@@ -778,6 +811,8 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		nullIfEmpty(p.DrugName), nullIfEmpty(p.DrugStrength), nullIfEmpty(p.DrugForm),
 		nullableBytes(p.ChainKey), entrySeqInChain, nullableBytes(prevRowHash), nullableBytes(rowHash),
 		p.RetentionUntil,
+		p.WitnessKind, p.ExternalWitnessName, p.ExternalWitnessRole, p.WitnessAttestation,
+		p.WitnessStatus,
 	)
 	rec, err := scanOperation(row)
 	if err != nil {
@@ -845,6 +880,19 @@ func (r *Repository) ConfirmOperation(ctx context.Context, id, clinicID, staffID
 
 // ListPendingConfirmForNote returns drug ops linked to a note that still
 // need clinician confirmation. Used by the note-submit gate.
+// UpdateWitnessStatus stamps the witness_status snapshot column on a
+// drug_operations_log row. Idempotent — invoked by the approvals
+// service when an async review transitions states.
+func (r *Repository) UpdateWitnessStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	const q = `UPDATE drug_operations_log
+	           SET witness_status = $3
+	           WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, id, clinicID, string(status)); err != nil {
+		return fmt.Errorf("drugs.repo.UpdateWitnessStatus: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM drug_operations_log
 		WHERE note_id = $1 AND clinic_id = $2 AND status = 'pending_confirm'
