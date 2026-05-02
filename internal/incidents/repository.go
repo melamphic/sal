@@ -371,6 +371,20 @@ func (r *Repository) MarkRegulatorNotified(ctx context.Context, p NotifyRegulato
 	return rec, nil
 }
 
+// UpdateReviewStatus stamps the review_status snapshot column on an
+// incident row. Idempotent — invoked by the approvals service when an
+// async review transitions states.
+func (r *Repository) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	const q = `UPDATE incident_events
+	           SET review_status = $3,
+	               updated_at = NOW()
+	           WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, id, clinicID, string(status)); err != nil {
+		return fmt.Errorf("incidents.repo.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // ── Witnesses ────────────────────────────────────────────────────────────────
 
 func (r *Repository) AddWitness(ctx context.Context, incidentID, staffID uuid.UUID) error {
