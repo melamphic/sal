@@ -15,6 +15,7 @@ type repo interface {
 	ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error)
 	UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error)
 	SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error)
+	OverrideUnlock(ctx context.Context, p OverrideUnlockParams) (*NoteRecord, error)
 	ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*NoteRecord, error)
 	// CountNotesByRecording returns how many notes exist for a recording within a clinic.
 	// Used to enforce the 3-note-per-recording cap at service layer.
