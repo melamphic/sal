@@ -96,6 +96,7 @@ type ConsentListResponse struct {
 type CaptureConsentInput struct {
 	ClinicID                    uuid.UUID
 	StaffID                     uuid.UUID
+	StaffRole                   string
 	SubjectID                   uuid.UUID
 	NoteID                      *uuid.UUID
 	NoteFieldID                 *uuid.UUID
@@ -115,6 +116,30 @@ type CaptureConsentInput struct {
 	ExpiresAt                   *time.Time
 	RenewalDueAt                *time.Time
 	AIAssistanceMetadata        *string
+
+	// SubmitForReview queues the consent row for second-pair-of-eyes
+	// review. Used for sensitive consents (euthanasia / sedation /
+	// invasive procedure) when an in-person witness wasn't available
+	// or capacity is contested.
+	SubmitForReview bool
+	ReviewNote      *string
+}
+
+// ApprovalSubmitter is the small surface consent.Service consumes from
+// the approvals package. Wired by app.go.
+type ApprovalSubmitter interface {
+	Submit(ctx context.Context, in ApprovalSubmitInput) error
+}
+
+type ApprovalSubmitInput struct {
+	ClinicID    uuid.UUID
+	EntityID    uuid.UUID
+	EntityOp    *string
+	SubmittedBy uuid.UUID
+	StaffRole   string
+	Note        *string
+	SubjectID   *uuid.UUID
+	NoteID      *uuid.UUID
 }
 
 type UpdateConsentInput struct {
@@ -142,10 +167,17 @@ type Service struct {
 	repo         *Repository
 	clinics      ClinicLookup
 	accessLogger SubjectAccessLogger
+	approvals    ApprovalSubmitter
 }
 
 func NewService(r *Repository, clinics ClinicLookup, accessLogger SubjectAccessLogger) *Service {
 	return &Service{repo: r, clinics: clinics, accessLogger: accessLogger}
+}
+
+// SetApprovals wires the second-pair-of-eyes submitter. nil disables
+// the async path so CaptureConsent with submit_for_review=true rejects.
+func (s *Service) SetApprovals(a ApprovalSubmitter) {
+	s.approvals = a
 }
 
 // CaptureConsent is the single capture entrypoint. Validates the input,
@@ -212,6 +244,23 @@ func (s *Service) CaptureConsent(ctx context.Context, in CaptureConsentInput) (*
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, in.ClinicID, in.SubjectID, in.StaffID,
 			"consent_capture", "consent.service.CaptureConsent")
+	}
+	if in.SubmitForReview {
+		if s.approvals == nil {
+			return nil, fmt.Errorf("consent.service.CaptureConsent: async approvals not configured: %w", domain.ErrValidation)
+		}
+		subjectID := in.SubjectID
+		if err := s.approvals.Submit(ctx, ApprovalSubmitInput{
+			ClinicID:    in.ClinicID,
+			EntityID:    rec.ID,
+			SubmittedBy: in.StaffID,
+			StaffRole:   in.StaffRole,
+			Note:        in.ReviewNote,
+			SubjectID:   &subjectID,
+			NoteID:      in.NoteID,
+		}); err != nil {
+			return nil, fmt.Errorf("consent.service.CaptureConsent: approval submit: %w", err)
+		}
 	}
 	return recordToResponse(rec), nil
 }
