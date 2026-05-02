@@ -111,9 +111,11 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 	if !ok || n.ClinicID != p.ClinicID {
 		return nil, domain.ErrNotFound
 	}
-	if n.Status != domain.NoteStatusDraft {
+	if n.Status != domain.NoteStatusDraft &&
+		n.Status != domain.NoteStatusOverriding {
 		return nil, domain.ErrConflict
 	}
+	wasOverriding := n.Status == domain.NoteStatusOverriding
 	n.Status = domain.NoteStatusSubmitted
 	n.ReviewedBy = &p.ReviewedBy
 	n.ReviewedAt = &p.ReviewedAt
@@ -128,6 +130,31 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 		n.OverrideBy = &by
 		n.OverrideAt = &at
 	}
+	if wasOverriding {
+		n.OverrideCount++
+		n.PDFStorageKey = nil
+	}
+	n.UpdatedAt = domain.TimeNow()
+	return cloneNote(n), nil
+}
+
+func (f *fakeRepo) OverrideUnlock(_ context.Context, p OverrideUnlockParams) (*NoteRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[p.ID]
+	if !ok || n.ClinicID != p.ClinicID {
+		return nil, domain.ErrNotFound
+	}
+	if n.Status != domain.NoteStatusSubmitted {
+		return nil, domain.ErrConflict
+	}
+	n.Status = domain.NoteStatusOverriding
+	at := p.UnlockedAt
+	by := p.UnlockedBy
+	reason := p.Reason
+	n.OverrideUnlockedAt = &at
+	n.OverrideUnlockedBy = &by
+	n.OverrideUnlockedReason = &reason
 	n.UpdatedAt = domain.TimeNow()
 	return cloneNote(n), nil
 }
