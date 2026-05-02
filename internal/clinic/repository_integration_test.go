@@ -33,7 +33,7 @@ func makeCreateParams(name, email, emailHash string) clinic.CreateParams {
 		EmailHash:   emailHash,
 		Vertical:    domain.VerticalVeterinary,
 		Status:      domain.ClinicStatusTrial,
-		TrialEndsAt: time.Now().UTC().Add(14 * 24 * time.Hour),
+		TrialEndsAt: time.Now().UTC().Add(21 * 24 * time.Hour),
 		DataRegion:  "ap-southeast-2",
 	}
 }
