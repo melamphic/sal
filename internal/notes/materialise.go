@@ -50,19 +50,24 @@ type MaterialiseConsentInput struct {
 // the drug name but the clinician picks the shelf entry from the
 // witness picker / drug picker before tapping Confirm.
 type MaterialiseDrugOpInput struct {
-	ClinicID         uuid.UUID
-	StaffID          uuid.UUID
-	SubjectID        *uuid.UUID
-	NoteID           uuid.UUID
-	NoteFieldID      uuid.UUID
-	ShelfID          uuid.UUID
-	Operation        string
-	Quantity         float64
-	Unit             string
-	Dose             *string
-	Route            *string
-	ReasonIndication *string
-	WitnessedBy      *uuid.UUID
+	ClinicID            uuid.UUID
+	StaffID             uuid.UUID
+	SubjectID           *uuid.UUID
+	NoteID              uuid.UUID
+	NoteFieldID         uuid.UUID
+	ShelfID             uuid.UUID
+	Operation           string
+	Quantity            float64
+	Unit                string
+	Dose                *string
+	Route               *string
+	ReasonIndication    *string
+	WitnessedBy         *uuid.UUID
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	WitnessNote         *string
 }
 
 // MaterialiseIncidentInput — payload passed to the incidents adapter.
@@ -144,9 +149,16 @@ type SystemSummaryItem struct {
 // labelled fields to surface on the materialised card / PDF row, so
 // the user sees what they actually captured (drug name + quantity,
 // incident type + severity, …) instead of just an entity id.
+//
+// ReviewStatus, when non-empty, drives the witness/approval pill on
+// the materialised system widget card and the equivalent footer line
+// on the PDF. Values: "not_required" / "pending" / "approved" /
+// "challenged". Empty string = the entity has no approval lifecycle
+// (e.g. a non-controlled drug op, or a domain that hasn't opted in).
 type SystemSummary struct {
-	EntityID uuid.UUID
-	Items    []SystemSummaryItem
+	EntityID     uuid.UUID
+	Items        []SystemSummaryItem
+	ReviewStatus string
 }
 
 // ConsentSummariser returns a short labelled summary for a consent
