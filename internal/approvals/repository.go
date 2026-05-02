@@ -154,6 +154,36 @@ func (r *Repository) GetLatestForEntity(ctx context.Context, kind domain.Approva
 	return rec, nil
 }
 
+// ListPendingForSubject — pending rows scoped to one subject. Used by
+// the subject-hub "Pending compliance" card. The unique-pending index
+// ensures at most one pending row per (kind, entity); ordering by
+// deadline puts the most urgent on top.
+func (r *Repository) ListPendingForSubject(ctx context.Context, clinicID, subjectID uuid.UUID, limit int) ([]*Record, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	q := fmt.Sprintf(`SELECT %s FROM compliance_approvals
+		WHERE clinic_id = $1 AND subject_id = $2 AND status = 'pending'
+		ORDER BY deadline_at ASC LIMIT $3`, approvalCols)
+	rows, err := r.db.Query(ctx, q, clinicID, subjectID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("approvals.repo.ListPendingForSubject: %w", err)
+	}
+	defer rows.Close()
+	var out []*Record
+	for rows.Next() {
+		rec, err := scanApproval(rows)
+		if err != nil {
+			return nil, fmt.Errorf("approvals.repo.ListPendingForSubject: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("approvals.repo.ListPendingForSubject: rows: %w", err)
+	}
+	return out, nil
+}
+
 // CountPendingForDecider — drives the "N approvals waiting" dashboard chip.
 func (r *Repository) CountPendingForDecider(ctx context.Context, clinicID, staffID uuid.UUID) (int, error) {
 	const q = `
