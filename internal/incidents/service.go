@@ -407,6 +407,17 @@ func (s *Service) AddAddendum(ctx context.Context, in AddAddendumInput) (*Incide
 	return s.hydrate(ctx, rec)
 }
 
+// UpdateReviewStatus is the entry point used by the approvals service
+// when an incident's pending/approved/challenged state changes. Pure
+// passthrough to the repository — kept on the service so cross-domain
+// callers still go through the typed surface.
+func (s *Service) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	if err := s.repo.UpdateReviewStatus(ctx, id, clinicID, status); err != nil {
+		return fmt.Errorf("incidents.service.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // ── Hydration + helpers ──────────────────────────────────────────────────────
 
 // hydrate fills in witnesses + addendums for the single-incident views.
