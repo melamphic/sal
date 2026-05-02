@@ -29,6 +29,7 @@ import (
 	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/approvals"
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
 	"github.com/melamphic/sal/internal/consent"
@@ -537,6 +538,26 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&painSummariserAdapter{svc: painSvc},
 	)
 
+	// ── Approvals (second pair of eyes) ─────────────────────────────────────
+	// Generic ledger that lets every system widget run an async
+	// sign-off flow: solo / out-of-hours staff log the entity now,
+	// another qualified colleague approves later from the queue. Each
+	// consuming domain registers its status updater so the entity's
+	// snapshot column (drug_operations_log.witness_status etc) stays
+	// in sync with the approval lifecycle.
+	approvalsRepo := approvals.NewRepository(db)
+	approvalsSvc := approvals.NewService(approvalsRepo)
+	approvalsSvc.SetPermissionChecker(&approvalsStaffPermsAdapter{
+		inner: &drugsStaffPermAdapter{staffSvc: staffSvc},
+	})
+	approvalsSvc.SetEventEmitter(&approvalsTimelineAdapter{repo: timelineRepo, log: log})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindDrugOp, &drugOpStatusUpdater{svc: drugsSvc})
+	// Other system widgets (consent, incident, pain) get their status
+	// updaters wired in a follow-up — see task #107. The service safely
+	// rejects Submit calls for un-registered kinds with ErrValidation.
+	drugsSvc.SetApprovals(&drugsApprovalsAdapter{svc: approvalsSvc})
+	approvalsHandler := approvals.NewHandler(approvalsSvc)
+
 	// ── Admin dashboard ──────────────────────────────────────────────────────
 	// Aggregator over patient + drugs + incidents + consent + pain. No
 	// persistent state of its own. Permission gating ManageStaff |
@@ -689,6 +710,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
 	drugsHandler.Mount(r, api, jwtSecret)
+	approvalsHandler.Mount(r, api, jwtSecret)
 	incidentsHandler.Mount(r, api, jwtSecret)
 	if incidentAIGenHandler != nil {
 		incidentAIGenHandler.Mount(r, api, jwtSecret)
@@ -765,6 +787,114 @@ func (a *timelineEventAdapter) Emit(ctx context.Context, e notes.NoteEvent) {
 			"note_id", e.NoteID,
 			"event_type", string(e.EventType),
 		)
+	}
+}
+
+// approvalsTimelineAdapter implements approvals.EventEmitter by writing
+// compliance-approval lifecycle events into the same timeline ledger.
+// Subject-bound entities (drug_op administer, consent, incident, pain)
+// land on the patient timeline; clinic-only ops (drug receive/transfer)
+// only show up in the clinic-wide audit log via clinic_id.
+type approvalsTimelineAdapter struct {
+	repo *timeline.Repository
+	log  *slog.Logger
+}
+
+func (a *approvalsTimelineAdapter) Emit(ctx context.Context, e approvals.Event) {
+	if err := a.repo.InsertNoteEvent(ctx, timeline.InsertEventParams{
+		ID:         domain.NewID(),
+		NoteID:     uuidOrNil(e.NoteID),
+		SubjectID:  e.SubjectID,
+		ClinicID:   e.ClinicID,
+		EventType:  string(e.Type),
+		ActorID:    e.ActorID,
+		ActorRole:  e.ActorRole,
+		Reason:     e.Reason,
+		OccurredAt: domain.TimeNow(),
+	}); err != nil {
+		a.log.Error("timeline: failed to emit approval event",
+			"error", err,
+			"approval_id", e.ApprovalID,
+			"event_type", string(e.Type),
+		)
+	}
+}
+
+// uuidOrNil dereferences an optional uuid pointer, returning uuid.Nil
+// when nil. Required because timeline.InsertEventParams expects a value
+// type for note_id (the repo allows zero UUIDs as "not bound").
+func uuidOrNil(id *uuid.UUID) uuid.UUID {
+	if id == nil {
+		return uuid.Nil
+	}
+	return *id
+}
+
+// drugsApprovalsAdapter bridges drugs.ApprovalSubmitter (the small
+// surface drugs.Service consumes) onto the approvals.Service Submit
+// signature. Lives in app/ so neither package imports the other.
+type drugsApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *drugsApprovalsAdapter) Submit(ctx context.Context, in drugs.ApprovalSubmitInput) error {
+	op := in.EntityOp
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindDrugOp,
+		EntityID:    in.EntityID,
+		EntityOp:    op,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.drugsApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// drugOpStatusUpdater implements approvals.EntityStatusUpdater for the
+// drug_op kind by routing into drugs.Service. Keeping the adapter here
+// (not in internal/drugs) preserves the cross-domain boundary: drugs
+// owns the column, app wires the callback.
+type drugOpStatusUpdater struct{ svc *drugs.Service }
+
+func (a *drugOpStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindDrugOp {
+		return nil
+	}
+	if err := a.svc.UpdateWitnessStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.drugOpStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// approvalsStaffPermsAdapter wires the existing per-staff permission
+// lookup into the approvals.PermissionChecker interface. Re-uses the
+// same role-mapping the drugs module uses so witness perms stay
+// consistent across modules. The adapter additionally maps
+// `perm_manage_patients` for consent / incident approvals.
+type approvalsStaffPermsAdapter struct{ inner *drugsStaffPermAdapter }
+
+func (a *approvalsStaffPermsAdapter) HasPermission(
+	ctx context.Context,
+	staffID, clinicID uuid.UUID,
+	perm string,
+) (bool, error) {
+	switch perm {
+	case "perm_manage_patients":
+		s, err := a.inner.staffSvc.GetByID(ctx, staffID, clinicID)
+		if err != nil {
+			return false, fmt.Errorf("app.approvalsStaffPermsAdapter: %w", err)
+		}
+		return s.Permissions.ManagePatients, nil
+	default:
+		return a.inner.HasPermission(ctx, staffID, clinicID, perm)
 	}
 }
 
