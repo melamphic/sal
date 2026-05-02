@@ -296,6 +296,17 @@ func (s *Service) WithdrawConsent(ctx context.Context, in WithdrawConsentInput) 
 	return recordToResponse(rec), nil
 }
 
+// UpdateReviewStatus is the entry point used by the approvals service
+// when a consent record's pending/approved/challenged state changes.
+// Pure passthrough to the repository so cross-domain callers go through
+// the typed surface.
+func (s *Service) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	if err := s.repo.UpdateReviewStatus(ctx, id, clinicID, status); err != nil {
+		return fmt.Errorf("consent.service.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // ── Validators ───────────────────────────────────────────────────────────────
 
 func validConsentType(t string) bool {
