@@ -552,9 +552,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	})
 	approvalsSvc.SetEventEmitter(&approvalsTimelineAdapter{repo: timelineRepo, log: log})
 	approvalsSvc.SetStatusUpdater(domain.ApprovalKindDrugOp, &drugOpStatusUpdater{svc: drugsSvc})
-	// Other system widgets (consent, incident, pain) get their status
-	// updaters wired in a follow-up — see task #107. The service safely
-	// rejects Submit calls for un-registered kinds with ErrValidation.
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindConsent, &consentStatusUpdater{svc: consentSvc})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindIncident, &incidentStatusUpdater{svc: incidentsSvc})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindPainScore, &painStatusUpdater{svc: painSvc})
 	drugsSvc.SetApprovals(&drugsApprovalsAdapter{svc: approvalsSvc})
 	approvalsHandler := approvals.NewHandler(approvalsSvc)
 
@@ -870,6 +870,61 @@ func (a *drugOpStatusUpdater) UpdateEntityReviewStatus(
 	}
 	if err := a.svc.UpdateWitnessStatus(ctx, entityID, clinicID, status); err != nil {
 		return fmt.Errorf("app.drugOpStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// consentStatusUpdater bridges approvals → consent.Service for the
+// consent kind. Same pattern as drugOpStatusUpdater.
+type consentStatusUpdater struct{ svc *consent.Service }
+
+func (a *consentStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindConsent {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.consentStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// incidentStatusUpdater bridges approvals → incidents.Service.
+type incidentStatusUpdater struct{ svc *incidents.Service }
+
+func (a *incidentStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindIncident {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.incidentStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// painStatusUpdater bridges approvals → pain.Service.
+type painStatusUpdater struct{ svc *pain.Service }
+
+func (a *painStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindPainScore {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.painStatusUpdater: %w", err)
 	}
 	return nil
 }
@@ -1900,6 +1955,16 @@ func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.U
 			}
 		}
 	}
+	// External witness: name is captured free-text on the op itself, not
+	// resolved against the staff directory.
+	if op.WitnessKind != nil && *op.WitnessKind == "external" &&
+		op.ExternalWitnessName != nil && *op.ExternalWitnessName != "" {
+		display := *op.ExternalWitnessName
+		if op.ExternalWitnessRole != nil && *op.ExternalWitnessRole != "" {
+			display = display + " (" + humaniseSnake(*op.ExternalWitnessRole) + ")"
+		}
+		witnessName = &display
+	}
 
 	return reports.DrugOpView{
 		ID:             op.ID,
@@ -1918,6 +1983,8 @@ func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.U
 		SubjectID:      op.SubjectID,
 		AdministeredBy: administeredBy,
 		WitnessedBy:    witnessName,
+		WitnessKind:    op.WitnessKind,
+		WitnessStatus:  op.WitnessStatus,
 		CreatedAt:      createdAt,
 	}, true
 }
@@ -2250,21 +2317,26 @@ func (a *drugOpMaterialiserAdapter) MaterialiseDrugOpForNote(ctx context.Context
 	// Clinician's tap on Confirm IS the regulator-binding action;
 	// status='confirmed' (the default), not pending.
 	resp, err := a.svc.LogOperation(ctx, drugs.LogOperationInput{
-		ClinicID:         in.ClinicID,
-		StaffID:          in.StaffID,
-		ShelfID:          in.ShelfID,
-		SubjectID:        in.SubjectID,
-		NoteID:           &noteID,
-		NoteFieldID:      &noteFieldID,
-		Operation:        in.Operation,
-		Quantity:         in.Quantity,
-		Unit:             in.Unit,
-		Dose:             in.Dose,
-		Route:            in.Route,
-		ReasonIndication: in.ReasonIndication,
-		AdministeredBy:   in.StaffID,
-		WitnessedBy:      in.WitnessedBy,
-		Status:           "confirmed",
+		ClinicID:            in.ClinicID,
+		StaffID:             in.StaffID,
+		ShelfID:             in.ShelfID,
+		SubjectID:           in.SubjectID,
+		NoteID:              &noteID,
+		NoteFieldID:         &noteFieldID,
+		Operation:           in.Operation,
+		Quantity:            in.Quantity,
+		Unit:                in.Unit,
+		Dose:                in.Dose,
+		Route:               in.Route,
+		ReasonIndication:    in.ReasonIndication,
+		AdministeredBy:      in.StaffID,
+		WitnessedBy:         in.WitnessedBy,
+		WitnessKind:         in.WitnessKind,
+		ExternalWitnessName: in.ExternalWitnessName,
+		ExternalWitnessRole: in.ExternalWitnessRole,
+		WitnessAttestation:  in.WitnessAttestation,
+		WitnessNote:         in.WitnessNote,
+		Status:              "confirmed",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.drugOpMaterialiserAdapter: %w", err)
@@ -2387,13 +2459,27 @@ func (a *drugOpSummariserAdapter) SummariseDrugOp(ctx context.Context, id, clini
 	if r.ReasonIndication != nil && *r.ReasonIndication != "" {
 		items = append(items, notes.SystemSummaryItem{Label: "Reason", Value: *r.ReasonIndication})
 	}
+	if r.WitnessKind != nil && *r.WitnessKind != "" {
+		items = append(items, notes.SystemSummaryItem{
+			Label: "Witness mode",
+			Value: humaniseSnake(*r.WitnessKind),
+		})
+	}
 	items = append(items, notes.SystemSummaryItem{Label: "Status", Value: humaniseSnake(r.Status)})
 	items = append(items, notes.SystemSummaryItem{Label: "Logged at", Value: humaniseTimestamp(r.CreatedAt)})
 	id2, err := uuid.Parse(r.ID)
 	if err != nil {
 		return nil, fmt.Errorf("app.drugOpSummariserAdapter: bad id: %w", err)
 	}
-	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+	reviewStatus := ""
+	if r.WitnessStatus != nil {
+		reviewStatus = *r.WitnessStatus
+	}
+	return &notes.SystemSummary{
+		EntityID:     id2,
+		Items:        items,
+		ReviewStatus: reviewStatus,
+	}, nil
 }
 
 type incidentSummariserAdapter struct{ svc *incidents.Service }
