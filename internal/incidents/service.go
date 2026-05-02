@@ -87,6 +87,7 @@ type IncidentListResponse struct {
 type CreateIncidentInput struct {
 	ClinicID         uuid.UUID
 	StaffID          uuid.UUID
+	StaffRole        string
 	SubjectID        uuid.UUID
 	NoteID           *uuid.UUID
 	NoteFieldID      *uuid.UUID
@@ -98,6 +99,34 @@ type CreateIncidentInput struct {
 	ImmediateActions *string
 	WitnessesText    *string
 	SubjectOutcome   *string
+
+	// SubmitForReview, when true, queues the row for second-pair-of-
+	// eyes review via the approvals service after the incident lands.
+	// review_status flips to 'pending'; failures restore it to
+	// 'not_required'. ReviewNote surfaces in the queue + timeline.
+	SubmitForReview bool
+	ReviewNote      *string
+}
+
+// ApprovalSubmitter is the small surface incidents.Service consumes
+// from the approvals package. Wired by app.go so incidents created
+// with submit_for_review=true get an async second-pair-of-eyes row.
+//
+// Mirrors approvals.SubmitInput but lives here so incidents doesn't
+// import approvals (cross-domain hygiene).
+type ApprovalSubmitter interface {
+	Submit(ctx context.Context, in ApprovalSubmitInput) error
+}
+
+type ApprovalSubmitInput struct {
+	ClinicID    uuid.UUID
+	EntityID    uuid.UUID
+	EntityOp    *string
+	SubmittedBy uuid.UUID
+	StaffRole   string
+	Note        *string
+	SubjectID   *uuid.UUID
+	NoteID      *uuid.UUID
 }
 
 type UpdateIncidentInput struct {
@@ -147,10 +176,17 @@ type Service struct {
 	repo         *Repository
 	clinics      ClinicLookup
 	accessLogger SubjectAccessLogger
+	approvals    ApprovalSubmitter
 }
 
 func NewService(r *Repository, clinics ClinicLookup, accessLogger SubjectAccessLogger) *Service {
 	return &Service{repo: r, clinics: clinics, accessLogger: accessLogger}
+}
+
+// SetApprovals wires the second-pair-of-eyes submitter. nil disables
+// the async path so CreateIncident with submit_for_review=true rejects.
+func (s *Service) SetApprovals(a ApprovalSubmitter) {
+	s.approvals = a
 }
 
 // CreateIncident validates the input, runs the SIRS/CQC classifier,
@@ -219,6 +255,29 @@ func (s *Service) CreateIncident(ctx context.Context, in CreateIncidentInput) (*
 	if s.accessLogger != nil {
 		_ = s.accessLogger.LogAccess(ctx, in.ClinicID, in.SubjectID, in.StaffID,
 			"incident_create", "incidents.service.CreateIncident")
+	}
+
+	// Async-witness path: hand the row off to the approvals service so
+	// a clinical lead can sign it from the queue. Failures here log +
+	// propagate so the caller knows the queue insert didn't take (the
+	// incident row has already landed; review_status will read
+	// 'not_required' until a successful retry).
+	if in.SubmitForReview {
+		if s.approvals == nil {
+			return nil, fmt.Errorf("incidents.service.CreateIncident: async approvals not configured: %w", domain.ErrValidation)
+		}
+		subjectID := in.SubjectID
+		if err := s.approvals.Submit(ctx, ApprovalSubmitInput{
+			ClinicID:    in.ClinicID,
+			EntityID:    rec.ID,
+			SubmittedBy: in.StaffID,
+			StaffRole:   in.StaffRole,
+			Note:        in.ReviewNote,
+			SubjectID:   &subjectID,
+			NoteID:      in.NoteID,
+		}); err != nil {
+			return nil, fmt.Errorf("incidents.service.CreateIncident: approval submit: %w", err)
+		}
 	}
 
 	return s.hydrate(ctx, rec)
