@@ -215,6 +215,29 @@ type LogOperationInput struct {
 	// pending_confirm rows linked to it.
 	Status string
 
+	// WitnessKind selects how the witness was/will-be captured. nil or
+	// empty falls back to 'staff' (legacy default). Values:
+	//   - "staff"    — concurrent internal witness (WitnessedBy set)
+	//   - "pending"  — async sign-off; queue another qualified colleague
+	//                  via the approvals service. WitnessedBy nil at
+	//                  log time; populated on Approve.
+	//   - "external" — concurrent paper-trail witness (non-Salvia user).
+	//                  ExternalWitnessName/Role + WitnessAttestation set.
+	//   - "self"     — emergency / solo. Attestation required; flagged
+	//                  on regulator report. FORBIDDEN for 'discard' op
+	//                  per UK S2 / AU S8 destruction rules.
+	WitnessKind *string
+
+	// Sync external-witness fields (non-Salvia user present at op).
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	// Free-text justification. Required (≥10 chars) for external mode,
+	// (≥30 chars) for self mode.
+	WitnessAttestation *string
+	// Optional note left for the async approver — surfaces in their
+	// queue card so they have context without opening the note.
+	WitnessNote *string
+
 	// Compliance — optional jurisdiction-specific fields populated by
 	// callers that have them (UK Sch 6, US 1304, NZ Reg 40, AU state).
 	// Phase 2a (shadow mode): validators inspect these and log
@@ -248,10 +271,21 @@ type OperationResponse struct {
 	// Status — 'pending_confirm' until a clinician confirms (only set
 	// for system.drug_op widget creates). Always 'confirmed' for ops
 	// created via the manual modal.
-	Status            string  `json:"status"`
-	ConfirmedBy       *string `json:"confirmed_by,omitempty"`
-	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
-	CreatedAt         string  `json:"created_at"`
+	Status      string  `json:"status"`
+	ConfirmedBy *string `json:"confirmed_by,omitempty"`
+	ConfirmedAt *string `json:"confirmed_at,omitempty"`
+
+	// Witness shape — added with the async-approval flow.
+	// WitnessKind is nil while a pending row awaits sign-off.
+	// WitnessStatus is the snapshot of the latest approval row
+	// (not_required | pending | approved | challenged).
+	WitnessKind         *string `json:"witness_kind,omitempty"`
+	ExternalWitnessName *string `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole *string `json:"external_witness_role,omitempty"`
+	WitnessAttestation  *string `json:"witness_attestation,omitempty"`
+	WitnessStatus       *string `json:"witness_status,omitempty"`
+
+	CreatedAt string `json:"created_at"`
 }
 
 // OperationListResponse — paginated ledger.
@@ -348,6 +382,31 @@ type ListReconciliationsInput struct {
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
+// ApprovalSubmitter is the small surface drugs.Service consumes from
+// the approvals package. Wired by app.go so drug ops with
+// witness_kind=pending get an async second-pair-of-eyes row created
+// alongside the ledger entry.
+//
+// Pre-set during Build(); a nil ApprovalSubmitter disables the async
+// path entirely (LogOperation rejects pending mode with ErrValidation).
+type ApprovalSubmitter interface {
+	Submit(ctx context.Context, in ApprovalSubmitInput) error
+}
+
+// ApprovalSubmitInput captures the bits the approvals service needs.
+// Mirrors approvals.SubmitInput but lives in the drugs package so
+// drugs doesn't import approvals (cross-domain hygiene).
+type ApprovalSubmitInput struct {
+	ClinicID    uuid.UUID
+	EntityID    uuid.UUID
+	EntityOp    *string
+	SubmittedBy uuid.UUID
+	StaffRole   string
+	Note        *string
+	SubjectID   *uuid.UUID
+	NoteID      *uuid.UUID
+}
+
 // Service is the drugs business-logic layer. Concurrency-safe; can be
 // shared across handlers without locking.
 type Service struct {
@@ -356,6 +415,7 @@ type Service struct {
 	clinics      ClinicLookup
 	staffPerms   StaffPermLookup
 	accessLogger SubjectAccessLogger
+	approvals    ApprovalSubmitter
 }
 
 // NewService constructs the drugs Service.
@@ -378,6 +438,22 @@ func NewService(
 		staffPerms:   staffPerms,
 		accessLogger: accessLogger,
 	}
+}
+
+// SetApprovals wires the second-pair-of-eyes submitter. nil disables
+// the async path so LogOperation will reject witness_kind=pending.
+func (s *Service) SetApprovals(a ApprovalSubmitter) {
+	s.approvals = a
+}
+
+// UpdateWitnessStatus flips the witness_status snapshot column on a
+// drug_operations_log row. Invoked by the approvals service callback
+// when a pending row transitions to approved / challenged. Idempotent.
+func (s *Service) UpdateWitnessStatus(ctx context.Context, opID, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	if err := s.repo.UpdateWitnessStatus(ctx, opID, clinicID, status); err != nil {
+		return fmt.Errorf("drugs.service.UpdateWitnessStatus: %w", err)
+	}
+	return nil
 }
 
 // ── Catalog read methods ─────────────────────────────────────────────────────
@@ -626,22 +702,60 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 	// §3.8 + §5.1.
 	s.runComplianceCheckShadow(ctx, in, shelf, requiresWitness)
 
-	// Witness validation — controlled drugs MUST have a witness who is not
-	// the administering staff. If the underlying drug is non-controlled,
-	// witnessed_by may be nil.
+	// Witness validation — four modes for controlled drugs:
+	//   * staff (default)   — synchronous internal witness
+	//   * pending           — async; queue another colleague via the
+	//                         approvals service after this op lands
+	//   * external          — synchronous paper-trail witness (non-Salvia)
+	//   * self              — emergency / solo; attestation only, FLAGGED
+	//                         on regulator export. Forbidden for 'discard'
+	//                         (UK S2 / AU S8 / NZ MoH destruction rules).
+	// Non-controlled drugs leave the witness fields empty regardless.
+	witnessKind := ""
+	if in.WitnessKind != nil {
+		witnessKind = strings.TrimSpace(*in.WitnessKind)
+	}
 	if requiresWitness {
-		if in.WitnessedBy == nil {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness required for controlled drug: %w", domain.ErrValidation)
-		}
-		if *in.WitnessedBy == in.AdministeredBy {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness must differ from administering staff: %w", domain.ErrValidation)
-		}
-		ok, err := s.staffPerms.HasPermission(ctx, *in.WitnessedBy, in.ClinicID, "perm_witness_controlled_drugs")
-		if err != nil {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness perm lookup: %w", err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness lacks perm_witness_controlled_drugs: %w", domain.ErrForbidden)
+		switch witnessKind {
+		case "", "staff":
+			witnessKind = "staff"
+			if in.WitnessedBy == nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness required for controlled drug: %w", domain.ErrValidation)
+			}
+			if *in.WitnessedBy == in.AdministeredBy {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness must differ from administering staff: %w", domain.ErrValidation)
+			}
+			ok, err := s.staffPerms.HasPermission(ctx, *in.WitnessedBy, in.ClinicID, "perm_witness_controlled_drugs")
+			if err != nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness perm lookup: %w", err)
+			}
+			if !ok {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness lacks perm_witness_controlled_drugs: %w", domain.ErrForbidden)
+			}
+		case "pending":
+			if s.approvals == nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: async approvals not configured: %w", domain.ErrValidation)
+			}
+			// Pending mode logs the op now without a witness; the
+			// approvals service creates a queue row after the ledger
+			// insert succeeds (post-tx so a transient approvals
+			// failure doesn't roll back the regulator-binding entry).
+		case "external":
+			if in.ExternalWitnessName == nil || strings.TrimSpace(*in.ExternalWitnessName) == "" {
+				return nil, fmt.Errorf("drugs.service.LogOperation: external witness name required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 10 {
+				return nil, fmt.Errorf("drugs.service.LogOperation: external witness attestation too short: %w", domain.ErrValidation)
+			}
+		case "self":
+			if in.Operation == "discard" {
+				return nil, fmt.Errorf("drugs.service.LogOperation: self-witness not permitted for destruction; in-person witness required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 30 {
+				return nil, fmt.Errorf("drugs.service.LogOperation: self-witness attestation too short (min 30 chars): %w", domain.ErrValidation)
+			}
+		default:
+			return nil, fmt.Errorf("drugs.service.LogOperation: unknown witness_kind %q: %w", witnessKind, domain.ErrValidation)
 		}
 	}
 
@@ -680,6 +794,30 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 			"clinic_id", in.ClinicID, "error", err.Error())
 	}
 
+	// Map witness mode → snapshot status + persisted column shape.
+	//   not_required: non-controlled drug — witness fields stay nil
+	//   staff/external/self: synchronous; status='approved' on insert
+	//   pending: async; status='pending', approval row created post-tx
+	var witnessKindParam *string
+	var witnessStatusParam *string
+	{
+		switch {
+		case !requiresWitness:
+			s := string(domain.EntityReviewNotRequired)
+			witnessStatusParam = &s
+		case witnessKind == "pending":
+			s := string(domain.EntityReviewPending)
+			witnessStatusParam = &s
+			// witnessKindParam stays nil — populated when the
+			// approver decides.
+		default:
+			k := witnessKind
+			witnessKindParam = &k
+			s := string(domain.EntityReviewApproved)
+			witnessStatusParam = &s
+		}
+	}
+
 	rec, err := s.repo.LogOperation(ctx, CreateOperationParams{
 		ID:                domain.NewID(),
 		ClinicID:          in.ClinicID,
@@ -707,6 +845,13 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		DrugForm:       cc.Form,
 		ChainKey:       chainK,
 		RetentionUntil: retentionUntil,
+
+		// Witness shape (00074 + 00075).
+		WitnessKind:         witnessKindParam,
+		ExternalWitnessName: trimNonEmpty(in.ExternalWitnessName),
+		ExternalWitnessRole: trimNonEmpty(in.ExternalWitnessRole),
+		WitnessAttestation:  trimNonEmpty(in.WitnessAttestation),
+		WitnessStatus:       witnessStatusParam,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
@@ -717,7 +862,47 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		_ = s.accessLogger.LogAccess(ctx, in.ClinicID, *in.SubjectID, in.StaffID, "drug_op", "drugs.service.LogOperation")
 	}
 
+	// Async-witness path: hand the row off to the approvals service so
+	// a qualified colleague can sign it from the queue. Failures here
+	// log + propagate so the caller knows the queue insert didn't take
+	// (the ledger row has already landed; the witness_status column
+	// is 'pending' so the row is visible as such on regulator
+	// reports until the queue eventually catches up).
+	if witnessKind == "pending" && s.approvals != nil {
+		operation := in.Operation
+		opPtr := &operation
+		note := trimNonEmpty(in.WitnessNote)
+		if err := s.approvals.Submit(ctx, ApprovalSubmitInput{
+			ClinicID:    in.ClinicID,
+			EntityID:    rec.ID,
+			EntityOp:    opPtr,
+			SubmittedBy: in.AdministeredBy,
+			StaffRole:   "", // handler doesn't surface role on this path; ok for now
+			Note:        note,
+			SubjectID:   in.SubjectID,
+			NoteID:      in.NoteID,
+		}); err != nil {
+			slog.Error("drugs.service.LogOperation: approval submit failed; ledger row landed but queue insert missed",
+				"op_id", rec.ID, "error", err.Error())
+			return nil, fmt.Errorf("drugs.service.LogOperation: approval submit: %w", err)
+		}
+	}
+
 	return operationRecordToResponse(rec), nil
+}
+
+// trimNonEmpty returns nil for nil or whitespace-only strings; the
+// trimmed value otherwise. Keeps optional witness fields out of the DB
+// when callers send empty strings instead of nil.
+func trimNonEmpty(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
 }
 
 // runComplianceCheckShadow runs the per-country compliance validator
@@ -1261,6 +1446,11 @@ func operationRecordToResponse(r *OperationRecord) *OperationResponse {
 		s := r.ConfirmedAt.Format(time.RFC3339)
 		resp.ConfirmedAt = &s
 	}
+	resp.WitnessKind = r.WitnessKind
+	resp.ExternalWitnessName = r.ExternalWitnessName
+	resp.ExternalWitnessRole = r.ExternalWitnessRole
+	resp.WitnessAttestation = r.WitnessAttestation
+	resp.WitnessStatus = r.WitnessStatus
 	return resp
 }
 
