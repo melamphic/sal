@@ -774,11 +774,14 @@ func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID)
 	return *note.PDFStorageKey, nil
 }
 
-// RetryPDF re-enqueues the PDF generation job for a submitted note whose PDF
-// has not yet been produced (e.g. River job exhausted retries or never ran).
-// Idempotent: if the PDF key already exists the call is a no-op success;
-// rejects unsubmitted notes with ErrConflict.
-func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+// RetryPDF re-renders the PDF for a submitted note. When [force] is
+// false this is the historical recovery path: render only if no key
+// exists yet (e.g. the worker exhausted retries). When [force] is true
+// the existing key is cleared first, so a backend renderer change
+// (Unicode handling, system widget cards, theme tweak) reaches an
+// already-rendered submitted note without making the user re-submit.
+// Rejects unsubmitted notes with ErrConflict.
+func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID, force bool) (*NoteResponse, error) {
 	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.RetryPDF: %w", err)
@@ -787,7 +790,16 @@ func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID) (*No
 		return nil, fmt.Errorf("notes.service.RetryPDF: not submitted: %w", domain.ErrConflict)
 	}
 	if note.PDFStorageKey != nil {
-		return s.GetNote(ctx, noteID, clinicID)
+		if !force {
+			return s.GetNote(ctx, noteID, clinicID)
+		}
+		// Force path — null the key so the renderer's idempotence
+		// check (note.PDFStorageKey != nil → no-op) doesn't short
+		// circuit. The actual artifact in object storage is left in
+		// place; the next render overwrites it under the same key.
+		if err := s.repo.ClearPDFKey(ctx, noteID, clinicID); err != nil {
+			return nil, fmt.Errorf("notes.service.RetryPDF: clear key: %w", err)
+		}
 	}
 
 	// Prefer a synchronous re-render so the response carries the new key.
