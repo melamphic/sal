@@ -234,6 +234,45 @@ func (h *Handler) submitNote(ctx context.Context, input *submitNoteInput) (*note
 	return &noteHTTPResponse{Body: resp}, nil
 }
 
+// ── Override unlock ──────────────────────────────────────────────────────────
+
+// unlockOverrideInput carries the note ID and the required justification for
+// re-opening a submitted note.
+type unlockOverrideInput struct {
+	NoteID string `path:"note_id" doc:"The note's UUID."`
+	Body   struct {
+		Reason string `json:"reason" minLength:"10" doc:"Written justification for re-opening this submitted note. Persisted on the note for audit and surfaced in the patient timeline."`
+	}
+}
+
+// unlockNoteOverride handles POST /api/v1/notes/{note_id}/override-unlock.
+// Allowed for the note's original creator OR any staff with manage_staff.
+func (h *Handler) unlockNoteOverride(ctx context.Context, input *unlockOverrideInput) (*noteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+	role := string(mw.RoleFromContext(ctx))
+	perms := mw.PermissionsFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	allowed, err := h.svc.CanUnlockForOverride(ctx, noteID, clinicID, staffID, perms.ManageStaff)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	if !allowed {
+		return nil, huma.Error403Forbidden("only the note creator or a staff manager can unlock this note for override")
+	}
+
+	resp, err := h.svc.UnlockForOverride(ctx, noteID, clinicID, staffID, role, input.Body.Reason)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &noteHTTPResponse{Body: resp}, nil
+}
+
 // ── Policy check ─────────────────────────────────────────────────────────────
 
 type policyCheckHTTPResponse struct {
@@ -309,6 +348,14 @@ func (h *Handler) getNotePDF(ctx context.Context, input *noteIDInput) (*notePDFH
 }
 
 // retryNotePDF handles POST /api/v1/notes/{note_id}/retry-pdf.
+// PDF render is the most opaque failure mode in the notes flow — fpdf
+// build errors, MinIO upload errors, doc-theme JSON parse errors, system
+// widget summarisation errors all bubble up here. The default
+// `mapNoteError` collapses these to a generic 500 "internal server
+// error" body, which is useless for the operator. Surface the leaf
+// message instead so the UI can show "PDF render failed: {actual
+// reason}" and the user can tell us what's broken without grepping
+// container logs.
 func (h *Handler) retryNotePDF(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
@@ -319,9 +366,31 @@ func (h *Handler) retryNotePDF(ctx context.Context, input *noteIDInput) (*noteHT
 
 	resp, err := h.svc.RetryPDF(ctx, noteID, clinicID)
 	if err != nil {
-		return nil, mapNoteError(err)
+		return nil, mapPDFError(err)
 	}
 	return &noteHTTPResponse{Body: resp}, nil
+}
+
+// mapPDFError surfaces the leaf message from PDF render failures so the
+// UI can show the actual cause. Sentinel errors still take their normal
+// 4xx mapping; everything else returns 500 with the leaf message in the
+// body (vs. an opaque "internal server error").
+func mapPDFError(err error) error {
+	switch {
+	case errors.Is(err, domain.ErrValidation):
+		return huma.Error422UnprocessableEntity(leafMessage(err))
+	case errors.Is(err, domain.ErrNotFound):
+		return huma.Error404NotFound("PDF not ready")
+	case errors.Is(err, domain.ErrConflict):
+		return huma.Error409Conflict(leafMessage(err))
+	case errors.Is(err, domain.ErrForbidden):
+		return huma.Error403Forbidden("insufficient permissions")
+	default:
+		slog.Error("notes: pdf render error", "error", err.Error())
+		return huma.Error500InternalServerError(
+			"pdf render failed: " + leafMessage(err),
+		)
+	}
 }
 
 // retryNoteExtraction handles POST /api/v1/notes/{note_id}/retry-extraction.
