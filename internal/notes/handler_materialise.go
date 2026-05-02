@@ -121,14 +121,19 @@ type materialiseDrugOpBody struct {
 	NoteID  string `path:"note_id"  doc:"Note UUID."`
 	FieldID string `path:"field_id" doc:"Form field UUID — must be a system.* widget."`
 	Body    struct {
-		ShelfID          string  `json:"shelf_id" minLength:"36" doc:"Shelf entry the drug is being drawn from."`
-		Operation        string  `json:"operation" enum:"administer,dispense,discard,receive,transfer,adjust"`
-		Quantity         float64 `json:"quantity" minimum:"0"`
-		Unit             string  `json:"unit"`
-		Dose             *string `json:"dose,omitempty"`
-		Route            *string `json:"route,omitempty"`
-		ReasonIndication *string `json:"reason_indication,omitempty"`
-		WitnessedBy      *string `json:"witnessed_by,omitempty" doc:"Staff UUID. Required for controlled drugs; service re-checks."`
+		ShelfID             string  `json:"shelf_id" minLength:"36" doc:"Shelf entry the drug is being drawn from."`
+		Operation           string  `json:"operation" enum:"administer,dispense,discard,receive,transfer,adjust"`
+		Quantity            float64 `json:"quantity" minimum:"0"`
+		Unit                string  `json:"unit"`
+		Dose                *string `json:"dose,omitempty"`
+		Route               *string `json:"route,omitempty"`
+		ReasonIndication    *string `json:"reason_indication,omitempty"`
+		WitnessedBy         *string `json:"witnessed_by,omitempty" doc:"Staff UUID for witness_kind=staff."`
+		WitnessKind         *string `json:"witness_kind,omitempty" enum:"staff,pending,external,self" doc:"Witness mode. Default 'staff'."`
+		ExternalWitnessName *string `json:"external_witness_name,omitempty"`
+		ExternalWitnessRole *string `json:"external_witness_role,omitempty"`
+		WitnessAttestation  *string `json:"witness_attestation,omitempty" doc:"Required (≥10) for external, required (≥30) for self."`
+		WitnessNote         *string `json:"witness_note,omitempty" doc:"Optional context surfaced to the eventual approver in pending mode."`
 	}
 }
 
@@ -150,14 +155,19 @@ func (h *Handler) materialiseDrugOp(ctx context.Context, input *materialiseDrugO
 	}
 
 	in := MaterialiseDrugOpInput{
-		ShelfID:          shelfID,
-		Operation:        input.Body.Operation,
-		Quantity:         input.Body.Quantity,
-		Unit:             input.Body.Unit,
-		Dose:             input.Body.Dose,
-		Route:            input.Body.Route,
-		ReasonIndication: input.Body.ReasonIndication,
-		WitnessedBy:      witness,
+		ShelfID:             shelfID,
+		Operation:           input.Body.Operation,
+		Quantity:            input.Body.Quantity,
+		Unit:                input.Body.Unit,
+		Dose:                input.Body.Dose,
+		Route:               input.Body.Route,
+		ReasonIndication:    input.Body.ReasonIndication,
+		WitnessedBy:         witness,
+		WitnessKind:         input.Body.WitnessKind,
+		ExternalWitnessName: input.Body.ExternalWitnessName,
+		ExternalWitnessRole: input.Body.ExternalWitnessRole,
+		WitnessAttestation:  input.Body.WitnessAttestation,
+		WitnessNote:         input.Body.WitnessNote,
 	}
 	ref, err := h.svc.MaterialiseDrugOp(ctx, noteID, fieldID, clinicID, staffID, in)
 	if err != nil {
