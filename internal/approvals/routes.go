@@ -28,6 +28,17 @@ func (h *Handler) Mount(_ chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.listPending)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-subject-pending-approvals",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/approvals/subjects/{subject_id}/pending",
+		Summary:     "List pending approvals for a subject",
+		Description: "Returns the pending second-pair-of-eyes rows scoped to one subject. Powers the subject hub's 'Pending compliance' card so a clinician opening a patient sees what is still waiting on someone — across drug ops, consents, incidents, and pain scores.",
+		Tags:        []string{"Approvals"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth},
+	}, h.listSubjectPending)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "count-pending-approvals",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/approvals/count",
