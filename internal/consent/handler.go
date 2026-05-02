@@ -59,6 +59,12 @@ type captureConsentBody struct {
 		CapturedAt                  *string `json:"captured_at,omitempty"   doc:"RFC3339; defaults to now."`
 		ExpiresAt                   *string `json:"expires_at,omitempty"    doc:"RFC3339; default applied per consent_type."`
 		RenewalDueAt                *string `json:"renewal_due_at,omitempty" doc:"RFC3339"`
+		// SubmitForReview queues the consent for second-pair-of-eyes
+		// review. Used for sensitive consents (euthanasia / sedation /
+		// invasive procedure) when capacity is contested or no in-person
+		// witness was available.
+		SubmitForReview bool    `json:"submit_for_review,omitempty"`
+		ReviewNote      *string `json:"review_note,omitempty" doc:"Optional context for the approver."`
 	}
 }
 
@@ -73,6 +79,7 @@ func (h *Handler) captureConsent(ctx context.Context, input *captureConsentBody)
 	in := CaptureConsentInput{
 		ClinicID:                    clinicID,
 		StaffID:                     staffID,
+		StaffRole:                   string(mw.RoleFromContext(ctx)),
 		SubjectID:                   subjectID,
 		ConsentType:                 input.Body.ConsentType,
 		Scope:                       input.Body.Scope,
@@ -82,6 +89,8 @@ func (h *Handler) captureConsent(ctx context.Context, input *captureConsentBody)
 		SignatureImageKey:           input.Body.SignatureImageKey,
 		ConsentingPartyRelationship: input.Body.ConsentingPartyRelationship,
 		ConsentingPartyName:         input.Body.ConsentingPartyName,
+		SubmitForReview:             input.Body.SubmitForReview,
+		ReviewNote:                  input.Body.ReviewNote,
 	}
 	if id, err := optUUID(input.Body.NoteID, "note_id"); err != nil {
 		return nil, err
