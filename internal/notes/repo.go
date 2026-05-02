@@ -51,11 +51,14 @@ type repo interface {
 // NoteFieldWithType is a denormalised join — the row from note_fields +
 // the field's type and title from form_fields. Used by the materialise
 // flow to validate field type without a second round-trip and by the
-// submit gate to surface the field title in error messages.
+// submit gate to surface the field title in error messages. Required
+// is read so the gate can let optional system widgets through with
+// unconfirmed AI values without blocking submit.
 type NoteFieldWithType struct {
 	FieldID   uuid.UUID
 	FieldType string
 	Title     string
+	Required  bool
 	Value     *string
 	NoteID    uuid.UUID
 	SubjectID *uuid.UUID
