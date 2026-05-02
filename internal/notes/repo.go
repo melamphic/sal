@@ -33,6 +33,9 @@ type repo interface {
 	UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error
 	// UpdatePDFKey sets the pdf_storage_key on a note after PDF generation.
 	UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUID, key string) error
+	// ClearPDFKey nulls pdf_storage_key so the next render produces a
+	// fresh artifact. Force-rerender path.
+	ClearPDFKey(ctx context.Context, noteID, clinicID uuid.UUID) error
 
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
