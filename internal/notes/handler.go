@@ -347,6 +347,11 @@ func (h *Handler) getNotePDF(ctx context.Context, input *noteIDInput) (*notePDFH
 	return resp, nil
 }
 
+type retryPDFInput struct {
+	NoteID string `path:"note_id" doc:"The note's UUID."`
+	Force  bool   `query:"force" doc:"Set true to clear the existing pdf_storage_key and re-render from scratch — used by the in-app refresh button so backend renderer fixes (Unicode, system widget cards, theme tweaks) reach already-rendered notes."`
+}
+
 // retryNotePDF handles POST /api/v1/notes/{note_id}/retry-pdf.
 // PDF render is the most opaque failure mode in the notes flow — fpdf
 // build errors, MinIO upload errors, doc-theme JSON parse errors, system
@@ -356,7 +361,7 @@ func (h *Handler) getNotePDF(ctx context.Context, input *noteIDInput) (*notePDFH
 // message instead so the UI can show "PDF render failed: {actual
 // reason}" and the user can tell us what's broken without grepping
 // container logs.
-func (h *Handler) retryNotePDF(ctx context.Context, input *noteIDInput) (*noteHTTPResponse, error) {
+func (h *Handler) retryNotePDF(ctx context.Context, input *retryPDFInput) (*noteHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
 
 	noteID, err := uuid.Parse(input.NoteID)
@@ -364,7 +369,7 @@ func (h *Handler) retryNotePDF(ctx context.Context, input *noteIDInput) (*noteHT
 		return nil, huma.Error400BadRequest("invalid note_id")
 	}
 
-	resp, err := h.svc.RetryPDF(ctx, noteID, clinicID)
+	resp, err := h.svc.RetryPDF(ctx, noteID, clinicID, input.Force)
 	if err != nil {
 		return nil, mapPDFError(err)
 	}
