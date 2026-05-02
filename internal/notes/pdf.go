@@ -80,13 +80,23 @@ type PDFInput struct {
 // PDFField is a label/value pair for rendering in the PDF body.
 //
 // SystemSummary, when non-nil, replaces the raw [Value] with a small
-// labelled table — used for materialised system widgets (drug op, pain
-// score, …) so the PDF surfaces what was captured rather than the raw
-// id-pointer JSON in note_fields.value.
+// labelled table — used for system widgets (drug op, consent, incident,
+// pain score) so the PDF surfaces the typed payload as a styled card
+// rather than dumping raw JSON.
+//
+// SystemKind identifies which system widget this is (`drug_op`,
+// `consent`, `incident`, `pain_score`). Drives card colour + icon.
+//
+// SystemPending=true marks the card as an AI-suggested but
+// unconfirmed payload — the renderer adds a "PENDING CONFIRMATION"
+// banner so the regulator/auditor can tell at a glance it isn't
+// ledger-bound yet.
 type PDFField struct {
 	Label         string
 	Value         string
 	SystemSummary []PDFSummaryItem
+	SystemKind    string
+	SystemPending bool
 }
 
 // PDFSummaryItem mirrors notes.NoteFieldSystemSummaryItem — kept in
@@ -129,14 +139,23 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin+22)
 
+	// gofpdf's built-in fonts (helvetica, times, courier) encode text as
+	// Windows-1252. UTF-8 strings carrying non-Latin1 characters (em-dash
+	// U+2014, smart quotes, ellipsis) get rendered byte-by-byte, so an
+	// em-dash shows up as `â€"`. Install the cp1252 translator and wrap
+	// every dynamic text write with `tx(...)`. Static labels are ASCII
+	// and don't strictly need the wrapper, but it's idempotent so we
+	// apply it everywhere for safety.
+	tx := pdf.UnicodeTranslatorFromDescriptor("")
+
 	pdf.SetFooterFunc(func() {
-		drawFooter(pdf, theme, input, primaryColor, mutedColor, baseSize, bodyFont, pageW, pageH, margin)
+		drawFooter(pdf, theme, input, primaryColor, mutedColor, baseSize, bodyFont, pageW, pageH, margin, tx)
 	})
 
 	pdf.AddPage()
 
-	headerHeight := drawHeader(pdf, theme, input, primaryColor, headingFont, bodyFont, baseSize, pageW)
-	drawWatermark(pdf, theme, mutedColor, headingFont, pageW, pageH)
+	headerHeight := drawHeader(pdf, theme, input, primaryColor, headingFont, bodyFont, baseSize, pageW, tx)
+	drawWatermark(pdf, theme, mutedColor, headingFont, pageW, pageH, tx)
 
 	pdf.SetY(headerHeight + 4)
 
@@ -144,12 +163,12 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 	pdf.SetFont(headingFont, "B", baseSize+3)
 	pdf.SetTextColor(int(r), int(g), int(b))
 	title := fmt.Sprintf("%s (v%s)", input.FormName, input.FormVersion)
-	pdf.MultiCell(0, baseSize*0.6, title, "", "L", false)
+	pdf.MultiCell(0, baseSize*0.6, tx(title), "", "L", false)
 	pdf.Ln(2)
 
 	if input.SystemHeader != nil && input.SystemHeader.Enabled && len(input.SystemHeader.Fields) > 0 {
 		drawSystemHeader(pdf, input.SystemHeader.Fields, input.Subject, input.VisitDate,
-			primaryColor, mutedColor, headingFont, bodyFont, baseSize, pageW, margin)
+			primaryColor, mutedColor, headingFont, bodyFont, baseSize, pageW, margin, tx)
 		pdf.Ln(2)
 	}
 
@@ -157,23 +176,26 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 	for _, f := range input.Fields {
 		pdf.SetFont(headingFont, "B", baseSize-1)
 		pdf.SetTextColor(int(mr), int(mg), int(mb))
-		pdf.MultiCell(0, baseSize*0.55, strings.ToUpper(f.Label), "", "L", false)
+		pdf.MultiCell(0, baseSize*0.55, tx(strings.ToUpper(f.Label)), "", "L", false)
 
 		pdf.SetFont(bodyFont, "", baseSize)
 		pdf.SetTextColor(int(r), int(g), int(b))
 		if len(f.SystemSummary) > 0 {
-			// Materialised system widget — render as a labelled table so
-			// the captured data (drug name + qty, score, …) shows
-			// instead of the raw id-pointer.
-			drawSystemSummary(pdf, f.SystemSummary,
+			// System widget — render as a styled card with a coloured
+			// header band, the per-kind icon/title, and a pending
+			// confirmation marker when the payload is still unconfirmed
+			// (raw AI JSON, not yet committed to the regulator-binding
+			// ledger). Falls through to a basic key/value table when
+			// SystemKind is unknown.
+			drawSystemCard(pdf, f,
 				int(mr), int(mg), int(mb), int(r), int(g), int(b),
-				headingFont, bodyFont, baseSize, lineHeight)
+				headingFont, bodyFont, baseSize, lineHeight, tx)
 		} else {
 			val := f.Value
 			if strings.TrimSpace(val) == "" {
 				val = "—"
 			}
-			pdf.MultiCell(0, baseSize*lineHeight*0.55, val, "", "L", false)
+			pdf.MultiCell(0, baseSize*lineHeight*0.55, tx(val), "", "L", false)
 		}
 		pdf.Ln(2)
 	}
@@ -187,7 +209,7 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 
 // ── Header / footer / watermark ──────────────────────────────────────────────
 
-func drawHeader(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, headingFont, bodyFont string, baseSize, pageW float64) float64 {
+func drawHeader(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, headingFont, bodyFont string, baseSize, pageW float64, tx func(string) string) float64 {
 	bandColor := primary
 	height := 28.0
 	showName, showContact, showTagline := true, true, false
@@ -250,30 +272,30 @@ func drawHeader(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, headin
 	if showName && clinicName != "" {
 		pdf.SetFont(headingFont, "B", baseSize+5)
 		pdf.SetXY(10, y)
-		pdf.CellFormat(pageW-20, 8, clinicName, "", 0, "L", false, 0, "")
+		pdf.CellFormat(pageW-20, 8, tx(clinicName), "", 0, "L", false, 0, "")
 		y += 9
 	}
 	if extraText != "" {
 		pdf.SetFont(bodyFont, "", baseSize-1)
 		pdf.SetXY(10, y)
-		pdf.CellFormat(pageW-20, 5, extraText, "", 0, "L", false, 0, "")
+		pdf.CellFormat(pageW-20, 5, tx(extraText), "", 0, "L", false, 0, "")
 		y += 5
 	}
 	if showContact && contactLine != "" {
 		pdf.SetFont(bodyFont, "", baseSize-2)
 		pdf.SetXY(10, y)
-		pdf.CellFormat(pageW-20, 5, contactLine, "", 0, "L", false, 0, "")
+		pdf.CellFormat(pageW-20, 5, tx(contactLine), "", 0, "L", false, 0, "")
 		y += 5
 	}
 	if showTagline && tagline != "" {
 		pdf.SetFont(bodyFont, "I", baseSize-2)
 		pdf.SetXY(10, y)
-		pdf.CellFormat(pageW-20, 5, tagline, "", 0, "L", false, 0, "")
+		pdf.CellFormat(pageW-20, 5, tx(tagline), "", 0, "L", false, 0, "")
 	}
 	return height
 }
 
-func drawFooter(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, muted string, baseSize float64, bodyFont string, pageW, pageH, margin float64) {
+func drawFooter(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, muted string, baseSize float64, bodyFont string, pageW, pageH, margin float64, tx func(string) string) {
 	bandColor := primary
 	finePrint := false
 	left, center, right, footerText := "", "", "", ""
@@ -337,19 +359,19 @@ func drawFooter(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, muted 
 
 	if left != "" {
 		pdf.SetXY(margin, pageH-bandHeight+5)
-		pdf.CellFormat(colW, 5, subst(left), "", 0, "L", false, 0, "")
+		pdf.CellFormat(colW, 5, tx(subst(left)), "", 0, "L", false, 0, "")
 	}
 	if center != "" {
 		pdf.SetXY(margin+colW, pageH-bandHeight+5)
-		pdf.CellFormat(colW, 5, subst(center), "", 0, "C", false, 0, "")
+		pdf.CellFormat(colW, 5, tx(subst(center)), "", 0, "C", false, 0, "")
 	}
 	if right != "" {
 		pdf.SetXY(margin+2*colW, pageH-bandHeight+5)
-		pdf.CellFormat(colW, 5, subst(right), "", 0, "R", false, 0, "")
+		pdf.CellFormat(colW, 5, tx(subst(right)), "", 0, "R", false, 0, "")
 	}
 	if footerText != "" {
 		pdf.SetXY(margin, pageH-bandHeight+11)
-		pdf.CellFormat(pageW-margin*2, 5, subst(footerText), "", 0, "C", false, 0, "")
+		pdf.CellFormat(pageW-margin*2, 5, tx(subst(footerText)), "", 0, "C", false, 0, "")
 	}
 
 	if finePrint {
@@ -358,12 +380,12 @@ func drawFooter(pdf *fpdf.Fpdf, theme *DocTheme, input PDFInput, primary, muted 
 		pdf.SetFont(bodyFont, "I", baseSize-3)
 		pdf.SetXY(margin, pageH-3)
 		pdf.CellFormat(pageW-margin*2, 3,
-			fmt.Sprintf("Note %s · generated %s", input.NoteID, input.SubmittedAt.UTC().Format(time.RFC3339)),
+			tx(fmt.Sprintf("Note %s · generated %s", input.NoteID, input.SubmittedAt.UTC().Format(time.RFC3339))),
 			"", 0, "C", false, 0, "")
 	}
 }
 
-func drawWatermark(pdf *fpdf.Fpdf, theme *DocTheme, mutedColor, fontName string, pageW, pageH float64) {
+func drawWatermark(pdf *fpdf.Fpdf, theme *DocTheme, mutedColor, fontName string, pageW, pageH float64, tx func(string) string) {
 	if theme.Watermark == nil {
 		return
 	}
@@ -382,9 +404,103 @@ func drawWatermark(pdf *fpdf.Fpdf, theme *DocTheme, mutedColor, fontName string,
 	pdf.TransformBegin()
 	pdf.TransformRotate(35, pageW/2, pageH/2)
 	pdf.SetXY(0, pageH/2-15)
-	pdf.CellFormat(pageW, 30, *w.Text, "", 0, "C", false, 0, "")
+	pdf.CellFormat(pageW, 30, tx(*w.Text), "", 0, "C", false, 0, "")
 	pdf.TransformEnd()
 	pdf.SetAlpha(1.0, "Normal")
+}
+
+// drawSystemCard wraps a system widget summary in a coloured card with
+// a kind-specific header (drug op = blue, consent = green, incident =
+// red, pain = amber). On unconfirmed AI payloads, the header carries a
+// "PENDING CONFIRMATION" pill so an auditor can tell at a glance the
+// payload isn't ledger-bound. The body uses the existing
+// drawSystemSummary key/value layout.
+func drawSystemCard(
+	pdf *fpdf.Fpdf,
+	field PDFField,
+	mR, mG, mB, tR, tG, tB int,
+	headingFont, bodyFont string,
+	baseSize, lineHeight float64,
+	tx func(string) string,
+) {
+	pageW, _ := pdf.GetPageSize()
+	left, _, right, _ := pdf.GetMargins()
+	contentW := pageW - left - right
+
+	kind := strings.TrimPrefix(field.SystemKind, "system.")
+	if kind == "" {
+		// Unknown / unset kind — fall back to bare summary table.
+		drawSystemSummary(pdf, field.SystemSummary,
+			mR, mG, mB, tR, tG, tB,
+			headingFont, bodyFont, baseSize, lineHeight, tx)
+		return
+	}
+	title, accent := systemCardChrome(kind)
+
+	startY := pdf.GetY()
+	headerH := 7.0
+	pad := 3.0
+
+	// Header band — coloured fill, white text, optional pending pill.
+	ar, ag, ab := hexToRGB(accent)
+	pdf.SetFillColor(int(ar), int(ag), int(ab))
+	pdf.Rect(left, startY, contentW, headerH, "F")
+
+	pdf.SetTextColor(255, 255, 255)
+	pdf.SetFont(headingFont, "B", baseSize-1)
+	pdf.SetXY(left+pad, startY+1.2)
+	pdf.CellFormat(contentW-pad*2, headerH-2, tx(strings.ToUpper(title)),
+		"", 0, "L", false, 0, "")
+
+	if field.SystemPending {
+		pdf.SetFont(bodyFont, "B", baseSize-3)
+		pdf.SetXY(left, startY+1.2)
+		pdf.CellFormat(contentW-pad, headerH-2,
+			tx("PENDING CONFIRMATION"),
+			"", 0, "R", false, 0, "")
+	}
+
+	// Body — thin border continuing the band colour, key/value rows
+	// inside. Save Y, render, then add the border around the spanned
+	// rectangle.
+	bodyY := startY + headerH
+	pdf.SetY(bodyY + pad)
+	pdf.SetX(left + pad)
+	// Reset cursor for the value-table — drawSystemSummary uses
+	// margins, so we wrap it in a temporary wider-margin block by
+	// pushing content from the card's inner-left (left+pad) to
+	// inner-right (right+pad).
+	originalLeft, originalTop, originalRight, originalBottom := pdf.GetMargins()
+	pdf.SetLeftMargin(left + pad)
+	pdf.SetRightMargin(right + pad)
+	drawSystemSummary(pdf, field.SystemSummary,
+		mR, mG, mB, tR, tG, tB,
+		headingFont, bodyFont, baseSize, lineHeight, tx)
+	pdf.SetMargins(originalLeft, originalTop, originalRight)
+	_ = originalBottom
+
+	endY := pdf.GetY() + pad
+	pdf.SetDrawColor(int(ar), int(ag), int(ab))
+	pdf.SetLineWidth(0.3)
+	pdf.Rect(left, startY, contentW, endY-startY, "D")
+	pdf.SetY(endY + 1)
+}
+
+// systemCardChrome returns the human-readable title + accent colour
+// for a known system widget kind. Unknown kinds get a neutral grey.
+func systemCardChrome(kind string) (title, accent string) {
+	switch kind {
+	case "drug_op":
+		return "Drug operation", "#1e6cd1" // blue
+	case "consent":
+		return "Consent", "#0e9f5e" // green
+	case "incident":
+		return "Incident", "#c2410c" // red-orange
+	case "pain_score":
+		return "Pain score", "#b45309" // amber
+	default:
+		return strings.ReplaceAll(kind, "_", " "), "#6b7280"
+	}
 }
 
 // drawSystemSummary renders the labelled key/value rows produced by a
@@ -396,6 +512,7 @@ func drawSystemSummary(
 	mR, mG, mB, tR, tG, tB int,
 	headingFont, bodyFont string,
 	baseSize, lineHeight float64,
+	tx func(string) string,
 ) {
 	pageW, _ := pdf.GetPageSize()
 	left, _, right, _ := pdf.GetMargins()
@@ -408,7 +525,7 @@ func drawSystemSummary(
 		pdf.SetFont(headingFont, "B", baseSize-1)
 		pdf.SetTextColor(mR, mG, mB)
 		pdf.SetXY(left, startY)
-		pdf.MultiCell(labelW, baseSize*lineHeight*0.55, strings.ToUpper(it.Label), "", "L", false)
+		pdf.MultiCell(labelW, baseSize*lineHeight*0.55, tx(strings.ToUpper(it.Label)), "", "L", false)
 		labelEndY := pdf.GetY()
 		// Value cell — top-aligned with label.
 		pdf.SetFont(bodyFont, "", baseSize)
@@ -418,7 +535,7 @@ func drawSystemSummary(
 		if strings.TrimSpace(val) == "" {
 			val = "—"
 		}
-		pdf.MultiCell(valueW, baseSize*lineHeight*0.55, val, "", "L", false)
+		pdf.MultiCell(valueW, baseSize*lineHeight*0.55, tx(val), "", "L", false)
 		valueEndY := pdf.GetY()
 		// Move cursor below the taller of the two cells.
 		if valueEndY > labelEndY {
@@ -431,7 +548,7 @@ func drawSystemSummary(
 
 // ── System header card ──────────────────────────────────────────────────────
 
-func drawSystemHeader(pdf *fpdf.Fpdf, fields []string, subject *PDFSubject, visitDate *time.Time, primary, muted, headingFont, bodyFont string, baseSize, pageW, margin float64) {
+func drawSystemHeader(pdf *fpdf.Fpdf, fields []string, subject *PDFSubject, visitDate *time.Time, primary, muted, headingFont, bodyFont string, baseSize, pageW, margin float64, tx func(string) string) {
 	rows := buildHeaderRows(fields, subject, visitDate)
 	if len(rows) == 0 {
 		return
@@ -465,12 +582,12 @@ func drawSystemHeader(pdf *fpdf.Fpdf, fields []string, subject *PDFSubject, visi
 		pdf.SetFont(headingFont, "B", baseSize-3)
 		pdf.SetTextColor(int(mr), int(mg), int(mb))
 		pdf.SetXY(x, y)
-		pdf.CellFormat(colW, rowH*0.5, strings.ToUpper(row.Label), "", 0, "L", false, 0, "")
+		pdf.CellFormat(colW, rowH*0.5, tx(strings.ToUpper(row.Label)), "", 0, "L", false, 0, "")
 
 		pdf.SetFont(bodyFont, "", baseSize-1)
 		pdf.SetTextColor(0, 0, 0)
 		pdf.SetXY(x, y+rowH*0.5)
-		pdf.CellFormat(colW, rowH*0.5, row.Value, "", 0, "L", false, 0, "")
+		pdf.CellFormat(colW, rowH*0.5, tx(row.Value), "", 0, "L", false, 0, "")
 	}
 	pdf.SetY(startY + cardH + 2)
 }
