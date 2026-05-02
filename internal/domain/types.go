@@ -226,6 +226,11 @@ const (
 	NoteStatusSubmitted NoteStatus = "submitted"
 	// NoteStatusFailed means extraction failed after all retries.
 	NoteStatusFailed NoteStatus = "failed"
+	// NoteStatusOverriding means a previously-submitted note has been
+	// unlocked for editing via the override flow. Field PATCH is allowed
+	// while in this state; on re-submit the status returns to submitted
+	// and override_count increments.
+	NoteStatusOverriding NoteStatus = "overriding"
 )
 
 // TransformationType describes how an AI-extracted field value was derived.
