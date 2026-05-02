@@ -721,6 +721,7 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		var summary []PDFSummaryItem
 		var systemKind string
 		var systemPending bool
+		var systemReview string
 		if strings.HasPrefix(fieldType, "system.") {
 			systemKind = strings.TrimPrefix(fieldType, "system.")
 			entityID, ptrKind := decodeIDPointer(val)
@@ -730,6 +731,7 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 					for i, it := range s.Items {
 						summary[i] = PDFSummaryItem(it)
 					}
+					systemReview = s.ReviewStatus
 				}
 			}
 			if summary == nil && val != "" {
@@ -738,11 +740,12 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 			}
 		}
 		pdfFields = append(pdfFields, PDFField{
-			Label:         label,
-			Value:         val,
-			SystemSummary: summary,
-			SystemKind:    systemKind,
-			SystemPending: systemPending,
+			Label:              label,
+			Value:              val,
+			SystemSummary:      summary,
+			SystemKind:         systemKind,
+			SystemPending:      systemPending,
+			SystemReviewStatus: systemReview,
 		})
 	}
 
