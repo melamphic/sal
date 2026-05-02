@@ -303,6 +303,17 @@ func (f *fakeRepo) UpdatePDFKey(_ context.Context, id, clinicID uuid.UUID, key s
 	return nil
 }
 
+func (f *fakeRepo) ClearPDFKey(_ context.Context, id, clinicID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok || n.ClinicID != clinicID {
+		return domain.ErrNotFound
+	}
+	n.PDFStorageKey = nil
+	return nil
+}
+
 func (f *fakeRepo) GetNoteFieldWithType(_ context.Context, _, _, _ uuid.UUID) (*NoteFieldWithType, error) {
 	// System widget tests don't run through fakeRepo today; live tests
 	// hit the real repository against postgres. Return ErrNotFound so
