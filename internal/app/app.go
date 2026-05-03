@@ -472,6 +472,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&drugsAccessLogAdapter{patientRepo: patientRepo},
 	)
 	drugsHandler := drugs.NewHandler(drugsSvc)
+	// Kits is a separate service inside the same package — independent
+	// of the broader drugs.Service surface so it can evolve on its own.
+	drugKitsSvc := drugs.NewKitsService(drugsRepo)
+	drugKitsHandler := drugs.NewKitsHandler(drugKitsSvc)
 
 	// Wire the drug-op confirm-gate into notes submission. system.drug_op
 	// widgets create rows in pending_confirm; the gate refuses to submit
@@ -712,7 +716,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if policyAIGenHandler != nil {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
-	drugsHandler.Mount(r, api, jwtSecret)
+	drugsHandler.Mount(r, api, jwtSecret, drugKitsHandler)
 	approvalsHandler.Mount(r, api, jwtSecret)
 	incidentsHandler.Mount(r, api, jwtSecret)
 	if incidentAIGenHandler != nil {
