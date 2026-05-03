@@ -710,6 +710,41 @@ func (r *Repository) WriteMaterialisedPointer(ctx context.Context, noteID, field
 	return nil
 }
 
+// SeedNoteFields inserts a NULL-value note_fields row for each
+// (noteID, fieldID) pair, ON CONFLICT DO NOTHING. Called from
+// Service.CreateNote so the FE can PATCH any form field by id without
+// hitting a 404 — the AI extraction worker only INSERTs rows for fields
+// it produced values for, and manual notes never run AI at all, so
+// without this seed the FE's first PATCH on an empty field would fail.
+//
+// Wraps the bulk insert in a transaction so a partial failure rolls back
+// cleanly. Empty fieldIDs is a no-op (manual note for a form with zero
+// fields — uncommon but valid).
+func (r *Repository) SeedNoteFields(ctx context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error {
+	if len(fieldIDs) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("notes.repo.SeedNoteFields: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const q = `
+		INSERT INTO note_fields (id, note_id, field_id, value)
+		VALUES ($1, $2, $3, NULL)
+		ON CONFLICT (note_id, field_id) DO NOTHING`
+	for _, fid := range fieldIDs {
+		if _, err := tx.Exec(ctx, q, domain.NewID(), noteID, fid); err != nil {
+			return fmt.Errorf("notes.repo.SeedNoteFields: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("notes.repo.SeedNoteFields: commit: %w", err)
+	}
+	return nil
+}
+
 // UpdateNoteField records a staff override on a single field.
 // The clinic ownership check and field update are performed atomically in one query.
 func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
