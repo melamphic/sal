@@ -103,11 +103,17 @@ func (r *Repository) Decide(ctx context.Context, p DecideParams) (*Record, error
 }
 
 // ListPending returns the queue rows for a clinic, ordered by deadline
-// ascending so overdue and soon-due rows surface first. Excludes rows
-// the requesting staff submitted (can't approve your own).
+// ascending so overdue and soon-due rows surface first. By default
+// excludes rows the requesting staff submitted (can't approve your
+// own); when OnlyOwnSubmitter=true the filter inverts to ONLY return
+// the caller's own submissions (FE "Submitted by you" tab).
 func (r *Repository) ListPending(ctx context.Context, p ListPendingParams) ([]*Record, error) {
 	args := []any{p.ClinicID, p.ExcludeSubmitter}
-	where := "clinic_id = $1 AND status = 'pending' AND submitted_by <> $2"
+	op := "<>"
+	if p.OnlyOwnSubmitter {
+		op = "="
+	}
+	where := fmt.Sprintf("clinic_id = $1 AND status = 'pending' AND submitted_by %s $2", op)
 	if p.EntityKind != nil {
 		args = append(args, string(*p.EntityKind))
 		where += fmt.Sprintf(" AND entity_kind = $%d", len(args))
