@@ -23,12 +23,12 @@ import (
 // repo.BatchLogOperationsTx — one transaction wrapping all N inserts +
 // shelf-balance updates. All-or-nothing.
 //
-// Pending-witness ('witness_kind=pending') lines are rejected by the
-// batch path because the post-tx async approvals submission is
-// per-row; mixing it into a single tx would either drop the queue
-// insert on a partial failure or block batch commit on the queue
-// service. Clinicians who need pending witness use the per-line
-// /operations endpoint.
+// Pending-witness ('witness_kind=pending') lines ARE supported. The
+// ledger row commits inside the batch tx; the async approvals row is
+// submitted post-commit, per pending line. If a per-line approval
+// submit fails after the batch committed, we log + return the error
+// — the ledger row is already in place (witness_status='pending')
+// just like the single-call /operations endpoint behaves.
 
 // BatchLogInput is what the service receives for a cart checkout.
 type BatchLogInput struct { //nolint:revive
@@ -86,16 +86,6 @@ func (s *Service) BatchLogOperations(ctx context.Context, in BatchLogInput) (*Ba
 		if line.StaffID == uuid.Nil {
 			line.StaffID = in.StaffID
 		}
-		if line.WitnessKind != nil && strings.TrimSpace(*line.WitnessKind) == "pending" {
-			idx := i
-			return &BatchLogResult{
-					FailedIndex: &idx,
-					FailedError: "pending-witness lines must use /operations one-at-a-time",
-				},
-				fmt.Errorf("drugs.service.BatchLogOperations: line %d: pending witness not supported in batch: %w",
-					i, domain.ErrValidation)
-		}
-
 		if err := validateOperation(line); err != nil {
 			idx := i
 			return &BatchLogResult{FailedIndex: &idx, FailedError: err.Error()},
@@ -160,6 +150,15 @@ func (s *Service) BatchLogOperations(ctx context.Context, in BatchLogInput) (*Ba
 					return &BatchLogResult{FailedIndex: &idx, FailedError: "witness lacks perm_witness_controlled_drugs"},
 						fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness lacks perm: %w", i, domain.ErrForbidden)
 				}
+			case "pending":
+				if s.approvals == nil {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "async approvals not configured"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: pending witness requires approvals service: %w",
+							i, domain.ErrValidation)
+				}
+				// Pending mode logs the row now without a witness; the
+				// approvals queue insert fires post-commit, per line.
 			case "external":
 				if line.ExternalWitnessName == nil || strings.TrimSpace(*line.ExternalWitnessName) == "" {
 					idx := i
