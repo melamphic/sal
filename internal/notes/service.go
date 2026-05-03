@@ -310,6 +310,27 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 		return nil, fmt.Errorf("notes.service.CreateNote: %w", err)
 	}
 
+	// Seed an empty note_fields row per form field so the FE can PATCH
+	// any field by id without hitting a 404. Required for manual notes
+	// (AI never runs); harmless for AI notes (the extraction worker's
+	// UpsertNoteFields fills the same rows via INSERT...ON CONFLICT).
+	// Best-effort: a failure here logs but does not block note creation
+	// — the user can still resume by re-trying field PATCH after the
+	// extraction worker writes the rows.
+	if s.fields != nil {
+		formFields, ferr := s.fields.GetFieldsByVersionID(ctx, input.FormVersionID)
+		if ferr != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: get fields: %w", ferr)
+		}
+		fieldIDs := make([]uuid.UUID, len(formFields))
+		for i, f := range formFields {
+			fieldIDs[i] = f.ID
+		}
+		if err := s.repo.SeedNoteFields(ctx, noteID, fieldIDs); err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: seed fields: %w", err)
+		}
+	}
+
 	if !input.SkipExtraction {
 		// Enqueue extraction immediately. Two things keep this from
 		// burning a 60-second River retry on missing transcripts:
@@ -577,6 +598,10 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 		// system.drug_op widget must be explicitly confirmed before
 		// submission. Override does NOT bypass — the gate is for
 		// regulator-binding records (CD register), not policy alignment.
+		// Note: the new submit-time materialise path always creates drug
+		// op rows with status='confirmed' (via the materialiser adapter),
+		// so the only pending_confirm rows seen here come from any
+		// remaining legacy auto-materialise paths or out-of-band creates.
 		if s.drugConfirm != nil {
 			pending, err := s.drugConfirm.HasPendingConfirmForNote(ctx, noteID, clinicID)
 			if err != nil {
@@ -586,28 +611,16 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 				return nil, fmt.Errorf("notes.service.SubmitNote: cannot submit while drug operations are pending confirmation: %w", domain.ErrValidation)
 			}
 		}
-		// Regulator rail #2: every system.* field with an AI-extracted
-		// JSON payload must be materialised into its typed ledger row
-		// before submit. Raw JSON in note_fields.value means the
-		// clinician hasn't tapped Confirm — block submission with a
-		// list of titles so the UI can highlight which cards remain.
-		unmaterialised, err := s.ListUnmaterialisedSystemFields(ctx, noteID, clinicID)
-		if err != nil {
-			return nil, fmt.Errorf("notes.service.SubmitNote: system-field check: %w", err)
-		}
-		if len(unmaterialised) > 0 {
-			titles := make([]string, len(unmaterialised))
-			for i, f := range unmaterialised {
-				titles[i] = f.Title
-			}
-			return nil, fmt.Errorf(
-				"notes.service.SubmitNote: %d system widget%s pending confirmation: %s: %w",
-				len(unmaterialised),
-				pluralS(len(unmaterialised)),
-				strings.Join(titles, ", "),
-				domain.ErrValidation,
-			)
-		}
+	}
+
+	// Regulator rail #2: walk every system.* field, parse its
+	// structured payload, and materialise it into the typed ledger.
+	// Drafts are never written to the regulator-binding ledgers — the
+	// only ledger writes happen here, on submit, so deleting a draft
+	// leaves no orphans. Direct-from-patient creates still hit the
+	// entity services straight (no note involved).
+	if err := s.materialiseSystemFieldsForSubmit(ctx, noteID, clinicID, staffID); err != nil {
+		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
 	}
 
 	// Capture prior status BEFORE SubmitNote — repo update transitions to
