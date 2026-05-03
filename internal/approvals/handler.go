@@ -65,8 +65,9 @@ type approvalListHTTPResponse struct {
 // ─── List ───────────────────────────────────────────────────────────────────
 
 type listInput struct {
-	Kind  string `query:"kind" doc:"Optional filter — drug_op | consent | incident | pain_score. When empty returns every kind."`
-	Limit int    `query:"limit" doc:"Max rows. Default 50, max 200."`
+	Kind      string `query:"kind" doc:"Optional filter — drug_op | consent | incident | pain_score. When empty returns every kind."`
+	Submitter string `query:"submitter" enum:"others,mine" doc:"Whose submissions. Default 'others' = pending rows the caller can approve (excludes their own). 'mine' = pending rows the caller submitted, awaiting another staff to approve."`
+	Limit     int    `query:"limit" doc:"Max rows. Default 50, max 200."`
 }
 
 func (h *Handler) listPending(ctx context.Context, input *listInput) (*approvalListHTTPResponse, error) {
@@ -82,7 +83,8 @@ func (h *Handler) listPending(ctx context.Context, input *listInput) (*approvalL
 		kind = &k
 	}
 
-	out, err := h.svc.ListPending(ctx, clinicID, staffID, kind, input.Limit)
+	onlyOwn := input.Submitter == "mine"
+	out, err := h.svc.ListPending(ctx, clinicID, staffID, kind, input.Limit, onlyOwn)
 	if err != nil {
 		return nil, mapApprovalError(err)
 	}
