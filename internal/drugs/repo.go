@@ -38,6 +38,11 @@ type repo interface {
 	// clinic_drug_shelf.balance atomically, with a FOR UPDATE lock on the
 	// shelf row to detect concurrent balance changes.
 	LogOperation(ctx context.Context, p CreateOperationParams) (*OperationRecord, error)
+	// BatchLogOperationsTx is the cart-checkout atomic path: every line
+	// commits together or none do. Caller (service) is responsible for
+	// computing per-line BalanceBefore/After in submit order so that
+	// multiple lines on the same shelf chain correctly.
+	BatchLogOperationsTx(ctx context.Context, params []CreateOperationParams) ([]*OperationRecord, error)
 	GetOperationByID(ctx context.Context, id, clinicID uuid.UUID) (*OperationRecord, error)
 	ListOperations(ctx context.Context, clinicID uuid.UUID, p ListOperationsParams) ([]*OperationRecord, int, error)
 	// ConfirmOperation flips a pending_confirm row (created via a
