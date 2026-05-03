@@ -292,14 +292,20 @@ func (s *Service) Decide(ctx context.Context, in DecideInput) (*Record, error) {
 }
 
 // ListPending returns the queue rows for the staff member, scoped to
-// clinic and excluding rows they submitted themselves. Optional
-// EntityKind filter narrows the queue (the dashboard chip uses
-// CountPendingForDecider; the dedicated queue page uses this).
-func (s *Service) ListPending(ctx context.Context, clinicID, staffID uuid.UUID, kind *domain.ApprovalEntityKind, limit int) ([]*Record, error) {
+// clinic with two modes:
+//   - onlyOwn=false (default): rows the caller can approve (excludes
+//     their own submissions — the regulator-binding "no self-witness"
+//     rule applies).
+//   - onlyOwn=true: rows the caller submitted that are still awaiting a
+//     colleague's sign-off. The FE renders these read-only.
+//
+// Optional EntityKind filter narrows the queue.
+func (s *Service) ListPending(ctx context.Context, clinicID, staffID uuid.UUID, kind *domain.ApprovalEntityKind, limit int, onlyOwn bool) ([]*Record, error) {
 	out, err := s.repo.ListPending(ctx, ListPendingParams{
 		ClinicID:         clinicID,
 		EntityKind:       kind,
 		ExcludeSubmitter: staffID,
+		OnlyOwnSubmitter: onlyOwn,
 		Limit:            limit,
 	})
 	if err != nil {
