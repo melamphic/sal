@@ -99,9 +99,17 @@ type DecideParams struct {
 
 // ListPendingParams scope the queue lookup. EntityKind is optional; nil
 // returns every kind so the unified queue page can render mixed rows.
+//
+// OnlyOwnSubmitter inverts the submitter filter: when false (default)
+// the query excludes ExcludeSubmitter (the regulator-binding "no
+// self-witness" rule); when true the query INCLUDES only
+// ExcludeSubmitter — used by the FE's "Submitted by you" tab so the
+// caller can see their own pending rows that are awaiting another
+// staff member's sign-off.
 type ListPendingParams struct {
 	ClinicID         uuid.UUID
 	EntityKind       *domain.ApprovalEntityKind
-	ExcludeSubmitter uuid.UUID // can't approve your own
+	ExcludeSubmitter uuid.UUID
+	OnlyOwnSubmitter bool
 	Limit            int
 }
