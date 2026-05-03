@@ -243,6 +243,29 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 	return f.fields[noteID], nil
 }
 
+func (f *fakeRepo) SeedNoteFields(_ context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	existing := make(map[uuid.UUID]bool)
+	for _, nf := range f.fields[noteID] {
+		existing[nf.FieldID] = true
+	}
+	for _, fid := range fieldIDs {
+		if existing[fid] {
+			continue
+		}
+		f.fields[noteID] = append(f.fields[noteID], &NoteFieldRecord{
+			ID:        domain.NewID(),
+			NoteID:    noteID,
+			FieldID:   fid,
+			Value:     nil,
+			CreatedAt: domain.TimeNow(),
+			UpdatedAt: domain.TimeNow(),
+		})
+	}
+	return nil
+}
+
 func (f *fakeRepo) GetNoteFields(_ context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
