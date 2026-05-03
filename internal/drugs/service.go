@@ -129,6 +129,12 @@ type ShelfResponse struct {
 	ID             string  `json:"id"`
 	CatalogID      *string `json:"catalog_id,omitempty"`
 	OverrideDrugID *string `json:"override_drug_id,omitempty"`
+	// DisplayName — human-readable drug name derived from the catalog
+	// entry (system) or override row (clinic). Populated by the
+	// service so the FE doesn't need a separate catalog round-trip
+	// per shelf row. Falls back to nil only when the catalog/override
+	// lookup misses (catalog drift, archived override, etc).
+	DisplayName    *string `json:"display_name,omitempty"`
 	Strength       *string `json:"strength,omitempty"`
 	Form           *string `json:"form,omitempty"`
 	BatchNumber    *string `json:"batch_number,omitempty"`
@@ -611,7 +617,7 @@ func (s *Service) CreateShelfEntry(ctx context.Context, in CreateShelfInput) (*S
 		})
 	}
 
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, in.ClinicID, rec), nil
 }
 
 // GetShelfEntry returns one shelf row. Tenant-scoped.
@@ -620,10 +626,14 @@ func (s *Service) GetShelfEntry(ctx context.Context, id, clinicID uuid.UUID) (*S
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.GetShelfEntry: %w", err)
 	}
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, clinicID, rec), nil
 }
 
-// ListShelfEntries — paginated.
+// ListShelfEntries — paginated. Resolves a human display name per
+// row by joining against the in-memory catalog (system entries) and
+// the override table (clinic-specific). Without this the FE would
+// render the raw catalog id like `vet.NZ.meloxicam.injectable.5mgml`
+// — useful as a stable key, useless as a label.
 func (s *Service) ListShelfEntries(ctx context.Context, clinicID uuid.UUID, in ListShelfInput) (*ShelfListResponse, error) {
 	if in.Limit <= 0 || in.Limit > 200 {
 		in.Limit = 50
@@ -632,9 +642,16 @@ func (s *Service) ListShelfEntries(ctx context.Context, clinicID uuid.UUID, in L
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.ListShelfEntries: %w", err)
 	}
+	// Pre-fetch override drug names in one query so we don't N+1.
+	overrideNames, err := s.collectOverrideNames(ctx, clinicID, recs)
+	if err != nil {
+		// Fall back to nameless responses; FE knows how to render the
+		// catalog id as a last resort.
+		overrideNames = nil
+	}
 	out := make([]*ShelfResponse, len(recs))
 	for i, r := range recs {
-		out[i] = shelfRecordToResponse(r)
+		out[i] = s.shelfWithNameCached(ctx, clinicID, r, overrideNames)
 	}
 	return &ShelfListResponse{Items: out, Total: total, Limit: in.Limit, Offset: in.Offset}, nil
 }
@@ -645,7 +662,81 @@ func (s *Service) UpdateShelfMeta(ctx context.Context, in UpdateShelfMetaInput) 
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.UpdateShelfMeta: %w", err)
 	}
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, in.ClinicID, rec), nil
+}
+
+// shelfWithName resolves the catalog/override display name for a
+// single shelf row. Cheap for catalog (in-memory map); for overrides
+// it costs one DB lookup — fine for single-row paths (Get / Update /
+// Create). For lists, use the cached helper instead.
+func (s *Service) shelfWithName(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord) *ShelfResponse {
+	resp := shelfRecordToResponse(r)
+	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, nil)
+	return resp
+}
+
+func (s *Service) shelfWithNameCached(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord, overrideNames map[uuid.UUID]string) *ShelfResponse {
+	resp := shelfRecordToResponse(r)
+	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, overrideNames)
+	return resp
+}
+
+// lookupShelfName returns the human name for a shelf row by joining
+// the catalog (in-memory) or the override table (cached map). nil
+// when neither resolves — rare, only on catalog drift / archived
+// override.
+func (s *Service) lookupShelfName(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord, overrideNames map[uuid.UUID]string) *string {
+	if r.CatalogID != nil && s.cat != nil {
+		// Catalog Lookup is in-memory; on miss it just returns nil.
+		vertical, country := "", ""
+		if v, c, err := s.clinics.GetVerticalAndCountry(ctx, clinicID); err == nil {
+			vertical, country = v, c
+		}
+		if entry := s.cat.Lookup(vertical, country, *r.CatalogID); entry != nil {
+			n := entry.Name
+			return &n
+		}
+	}
+	if r.OverrideDrugID != nil {
+		if overrideNames != nil {
+			if name, ok := overrideNames[*r.OverrideDrugID]; ok {
+				return &name
+			}
+		}
+		// Single-row path — fall back to one direct lookup.
+		if rec, err := s.repo.GetOverrideDrugByID(ctx, *r.OverrideDrugID, clinicID); err == nil {
+			n := rec.Name
+			return &n
+		}
+	}
+	return nil
+}
+
+// collectOverrideNames bulk-loads the override drug names referenced by
+// any of the shelf rows, returning a map id→name. One query (via
+// repo.ListOverrideDrugs) — small N (clinic overrides are dozens at
+// most), so listing all and indexing in Go is cheaper than a per-row
+// fetch.
+func (s *Service) collectOverrideNames(ctx context.Context, clinicID uuid.UUID, recs []*ShelfRecord) (map[uuid.UUID]string, error) {
+	any := false
+	for _, r := range recs {
+		if r.OverrideDrugID != nil {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil, nil
+	}
+	all, err := s.repo.ListOverrideDrugs(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.collectOverrideNames: %w", err)
+	}
+	out := make(map[uuid.UUID]string, len(all))
+	for _, o := range all {
+		out[o.ID] = o.Name
+	}
+	return out, nil
 }
 
 // ArchiveShelfEntry — soft-delete.
