@@ -404,9 +404,20 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*Pol
 	return resp, nil
 }
 
-// DiscardDraft deletes the current draft of a policy. Returns ErrNotFound if
-// no draft exists. The latest published version (if any) is unaffected and
-// remains the active version.
+// DiscardDraft deletes the current draft of a policy.
+//
+// Two semantics, branched on whether the policy has ever been published:
+//
+//   - **Has a published version** — the draft is dropped, the latest
+//     published version remains the active one. Returns
+//     [domain.ErrNotFound] if there's nothing to drop.
+//   - **Never published** — the entire policy row is cascade-deleted
+//     along with its draft. The "discard draft" affordance doubles as
+//     "delete this policy" while it's still draft-only, since there's
+//     no published artefact left to keep.
+//
+// Retired policies always reject — use the retire workflow's restore
+// path if you need to bring one back.
 func (s *Service) DiscardDraft(ctx context.Context, policyID, clinicID uuid.UUID) error {
 	pol, err := s.repo.GetPolicyByID(ctx, policyID, clinicID)
 	if err != nil {
@@ -415,6 +426,21 @@ func (s *Service) DiscardDraft(ctx context.Context, policyID, clinicID uuid.UUID
 	if pol.ArchivedAt != nil {
 		return fmt.Errorf("policy.service.DiscardDraft: policy is retired: %w", domain.ErrConflict)
 	}
+
+	// Detect "never published" by asking for the latest published row.
+	// Anything other than ErrNotFound means a real publish exists OR the
+	// repo blew up — surface both as errors.
+	if _, err := s.repo.GetLatestPublishedVersion(ctx, policyID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			if err := s.repo.DeletePolicyCascade(ctx, policyID, clinicID); err != nil {
+				return fmt.Errorf("policy.service.DiscardDraft: cascade: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("policy.service.DiscardDraft: check published: %w", err)
+	}
+
+	// Has a published version — drop only the draft.
 	if err := s.repo.DeleteDraftVersion(ctx, policyID); err != nil {
 		return fmt.Errorf("policy.service.DiscardDraft: %w", err)
 	}

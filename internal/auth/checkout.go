@@ -175,5 +175,5 @@ func (s *Service) StartSignupCheckout(_ context.Context, in StartSignupCheckoutI
 }
 
 // signupCheckoutTrialDays is the trial length granted to signup-checkout
-// subscriptions. Pricing model v3 §9 mandates 14 days.
-const signupCheckoutTrialDays = 14
+// subscriptions. Pricing model v3 §9 mandates 21 days.
+const signupCheckoutTrialDays = 21

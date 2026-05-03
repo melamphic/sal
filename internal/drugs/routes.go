@@ -14,7 +14,11 @@ import (
 // ViewAllPatients / GenerateAuditExport) until granular drug-specific
 // permissions are wired into the JWT path. See the drugs README for the
 // permission matrix and the planned migration to per-action perms.
-func (h *Handler) Mount(_ chi.Router, api huma.API, jwtSecret []byte) {
+//
+// Pass kits=nil to skip kits routes (e.g. tests that don't wire the
+// kits service); production wiring in app/app.go always passes a real
+// handler.
+func (h *Handler) Mount(_ chi.Router, api huma.API, jwtSecret []byte, kits *KitsHandler) {
 	auth := mw.AuthenticateHuma(api, jwtSecret)
 	manageShelf := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManagePatients })
 	dispense := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.Dispense })
@@ -246,4 +250,88 @@ func (h *Handler) Mount(_ chi.Router, api huma.API, jwtSecret []byte) {
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, reconcile},
 	}, h.getReconciliation)
+
+	// ── Cart batch checkout ──────────────────────────────────────────────
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "batch-log-drug-operations",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/drugs/operations/batch",
+		Summary:       "Atomically log N drug operations from a cart checkout",
+		Description:   "Wraps every line in one transaction — all succeed or all roll back. Witness rules apply per line (controlled drugs in the cart need a witness; non-controlled don't). Returns the created operations in submit order.",
+		Tags:          []string{"Drugs"},
+		Security:      security,
+		Middlewares:   huma.Middlewares{auth, dispense},
+		DefaultStatus: http.StatusCreated,
+	}, h.batchLogOperations)
+
+	// ── Drug kits (clinic-defined bundles) ──────────────────────────────
+	if kits == nil {
+		return
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID:   "create-drug-kit",
+		Method:        http.MethodPost,
+		Path:          "/api/v1/drugs/kits",
+		Summary:       "Create a drug kit (template of repeat-use drug bundles)",
+		Description:   "Clinic-defined bundles of drugs that get used together (spay pack, dental tray, comfort pack, vaccine panel). 'Use kit' on the FE expands the items into a draft cart for checkout.",
+		Tags:          []string{"Drugs", "Kits"},
+		Security:      security,
+		Middlewares:   huma.Middlewares{auth, manageShelf},
+		DefaultStatus: http.StatusCreated,
+	}, kits.createKit)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-drug-kits",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/drugs/kits",
+		Summary:     "List the clinic's drug kits with items",
+		Tags:        []string{"Drugs", "Kits"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth},
+	}, kits.listKits)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-drug-kit",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/drugs/kits/{kit_id}",
+		Summary:     "Get one kit + items",
+		Tags:        []string{"Drugs", "Kits"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth},
+	}, kits.getKit)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "update-drug-kit",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/drugs/kits/{kit_id}",
+		Summary:     "Update kit metadata (name / description / use_context)",
+		Description: "Items are managed via the dedicated PUT /items endpoint.",
+		Tags:        []string{"Drugs", "Kits"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageShelf},
+	}, kits.updateKit)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "replace-drug-kit-items",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/drugs/kits/{kit_id}/items",
+		Summary:     "Replace the kit's full item list",
+		Description: "Frontend builds the full ordered list and submits it as one payload — simpler than per-item PATCH for a list this small.",
+		Tags:        []string{"Drugs", "Kits"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageShelf},
+	}, kits.replaceItems)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "archive-drug-kit",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/drugs/kits/{kit_id}",
+		Summary:     "Archive (soft-delete) a kit",
+		Description: "Existing dispenses linked to the kit's drugs are unaffected — they live as their own snapshot rows in drug_operations_log.",
+		Tags:        []string{"Drugs", "Kits"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageShelf},
+	}, kits.archiveKit)
 }

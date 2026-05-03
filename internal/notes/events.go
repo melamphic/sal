@@ -16,6 +16,14 @@ const (
 	NoteEventArchived           NoteEventType = "note.archived"
 	NoteEventExtractionComplete NoteEventType = "note.extraction_complete"
 	NoteEventExtractionFailed   NoteEventType = "note.extraction_failed"
+	// NoteEventOverrideUnlocked fires when a privileged staff member
+	// re-opens a submitted note for correction via the override flow.
+	// The Reason field carries the required written justification.
+	NoteEventOverrideUnlocked NoteEventType = "note.override_unlocked"
+	// NoteEventOverrideCommitted fires on re-submit of a note that was
+	// in `overriding` status — distinct from note.submitted so the
+	// timeline can render a "Corrected by X" entry for audit.
+	NoteEventOverrideCommitted NoteEventType = "note.override_committed"
 	// NoteEventPDFReady fires after the post-submit PDF generation worker
 	// uploads the rendered PDF and stores its key on the note row. The UI
 	// uses this to flip the download button from "rendering…" to active

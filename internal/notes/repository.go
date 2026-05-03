@@ -35,12 +35,21 @@ type NoteRecord struct {
 	// OverrideReason/By/At record a submitter's written justification for
 	// submitting despite a high-parity policy violation. The columns are
 	// populated together by a CHECK constraint or all null.
-	OverrideReason     *string
-	OverrideBy         *uuid.UUID
-	OverrideAt         *time.Time
-	PDFStorageKey      *string // S3 key; nil until PDF generated after submit
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	OverrideReason *string
+	OverrideBy     *uuid.UUID
+	OverrideAt     *time.Time
+	// OverrideUnlockedAt/By/Reason record a post-submit re-open. Set when a
+	// privileged staff member re-opens a submitted note for correction;
+	// the columns are not cleared on re-submit so the audit trail
+	// persists. OverrideCount increments each time the note is committed
+	// out of an `overriding` state.
+	OverrideUnlockedAt     *time.Time
+	OverrideUnlockedBy     *uuid.UUID
+	OverrideUnlockedReason *string
+	OverrideCount          int
+	PDFStorageKey          *string // S3 key; nil until PDF generated after submit
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
@@ -157,6 +166,7 @@ const noteCols = `id, clinic_id, recording_id, form_version_id, subject_id, crea
 	status, error_message, reviewed_by, reviewed_at, submitted_at, submitted_by,
 	archived_at, form_version_context, policy_alignment_pct, policy_check_result::text,
 	override_reason, override_by, override_at,
+	override_unlocked_at, override_unlocked_by, override_unlocked_reason, override_count,
 	pdf_storage_key, created_at, updated_at`
 
 // CreateNote inserts a new note with the given status.
@@ -269,6 +279,10 @@ func (r *Repository) UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUI
 // The form_version_context column is computed inline: if the linked form or version
 // is no longer published (decommissioned), the note is labelled "before decommission".
 func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error) {
+	// Accepts draft → submitted (first submit) AND overriding → submitted
+	// (re-submit after override-unlock). For overriding-source, also bump
+	// override_count + clear pdf_storage_key so the PDF re-renders with
+	// the corrected values.
 	q := fmt.Sprintf(`
 		UPDATE notes
 		SET status                = 'submitted',
@@ -279,6 +293,8 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		    override_reason       = $7,
 		    override_by           = CASE WHEN $7::text IS NULL THEN NULL ELSE $5::uuid END,
 		    override_at           = CASE WHEN $7::text IS NULL THEN NULL ELSE $6::timestamptz END,
+		    override_count        = override_count + CASE WHEN status = 'overriding' THEN 1 ELSE 0 END,
+		    pdf_storage_key       = CASE WHEN status = 'overriding' THEN NULL ELSE pdf_storage_key END,
 		    form_version_context  = (
 		        SELECT CASE
 		            WHEN f.archived_at IS NOT NULL THEN 'before decommission'
@@ -289,7 +305,7 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 		        JOIN forms f ON f.id = fv.form_id
 		        WHERE fv.id = notes.form_version_id
 		    )
-		WHERE id = $1 AND clinic_id = $2 AND status = 'draft'
+		WHERE id = $1 AND clinic_id = $2 AND status IN ('draft', 'overriding')
 		RETURNING %s`, noteCols)
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ReviewedBy, p.ReviewedAt, p.SubmittedBy, p.SubmittedAt, p.OverrideReason)
@@ -312,6 +328,52 @@ func (r *Repository) SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteR
 			return nil, domain.ErrConflict
 		}
 		return nil, fmt.Errorf("notes.repo.SubmitNote: %w", err)
+	}
+	return rec, nil
+}
+
+// OverrideUnlockParams holds values for re-opening a submitted note for
+// post-submit correction. Only allowed on submitted notes; the columns
+// stamp who unlocked it, why, and when. The note's status moves to
+// 'overriding' and field PATCH is allowed again until re-submit.
+type OverrideUnlockParams struct {
+	ID         uuid.UUID
+	ClinicID   uuid.UUID
+	UnlockedBy uuid.UUID
+	UnlockedAt time.Time
+	Reason     string
+}
+
+// OverrideUnlock transitions a submitted note to 'overriding'. Returns
+// domain.ErrConflict if the note is in any other status, ErrNotFound if
+// the row doesn't exist for the given clinic.
+func (r *Repository) OverrideUnlock(ctx context.Context, p OverrideUnlockParams) (*NoteRecord, error) {
+	q := fmt.Sprintf(`
+		UPDATE notes
+		SET status                  = 'overriding',
+		    override_unlocked_at    = $3,
+		    override_unlocked_by    = $4,
+		    override_unlocked_reason = $5
+		WHERE id = $1 AND clinic_id = $2 AND status = 'submitted'
+		RETURNING %s`, noteCols)
+	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.UnlockedAt, p.UnlockedBy, p.Reason)
+	rec, err := scanNote(row)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			var status domain.NoteStatus
+			checkErr := r.db.QueryRow(ctx,
+				`SELECT status FROM notes WHERE id = $1 AND clinic_id = $2`,
+				p.ID, p.ClinicID,
+			).Scan(&status)
+			if errors.Is(checkErr, pgx.ErrNoRows) {
+				return nil, domain.ErrNotFound
+			}
+			if checkErr != nil {
+				return nil, fmt.Errorf("notes.repo.OverrideUnlock: status check: %w", checkErr)
+			}
+			return nil, domain.ErrConflict
+		}
+		return nil, fmt.Errorf("notes.repo.OverrideUnlock: %w", err)
 	}
 	return rec, nil
 }
@@ -405,6 +467,18 @@ func (r *Repository) UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUI
 	const q = `UPDATE notes SET pdf_storage_key = $3 WHERE id = $1 AND clinic_id = $2`
 	if _, err := r.db.Exec(ctx, q, noteID, clinicID, key); err != nil {
 		return fmt.Errorf("notes.repo.UpdatePDFKey: %w", err)
+	}
+	return nil
+}
+
+// ClearPDFKey nulls out pdf_storage_key so the next render produces a
+// fresh artifact. Used by the force-rerender path so a backend renderer
+// fix (Unicode handling, system widget cards, theme tweak) reaches an
+// already-rendered submitted note without re-submitting it.
+func (r *Repository) ClearPDFKey(ctx context.Context, noteID, clinicID uuid.UUID) error {
+	const q = `UPDATE notes SET pdf_storage_key = NULL WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID); err != nil {
+		return fmt.Errorf("notes.repo.ClearPDFKey: %w", err)
 	}
 	return nil
 }
@@ -576,7 +650,7 @@ func (r *Repository) GetNoteFieldWithType(ctx context.Context, noteID, fieldID, 
 // by the submit gate to detect unmaterialised system widgets.
 func (r *Repository) ListSystemFieldStates(ctx context.Context, noteID, clinicID uuid.UUID) ([]NoteFieldWithType, error) {
 	const q = `
-		SELECT ff.id, ff.type, ff.title, nf.value, nf.note_id, n.subject_id
+		SELECT ff.id, ff.type, ff.title, ff.required, nf.value, nf.note_id, n.subject_id
 		FROM note_fields nf
 		JOIN form_fields ff ON ff.id = nf.field_id
 		JOIN notes n ON n.id = nf.note_id
@@ -591,7 +665,7 @@ func (r *Repository) ListSystemFieldStates(ctx context.Context, noteID, clinicID
 	for rows.Next() {
 		var f NoteFieldWithType
 		if err := rows.Scan(
-			&f.FieldID, &f.FieldType, &f.Title, &f.Value,
+			&f.FieldID, &f.FieldType, &f.Title, &f.Required, &f.Value,
 			&f.NoteID, &f.SubjectID,
 		); err != nil {
 			return nil, fmt.Errorf("notes.repo.ListSystemFieldStates: scan: %w", err)
@@ -636,6 +710,41 @@ func (r *Repository) WriteMaterialisedPointer(ctx context.Context, noteID, field
 	return nil
 }
 
+// SeedNoteFields inserts a NULL-value note_fields row for each
+// (noteID, fieldID) pair, ON CONFLICT DO NOTHING. Called from
+// Service.CreateNote so the FE can PATCH any form field by id without
+// hitting a 404 — the AI extraction worker only INSERTs rows for fields
+// it produced values for, and manual notes never run AI at all, so
+// without this seed the FE's first PATCH on an empty field would fail.
+//
+// Wraps the bulk insert in a transaction so a partial failure rolls back
+// cleanly. Empty fieldIDs is a no-op (manual note for a form with zero
+// fields — uncommon but valid).
+func (r *Repository) SeedNoteFields(ctx context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error {
+	if len(fieldIDs) == 0 {
+		return nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("notes.repo.SeedNoteFields: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const q = `
+		INSERT INTO note_fields (id, note_id, field_id, value)
+		VALUES ($1, $2, $3, NULL)
+		ON CONFLICT (note_id, field_id) DO NOTHING`
+	for _, fid := range fieldIDs {
+		if _, err := tx.Exec(ctx, q, domain.NewID(), noteID, fid); err != nil {
+			return fmt.Errorf("notes.repo.SeedNoteFields: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("notes.repo.SeedNoteFields: commit: %w", err)
+	}
+	return nil
+}
+
 // UpdateNoteField records a staff override on a single field.
 // The clinic ownership check and field update are performed atomically in one query.
 func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error) {
@@ -672,6 +781,7 @@ func scanNote(row scannable) (*NoteRecord, error) {
 		&n.SubmittedAt, &n.SubmittedBy,
 		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct, &n.PolicyCheckResult,
 		&n.OverrideReason, &n.OverrideBy, &n.OverrideAt,
+		&n.OverrideUnlockedAt, &n.OverrideUnlockedBy, &n.OverrideUnlockedReason, &n.OverrideCount,
 		&n.PDFStorageKey, &n.CreatedAt, &n.UpdatedAt,
 	)
 	if err != nil {

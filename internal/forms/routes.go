@@ -103,7 +103,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/forms/{form_id}/draft",
 		Summary:     "Discard form draft",
-		Description: "Deletes the current draft version of a form. The latest published version (if any) remains active. Requires manage_forms permission.",
+		Description: "Deletes the current draft version of a form. If the form has a published version, only the draft is removed and the published version stays active. If the form has never been published, the entire form row is cascade-deleted (draft, fields, form_policies links, and any marketplace-acquisition reference is nulled out) — the discard-draft action doubles as 'delete this draft-only form'. Requires manage_forms permission.",
 		Tags:        []string{"Forms"},
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, manageForms},

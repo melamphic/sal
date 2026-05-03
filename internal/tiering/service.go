@@ -53,6 +53,13 @@ type PriceLookup interface {
 	StripePriceIDForPlanCode(planCode domain.PlanCode) (string, bool)
 }
 
+// enterpriseHeadcountThreshold mirrors pricing-model-v3 §4: 8+ standard
+// clinicians falls into the Enterprise band, which is sold via Contact
+// Sales rather than auto-derived. We log past this floor so CS picks
+// up the upgrade conversation; we don't transition the plan
+// automatically because Enterprise is custom-priced.
+const enterpriseHeadcountThreshold = 8
+
 // Service is the public API of the tiering module — implements
 // staff.TierReconciler. Construct via NewService.
 type Service struct {
@@ -115,6 +122,25 @@ func (s *Service) Reconcile(ctx context.Context, clinicID uuid.UUID) error {
 		// just deactivated their last one; either way, sales handles
 		// the conversation manually rather than auto-downgrading.
 		return nil
+	}
+
+	// Enterprise-eligible signal — pricing-model-v3 §1 + §14: 8+
+	// standard clinicians falls into Contact Sales, but
+	// DeriveTierFromHeadcount silently returns Pro for any count of 4
+	// or more. Without this hook the clinic could ride Pro forever
+	// without a CS upgrade conversation. We emit a structured WARN log
+	// rather than transition the plan automatically — Enterprise
+	// pricing is custom (volume + SSO + dedicated onboarding) and
+	// must come from a human-led conversation. CS dashboards filter
+	// on this event name to surface the queue.
+	if count >= enterpriseHeadcountThreshold {
+		s.log.WarnContext(ctx, "tiering.enterprise_eligible",
+			slog.String("clinic_id", clinicID.String()),
+			slog.Int("standard_headcount", count),
+			slog.String("current_plan_code", string(*state.PlanCode)),
+			slog.String("current_tier", string(plan.Tier)),
+			slog.String("product", string(plan.Product)),
+		)
 	}
 
 	if expectedTier == plan.Tier {

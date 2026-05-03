@@ -171,7 +171,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*ClinicRespon
 			Phone:       encPhone,
 			Address:     encAddress,
 			Vertical:    vertical,
-			TrialEndsAt: domain.TimeNow().Add(14 * 24 * time.Hour),
+			TrialEndsAt: domain.TimeNow().Add(21 * 24 * time.Hour),
 			DataRegion:  dataRegion,
 		}
 		row, err = s.repo.Create(ctx, p)
@@ -245,7 +245,7 @@ func (s *Service) HandoffProvision(ctx context.Context, in HandoffProvisionInput
 			Email:            encEmail,
 			EmailHash:        emailHash,
 			Vertical:         vertical,
-			TrialEndsAt:      domain.TimeNow().Add(14 * 24 * time.Hour),
+			TrialEndsAt:      domain.TimeNow().Add(21 * 24 * time.Hour),
 			DataRegion:       "ap-southeast-2",
 			PlanCode:         in.PlanCode,
 			StripeCustomerID: in.StripeCustomerID,

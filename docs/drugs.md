@@ -5,6 +5,13 @@ drugs (per vertical × country), a per-tenant **shelf** that holds physical
 inventory, an append-only **operations ledger**, and **reconciliation** events
 that close out a counting period with two-staff signoff.
 
+> **Compliance v2 in flight.** This doc describes the v1 module shipped to
+> the NZ vet pilot. The full multi-vertical × multi-country compliance
+> redesign — counterparty fields, DEA registrations, retention policy,
+> tamper-evident chain, MAR sub-module, vet procedure grouping, dental gas
+> tracking, regulator export — lives in [drug-register-compliance-v2.md](drug-register-compliance-v2.md).
+> v2 lands behind the `drug_register.compliance_v2` feature flag.
+
 The module is designed around a "game inventory" mental model:
 
 ```

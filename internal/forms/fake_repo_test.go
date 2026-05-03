@@ -113,6 +113,22 @@ func (f *fakeRepo) DeleteDraftVersion(_ context.Context, formID uuid.UUID) error
 	return domain.ErrNotFound
 }
 
+func (f *fakeRepo) DeleteFormCascade(_ context.Context, formID, clinicID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form, ok := f.forms[formID]
+	if !ok || form.ClinicID != clinicID {
+		return domain.ErrNotFound
+	}
+	for id, v := range f.versions {
+		if v.FormID == formID {
+			delete(f.versions, id)
+		}
+	}
+	delete(f.forms, formID)
+	return nil
+}
+
 func (f *fakeRepo) CreateForm(_ context.Context, p CreateFormParams) (*FormRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

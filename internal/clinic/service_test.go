@@ -85,8 +85,8 @@ func TestService_Register_Success(t *testing.T) {
 	assert.NotEmpty(t, dto.Slug)
 	assert.NotEmpty(t, dto.ID)
 
-	// Trial ends 14 days from now.
-	expectedEnd := testutil.FixedTime.Add(14 * 24 * time.Hour)
+	// Trial ends 21 days from now.
+	expectedEnd := testutil.FixedTime.Add(21 * 24 * time.Hour)
 	assert.Equal(t, expectedEnd, dto.TrialEndsAt)
 }
 

@@ -307,19 +307,40 @@ func (h *Handler) archiveShelf(ctx context.Context, input *idPathInput) (*emptyH
 
 type logOperationBodyInput struct {
 	Body struct {
-		ShelfID          string   `json:"shelf_id"           minLength:"36"`
-		SubjectID        *string  `json:"subject_id,omitempty"`
-		NoteID           *string  `json:"note_id,omitempty"`
-		Operation        string   `json:"operation"          enum:"administer,dispense,discard,receive,transfer,adjust"`
-		Quantity         float64  `json:"quantity"`
-		Unit             string   `json:"unit"               minLength:"1" maxLength:"20"`
-		Dose             *string  `json:"dose,omitempty"`
-		Route            *string  `json:"route,omitempty"`
-		ReasonIndication *string  `json:"reason_indication,omitempty"`
-		AdministeredBy   *string  `json:"administered_by,omitempty"`
-		WitnessedBy      *string  `json:"witnessed_by,omitempty"`
-		PrescribedBy     *string  `json:"prescribed_by,omitempty"`
-		AddendsTo        *string  `json:"addends_to,omitempty"`
+		ShelfID          string  `json:"shelf_id"           minLength:"36"`
+		SubjectID        *string `json:"subject_id,omitempty"`
+		NoteID           *string `json:"note_id,omitempty"`
+		Operation        string  `json:"operation"          enum:"administer,dispense,discard,receive,transfer,adjust"`
+		Quantity         float64 `json:"quantity"`
+		Unit             string  `json:"unit"               minLength:"1" maxLength:"20"`
+		Dose             *string `json:"dose,omitempty"`
+		Route            *string `json:"route,omitempty"`
+		ReasonIndication *string `json:"reason_indication,omitempty"`
+		AdministeredBy   *string `json:"administered_by,omitempty"`
+		WitnessedBy      *string `json:"witnessed_by,omitempty"`
+		PrescribedBy     *string `json:"prescribed_by,omitempty"`
+		AddendsTo        *string `json:"addends_to,omitempty"`
+
+		// WitnessKind selects how this op is witnessed. Default
+		// 'staff' (legacy). Possible values:
+		//  staff    — sync internal witness (witnessed_by set)
+		//  pending  — async; queue another qualified colleague to
+		//             approve from the witness queue. Required when
+		//             no eligible staff is available right now.
+		//  external — sync paper-trail witness (non-Salvia user);
+		//             external_witness_name + role + attestation set.
+		//  self     — emergency / solo; attestation only. Forbidden
+		//             for 'discard' op (UK S2 / AU S8 / NZ MoH
+		//             require concurrent in-person witness for
+		//             destruction). Surfaces FLAGGED on regulator
+		//             export.
+		WitnessKind         *string `json:"witness_kind,omitempty"          enum:"staff,pending,external,self"`
+		ExternalWitnessName *string `json:"external_witness_name,omitempty" maxLength:"200"`
+		ExternalWitnessRole *string `json:"external_witness_role,omitempty" maxLength:"80"`
+		WitnessAttestation  *string `json:"witness_attestation,omitempty"   maxLength:"2000"`
+		// WitnessNote — optional context for the async approver
+		// (only honoured when witness_kind=pending).
+		WitnessNote *string `json:"witness_note,omitempty" maxLength:"500"`
 	}
 }
 
@@ -395,6 +416,12 @@ func (h *Handler) logOperation(ctx context.Context, input *logOperationBodyInput
 		}
 		in.AddendsTo = &id
 	}
+
+	in.WitnessKind = input.Body.WitnessKind
+	in.ExternalWitnessName = input.Body.ExternalWitnessName
+	in.ExternalWitnessRole = input.Body.ExternalWitnessRole
+	in.WitnessAttestation = input.Body.WitnessAttestation
+	in.WitnessNote = input.Body.WitnessNote
 
 	resp, err := h.svc.LogOperation(ctx, in)
 	if err != nil {

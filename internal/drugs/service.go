@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/drugs/catalog"
+	"github.com/melamphic/sal/internal/drugs/validators"
 )
 
 // ── Service dependencies (small interfaces, satisfied by app.go adapters) ──
@@ -17,8 +19,15 @@ import (
 // ClinicLookup resolves vertical + country for a clinic — needed to scope
 // the system catalog and to drive witnessing rules. Implemented by app.go
 // via a thin wrapper over clinic.Service.
+//
+// GetClinicState is optional: AU clinics need it for state-aware
+// validation (NSW/VIC/QLD/WA/...); other countries return empty
+// string. Adapters that don't carry state may always return "" — the
+// AU validator falls back to WA-strict, which is the safe default for
+// shadow mode.
 type ClinicLookup interface {
 	GetVerticalAndCountry(ctx context.Context, clinicID uuid.UUID) (vertical, country string, err error)
+	GetClinicState(ctx context.Context, clinicID uuid.UUID) (state string, err error)
 }
 
 // StaffPermLookup checks runtime perm flags for a staff member. The drugs
@@ -120,6 +129,12 @@ type ShelfResponse struct {
 	ID             string  `json:"id"`
 	CatalogID      *string `json:"catalog_id,omitempty"`
 	OverrideDrugID *string `json:"override_drug_id,omitempty"`
+	// DisplayName — human-readable drug name derived from the catalog
+	// entry (system) or override row (clinic). Populated by the
+	// service so the FE doesn't need a separate catalog round-trip
+	// per shelf row. Falls back to nil only when the catalog/override
+	// lookup misses (catalog drift, archived override, etc).
+	DisplayName    *string `json:"display_name,omitempty"`
 	Strength       *string `json:"strength,omitempty"`
 	Form           *string `json:"form,omitempty"`
 	BatchNumber    *string `json:"batch_number,omitempty"`
@@ -205,6 +220,36 @@ type LogOperationInput struct {
 	// review). The submit gate refuses to ship a note with any
 	// pending_confirm rows linked to it.
 	Status string
+
+	// WitnessKind selects how the witness was/will-be captured. nil or
+	// empty falls back to 'staff' (legacy default). Values:
+	//   - "staff"    — concurrent internal witness (WitnessedBy set)
+	//   - "pending"  — async sign-off; queue another qualified colleague
+	//                  via the approvals service. WitnessedBy nil at
+	//                  log time; populated on Approve.
+	//   - "external" — concurrent paper-trail witness (non-Salvia user).
+	//                  ExternalWitnessName/Role + WitnessAttestation set.
+	//   - "self"     — emergency / solo. Attestation required; flagged
+	//                  on regulator report. FORBIDDEN for 'discard' op
+	//                  per UK S2 / AU S8 destruction rules.
+	WitnessKind *string
+
+	// Sync external-witness fields (non-Salvia user present at op).
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	// Free-text justification. Required (≥10 chars) for external mode,
+	// (≥30 chars) for self mode.
+	WitnessAttestation *string
+	// Optional note left for the async approver — surfaces in their
+	// queue card so they have context without opening the note.
+	WitnessNote *string
+
+	// Compliance — optional jurisdiction-specific fields populated by
+	// callers that have them (UK Sch 6, US 1304, NZ Reg 40, AU state).
+	// Phase 2a (shadow mode): validators inspect these and log
+	// findings; the operation always proceeds. Phase 2c flips to
+	// enforce mode for clinics on compliance_v2.
+	Compliance validators.ComplianceInput
 }
 
 // OperationResponse — one ledger row on the wire.
@@ -232,10 +277,21 @@ type OperationResponse struct {
 	// Status — 'pending_confirm' until a clinician confirms (only set
 	// for system.drug_op widget creates). Always 'confirmed' for ops
 	// created via the manual modal.
-	Status            string  `json:"status"`
-	ConfirmedBy       *string `json:"confirmed_by,omitempty"`
-	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
-	CreatedAt         string  `json:"created_at"`
+	Status      string  `json:"status"`
+	ConfirmedBy *string `json:"confirmed_by,omitempty"`
+	ConfirmedAt *string `json:"confirmed_at,omitempty"`
+
+	// Witness shape — added with the async-approval flow.
+	// WitnessKind is nil while a pending row awaits sign-off.
+	// WitnessStatus is the snapshot of the latest approval row
+	// (not_required | pending | approved | challenged).
+	WitnessKind         *string `json:"witness_kind,omitempty"`
+	ExternalWitnessName *string `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole *string `json:"external_witness_role,omitempty"`
+	WitnessAttestation  *string `json:"witness_attestation,omitempty"`
+	WitnessStatus       *string `json:"witness_status,omitempty"`
+
+	CreatedAt string `json:"created_at"`
 }
 
 // OperationListResponse — paginated ledger.
@@ -332,6 +388,31 @@ type ListReconciliationsInput struct {
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
+// ApprovalSubmitter is the small surface drugs.Service consumes from
+// the approvals package. Wired by app.go so drug ops with
+// witness_kind=pending get an async second-pair-of-eyes row created
+// alongside the ledger entry.
+//
+// Pre-set during Build(); a nil ApprovalSubmitter disables the async
+// path entirely (LogOperation rejects pending mode with ErrValidation).
+type ApprovalSubmitter interface {
+	Submit(ctx context.Context, in ApprovalSubmitInput) error
+}
+
+// ApprovalSubmitInput captures the bits the approvals service needs.
+// Mirrors approvals.SubmitInput but lives in the drugs package so
+// drugs doesn't import approvals (cross-domain hygiene).
+type ApprovalSubmitInput struct {
+	ClinicID    uuid.UUID
+	EntityID    uuid.UUID
+	EntityOp    *string
+	SubmittedBy uuid.UUID
+	StaffRole   string
+	Note        *string
+	SubjectID   *uuid.UUID
+	NoteID      *uuid.UUID
+}
+
 // Service is the drugs business-logic layer. Concurrency-safe; can be
 // shared across handlers without locking.
 type Service struct {
@@ -340,6 +421,7 @@ type Service struct {
 	clinics      ClinicLookup
 	staffPerms   StaffPermLookup
 	accessLogger SubjectAccessLogger
+	approvals    ApprovalSubmitter
 }
 
 // NewService constructs the drugs Service.
@@ -362,6 +444,22 @@ func NewService(
 		staffPerms:   staffPerms,
 		accessLogger: accessLogger,
 	}
+}
+
+// SetApprovals wires the second-pair-of-eyes submitter. nil disables
+// the async path so LogOperation will reject witness_kind=pending.
+func (s *Service) SetApprovals(a ApprovalSubmitter) {
+	s.approvals = a
+}
+
+// UpdateWitnessStatus flips the witness_status snapshot column on a
+// drug_operations_log row. Invoked by the approvals service callback
+// when a pending row transitions to approved / challenged. Idempotent.
+func (s *Service) UpdateWitnessStatus(ctx context.Context, opID, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	if err := s.repo.UpdateWitnessStatus(ctx, opID, clinicID, status); err != nil {
+		return fmt.Errorf("drugs.service.UpdateWitnessStatus: %w", err)
+	}
+	return nil
 }
 
 // ── Catalog read methods ─────────────────────────────────────────────────────
@@ -519,7 +617,7 @@ func (s *Service) CreateShelfEntry(ctx context.Context, in CreateShelfInput) (*S
 		})
 	}
 
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, in.ClinicID, rec), nil
 }
 
 // GetShelfEntry returns one shelf row. Tenant-scoped.
@@ -528,10 +626,14 @@ func (s *Service) GetShelfEntry(ctx context.Context, id, clinicID uuid.UUID) (*S
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.GetShelfEntry: %w", err)
 	}
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, clinicID, rec), nil
 }
 
-// ListShelfEntries — paginated.
+// ListShelfEntries — paginated. Resolves a human display name per
+// row by joining against the in-memory catalog (system entries) and
+// the override table (clinic-specific). Without this the FE would
+// render the raw catalog id like `vet.NZ.meloxicam.injectable.5mgml`
+// — useful as a stable key, useless as a label.
 func (s *Service) ListShelfEntries(ctx context.Context, clinicID uuid.UUID, in ListShelfInput) (*ShelfListResponse, error) {
 	if in.Limit <= 0 || in.Limit > 200 {
 		in.Limit = 50
@@ -540,9 +642,16 @@ func (s *Service) ListShelfEntries(ctx context.Context, clinicID uuid.UUID, in L
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.ListShelfEntries: %w", err)
 	}
+	// Pre-fetch override drug names in one query so we don't N+1.
+	overrideNames, err := s.collectOverrideNames(ctx, clinicID, recs)
+	if err != nil {
+		// Fall back to nameless responses; FE knows how to render the
+		// catalog id as a last resort.
+		overrideNames = nil
+	}
 	out := make([]*ShelfResponse, len(recs))
 	for i, r := range recs {
-		out[i] = shelfRecordToResponse(r)
+		out[i] = s.shelfWithNameCached(ctx, clinicID, r, overrideNames)
 	}
 	return &ShelfListResponse{Items: out, Total: total, Limit: in.Limit, Offset: in.Offset}, nil
 }
@@ -553,7 +662,81 @@ func (s *Service) UpdateShelfMeta(ctx context.Context, in UpdateShelfMetaInput) 
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.UpdateShelfMeta: %w", err)
 	}
-	return shelfRecordToResponse(rec), nil
+	return s.shelfWithName(ctx, in.ClinicID, rec), nil
+}
+
+// shelfWithName resolves the catalog/override display name for a
+// single shelf row. Cheap for catalog (in-memory map); for overrides
+// it costs one DB lookup — fine for single-row paths (Get / Update /
+// Create). For lists, use the cached helper instead.
+func (s *Service) shelfWithName(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord) *ShelfResponse {
+	resp := shelfRecordToResponse(r)
+	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, nil)
+	return resp
+}
+
+func (s *Service) shelfWithNameCached(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord, overrideNames map[uuid.UUID]string) *ShelfResponse {
+	resp := shelfRecordToResponse(r)
+	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, overrideNames)
+	return resp
+}
+
+// lookupShelfName returns the human name for a shelf row by joining
+// the catalog (in-memory) or the override table (cached map). nil
+// when neither resolves — rare, only on catalog drift / archived
+// override.
+func (s *Service) lookupShelfName(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord, overrideNames map[uuid.UUID]string) *string {
+	if r.CatalogID != nil && s.cat != nil {
+		// Catalog Lookup is in-memory; on miss it just returns nil.
+		vertical, country := "", ""
+		if v, c, err := s.clinics.GetVerticalAndCountry(ctx, clinicID); err == nil {
+			vertical, country = v, c
+		}
+		if entry := s.cat.Lookup(vertical, country, *r.CatalogID); entry != nil {
+			n := entry.Name
+			return &n
+		}
+	}
+	if r.OverrideDrugID != nil {
+		if overrideNames != nil {
+			if name, ok := overrideNames[*r.OverrideDrugID]; ok {
+				return &name
+			}
+		}
+		// Single-row path — fall back to one direct lookup.
+		if rec, err := s.repo.GetOverrideDrugByID(ctx, *r.OverrideDrugID, clinicID); err == nil {
+			n := rec.Name
+			return &n
+		}
+	}
+	return nil
+}
+
+// collectOverrideNames bulk-loads the override drug names referenced by
+// any of the shelf rows, returning a map id→name. One query (via
+// repo.ListOverrideDrugs) — small N (clinic overrides are dozens at
+// most), so listing all and indexing in Go is cheaper than a per-row
+// fetch.
+func (s *Service) collectOverrideNames(ctx context.Context, clinicID uuid.UUID, recs []*ShelfRecord) (map[uuid.UUID]string, error) {
+	any := false
+	for _, r := range recs {
+		if r.OverrideDrugID != nil {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return nil, nil
+	}
+	all, err := s.repo.ListOverrideDrugs(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.collectOverrideNames: %w", err)
+	}
+	out := make(map[uuid.UUID]string, len(all))
+	for _, o := range all {
+		out[o.ID] = o.Name
+	}
+	return out, nil
 }
 
 // ArchiveShelfEntry — soft-delete.
@@ -603,22 +786,67 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
 	}
 
-	// Witness validation — controlled drugs MUST have a witness who is not
-	// the administering staff. If the underlying drug is non-controlled,
-	// witnessed_by may be nil.
+	// Compliance v2 shadow check — runs the per-country validator and
+	// logs any findings. Operation is NOT blocked in shadow mode; we
+	// gather telemetry to validate rule coverage against real traffic
+	// before flipping to enforce. See docs/drug-register-compliance-v2.md
+	// §3.8 + §5.1.
+	s.runComplianceCheckShadow(ctx, in, shelf, requiresWitness)
+
+	// Witness validation — four modes for controlled drugs:
+	//   * staff (default)   — synchronous internal witness
+	//   * pending           — async; queue another colleague via the
+	//                         approvals service after this op lands
+	//   * external          — synchronous paper-trail witness (non-Salvia)
+	//   * self              — emergency / solo; attestation only, FLAGGED
+	//                         on regulator export. Forbidden for 'discard'
+	//                         (UK S2 / AU S8 / NZ MoH destruction rules).
+	// Non-controlled drugs leave the witness fields empty regardless.
+	witnessKind := ""
+	if in.WitnessKind != nil {
+		witnessKind = strings.TrimSpace(*in.WitnessKind)
+	}
 	if requiresWitness {
-		if in.WitnessedBy == nil {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness required for controlled drug: %w", domain.ErrValidation)
-		}
-		if *in.WitnessedBy == in.AdministeredBy {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness must differ from administering staff: %w", domain.ErrValidation)
-		}
-		ok, err := s.staffPerms.HasPermission(ctx, *in.WitnessedBy, in.ClinicID, "perm_witness_controlled_drugs")
-		if err != nil {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness perm lookup: %w", err)
-		}
-		if !ok {
-			return nil, fmt.Errorf("drugs.service.LogOperation: witness lacks perm_witness_controlled_drugs: %w", domain.ErrForbidden)
+		switch witnessKind {
+		case "", "staff":
+			witnessKind = "staff"
+			if in.WitnessedBy == nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness required for controlled drug: %w", domain.ErrValidation)
+			}
+			if *in.WitnessedBy == in.AdministeredBy {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness must differ from administering staff: %w", domain.ErrValidation)
+			}
+			ok, err := s.staffPerms.HasPermission(ctx, *in.WitnessedBy, in.ClinicID, "perm_witness_controlled_drugs")
+			if err != nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness perm lookup: %w", err)
+			}
+			if !ok {
+				return nil, fmt.Errorf("drugs.service.LogOperation: witness lacks perm_witness_controlled_drugs: %w", domain.ErrForbidden)
+			}
+		case "pending":
+			if s.approvals == nil {
+				return nil, fmt.Errorf("drugs.service.LogOperation: async approvals not configured: %w", domain.ErrValidation)
+			}
+			// Pending mode logs the op now without a witness; the
+			// approvals service creates a queue row after the ledger
+			// insert succeeds (post-tx so a transient approvals
+			// failure doesn't roll back the regulator-binding entry).
+		case "external":
+			if in.ExternalWitnessName == nil || strings.TrimSpace(*in.ExternalWitnessName) == "" {
+				return nil, fmt.Errorf("drugs.service.LogOperation: external witness name required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 10 {
+				return nil, fmt.Errorf("drugs.service.LogOperation: external witness attestation too short: %w", domain.ErrValidation)
+			}
+		case "self":
+			if in.Operation == "discard" {
+				return nil, fmt.Errorf("drugs.service.LogOperation: self-witness not permitted for destruction; in-person witness required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 30 {
+				return nil, fmt.Errorf("drugs.service.LogOperation: self-witness attestation too short (min 30 chars): %w", domain.ErrValidation)
+			}
+		default:
+			return nil, fmt.Errorf("drugs.service.LogOperation: unknown witness_kind %q: %w", witnessKind, domain.ErrValidation)
 		}
 	}
 
@@ -626,6 +854,59 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 	balanceAfter, err := computeBalanceAfter(in.Operation, balanceBefore, in.Quantity)
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
+	}
+
+	// Compliance v2 chain: page-identity + chain key for the new row.
+	// Legacy callers (catalog drift, override drugs without metadata)
+	// fall back to empty values; repo skips chain compute then.
+	cc, err := s.loadCatalogContext(ctx, in.ClinicID, shelf)
+	if err != nil {
+		// Don't block the op on a catalog lookup failure — log and
+		// proceed with empty page identity (repo will skip the chain).
+		slog.Warn("drugs.service.LogOperation: catalog context load failed; chain disabled for this row",
+			"clinic_id", in.ClinicID, "shelf_id", in.ShelfID, "error", err.Error())
+		cc = &catalogContext{}
+	}
+
+	var chainK []byte
+	if cc.DrugName != "" && cc.Strength != "" && cc.Form != "" {
+		chainK = chainKey(in.ClinicID, cc.DrugName, cc.Strength, cc.Form)
+	}
+
+	// Compliance v2: derive retention floor from per-clinic policy.
+	// Failure to fetch the policy is non-fatal — we'd rather log + leave
+	// retention_until NULL (effectively keep-forever) than block the op.
+	var retentionUntil *time.Time
+	if pol, err := s.repo.GetRetentionPolicy(ctx, in.ClinicID); err == nil {
+		ru := domainTimeNow().AddDate(pol.LedgerYears, 0, 0)
+		retentionUntil = &ru
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		slog.Warn("drugs.service.LogOperation: retention policy lookup failed; row keeps forever",
+			"clinic_id", in.ClinicID, "error", err.Error())
+	}
+
+	// Map witness mode → snapshot status + persisted column shape.
+	//   not_required: non-controlled drug — witness fields stay nil
+	//   staff/external/self: synchronous; status='approved' on insert
+	//   pending: async; status='pending', approval row created post-tx
+	var witnessKindParam *string
+	var witnessStatusParam *string
+	{
+		switch {
+		case !requiresWitness:
+			s := string(domain.EntityReviewNotRequired)
+			witnessStatusParam = &s
+		case witnessKind == "pending":
+			s := string(domain.EntityReviewPending)
+			witnessStatusParam = &s
+			// witnessKindParam stays nil — populated when the
+			// approver decides.
+		default:
+			k := witnessKind
+			witnessKindParam = &k
+			s := string(domain.EntityReviewApproved)
+			witnessStatusParam = &s
+		}
 	}
 
 	rec, err := s.repo.LogOperation(ctx, CreateOperationParams{
@@ -648,6 +929,20 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		BalanceAfter:      balanceAfter,
 		AddendsTo:         in.AddendsTo,
 		Status:            in.Status,
+
+		// Compliance v2: page-identity + chain key + retention floor.
+		DrugName:       cc.DrugName,
+		DrugStrength:   cc.Strength,
+		DrugForm:       cc.Form,
+		ChainKey:       chainK,
+		RetentionUntil: retentionUntil,
+
+		// Witness shape (00074 + 00075).
+		WitnessKind:         witnessKindParam,
+		ExternalWitnessName: trimNonEmpty(in.ExternalWitnessName),
+		ExternalWitnessRole: trimNonEmpty(in.ExternalWitnessRole),
+		WitnessAttestation:  trimNonEmpty(in.WitnessAttestation),
+		WitnessStatus:       witnessStatusParam,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drugs.service.LogOperation: %w", err)
@@ -658,7 +953,174 @@ func (s *Service) LogOperation(ctx context.Context, in LogOperationInput) (*Oper
 		_ = s.accessLogger.LogAccess(ctx, in.ClinicID, *in.SubjectID, in.StaffID, "drug_op", "drugs.service.LogOperation")
 	}
 
+	// Async-witness path: hand the row off to the approvals service so
+	// a qualified colleague can sign it from the queue. Failures here
+	// log + propagate so the caller knows the queue insert didn't take
+	// (the ledger row has already landed; the witness_status column
+	// is 'pending' so the row is visible as such on regulator
+	// reports until the queue eventually catches up).
+	if witnessKind == "pending" && s.approvals != nil {
+		operation := in.Operation
+		opPtr := &operation
+		note := trimNonEmpty(in.WitnessNote)
+		if err := s.approvals.Submit(ctx, ApprovalSubmitInput{
+			ClinicID:    in.ClinicID,
+			EntityID:    rec.ID,
+			EntityOp:    opPtr,
+			SubmittedBy: in.AdministeredBy,
+			StaffRole:   "", // handler doesn't surface role on this path; ok for now
+			Note:        note,
+			SubjectID:   in.SubjectID,
+			NoteID:      in.NoteID,
+		}); err != nil {
+			slog.Error("drugs.service.LogOperation: approval submit failed; ledger row landed but queue insert missed",
+				"op_id", rec.ID, "error", err.Error())
+			return nil, fmt.Errorf("drugs.service.LogOperation: approval submit: %w", err)
+		}
+	}
+
 	return operationRecordToResponse(rec), nil
+}
+
+// trimNonEmpty returns nil for nil or whitespace-only strings; the
+// trimmed value otherwise. Keeps optional witness fields out of the DB
+// when callers send empty strings instead of nil.
+func trimNonEmpty(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
+// runComplianceCheckShadow runs the per-country compliance validator
+// and logs any findings. Operation is NOT blocked — Phase 2a ships in
+// shadow mode so we can measure rule coverage against real traffic
+// before flipping to enforce. Errors loading catalog/state never block
+// either; they're logged for ops visibility.
+func (s *Service) runComplianceCheckShadow(ctx context.Context, in LogOperationInput, shelf *ShelfRecord, requiresWitness bool) {
+	cc, err := s.loadCatalogContext(ctx, in.ClinicID, shelf)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: catalog context load failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		return
+	}
+	_, country, err := s.clinics.GetVerticalAndCountry(ctx, in.ClinicID)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: clinic country lookup failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		return
+	}
+	state, err := s.clinics.GetClinicState(ctx, in.ClinicID)
+	if err != nil {
+		slog.Warn("drugs.compliance.shadow: clinic state lookup failed",
+			"clinic_id", in.ClinicID, "error", err.Error())
+		// continue — state is optional; AU falls back to WA-strict.
+	}
+
+	in.Compliance.Witnessed = in.WitnessedBy != nil
+
+	octx := validators.OperationContext{
+		Operation:     validators.Operation(in.Operation),
+		Schedule:      cc.Schedule,
+		IsControlled:  cc.IsControlled || requiresWitness,
+		ClinicCountry: country,
+		ClinicState:   state,
+		Compliance:    in.Compliance,
+	}
+
+	v := validators.Dispatch(country)
+	issues := v.Validate(octx)
+	if len(issues) == 0 {
+		return
+	}
+	for _, issue := range issues {
+		slog.Info("drugs.compliance.shadow",
+			"clinic_id", in.ClinicID,
+			"shelf_id", in.ShelfID,
+			"operation", in.Operation,
+			"country", country,
+			"state", state,
+			"schedule", cc.Schedule,
+			"field", issue.Field,
+			"code", issue.Code,
+			"severity", severityLabel(issue.Severity),
+			"message", issue.Message,
+		)
+	}
+}
+
+func severityLabel(s validators.Severity) string {
+	if s == validators.Error {
+		return "error"
+	}
+	return "warning"
+}
+
+// catalogContext bundles the regulator-relevant catalog facts for one
+// shelf row: page-identity (drug name + strength + form) plus the
+// schedule + control-flag the validators need.
+//
+// Returned even for override drugs (catalog metadata may be empty for
+// clinic-defined drugs — the override path returns ScheduleEmpty +
+// IsControlled=false today; controls metadata for overrides is a
+// known v1 limitation called out in shelfRequiresWitness).
+type catalogContext struct {
+	DrugName     string
+	Strength     string
+	Form         string
+	Schedule     string
+	IsControlled bool
+}
+
+// loadCatalogContext joins the shelf row to the system catalog (or
+// override) and returns the page-identity + control facts. Used by
+// LogOperation to build the validator OperationContext + (Phase 2b)
+// the chain key.
+func (s *Service) loadCatalogContext(ctx context.Context, clinicID uuid.UUID, shelf *ShelfRecord) (*catalogContext, error) {
+	cc := &catalogContext{}
+	if shelf.Strength != nil {
+		cc.Strength = *shelf.Strength
+	}
+	if shelf.Form != nil {
+		cc.Form = *shelf.Form
+	}
+
+	if shelf.CatalogID != nil {
+		vertical, country, err := s.clinics.GetVerticalAndCountry(ctx, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("clinic lookup: %w", err)
+		}
+		entry := s.cat.Lookup(vertical, country, *shelf.CatalogID)
+		if entry != nil {
+			cc.DrugName = entry.Name
+			cc.Schedule = entry.Schedule
+			cc.IsControlled = entry.RequiresWitness() || entry.Controls.RegisterRequired
+			if cc.Form == "" {
+				cc.Form = entry.Form
+			}
+			return cc, nil
+		}
+	}
+
+	if shelf.OverrideDrugID != nil {
+		ov, err := s.repo.GetOverrideDrugByID(ctx, *shelf.OverrideDrugID, clinicID)
+		if err != nil {
+			return nil, fmt.Errorf("override lookup: %w", err)
+		}
+		cc.DrugName = ov.Name
+		if ov.Schedule != nil {
+			cc.Schedule = *ov.Schedule
+		}
+		// Override drugs don't carry Controls metadata in v1; treat as
+		// non-controlled. (See shelfRequiresWitness for the same v1
+		// limitation.)
+	}
+
+	return cc, nil
 }
 
 // shelfRequiresWitness consults the catalog (or override) for the
@@ -1075,6 +1537,11 @@ func operationRecordToResponse(r *OperationRecord) *OperationResponse {
 		s := r.ConfirmedAt.Format(time.RFC3339)
 		resp.ConfirmedAt = &s
 	}
+	resp.WitnessKind = r.WitnessKind
+	resp.ExternalWitnessName = r.ExternalWitnessName
+	resp.ExternalWitnessRole = r.ExternalWitnessRole
+	resp.WitnessAttestation = r.WitnessAttestation
+	resp.WitnessStatus = r.WitnessStatus
 	return resp
 }
 
@@ -1111,6 +1578,50 @@ func reconciliationRecordToResponse(r *ReconciliationRecord) *ReconciliationResp
 // also makes it trivial to mock in tests via SetTimeNow.
 func domainTimeNow() time.Time {
 	return domain.TimeNow()
+}
+
+// ── Compliance v2: chain verification ─────────────────────────────────────
+
+// VerifyChainInput identifies a chain to verify by its page-identity
+// tuple. Service derives the chain_key from these — callers don't need
+// to know the SHA256 detail.
+type VerifyChainInput struct {
+	ClinicID     uuid.UUID
+	DrugName     string
+	DrugStrength string
+	DrugForm     string
+}
+
+// VerifyChainResponse mirrors repo.ChainStatus on the wire.
+//
+//nolint:revive
+type VerifyChainResponse struct {
+	Intact            bool   `json:"intact"`
+	Length            int64  `json:"length"`
+	FirstBrokenSeq    *int64 `json:"first_broken_seq,omitempty"`
+	FirstBrokenReason string `json:"first_broken_reason,omitempty"`
+}
+
+// VerifyChain walks the (clinic, drug, strength, form) chain and
+// reports whether every row's row_hash recomputes correctly. Used by
+// the regulator-export endpoint + on-demand inspection by clinic
+// admins.
+func (s *Service) VerifyChain(ctx context.Context, in VerifyChainInput) (*VerifyChainResponse, error) {
+	if in.DrugName == "" || in.DrugStrength == "" || in.DrugForm == "" {
+		return nil, fmt.Errorf("drugs.service.VerifyChain: drug_name + strength + form required: %w", domain.ErrValidation)
+	}
+	chainK := chainKey(in.ClinicID, in.DrugName, in.DrugStrength, in.DrugForm)
+
+	status, err := s.repo.VerifyChain(ctx, in.ClinicID, chainK)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.VerifyChain: %w", err)
+	}
+	return &VerifyChainResponse{
+		Intact:            status.Intact,
+		Length:            status.Length,
+		FirstBrokenSeq:    status.FirstBrokenSeq,
+		FirstBrokenReason: status.FirstBrokenReason,
+	}, nil
 }
 
 // Sentinel: ensure errors.Is(err, domain.ErrXxx) works through our wrapping

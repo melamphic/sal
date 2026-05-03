@@ -278,6 +278,20 @@ func (r *Repository) WithdrawConsent(ctx context.Context, p WithdrawConsentParam
 	return rec, nil
 }
 
+// UpdateReviewStatus stamps the review_status snapshot column on a
+// consent record. Idempotent — invoked by the approvals service when
+// an async review transitions states.
+func (r *Repository) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	const q = `UPDATE consent_records
+	           SET review_status = $3,
+	               updated_at = NOW()
+	           WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, id, clinicID, string(status)); err != nil {
+		return fmt.Errorf("consent.repo.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 type scannable interface {

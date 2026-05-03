@@ -29,6 +29,7 @@ import (
 	"github.com/melamphic/sal/internal/aigen"
 	"github.com/melamphic/sal/internal/audio"
 	"github.com/melamphic/sal/internal/auth"
+	"github.com/melamphic/sal/internal/approvals"
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
 	"github.com/melamphic/sal/internal/consent"
@@ -291,6 +292,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Reports repo + worker (registered before river.NewClient) ─────────────
 	reportsRepo := reports.NewRepository(db)
 	river.AddWorker(workers, reports.NewGenerateReportWorker(reportsRepo, store))
+
+	// ── Drugs repo (early — its retention-purge worker registers here) ───────
+	// drugsSvc + drugsHandler are constructed below alongside the rest of the
+	// drugs domain (catalog loader, adapters); we just need the repo here so
+	// the periodic purge worker can be wired before river.NewClient.
+	drugsRepo := drugs.NewRepository(db)
+	river.AddWorker(workers, drugs.NewPurgeRetentionExpiredWorker(drugsRepo))
 	// lazyEnqueuer is shared by every worker that needs to enqueue
 	// downstream jobs after river.NewClient binds (notes extraction,
 	// compliance fan-out, schedule firing). One instance, set once below.
@@ -352,6 +360,15 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 				return reports.FireDueReportSchedulesArgs{}, nil
 			},
 			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+		// Compliance v2: daily soft-delete of drug ops past retention.
+		// See docs/drug-register-compliance-v2.md §5.5.
+		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return drugs.PurgeRetentionExpiredArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: false},
 		),
 	}
 
@@ -445,7 +462,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		return nil, fmt.Errorf("app.Build: drugs catalog: %w", err)
 	}
 	log.Info("drugs: catalog loaded", "combos", len(drugCatalog.Manifest()))
-	drugsRepo := drugs.NewRepository(db)
+	// drugsRepo was constructed earlier so its periodic worker could be
+	// registered before river.NewClient. Reuse the same instance here.
 	drugsSvc := drugs.NewService(
 		drugsRepo,
 		drugCatalog,
@@ -454,6 +472,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&drugsAccessLogAdapter{patientRepo: patientRepo},
 	)
 	drugsHandler := drugs.NewHandler(drugsSvc)
+	// Kits is a separate service inside the same package — independent
+	// of the broader drugs.Service surface so it can evolve on its own.
+	drugKitsSvc := drugs.NewKitsService(drugsRepo)
+	drugKitsHandler := drugs.NewKitsHandler(drugKitsSvc)
 
 	// Wire the drug-op confirm-gate into notes submission. system.drug_op
 	// widgets create rows in pending_confirm; the gate refuses to submit
@@ -519,6 +541,29 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&incidentSummariserAdapter{svc: incidentsSvc},
 		&painSummariserAdapter{svc: painSvc},
 	)
+
+	// ── Approvals (second pair of eyes) ─────────────────────────────────────
+	// Generic ledger that lets every system widget run an async
+	// sign-off flow: solo / out-of-hours staff log the entity now,
+	// another qualified colleague approves later from the queue. Each
+	// consuming domain registers its status updater so the entity's
+	// snapshot column (drug_operations_log.witness_status etc) stays
+	// in sync with the approval lifecycle.
+	approvalsRepo := approvals.NewRepository(db)
+	approvalsSvc := approvals.NewService(approvalsRepo)
+	approvalsSvc.SetPermissionChecker(&approvalsStaffPermsAdapter{
+		inner: &drugsStaffPermAdapter{staffSvc: staffSvc},
+	})
+	approvalsSvc.SetEventEmitter(&approvalsTimelineAdapter{repo: timelineRepo, log: log})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindDrugOp, &drugOpStatusUpdater{svc: drugsSvc})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindConsent, &consentStatusUpdater{svc: consentSvc})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindIncident, &incidentStatusUpdater{svc: incidentsSvc})
+	approvalsSvc.SetStatusUpdater(domain.ApprovalKindPainScore, &painStatusUpdater{svc: painSvc})
+	drugsSvc.SetApprovals(&drugsApprovalsAdapter{svc: approvalsSvc})
+	incidentsSvc.SetApprovals(&incidentsApprovalsAdapter{svc: approvalsSvc})
+	consentSvc.SetApprovals(&consentApprovalsAdapter{svc: approvalsSvc})
+	painSvc.SetApprovals(&painApprovalsAdapter{svc: approvalsSvc})
+	approvalsHandler := approvals.NewHandler(approvalsSvc)
 
 	// ── Admin dashboard ──────────────────────────────────────────────────────
 	// Aggregator over patient + drugs + incidents + consent + pain. No
@@ -671,7 +716,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	if policyAIGenHandler != nil {
 		policyAIGenHandler.Mount(r, api, jwtSecret)
 	}
-	drugsHandler.Mount(r, api, jwtSecret)
+	drugsHandler.Mount(r, api, jwtSecret, drugKitsHandler)
+	approvalsHandler.Mount(r, api, jwtSecret)
 	incidentsHandler.Mount(r, api, jwtSecret)
 	if incidentAIGenHandler != nil {
 		incidentAIGenHandler.Mount(r, api, jwtSecret)
@@ -748,6 +794,229 @@ func (a *timelineEventAdapter) Emit(ctx context.Context, e notes.NoteEvent) {
 			"note_id", e.NoteID,
 			"event_type", string(e.EventType),
 		)
+	}
+}
+
+// approvalsTimelineAdapter implements approvals.EventEmitter by writing
+// compliance-approval lifecycle events into the same timeline ledger.
+// Subject-bound entities (drug_op administer, consent, incident, pain)
+// land on the patient timeline; clinic-only ops (drug receive/transfer)
+// only show up in the clinic-wide audit log via clinic_id.
+type approvalsTimelineAdapter struct {
+	repo *timeline.Repository
+	log  *slog.Logger
+}
+
+func (a *approvalsTimelineAdapter) Emit(ctx context.Context, e approvals.Event) {
+	if err := a.repo.InsertNoteEvent(ctx, timeline.InsertEventParams{
+		ID:         domain.NewID(),
+		NoteID:     uuidOrNil(e.NoteID),
+		SubjectID:  e.SubjectID,
+		ClinicID:   e.ClinicID,
+		EventType:  string(e.Type),
+		ActorID:    e.ActorID,
+		ActorRole:  e.ActorRole,
+		Reason:     e.Reason,
+		OccurredAt: domain.TimeNow(),
+	}); err != nil {
+		a.log.Error("timeline: failed to emit approval event",
+			"error", err,
+			"approval_id", e.ApprovalID,
+			"event_type", string(e.Type),
+		)
+	}
+}
+
+// uuidOrNil dereferences an optional uuid pointer, returning uuid.Nil
+// when nil. Required because timeline.InsertEventParams expects a value
+// type for note_id (the repo allows zero UUIDs as "not bound").
+func uuidOrNil(id *uuid.UUID) uuid.UUID {
+	if id == nil {
+		return uuid.Nil
+	}
+	return *id
+}
+
+// drugsApprovalsAdapter bridges drugs.ApprovalSubmitter (the small
+// surface drugs.Service consumes) onto the approvals.Service Submit
+// signature. Lives in app/ so neither package imports the other.
+type drugsApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *drugsApprovalsAdapter) Submit(ctx context.Context, in drugs.ApprovalSubmitInput) error {
+	op := in.EntityOp
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindDrugOp,
+		EntityID:    in.EntityID,
+		EntityOp:    op,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.drugsApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// incidentsApprovalsAdapter — same pattern, for the incident kind.
+type incidentsApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *incidentsApprovalsAdapter) Submit(ctx context.Context, in incidents.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindIncident,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.incidentsApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// consentApprovalsAdapter — same pattern, for the consent kind.
+type consentApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *consentApprovalsAdapter) Submit(ctx context.Context, in consent.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindConsent,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.consentApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// painApprovalsAdapter — same pattern, for the pain_score kind.
+type painApprovalsAdapter struct{ svc *approvals.Service }
+
+func (a *painApprovalsAdapter) Submit(ctx context.Context, in pain.ApprovalSubmitInput) error {
+	if _, err := a.svc.Submit(ctx, approvals.SubmitInput{
+		ClinicID:    in.ClinicID,
+		EntityKind:  domain.ApprovalKindPainScore,
+		EntityID:    in.EntityID,
+		EntityOp:    in.EntityOp,
+		SubmittedBy: in.SubmittedBy,
+		StaffRole:   in.StaffRole,
+		Note:        in.Note,
+		SubjectID:   in.SubjectID,
+		NoteID:      in.NoteID,
+	}); err != nil {
+		return fmt.Errorf("app.painApprovalsAdapter: %w", err)
+	}
+	return nil
+}
+
+// drugOpStatusUpdater implements approvals.EntityStatusUpdater for the
+// drug_op kind by routing into drugs.Service. Keeping the adapter here
+// (not in internal/drugs) preserves the cross-domain boundary: drugs
+// owns the column, app wires the callback.
+type drugOpStatusUpdater struct{ svc *drugs.Service }
+
+func (a *drugOpStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindDrugOp {
+		return nil
+	}
+	if err := a.svc.UpdateWitnessStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.drugOpStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// consentStatusUpdater bridges approvals → consent.Service for the
+// consent kind. Same pattern as drugOpStatusUpdater.
+type consentStatusUpdater struct{ svc *consent.Service }
+
+func (a *consentStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindConsent {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.consentStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// incidentStatusUpdater bridges approvals → incidents.Service.
+type incidentStatusUpdater struct{ svc *incidents.Service }
+
+func (a *incidentStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindIncident {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.incidentStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// painStatusUpdater bridges approvals → pain.Service.
+type painStatusUpdater struct{ svc *pain.Service }
+
+func (a *painStatusUpdater) UpdateEntityReviewStatus(
+	ctx context.Context,
+	kind domain.ApprovalEntityKind,
+	entityID, clinicID uuid.UUID,
+	status domain.EntityReviewStatus,
+) error {
+	if kind != domain.ApprovalKindPainScore {
+		return nil
+	}
+	if err := a.svc.UpdateReviewStatus(ctx, entityID, clinicID, status); err != nil {
+		return fmt.Errorf("app.painStatusUpdater: %w", err)
+	}
+	return nil
+}
+
+// approvalsStaffPermsAdapter wires the existing per-staff permission
+// lookup into the approvals.PermissionChecker interface. Re-uses the
+// same role-mapping the drugs module uses so witness perms stay
+// consistent across modules. The adapter additionally maps
+// `perm_manage_patients` for consent / incident approvals.
+type approvalsStaffPermsAdapter struct{ inner *drugsStaffPermAdapter }
+
+func (a *approvalsStaffPermsAdapter) HasPermission(
+	ctx context.Context,
+	staffID, clinicID uuid.UUID,
+	perm string,
+) (bool, error) {
+	switch perm {
+	case "perm_manage_patients":
+		s, err := a.inner.staffSvc.GetByID(ctx, staffID, clinicID)
+		if err != nil {
+			return false, fmt.Errorf("app.approvalsStaffPermsAdapter: %w", err)
+		}
+		return s.Permissions.ManagePatients, nil
+	default:
+		return a.inner.HasPermission(ctx, staffID, clinicID, perm)
 	}
 }
 
@@ -1473,6 +1742,17 @@ func (a *drugsClinicLookupAdapter) GetVerticalAndCountry(ctx context.Context, cl
 	return string(c.Vertical), c.Country, nil
 }
 
+// GetClinicState — AU sub-state for state-aware compliance validation.
+// Returns "" today (clinic record does not yet carry an AU state); the
+// AU validator falls back to WA-strict in shadow mode, which is the
+// safe over-validation default. When AU clinics onboard, add a state
+// column to clinics + return it here.
+func (a *drugsClinicLookupAdapter) GetClinicState(ctx context.Context, clinicID uuid.UUID) (string, error) {
+	_ = ctx
+	_ = clinicID
+	return "", nil
+}
+
 // drugsStaffPermAdapter satisfies drugs.StaffPermLookup. v1 maps every
 // "perm_*_drug*" name back onto the existing domain.Permissions struct
 // fields — the JWT path doesn't yet ship the granular drug perms shipped
@@ -1742,6 +2022,16 @@ func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.U
 			}
 		}
 	}
+	// External witness: name is captured free-text on the op itself, not
+	// resolved against the staff directory.
+	if op.WitnessKind != nil && *op.WitnessKind == "external" &&
+		op.ExternalWitnessName != nil && *op.ExternalWitnessName != "" {
+		display := *op.ExternalWitnessName
+		if op.ExternalWitnessRole != nil && *op.ExternalWitnessRole != "" {
+			display = display + " (" + humaniseSnake(*op.ExternalWitnessRole) + ")"
+		}
+		witnessName = &display
+	}
 
 	return reports.DrugOpView{
 		ID:             op.ID,
@@ -1760,6 +2050,8 @@ func (a *complianceDataAdapter) translateOp(ctx context.Context, clinicID uuid.U
 		SubjectID:      op.SubjectID,
 		AdministeredBy: administeredBy,
 		WitnessedBy:    witnessName,
+		WitnessKind:    op.WitnessKind,
+		WitnessStatus:  op.WitnessStatus,
 		CreatedAt:      createdAt,
 	}, true
 }
@@ -2092,21 +2384,26 @@ func (a *drugOpMaterialiserAdapter) MaterialiseDrugOpForNote(ctx context.Context
 	// Clinician's tap on Confirm IS the regulator-binding action;
 	// status='confirmed' (the default), not pending.
 	resp, err := a.svc.LogOperation(ctx, drugs.LogOperationInput{
-		ClinicID:         in.ClinicID,
-		StaffID:          in.StaffID,
-		ShelfID:          in.ShelfID,
-		SubjectID:        in.SubjectID,
-		NoteID:           &noteID,
-		NoteFieldID:      &noteFieldID,
-		Operation:        in.Operation,
-		Quantity:         in.Quantity,
-		Unit:             in.Unit,
-		Dose:             in.Dose,
-		Route:            in.Route,
-		ReasonIndication: in.ReasonIndication,
-		AdministeredBy:   in.StaffID,
-		WitnessedBy:      in.WitnessedBy,
-		Status:           "confirmed",
+		ClinicID:            in.ClinicID,
+		StaffID:             in.StaffID,
+		ShelfID:             in.ShelfID,
+		SubjectID:           in.SubjectID,
+		NoteID:              &noteID,
+		NoteFieldID:         &noteFieldID,
+		Operation:           in.Operation,
+		Quantity:            in.Quantity,
+		Unit:                in.Unit,
+		Dose:                in.Dose,
+		Route:               in.Route,
+		ReasonIndication:    in.ReasonIndication,
+		AdministeredBy:      in.StaffID,
+		WitnessedBy:         in.WitnessedBy,
+		WitnessKind:         in.WitnessKind,
+		ExternalWitnessName: in.ExternalWitnessName,
+		ExternalWitnessRole: in.ExternalWitnessRole,
+		WitnessAttestation:  in.WitnessAttestation,
+		WitnessNote:         in.WitnessNote,
+		Status:              "confirmed",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.drugOpMaterialiserAdapter: %w", err)
@@ -2229,13 +2526,27 @@ func (a *drugOpSummariserAdapter) SummariseDrugOp(ctx context.Context, id, clini
 	if r.ReasonIndication != nil && *r.ReasonIndication != "" {
 		items = append(items, notes.SystemSummaryItem{Label: "Reason", Value: *r.ReasonIndication})
 	}
+	if r.WitnessKind != nil && *r.WitnessKind != "" {
+		items = append(items, notes.SystemSummaryItem{
+			Label: "Witness mode",
+			Value: humaniseSnake(*r.WitnessKind),
+		})
+	}
 	items = append(items, notes.SystemSummaryItem{Label: "Status", Value: humaniseSnake(r.Status)})
 	items = append(items, notes.SystemSummaryItem{Label: "Logged at", Value: humaniseTimestamp(r.CreatedAt)})
 	id2, err := uuid.Parse(r.ID)
 	if err != nil {
 		return nil, fmt.Errorf("app.drugOpSummariserAdapter: bad id: %w", err)
 	}
-	return &notes.SystemSummary{EntityID: id2, Items: items}, nil
+	reviewStatus := ""
+	if r.WitnessStatus != nil {
+		reviewStatus = *r.WitnessStatus
+	}
+	return &notes.SystemSummary{
+		EntityID:     id2,
+		Items:        items,
+		ReviewStatus: reviewStatus,
+	}, nil
 }
 
 type incidentSummariserAdapter struct{ svc *incidents.Service }

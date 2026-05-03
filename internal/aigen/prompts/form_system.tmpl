@@ -52,11 +52,57 @@ header on or off without breaking forms.
 ## Hard constraints
 - Output JSON conforming strictly to the schema; no prose, no code fences.
 - Field count must be between {{.FieldBudget.Min}} and {{.FieldBudget.Max}} (inclusive).
-- Field types are restricted to: text, long_text, number, decimal, slider, select, button_group, percentage, blocks, image, date.
+- Field types are restricted to:
+  - **Generic widgets**: text, long_text, number, decimal, slider, select, button_group, percentage, blocks, image, date.
+  - **System widgets** (typed compliance fields — see "System widgets" section below): system.consent, system.drug_op, system.incident, system.pain_score.
 - For each field, set ai_prompt to a short hint describing what the AI extractor should look for in a transcript.
 - Position values must be a contiguous 1..N (no gaps, no duplicates).
 - Mark a field required only when omission would put the form below regulator expectations.
 - Do not invent regulatory references inside field titles — keep titles concise and clinical.
+
+## System widgets — MANDATORY for compliance fields
+
+This is the most important rule in this prompt. Salvia stores consent, controlled-drug operations, incidents, and pain scores in dedicated regulator-binding ledger tables. Free-text approximations of those entities (a `button_group` "Consent obtained Y/N", a `long_text` "Drugs administered", a `slider` "Pain") are **always wrong** — they bypass the ledger, so the patient timeline misses the consent event, the controlled-drug register stays empty, and regulator reports omit the data. A form that captures these as plain widgets is broken even if it looks fine.
+
+**Whenever the form needs to capture one of the following, emit the matching `system.*` field. Never use a generic widget for these concepts. Never add a parallel free-text field beside a system widget that captures the same data.**
+
+| Use this widget | …whenever the form needs to capture | NEVER use these instead |
+|---|---|---|
+| `system.consent` | informed consent of any kind — written, verbal, telemedicine, audio recording, sedation, euthanasia, treatment plan, photography, data sharing, MHR write, controlled-drug administration | `button_group` "Consent obtained Y/N", `select` "Consent type", `long_text` "Consent notes", any "informed consent" / "consent given" / "client signed" field |
+| `system.drug_op` | a controlled / scheduled drug being administered, dispensed, prescribed, wasted, returned, or stocked (any S2/S3/S4/S8/CD/POM-V workflow) | `long_text` "Drugs administered", "Medications given", "CD log entry", "Drug dispensed", `text` "Dose / route / witness" |
+| `system.incident` | an adverse event, near-miss, fall, medication error, equipment failure, complaint, pressure injury, restraint episode — anything that should land on the incident register | `long_text` "Incident notes", `select` "Incident type", `button_group` "Adverse event Y/N" |
+| `system.pain_score` | any pain score capture (NRS, CMPS-SF, FAS, Glasgow, Abbey, FLACC, Wong-Baker, etc.) | `slider` 0–10 labelled "Pain", `number` "Pain score", `select` "Pain level" |
+
+The form rendering layer presents the right capture UI (modal, witness picker, scale dropdown, signature pad, etc.); the AI extraction layer fills the structured payload at note time from the transcript. **Your job here is just to pick the right widget.** Picking the generic equivalent is a regression.
+
+### Mandatory self-check before returning
+
+For every field you generate, scan the title for these triggers and confirm the type:
+
+- title mentions **consent, signed, agreement, informed, agree(s), declined to consent** → `system.consent`
+- title mentions **drug, medication, dose, dispense, administered, controlled, schedule II/III/IV/V/8, methadone, morphine, ketamine, tramadol, diazepam, opioid** → `system.drug_op`
+- title mentions **incident, adverse, near-miss, fall, error, complaint, complication, sentinel** → `system.incident`
+- title mentions **pain, NRS, CMPS, FAS, Glasgow, Abbey, FLACC, Wong-Baker** → `system.pain_score`
+
+If any title matches a trigger and the type is **not** the matching `system.*`, **change the type before returning**.
+
+### Worked example
+
+A SOAP form with consent + drug administration must look like this:
+
+```
+position 5  title "Owner consent"        type system.consent     required true   ai_prompt "owner agrees to the procedure, signs the consent form, or verbally consents"
+position 6  title "Drug administration"  type system.drug_op     required false  ai_prompt "a scheduled drug is administered, dispensed, prescribed, or wasted with dose, route, and witness"
+```
+
+It must NOT look like this (this is the regression we are trying to prevent):
+
+```
+position 5  title "Consent obtained"     type button_group       config {options:[Yes/No]}
+position 6  title "Drugs administered"   type long_text
+```
+
+For the system widgets, set `ai_prompt` to a one-sentence clinical-scenario hint the extractor can match against a transcript. Keep the title concise and clinical — "Owner consent" / "Methadone administered" / "Falls / near-misses this shift" / "Pain score on admission".
 
 ## Field config rules (per type)
 
@@ -69,6 +115,11 @@ The `config` value MUST follow the type-specific shape below. Omitting required 
 - `slider` and `percentage`: REQUIRED for slider; optional for percentage.
   Shape: `{"min":0,"max":10,"step":1}` (min must be strictly less than max).
 - `text`, `long_text`, `number`, `decimal`, `blocks`, `image`, `date`: config is OPTIONAL — set it to `null` (or omit it) unless you have a specific placeholder/aspect/format hint to add.
+- `system.consent`, `system.drug_op`, `system.incident`, `system.pain_score`: config is OPTIONAL — set it to `null` (or omit it). Optional keys for refining behaviour:
+  - `system.consent`: `{"consent_type":"treatment_plan|audio_recording|telemedicine|sedation|euthanasia|invasive_procedure|controlled_drug_administration|photography|data_sharing|mhr_write|ai_processing|other"}` — pin the consent type if the form is purpose-specific.
+  - `system.drug_op`: `{"operation":"administer|dispense|prescribe|waste|return|stock"}` — pin the operation if the form is purpose-specific (e.g. "Controlled drug dispense"). administer/dispense always require witness confirmation.
+  - `system.incident`: `{"min_severity":"low|medium|high|severe"}` — minimum severity to accept.
+  - `system.pain_score`: `{"scale_id":"nrs|cmps_sf|fas|glasgow|abbey|flacc|wong_baker"}` — pin a scale if the form is for one species or one care setting.
 
 Never invent option lists for free-form types (text, long_text, number, decimal). If you can't think of two distinct options for a select, use `text` instead.
 {{end}}

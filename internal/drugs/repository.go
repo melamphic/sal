@@ -27,6 +27,7 @@
 package drugs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -118,7 +119,20 @@ type OperationRecord struct {
 	Status            string
 	ConfirmedBy       *uuid.UUID
 	ConfirmedAt       *time.Time
-	CreatedAt         time.Time
+
+	// Witness shape (00074 + 00075). WitnessKind is nil while a
+	// pending row awaits async approval; populated to one of
+	// {staff, external, self} once the witness lands.
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	// WitnessStatus snapshot — not_required | pending | approved |
+	// challenged. Reads as the source of truth for regulator reports
+	// + queue UIs without a join into compliance_approvals.
+	WitnessStatus *string
+
+	CreatedAt time.Time
 }
 
 // ReconciliationRecord closes a (shelf, period) with two-staff signoff.
@@ -228,6 +242,35 @@ type CreateOperationParams struct {
 	// 'confirmed' for backwards compat with callers that haven't been
 	// updated.
 	Status            string
+
+	// Witness shape — added in migration 00074. WitnessKind ∈
+	// {nil,'staff','external','self'}. WitnessStatus is the snapshot
+	// column (added in 00075) — set at insert so the queue / regulator
+	// report can read it without joining compliance_approvals.
+	WitnessKind          *string
+	ExternalWitnessName  *string
+	ExternalWitnessRole  *string
+	WitnessAttestation   *string
+	WitnessStatus        *string
+
+	// ── Compliance v2 fields (Phase 2b) ────────────────────────────────
+	//
+	// Page-identity snapshot — service populates from
+	// catalogContext at insert time. Used by the repo to compute
+	// chain_key + entry_seq_in_chain inside the same tx.
+	DrugName     string
+	DrugStrength string
+	DrugForm     string
+
+	// ChainKey — deterministic SHA256 over (clinic, drug_name,
+	// strength, form). Empty when service didn't provide it (legacy
+	// caller); repo skips chain compute in that case so v1 callers
+	// keep working.
+	ChainKey []byte
+
+	// RetentionUntil — derived from clinic country at the service
+	// layer; nil for legacy callers.
+	RetentionUntil *time.Time
 }
 
 // ListShelfParams — filters for the shelf listing.
@@ -372,6 +415,8 @@ func scanOperation(row scannable) (*OperationRecord, error) {
 		&r.BalanceBefore, &r.BalanceAfter,
 		&r.ReconciliationID, &r.AddendsTo,
 		&r.Status, &r.ConfirmedBy, &r.ConfirmedAt,
+		&r.WitnessKind, &r.ExternalWitnessName, &r.ExternalWitnessRole,
+		&r.WitnessAttestation, &r.WitnessStatus,
 		&r.CreatedAt,
 	)
 	if err != nil {
@@ -390,6 +435,8 @@ const operationCols = `
 	balance_before, balance_after,
 	reconciliation_id, addends_to,
 	status, confirmed_by, confirmed_at,
+	witness_kind, external_witness_name, external_witness_role,
+	witness_attestation, witness_status,
 	created_at`
 
 func scanReconciliation(row scannable) (*ReconciliationRecord, error) {
@@ -656,18 +703,75 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	rec, err := r.logOperationOnTx(ctx, tx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("drugs.repo.LogOperation: commit: %w", err)
+	}
+	return rec, nil
+}
+
+// BatchLogOperationsTx atomically logs N operations in a single
+// transaction. Either all succeed or all roll back. Used by cart
+// checkout where the user expects "log 4 drugs together or log
+// nothing." The caller (service layer) is responsible for computing
+// per-line BalanceBefore/After in submit order — for multiple lines
+// on the same shelf those balances need to chain (line K's
+// BalanceBefore = line K-1's BalanceAfter). The repo enforces the
+// per-line balance match via FOR UPDATE on the shelf row, same as
+// the single-call path.
+//
+// Compliance-v2 chain hashing + advisory locks work per-row exactly
+// as in [LogOperation] — same code path, same regulator-binding
+// guarantees. The async-witness ('pending') path stays single-call
+// (BatchLogOperations rejects pending lines at the service layer)
+// because the post-tx approvals submission is per-row.
+func (r *Repository) BatchLogOperationsTx(ctx context.Context, params []CreateOperationParams) ([]*OperationRecord, error) {
+	if len(params) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	out := make([]*OperationRecord, 0, len(params))
+	for i, p := range params {
+		rec, err := r.logOperationOnTx(ctx, tx, p)
+		if err != nil {
+			return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: line %d: %w", i, err)
+		}
+		out = append(out, rec)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: commit: %w", err)
+	}
+	return out, nil
+}
+
+// logOperationOnTx is the per-row body shared by LogOperation
+// (single-call, opens its own tx) and BatchLogOperationsTx (multi-row,
+// opens one tx for the whole batch). Holds the regulator-binding
+// invariants — FOR UPDATE on the shelf, balance match check, chain
+// hash + advisory lock, retention stamp.
+func (r *Repository) logOperationOnTx(ctx context.Context, tx pgx.Tx, p CreateOperationParams) (*OperationRecord, error) {
 	// Lock the shelf row + verify balance hasn't changed under us.
 	const lockQ = `SELECT balance FROM clinic_drug_shelf
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL FOR UPDATE`
 	var currentBalance float64
 	if err := tx.QueryRow(ctx, lockQ, p.ShelfID, p.ClinicID).Scan(&currentBalance); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("drugs.repo.LogOperation: shelf: %w", domain.ErrNotFound)
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: shelf: %w", domain.ErrNotFound)
 		}
-		return nil, fmt.Errorf("drugs.repo.LogOperation: lock shelf: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: lock shelf: %w", err)
 	}
 	if currentBalance != p.BalanceBefore {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: balance changed under us, expected %v got %v: %w",
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: balance changed under us, expected %v got %v: %w",
 			p.BalanceBefore, currentBalance, domain.ErrConflict)
 	}
 
@@ -678,15 +782,82 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		status = "confirmed"
 	}
 
-	// Insert the operation row.
+	// Compliance v2: compute chain fields when the service supplied a
+	// chain key. Legacy callers (v1) leave ChainKey empty and the row
+	// inserts without chain fields — keeps existing flows working
+	// while we backfill legacy rows out-of-band.
+	var (
+		entrySeqInChain *int64
+		prevRowHash     []byte
+		rowHash         []byte
+	)
+	if len(p.ChainKey) > 0 {
+		// Advisory lock per chain — serialises concurrent inserts on
+		// the same drug-strength-form page within the txn lifetime.
+		lockID := chainAdvisoryLockID(p.ChainKey)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: chain advisory lock: %w", err)
+		}
+
+		const headQ = `
+			SELECT row_hash, entry_seq_in_chain
+			  FROM drug_operations_log
+			 WHERE clinic_id = $1 AND chain_key = $2
+			   AND entry_seq_in_chain IS NOT NULL
+			 ORDER BY entry_seq_in_chain DESC
+			 LIMIT 1`
+		var prevSeq int64
+		err := tx.QueryRow(ctx, headQ, p.ClinicID, p.ChainKey).Scan(&prevRowHash, &prevSeq)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			// First row in this chain.
+			prevRowHash = ZeroHash()
+			prevSeq = 0
+		case err != nil:
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: read chain head: %w", err)
+		}
+
+		nextSeq := prevSeq + 1
+		entrySeqInChain = &nextSeq
+
+		canonical := canonicalRowBytes(
+			p.ID, p.ClinicID, p.ChainKey, nextSeq,
+			p.Operation, p.Quantity, p.Unit,
+			p.DrugName, p.DrugStrength, p.DrugForm,
+			p.BalanceAfter, prevRowHash,
+		)
+		rowHash = computeRowHash(canonical, prevRowHash)
+	}
+
+	// Insert the operation row. Chain fields + page-identity snapshots
+	// + retention_until ride along with v1 fields; all are NULLABLE so
+	// legacy callers (ChainKey empty) get NULLs. Witness shape columns
+	// (00074 + 00075) are also NULLable so the legacy synchronous-only
+	// path keeps working for callers that haven't been updated.
 	insertQ := fmt.Sprintf(`
 		INSERT INTO drug_operations_log (
 			id, clinic_id, shelf_id, subject_id, note_id, note_field_id,
 			operation, quantity, unit, dose, route, reason_indication,
 			administered_by, witnessed_by, prescribed_by,
 			balance_before, balance_after, addends_to,
-			status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			status,
+			drug_name, drug_strength, drug_form,
+			chain_key, entry_seq_in_chain, prev_row_hash, row_hash,
+			retention_until,
+			witness_kind, external_witness_name, external_witness_role, witness_attestation,
+			witness_status
+		) VALUES (
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12,
+			$13, $14, $15,
+			$16, $17, $18,
+			$19,
+			$20, $21, $22,
+			$23, $24, $25, $26,
+			$27,
+			$28, $29, $30, $31,
+			$32
+		)
 		RETURNING %s`, operationCols)
 	row := tx.QueryRow(ctx, insertQ,
 		p.ID, p.ClinicID, p.ShelfID, p.SubjectID, p.NoteID, p.NoteFieldID,
@@ -694,10 +865,15 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		p.AdministeredBy, p.WitnessedBy, p.PrescribedBy,
 		p.BalanceBefore, p.BalanceAfter, p.AddendsTo,
 		status,
+		nullIfEmpty(p.DrugName), nullIfEmpty(p.DrugStrength), nullIfEmpty(p.DrugForm),
+		nullableBytes(p.ChainKey), entrySeqInChain, nullableBytes(prevRowHash), nullableBytes(rowHash),
+		p.RetentionUntil,
+		p.WitnessKind, p.ExternalWitnessName, p.ExternalWitnessRole, p.WitnessAttestation,
+		p.WitnessStatus,
 	)
 	rec, err := scanOperation(row)
 	if err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: insert op: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: insert op: %w", err)
 	}
 
 	// Update the shelf balance.
@@ -705,12 +881,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		SET balance = $3, updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2`
 	if _, err := tx.Exec(ctx, updateQ, p.ShelfID, p.ClinicID, p.BalanceAfter); err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: update balance: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: update balance: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: commit: %w", err)
-	}
 	return rec, nil
 }
 
@@ -761,6 +934,19 @@ func (r *Repository) ConfirmOperation(ctx context.Context, id, clinicID, staffID
 
 // ListPendingConfirmForNote returns drug ops linked to a note that still
 // need clinician confirmation. Used by the note-submit gate.
+// UpdateWitnessStatus stamps the witness_status snapshot column on a
+// drug_operations_log row. Idempotent — invoked by the approvals
+// service when an async review transitions states.
+func (r *Repository) UpdateWitnessStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	const q = `UPDATE drug_operations_log
+	           SET witness_status = $3
+	           WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, id, clinicID, string(status)); err != nil {
+		return fmt.Errorf("drugs.repo.UpdateWitnessStatus: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error) {
 	q := fmt.Sprintf(`SELECT %s FROM drug_operations_log
 		WHERE note_id = $1 AND clinic_id = $2 AND status = 'pending_confirm'
@@ -1015,6 +1201,221 @@ func (r *Repository) ListReconciliations(ctx context.Context, clinicID uuid.UUID
 		return nil, 0, fmt.Errorf("drugs.repo.ListReconciliations: rows: %w", err)
 	}
 	return out, total, nil
+}
+
+// RetentionPolicy carries the per-clinic retention years from
+// clinic_drug_retention_policy.
+type RetentionPolicy struct {
+	ClinicID     uuid.UUID
+	LedgerYears  int
+	ReconYears   int
+	MARYears     int
+}
+
+// BackfillChainRowParams stamps chain fields onto a legacy row.
+type BackfillChainRowParams struct {
+	ID              uuid.UUID
+	ClinicID        uuid.UUID
+	DrugName        string
+	DrugStrength    string
+	DrugForm        string
+	ChainKey        []byte
+	EntrySeqInChain int64
+	PrevRowHash     []byte
+	RowHash         []byte
+	RetentionUntil  *time.Time
+}
+
+// GetRetentionPolicy reads the per-clinic retention policy. Returns
+// ErrNotFound if the clinic was created before migration 00068 and no
+// row was seeded — caller should fall back to country defaults.
+func (r *Repository) GetRetentionPolicy(ctx context.Context, clinicID uuid.UUID) (*RetentionPolicy, error) {
+	const q = `
+		SELECT clinic_id, ledger_years, recon_years, mar_years
+		  FROM clinic_drug_retention_policy
+		 WHERE clinic_id = $1`
+	var p RetentionPolicy
+	err := r.db.QueryRow(ctx, q, clinicID).Scan(
+		&p.ClinicID, &p.LedgerYears, &p.ReconYears, &p.MARYears,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("drugs.repo.GetRetentionPolicy: %w", domain.ErrNotFound)
+		}
+		return nil, fmt.Errorf("drugs.repo.GetRetentionPolicy: %w", err)
+	}
+	return &p, nil
+}
+
+// SoftDeleteOpsPastRetention sets archived_at on every active ledger
+// row whose retention_until has passed. Append-only is preserved
+// (rows still exist + still verify in the chain). Physical purge
+// happens via a separate admin endpoint with grace window — see
+// design doc §5.5.
+func (r *Repository) SoftDeleteOpsPastRetention(ctx context.Context, asOf time.Time) (int64, error) {
+	const q = `
+		UPDATE drug_operations_log
+		   SET archived_at = NOW()
+		 WHERE retention_until IS NOT NULL
+		   AND retention_until < $1::date
+		   AND archived_at IS NULL`
+	tag, err := r.db.Exec(ctx, q, asOf)
+	if err != nil {
+		return 0, fmt.Errorf("drugs.repo.SoftDeleteOpsPastRetention: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// ListLegacyOpsForBackfill returns rows in (clinic, created_at) order
+// that lack chain_key — i.e. inserted before Phase 2 wired up the
+// chain. Bounded by limit + a since cursor (use the previous page's
+// last created_at as the next page's `since`).
+func (r *Repository) ListLegacyOpsForBackfill(ctx context.Context, clinicID uuid.UUID, since time.Time, limit int) ([]*OperationRecord, error) {
+	q := fmt.Sprintf(`
+		SELECT %s
+		  FROM drug_operations_log
+		 WHERE clinic_id = $1
+		   AND chain_key IS NULL
+		   AND created_at >= $2
+		 ORDER BY created_at ASC
+		 LIMIT $3`, operationCols)
+	rows, err := r.db.Query(ctx, q, clinicID, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: %w", err)
+	}
+	defer rows.Close()
+	var out []*OperationRecord
+	for rows.Next() {
+		rec, err := scanOperation(rows)
+		if err != nil {
+			return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListLegacyOpsForBackfill: rows: %w", err)
+	}
+	return out, nil
+}
+
+// BackfillChainRow stamps chain fields onto one legacy row. Idempotent:
+// skips when chain_key is already set.
+func (r *Repository) BackfillChainRow(ctx context.Context, p BackfillChainRowParams) error {
+	const q = `
+		UPDATE drug_operations_log
+		   SET drug_name           = $3,
+		       drug_strength       = $4,
+		       drug_form           = $5,
+		       chain_key           = $6,
+		       entry_seq_in_chain  = $7,
+		       prev_row_hash       = $8,
+		       row_hash            = $9,
+		       retention_until     = COALESCE(retention_until, $10)
+		 WHERE id = $1
+		   AND clinic_id = $2
+		   AND chain_key IS NULL`
+	if _, err := r.db.Exec(ctx, q,
+		p.ID, p.ClinicID,
+		nullIfEmpty(p.DrugName), nullIfEmpty(p.DrugStrength), nullIfEmpty(p.DrugForm),
+		nullableBytes(p.ChainKey), p.EntrySeqInChain,
+		nullableBytes(p.PrevRowHash), nullableBytes(p.RowHash),
+		p.RetentionUntil,
+	); err != nil {
+		return fmt.Errorf("drugs.repo.BackfillChainRow: %w", err)
+	}
+	return nil
+}
+
+// ChainStatus is the result of repo.VerifyChain.
+type ChainStatus struct {
+	Intact            bool
+	Length            int64
+	FirstBrokenSeq    *int64
+	FirstBrokenReason string
+}
+
+// VerifyChain reads every row in (clinic, chain_key) ordered by
+// entry_seq_in_chain and recomputes the canonical hash for each. The
+// first row whose stored row_hash differs from the recomputed hash is
+// reported as broken; the walk stops there.
+//
+// A chain with zero rows is considered Intact (length 0, no row to
+// fail). Sequence gaps (e.g. 1, 2, 4) are reported as broken at the
+// first missing seq.
+func (r *Repository) VerifyChain(ctx context.Context, clinicID uuid.UUID, chainK []byte) (*ChainStatus, error) {
+	const q = `
+		SELECT id, entry_seq_in_chain, operation, quantity, unit,
+		       drug_name, drug_strength, drug_form, balance_after,
+		       prev_row_hash, row_hash
+		  FROM drug_operations_log
+		 WHERE clinic_id = $1
+		   AND chain_key = $2
+		   AND entry_seq_in_chain IS NOT NULL
+		 ORDER BY entry_seq_in_chain ASC`
+	rows, err := r.db.Query(ctx, q, clinicID, chainK)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.VerifyChain: query: %w", err)
+	}
+	defer rows.Close()
+
+	status := &ChainStatus{Intact: true}
+	prevHash := ZeroHash()
+	expectedSeq := int64(1)
+
+	for rows.Next() {
+		var (
+			id                              uuid.UUID
+			seq                             int64
+			operation, unit                 string
+			drugName, strength, form        string
+			quantity, balanceAfter          float64
+			storedPrevHash, storedRowHash   []byte
+		)
+		if err := rows.Scan(&id, &seq, &operation, &quantity, &unit,
+			&drugName, &strength, &form, &balanceAfter,
+			&storedPrevHash, &storedRowHash); err != nil {
+			return nil, fmt.Errorf("drugs.repo.VerifyChain: scan: %w", err)
+		}
+		status.Length++
+
+		if seq != expectedSeq {
+			status.Intact = false
+			missingSeq := expectedSeq
+			status.FirstBrokenSeq = &missingSeq
+			status.FirstBrokenReason = fmt.Sprintf("sequence gap at %d (next row was %d)", expectedSeq, seq)
+			return status, nil
+		}
+
+		// Stored prev_row_hash must match the running prevHash we're
+		// carrying forward — catches reorderings.
+		if !bytes.Equal(storedPrevHash, prevHash) {
+			status.Intact = false
+			status.FirstBrokenSeq = &seq
+			status.FirstBrokenReason = "stored prev_row_hash does not match the previous row's row_hash"
+			return status, nil
+		}
+
+		canonical := canonicalRowBytes(
+			id, clinicID, chainK, seq,
+			operation, quantity, unit,
+			drugName, strength, form,
+			balanceAfter, prevHash,
+		)
+		recomputed := computeRowHash(canonical, prevHash)
+		if !bytes.Equal(recomputed, storedRowHash) {
+			status.Intact = false
+			status.FirstBrokenSeq = &seq
+			status.FirstBrokenReason = "stored row_hash does not match recomputed hash"
+			return status, nil
+		}
+
+		prevHash = storedRowHash
+		expectedSeq++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.VerifyChain: rows: %w", err)
+	}
+	return status, nil
 }
 
 // HasOpenReconciliation reports whether there's already an unreported

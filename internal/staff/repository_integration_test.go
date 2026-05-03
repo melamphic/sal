@@ -24,7 +24,7 @@ func seedClinic(t *testing.T, clinicID uuid.UUID) {
 	pool := testutil.NewTestDB(t)
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'Test Clinic','tc-'||$1::text,'enc','ch-'||$1::text,'veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'Test Clinic','tc-'||$1::text,'enc','ch-'||$1::text,'veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 		ON CONFLICT DO NOTHING
 	`, clinicID)
 	require.NoError(t, err)
