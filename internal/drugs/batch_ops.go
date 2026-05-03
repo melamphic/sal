@@ -2,7 +2,11 @@ package drugs
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -12,65 +16,271 @@ import (
 
 // ── Batch checkout (cart) ────────────────────────────────────────────────
 //
-// Checkout from the FE cart sends N pre-validated lines in one POST.
-// The service iterates and calls LogOperation for each line in submit
-// order. Each LogOperation already runs in its own DB transaction (with
-// FOR UPDATE on the shelf row to detect concurrent balance changes), so
-// this loop is sequential, not nested-transactional.
+// Checkout from the FE cart sends N lines in one POST. We validate
+// every line up-front (witness, shelf existence, balance arithmetic),
+// compute per-shelf running balances so multiple lines on the same
+// shelf chain correctly, and then commit the entire batch through
+// repo.BatchLogOperationsTx — one transaction wrapping all N inserts +
+// shelf-balance updates. All-or-nothing.
 //
-// Failure semantics: if line K fails, lines 1..K-1 have committed and
-// line K..N are not attempted. The handler returns 422 with a body
-// listing the successful lines + the failure index + reason so the FE
-// can recover (offer the user to undo the logged ops via addends_to,
-// or just inspect the ledger).
-//
-// We don't try to wrap the whole batch in one nested tx because each
-// LogOperation already grabs its own connection from the pool and
-// holds row locks long enough that nesting would cripple concurrency.
-// Real atomicity would require a new repo method that does N inserts
-// in a single tx — out of scope for v1; the partial-success surface
-// is honest about the trade-off.
+// Pending-witness ('witness_kind=pending') lines are rejected by the
+// batch path because the post-tx async approvals submission is
+// per-row; mixing it into a single tx would either drop the queue
+// insert on a partial failure or block batch commit on the queue
+// service. Clinicians who need pending witness use the per-line
+// /operations endpoint.
 
 // BatchLogInput is what the service receives for a cart checkout.
 type BatchLogInput struct { //nolint:revive
-	ClinicID  uuid.UUID
-	StaffID   uuid.UUID
-	Lines     []LogOperationInput
+	ClinicID uuid.UUID
+	StaffID  uuid.UUID
+	Lines    []LogOperationInput
 }
 
-// BatchLogResult tells the FE what landed and what didn't. When
-// FailedIndex is nil, every line succeeded.
+// BatchLogResult is the all-or-nothing checkout result. Logged is
+// populated only on full success. FailedIndex / FailedError are kept
+// in the type for back-compat with the handler shape; with atomic
+// commit they only fire when validation rejects a line up-front (in
+// which case Logged is nil and FailedIndex points at the offending
+// line so the FE can highlight it).
 type BatchLogResult struct { //nolint:revive
 	Logged      []*OperationResponse
 	FailedIndex *int
 	FailedError string
 }
 
-// BatchLogOperations runs the cart checkout sequentially. ClinicID +
-// StaffID are stamped on each line before delegating to LogOperation
-// so the FE never has to populate them per-line.
+// BatchLogOperations runs the cart checkout atomically. Pre-validates
+// all lines (witness rules, shelf existence, balance arithmetic),
+// computes per-shelf running balances so same-shelf lines chain, then
+// commits all inserts + balance updates in a single repo transaction.
+// On any per-line validation or commit failure the entire batch rolls
+// back — no partial-success surface.
 func (s *Service) BatchLogOperations(ctx context.Context, in BatchLogInput) (*BatchLogResult, error) {
 	if len(in.Lines) == 0 {
 		return nil, fmt.Errorf("drugs.service.BatchLogOperations: empty cart: %w", domain.ErrValidation)
 	}
-	out := &BatchLogResult{Logged: make([]*OperationResponse, 0, len(in.Lines))}
+
+	// Cache per-shelf state so we only fetch each shelf row once even
+	// if the cart has multiple lines from the same shelf.
+	shelfCache := map[uuid.UUID]*ShelfRecord{}
+	requiresWitnessCache := map[uuid.UUID]bool{}
+	runningBalance := map[uuid.UUID]float64{}
+	prepped := make([]CreateOperationParams, 0, len(in.Lines))
+
+	// Per-clinic retention policy is the same for every line; fetch once.
+	var retentionUntil *time.Time
+	if pol, err := s.repo.GetRetentionPolicy(ctx, in.ClinicID); err == nil {
+		ru := domainTimeNow().AddDate(pol.LedgerYears, 0, 0)
+		retentionUntil = &ru
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		slog.Warn("drugs.service.BatchLogOperations: retention policy lookup failed; rows keep forever",
+			"clinic_id", in.ClinicID, "error", err.Error())
+	}
+
 	for i, line := range in.Lines {
+		// Stamp clinic + actor on every line so handler doesn't have to.
 		line.ClinicID = in.ClinicID
-		// AdministeredBy defaults to caller; keep any per-line override.
 		if line.AdministeredBy == uuid.Nil {
 			line.AdministeredBy = in.StaffID
 		}
 		if line.StaffID == uuid.Nil {
 			line.StaffID = in.StaffID
 		}
-		resp, err := s.LogOperation(ctx, line)
+		if line.WitnessKind != nil && strings.TrimSpace(*line.WitnessKind) == "pending" {
+			idx := i
+			return &BatchLogResult{
+					FailedIndex: &idx,
+					FailedError: "pending-witness lines must use /operations one-at-a-time",
+				},
+				fmt.Errorf("drugs.service.BatchLogOperations: line %d: pending witness not supported in batch: %w",
+					i, domain.ErrValidation)
+		}
+
+		if err := validateOperation(line); err != nil {
+			idx := i
+			return &BatchLogResult{FailedIndex: &idx, FailedError: err.Error()},
+				fmt.Errorf("drugs.service.BatchLogOperations: line %d: %w", i, err)
+		}
+
+		shelf, ok := shelfCache[line.ShelfID]
+		if !ok {
+			s2, err := s.repo.GetShelfEntryByID(ctx, line.ShelfID, in.ClinicID)
+			if err != nil {
+				idx := i
+				return &BatchLogResult{FailedIndex: &idx, FailedError: err.Error()},
+					fmt.Errorf("drugs.service.BatchLogOperations: line %d: shelf: %w", i, err)
+			}
+			if s2.ArchivedAt != nil {
+				idx := i
+				return &BatchLogResult{FailedIndex: &idx, FailedError: "shelf archived"},
+					fmt.Errorf("drugs.service.BatchLogOperations: line %d: shelf archived: %w",
+						i, domain.ErrConflict)
+			}
+			shelfCache[line.ShelfID] = s2
+			runningBalance[line.ShelfID] = s2.Balance
+			shelf = s2
+		}
+
+		requiresWitness, ok := requiresWitnessCache[line.ShelfID]
+		if !ok {
+			rw, err := s.shelfRequiresWitness(ctx, in.ClinicID, shelf)
+			if err != nil {
+				return nil, fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness check: %w", i, err)
+			}
+			requiresWitnessCache[line.ShelfID] = rw
+			requiresWitness = rw
+		}
+
+		// Inline witness validation — same rules as service.LogOperation
+		// but with batch-specific surface (pending already rejected above).
+		witnessKind := ""
+		if line.WitnessKind != nil {
+			witnessKind = strings.TrimSpace(*line.WitnessKind)
+		}
+		if requiresWitness {
+			switch witnessKind {
+			case "", "staff":
+				witnessKind = "staff"
+				if line.WitnessedBy == nil {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "witness required for controlled drug"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness required: %w", i, domain.ErrValidation)
+				}
+				if *line.WitnessedBy == line.AdministeredBy {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "witness must differ from administering staff"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness same as actor: %w", i, domain.ErrValidation)
+				}
+				perm, err := s.staffPerms.HasPermission(ctx, *line.WitnessedBy, in.ClinicID, "perm_witness_controlled_drugs")
+				if err != nil {
+					return nil, fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness perm: %w", i, err)
+				}
+				if !perm {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "witness lacks perm_witness_controlled_drugs"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: witness lacks perm: %w", i, domain.ErrForbidden)
+				}
+			case "external":
+				if line.ExternalWitnessName == nil || strings.TrimSpace(*line.ExternalWitnessName) == "" {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "external witness name required"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: external witness name required: %w", i, domain.ErrValidation)
+				}
+				if line.WitnessAttestation == nil || len(strings.TrimSpace(*line.WitnessAttestation)) < 10 {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "external witness attestation too short"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: external attestation: %w", i, domain.ErrValidation)
+				}
+			case "self":
+				if line.Operation == "discard" {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "self-witness not permitted for discard"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: self-witness on discard: %w", i, domain.ErrValidation)
+				}
+				if line.WitnessAttestation == nil || len(strings.TrimSpace(*line.WitnessAttestation)) < 30 {
+					idx := i
+					return &BatchLogResult{FailedIndex: &idx, FailedError: "self-witness attestation too short"},
+						fmt.Errorf("drugs.service.BatchLogOperations: line %d: self attestation: %w", i, domain.ErrValidation)
+				}
+			default:
+				idx := i
+				return &BatchLogResult{FailedIndex: &idx, FailedError: "unknown witness_kind"},
+					fmt.Errorf("drugs.service.BatchLogOperations: line %d: unknown witness_kind %q: %w",
+						i, witnessKind, domain.ErrValidation)
+			}
+		}
+
+		// Per-line balance using the running balance for the shelf.
+		balanceBefore := runningBalance[line.ShelfID]
+		balanceAfter, err := computeBalanceAfter(line.Operation, balanceBefore, line.Quantity)
 		if err != nil {
 			idx := i
-			out.FailedIndex = &idx
-			out.FailedError = err.Error()
-			return out, fmt.Errorf("drugs.service.BatchLogOperations: line %d: %w", i, err)
+			return &BatchLogResult{FailedIndex: &idx, FailedError: err.Error()},
+				fmt.Errorf("drugs.service.BatchLogOperations: line %d: balance: %w", i, err)
 		}
-		out.Logged = append(out.Logged, resp)
+		runningBalance[line.ShelfID] = balanceAfter
+
+		// Compliance v2 chain context.
+		cc, err := s.loadCatalogContext(ctx, in.ClinicID, shelf)
+		if err != nil {
+			slog.Warn("drugs.service.BatchLogOperations: catalog context load failed; chain disabled for line",
+				"clinic_id", in.ClinicID, "shelf_id", line.ShelfID, "error", err.Error())
+			cc = &catalogContext{}
+		}
+		var chainK []byte
+		if cc.DrugName != "" && cc.Strength != "" && cc.Form != "" {
+			chainK = chainKey(in.ClinicID, cc.DrugName, cc.Strength, cc.Form)
+		}
+
+		// Witness shape mapping — same as single-call path.
+		var witnessKindParam *string
+		var witnessStatusParam *string
+		switch {
+		case !requiresWitness:
+			ss := string(domain.EntityReviewNotRequired)
+			witnessStatusParam = &ss
+		default:
+			k := witnessKind
+			witnessKindParam = &k
+			ss := string(domain.EntityReviewApproved)
+			witnessStatusParam = &ss
+		}
+
+		prepped = append(prepped, CreateOperationParams{
+			ID:                  domain.NewID(),
+			ClinicID:            in.ClinicID,
+			ShelfID:             line.ShelfID,
+			SubjectID:           line.SubjectID,
+			NoteID:              line.NoteID,
+			NoteFieldID:         line.NoteFieldID,
+			Operation:           line.Operation,
+			Quantity:            line.Quantity,
+			Unit:                line.Unit,
+			Dose:                line.Dose,
+			Route:               line.Route,
+			ReasonIndication:    line.ReasonIndication,
+			AdministeredBy:      line.AdministeredBy,
+			WitnessedBy:         line.WitnessedBy,
+			PrescribedBy:        line.PrescribedBy,
+			BalanceBefore:       balanceBefore,
+			BalanceAfter:        balanceAfter,
+			AddendsTo:           line.AddendsTo,
+			Status:              line.Status,
+			DrugName:            cc.DrugName,
+			DrugStrength:        cc.Strength,
+			DrugForm:            cc.Form,
+			ChainKey:            chainK,
+			RetentionUntil:      retentionUntil,
+			WitnessKind:         witnessKindParam,
+			ExternalWitnessName: trimNonEmpty(line.ExternalWitnessName),
+			ExternalWitnessRole: trimNonEmpty(line.ExternalWitnessRole),
+			WitnessAttestation:  trimNonEmpty(line.WitnessAttestation),
+			WitnessStatus:       witnessStatusParam,
+		})
+	}
+
+	// Atomic commit — repo wraps every insert + balance update in one tx.
+	recs, err := s.repo.BatchLogOperationsTx(ctx, prepped)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.BatchLogOperations: %w", err)
+	}
+
+	// Best-effort subject-access logs after commit. Don't fail the cart
+	// on a logger glitch — the ledger landed.
+	if s.accessLogger != nil {
+		for i, rec := range recs {
+			line := in.Lines[i]
+			if line.SubjectID != nil {
+				_ = s.accessLogger.LogAccess(ctx, in.ClinicID, *line.SubjectID, line.StaffID,
+					"drug_op", "drugs.service.BatchLogOperations")
+			}
+			_ = rec
+		}
+	}
+
+	out := &BatchLogResult{Logged: make([]*OperationResponse, len(recs))}
+	for i, r := range recs {
+		out.Logged[i] = operationRecordToResponse(r)
 	}
 	return out, nil
 }
