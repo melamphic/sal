@@ -41,6 +41,11 @@ type repo interface {
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
 	GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error)
 	UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error)
+	// SeedNoteFields inserts a NULL-value row for each (noteID, fieldID)
+	// pair, ON CONFLICT DO NOTHING. Called at note creation time so the
+	// FE can PATCH any field by id without a 404 for fields the AI
+	// produced no value for (or for manual notes where the AI never ran).
+	SeedNoteFields(ctx context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error
 
 	// System widget materialise support — joins note_fields with
 	// form_fields.type + form_fields.title.
