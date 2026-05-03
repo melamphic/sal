@@ -703,18 +703,75 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	rec, err := r.logOperationOnTx(ctx, tx, p)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("drugs.repo.LogOperation: commit: %w", err)
+	}
+	return rec, nil
+}
+
+// BatchLogOperationsTx atomically logs N operations in a single
+// transaction. Either all succeed or all roll back. Used by cart
+// checkout where the user expects "log 4 drugs together or log
+// nothing." The caller (service layer) is responsible for computing
+// per-line BalanceBefore/After in submit order — for multiple lines
+// on the same shelf those balances need to chain (line K's
+// BalanceBefore = line K-1's BalanceAfter). The repo enforces the
+// per-line balance match via FOR UPDATE on the shelf row, same as
+// the single-call path.
+//
+// Compliance-v2 chain hashing + advisory locks work per-row exactly
+// as in [LogOperation] — same code path, same regulator-binding
+// guarantees. The async-witness ('pending') path stays single-call
+// (BatchLogOperations rejects pending lines at the service layer)
+// because the post-tx approvals submission is per-row.
+func (r *Repository) BatchLogOperationsTx(ctx context.Context, params []CreateOperationParams) ([]*OperationRecord, error) {
+	if len(params) == 0 {
+		return nil, nil
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	out := make([]*OperationRecord, 0, len(params))
+	for i, p := range params {
+		rec, err := r.logOperationOnTx(ctx, tx, p)
+		if err != nil {
+			return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: line %d: %w", i, err)
+		}
+		out = append(out, rec)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("drugs.repo.BatchLogOperationsTx: commit: %w", err)
+	}
+	return out, nil
+}
+
+// logOperationOnTx is the per-row body shared by LogOperation
+// (single-call, opens its own tx) and BatchLogOperationsTx (multi-row,
+// opens one tx for the whole batch). Holds the regulator-binding
+// invariants — FOR UPDATE on the shelf, balance match check, chain
+// hash + advisory lock, retention stamp.
+func (r *Repository) logOperationOnTx(ctx context.Context, tx pgx.Tx, p CreateOperationParams) (*OperationRecord, error) {
 	// Lock the shelf row + verify balance hasn't changed under us.
 	const lockQ = `SELECT balance FROM clinic_drug_shelf
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL FOR UPDATE`
 	var currentBalance float64
 	if err := tx.QueryRow(ctx, lockQ, p.ShelfID, p.ClinicID).Scan(&currentBalance); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("drugs.repo.LogOperation: shelf: %w", domain.ErrNotFound)
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: shelf: %w", domain.ErrNotFound)
 		}
-		return nil, fmt.Errorf("drugs.repo.LogOperation: lock shelf: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: lock shelf: %w", err)
 	}
 	if currentBalance != p.BalanceBefore {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: balance changed under us, expected %v got %v: %w",
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: balance changed under us, expected %v got %v: %w",
 			p.BalanceBefore, currentBalance, domain.ErrConflict)
 	}
 
@@ -739,7 +796,7 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		// the same drug-strength-form page within the txn lifetime.
 		lockID := chainAdvisoryLockID(p.ChainKey)
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
-			return nil, fmt.Errorf("drugs.repo.LogOperation: chain advisory lock: %w", err)
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: chain advisory lock: %w", err)
 		}
 
 		const headQ = `
@@ -757,7 +814,7 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 			prevRowHash = ZeroHash()
 			prevSeq = 0
 		case err != nil:
-			return nil, fmt.Errorf("drugs.repo.LogOperation: read chain head: %w", err)
+			return nil, fmt.Errorf("drugs.repo.logOperationOnTx: read chain head: %w", err)
 		}
 
 		nextSeq := prevSeq + 1
@@ -816,7 +873,7 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 	)
 	rec, err := scanOperation(row)
 	if err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: insert op: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: insert op: %w", err)
 	}
 
 	// Update the shelf balance.
@@ -824,12 +881,9 @@ func (r *Repository) LogOperation(ctx context.Context, p CreateOperationParams) 
 		SET balance = $3, updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2`
 	if _, err := tx.Exec(ctx, updateQ, p.ShelfID, p.ClinicID, p.BalanceAfter); err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: update balance: %w", err)
+		return nil, fmt.Errorf("drugs.repo.logOperationOnTx: update balance: %w", err)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("drugs.repo.LogOperation: commit: %w", err)
-	}
 	return rec, nil
 }
 
