@@ -28,7 +28,7 @@ func seedClinic(t *testing.T, db interface {
 	pool := testutil.NewTestDB(t)
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1, 'Test Clinic', 'test-clinic', 'enc', 'hash-'||$1::text, 'veterinary', 'trial', NOW()+interval'14 days', 'ap-southeast-2')
+		VALUES ($1, 'Test Clinic', 'test-clinic', 'enc', 'hash-'||$1::text, 'veterinary', 'trial', NOW()+interval'21 days', 'ap-southeast-2')
 		ON CONFLICT DO NOTHING
 	`, clinicID)
 	require.NoError(t, err)
@@ -73,7 +73,7 @@ func TestRepository_FindStaffByEmailHash_Found(t *testing.T) {
 	// Need clinic first for FK.
 	_, err := pool.Exec(ctx, `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'TC','tc-slug','enc',$2,'veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'TC','tc-slug','enc',$2,'veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 	`, clinicID, "clinic-"+emailHash)
 	require.NoError(t, err)
 
@@ -117,7 +117,7 @@ func TestRepository_CreateAndConsumeAuthToken_Roundtrip(t *testing.T) {
 	clinicID := domain.NewID()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'TC2','tc2-slug','enc','clinic2hash','veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'TC2','tc2-slug','enc','clinic2hash','veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 	`, clinicID)
 	require.NoError(t, err)
 
@@ -155,7 +155,7 @@ func TestRepository_GetAndConsumeAuthToken_Replay_Blocked(t *testing.T) {
 	clinicID := domain.NewID()
 	_, _ = pool.Exec(ctx, `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'TC3','tc3-slug','enc','clinic3hash','veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'TC3','tc3-slug','enc','clinic3hash','veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 	`, clinicID)
 	staffID := domain.NewID()
 	_, _ = pool.Exec(ctx, `
@@ -189,7 +189,7 @@ func TestRepository_GetAndConsumeAuthToken_Expired(t *testing.T) {
 	clinicID := domain.NewID()
 	_, _ = pool.Exec(ctx, `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'TC4','tc4-slug','enc','clinic4hash','veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'TC4','tc4-slug','enc','clinic4hash','veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 	`, clinicID)
 	staffID := domain.NewID()
 	_, _ = pool.Exec(ctx, `
@@ -232,7 +232,7 @@ func TestRepository_DeleteRefreshTokensForStaff(t *testing.T) {
 	clinicID := domain.NewID()
 	_, _ = pool.Exec(ctx, `
 		INSERT INTO clinics (id, name, slug, email, email_hash, vertical, status, trial_ends_at, data_region)
-		VALUES ($1,'TC5','tc5-slug','enc','clinic5hash','veterinary','trial',NOW()+interval'14d','ap-southeast-2')
+		VALUES ($1,'TC5','tc5-slug','enc','clinic5hash','veterinary','trial',NOW()+interval'21d','ap-southeast-2')
 	`, clinicID)
 	staffID := domain.NewID()
 	_, _ = pool.Exec(ctx, `

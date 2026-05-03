@@ -111,9 +111,11 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 	if !ok || n.ClinicID != p.ClinicID {
 		return nil, domain.ErrNotFound
 	}
-	if n.Status != domain.NoteStatusDraft {
+	if n.Status != domain.NoteStatusDraft &&
+		n.Status != domain.NoteStatusOverriding {
 		return nil, domain.ErrConflict
 	}
+	wasOverriding := n.Status == domain.NoteStatusOverriding
 	n.Status = domain.NoteStatusSubmitted
 	n.ReviewedBy = &p.ReviewedBy
 	n.ReviewedAt = &p.ReviewedAt
@@ -128,6 +130,31 @@ func (f *fakeRepo) SubmitNote(_ context.Context, p SubmitNoteParams) (*NoteRecor
 		n.OverrideBy = &by
 		n.OverrideAt = &at
 	}
+	if wasOverriding {
+		n.OverrideCount++
+		n.PDFStorageKey = nil
+	}
+	n.UpdatedAt = domain.TimeNow()
+	return cloneNote(n), nil
+}
+
+func (f *fakeRepo) OverrideUnlock(_ context.Context, p OverrideUnlockParams) (*NoteRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[p.ID]
+	if !ok || n.ClinicID != p.ClinicID {
+		return nil, domain.ErrNotFound
+	}
+	if n.Status != domain.NoteStatusSubmitted {
+		return nil, domain.ErrConflict
+	}
+	n.Status = domain.NoteStatusOverriding
+	at := p.UnlockedAt
+	by := p.UnlockedBy
+	reason := p.Reason
+	n.OverrideUnlockedAt = &at
+	n.OverrideUnlockedBy = &by
+	n.OverrideUnlockedReason = &reason
 	n.UpdatedAt = domain.TimeNow()
 	return cloneNote(n), nil
 }
@@ -216,6 +243,29 @@ func (f *fakeRepo) UpsertNoteFields(_ context.Context, noteID uuid.UUID, fields 
 	return f.fields[noteID], nil
 }
 
+func (f *fakeRepo) SeedNoteFields(_ context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	existing := make(map[uuid.UUID]bool)
+	for _, nf := range f.fields[noteID] {
+		existing[nf.FieldID] = true
+	}
+	for _, fid := range fieldIDs {
+		if existing[fid] {
+			continue
+		}
+		f.fields[noteID] = append(f.fields[noteID], &NoteFieldRecord{
+			ID:        domain.NewID(),
+			NoteID:    noteID,
+			FieldID:   fid,
+			Value:     nil,
+			CreatedAt: domain.TimeNow(),
+			UpdatedAt: domain.TimeNow(),
+		})
+	}
+	return nil
+}
+
 func (f *fakeRepo) GetNoteFields(_ context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
@@ -273,6 +323,17 @@ func (f *fakeRepo) UpdatePDFKey(_ context.Context, id, clinicID uuid.UUID, key s
 		return domain.ErrNotFound
 	}
 	n.PDFStorageKey = &key
+	return nil
+}
+
+func (f *fakeRepo) ClearPDFKey(_ context.Context, id, clinicID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n, ok := f.notes[id]
+	if !ok || n.ClinicID != clinicID {
+		return domain.ErrNotFound
+	}
+	n.PDFStorageKey = nil
 	return nil
 }
 

@@ -7,7 +7,7 @@
 //     first time a clinic crosses each threshold in the period; 150%
 //     hard-blocks further creates with domain.ErrForbidden.
 //
-//  2. Trial clinics: 100 notes total over the entire 14-day trial,
+//  2. Trial clinics: 100 notes total over the entire 21-day trial,
 //     counted from clinics.created_at (no billing period yet).
 //
 // notecap is a leaf cross-domain coordinator — it imports nothing from
@@ -24,7 +24,7 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 )
 
-// trialNoteCap is the hard ceiling for a clinic still on its 14-day
+// trialNoteCap is the hard ceiling for a clinic still on its 21-day
 // trial (pricing-model-v3 §7 "Trial period"). Independent of plan
 // configuration since trial clinics haven't picked a plan yet.
 const trialNoteCap = 100

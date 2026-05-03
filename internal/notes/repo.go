@@ -15,6 +15,7 @@ type repo interface {
 	ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error)
 	UpdateNoteStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.NoteStatus, errMsg *string) (*NoteRecord, error)
 	SubmitNote(ctx context.Context, p SubmitNoteParams) (*NoteRecord, error)
+	OverrideUnlock(ctx context.Context, p OverrideUnlockParams) (*NoteRecord, error)
 	ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*NoteRecord, error)
 	// CountNotesByRecording returns how many notes exist for a recording within a clinic.
 	// Used to enforce the 3-note-per-recording cap at service layer.
@@ -32,11 +33,19 @@ type repo interface {
 	UpdatePolicyCheckResult(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error
 	// UpdatePDFKey sets the pdf_storage_key on a note after PDF generation.
 	UpdatePDFKey(ctx context.Context, noteID, clinicID uuid.UUID, key string) error
+	// ClearPDFKey nulls pdf_storage_key so the next render produces a
+	// fresh artifact. Force-rerender path.
+	ClearPDFKey(ctx context.Context, noteID, clinicID uuid.UUID) error
 
 	// Note fields.
 	UpsertNoteFields(ctx context.Context, noteID uuid.UUID, fields []UpsertFieldParams) ([]*NoteFieldRecord, error)
 	GetNoteFields(ctx context.Context, noteID uuid.UUID) ([]*NoteFieldRecord, error)
 	UpdateNoteField(ctx context.Context, p UpdateNoteFieldParams) (*NoteFieldRecord, error)
+	// SeedNoteFields inserts a NULL-value row for each (noteID, fieldID)
+	// pair, ON CONFLICT DO NOTHING. Called at note creation time so the
+	// FE can PATCH any field by id without a 404 for fields the AI
+	// produced no value for (or for manual notes where the AI never ran).
+	SeedNoteFields(ctx context.Context, noteID uuid.UUID, fieldIDs []uuid.UUID) error
 
 	// System widget materialise support — joins note_fields with
 	// form_fields.type + form_fields.title.
@@ -51,11 +60,14 @@ type repo interface {
 // NoteFieldWithType is a denormalised join — the row from note_fields +
 // the field's type and title from form_fields. Used by the materialise
 // flow to validate field type without a second round-trip and by the
-// submit gate to surface the field title in error messages.
+// submit gate to surface the field title in error messages. Required
+// is read so the gate can let optional system widgets through with
+// unconfirmed AI values without blocking submit.
 type NoteFieldWithType struct {
 	FieldID   uuid.UUID
 	FieldType string
 	Title     string
+	Required  bool
 	Value     *string
 	NoteID    uuid.UUID
 	SubjectID *uuid.UUID

@@ -155,6 +155,19 @@ func (r *Repository) ListPainScores(ctx context.Context, clinicID uuid.UUID, p L
 	return out, total, nil
 }
 
+// UpdateReviewStatus stamps the review_status snapshot column on a
+// pain_scores row. Idempotent — invoked by the approvals service when
+// an async review transitions states.
+func (r *Repository) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error {
+	const q = `UPDATE pain_scores
+	           SET review_status = $3
+	           WHERE id = $1 AND clinic_id = $2`
+	if _, err := r.db.Exec(ctx, q, id, clinicID, string(status)); err != nil {
+		return fmt.Errorf("pain.repo.UpdateReviewStatus: %w", err)
+	}
+	return nil
+}
+
 // SubjectTrend holds a compact (count, avg, latest) summary for the
 // subject hub. Period-bounded so a "last 30 days" view doesn't have to
 // pull the entire history.

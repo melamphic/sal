@@ -1,4 +1,4 @@
-.PHONY: dev restart build test test-integration lint migrate migrate-down docs docs-api docs-install tidy smoke-billing
+.PHONY: dev restart build test test-integration lint migrate migrate-down migrate-status docs docs-api docs-install tidy smoke-billing
 SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 

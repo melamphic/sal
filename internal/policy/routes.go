@@ -121,7 +121,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/policies/{policy_id}/draft",
 		Summary:     "Discard policy draft",
-		Description: "Deletes the current draft version of a policy. The latest published version (if any) remains active. Requires manage_policies permission.",
+		Description: "Deletes the current draft version of a policy. If the policy has a published version, only the draft is removed and the published version stays active. If the policy has never been published, the entire policy row is cascade-deleted (draft, clauses, and form_policies links) — the discard-draft action doubles as 'delete this draft-only policy'. Requires manage_policies permission.",
 		Tags:        []string{"Policy"},
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, managePolicies},

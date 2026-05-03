@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -708,26 +709,43 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		if label == "" {
 			label = f.FieldID.String()
 		}
-		// Materialised system widget? Resolve to a labelled summary.
-		// On any error, fall back to raw value rendering — we'd rather
-		// ship the PDF with an id-pointer than fail the render.
+		fieldType := typeByID[f.FieldID]
+
+		// System widget: surface as a typed card. Two states:
+		//   - materialised: id-pointer resolves to a real ledger row,
+		//     summariseByKind returns the friendly Items; pending=false
+		//   - unmaterialised: AI extracted a payload but the clinician
+		//     hasn't tapped Confirm. Parse the raw JSON into items and
+		//     mark pending=true so the card shows a banner instead of
+		//     raw {"operation":"administer", ...} text in the PDF.
 		var summary []PDFSummaryItem
-		if r.svc != nil && strings.HasPrefix(typeByID[f.FieldID], "system.") {
-			entityID, kind := decodeIDPointer(val)
-			if kind != "" {
-				s, sErr := r.svc.summariseByKind(ctx, kind, entityID, note.ClinicID)
-				if sErr == nil && s != nil {
+		var systemKind string
+		var systemPending bool
+		var systemReview string
+		if strings.HasPrefix(fieldType, "system.") {
+			systemKind = strings.TrimPrefix(fieldType, "system.")
+			entityID, ptrKind := decodeIDPointer(val)
+			if ptrKind != "" && r.svc != nil {
+				if s, sErr := r.svc.summariseByKind(ctx, ptrKind, entityID, note.ClinicID); sErr == nil && s != nil {
 					summary = make([]PDFSummaryItem, len(s.Items))
 					for i, it := range s.Items {
 						summary[i] = PDFSummaryItem(it)
 					}
+					systemReview = s.ReviewStatus
 				}
+			}
+			if summary == nil && val != "" {
+				summary = parseUnmaterialisedSystemPayload(systemKind, val)
+				systemPending = len(summary) > 0
 			}
 		}
 		pdfFields = append(pdfFields, PDFField{
-			Label:         label,
-			Value:         val,
-			SystemSummary: summary,
+			Label:              label,
+			Value:              val,
+			SystemSummary:      summary,
+			SystemKind:         systemKind,
+			SystemPending:      systemPending,
+			SystemReviewStatus: systemReview,
 		})
 	}
 
@@ -813,4 +831,142 @@ func derefStr(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// parseUnmaterialisedSystemPayload parses the AI-extracted JSON payload
+// stored in note_fields.value for an unconfirmed system widget into a
+// list of friendly label/value items, ready to feed
+// pdf.drawSystemCard. Returns nil if the value isn't valid JSON or
+// doesn't match a known kind. Empty/null sub-values render as "—" so
+// the card has predictable rows rather than collapsing on missing data.
+func parseUnmaterialisedSystemPayload(kind, raw string) []PDFSummaryItem {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		return nil
+	}
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			v, ok := obj[k]
+			if !ok || v == nil {
+				continue
+			}
+			switch t := v.(type) {
+			case string:
+				if t != "" {
+					return t
+				}
+			case float64:
+				// JSON numbers; render integers without trailing .0.
+				if t == float64(int64(t)) {
+					return fmt.Sprintf("%d", int64(t))
+				}
+				return fmt.Sprintf("%g", t)
+			case bool:
+				if t {
+					return "yes"
+				}
+				return "no"
+			default:
+				if b, err := json.Marshal(t); err == nil {
+					return string(b)
+				}
+			}
+		}
+		return "—"
+	}
+	switch kind {
+	case "drug_op":
+		return []PDFSummaryItem{
+			{Label: "Operation", Value: titleCase(get("operation"))},
+			{Label: "Drug", Value: get("drug_name", "drug")},
+			{Label: "Quantity", Value: combine(get("quantity"), get("unit"))},
+			{Label: "Dose", Value: get("dose")},
+			{Label: "Route", Value: get("route")},
+			{Label: "Indication", Value: get("reason_indication", "indication", "reason")},
+			{Label: "Witness", Value: get("witness_name", "witness")},
+		}
+	case "consent":
+		return []PDFSummaryItem{
+			{Label: "Type", Value: get("consent_type", "type")},
+			{Label: "Scope", Value: get("scope")},
+			{Label: "Captured via", Value: titleCase(get("captured_via", "via", "method"))},
+			{Label: "Consenting party", Value: combine(
+				get("consenting_party_name", "party_name", "name"),
+				get("consenting_party_relationship", "relationship"),
+			)},
+			{Label: "Risks discussed", Value: get("risks_discussed", "risks")},
+			{Label: "Alternatives", Value: get("alternatives_discussed", "alternatives")},
+			{Label: "Witness", Value: get("witness_name", "witness")},
+			{Label: "Expires", Value: get("expires_at", "expires")},
+		}
+	case "incident":
+		return []PDFSummaryItem{
+			{Label: "Type", Value: get("incident_type", "type")},
+			{Label: "Severity", Value: titleCase(get("severity"))},
+			{Label: "Occurred at", Value: get("occurred_at")},
+			{Label: "Location", Value: get("location")},
+			{Label: "Description", Value: get("brief_description", "description")},
+			{Label: "Immediate actions", Value: get("immediate_actions", "actions")},
+			{Label: "Witnesses", Value: get("witnesses_text", "witnesses")},
+			{Label: "Subject outcome", Value: get("subject_outcome", "outcome")},
+		}
+	case "pain_score":
+		return []PDFSummaryItem{
+			{Label: "Score", Value: get("score")},
+			{Label: "Scale", Value: get("pain_scale_used", "scale")},
+			{Label: "Method", Value: titleCase(get("method"))},
+			{Label: "Note", Value: get("note", "comment")},
+		}
+	default:
+		// Unknown kind — render every key as a row so nothing's lost,
+		// even if the schema changes server-side. Sorted for stable
+		// output between renders.
+		keys := make([]string, 0, len(obj))
+		for k := range obj {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		out := make([]PDFSummaryItem, 0, len(keys))
+		for _, k := range keys {
+			out = append(out, PDFSummaryItem{
+				Label: titleCase(strings.ReplaceAll(k, "_", " ")),
+				Value: get(k),
+			})
+		}
+		return out
+	}
+}
+
+// titleCase capitalises the first letter of each whitespace-separated
+// word. Used to make the AI's lowercase enum values ("administer",
+// "verbal") read like UI labels in the PDF.
+func titleCase(s string) string {
+	if s == "" || s == "—" {
+		return s
+	}
+	parts := strings.Fields(s)
+	for i, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		parts[i] = strings.ToUpper(p[:1]) + p[1:]
+	}
+	return strings.Join(parts, " ")
+}
+
+// combine joins two adjacent fields with a separator, dropping the
+// separator if either side is empty / "—". E.g. "10 mg" or "Jane (parent)".
+func combine(a, b string) string {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || a == "—" {
+		if b == "" {
+			return "—"
+		}
+		return b
+	}
+	if b == "" || b == "—" {
+		return a
+	}
+	return a + " " + b
 }

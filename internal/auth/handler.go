@@ -172,7 +172,7 @@ func (h *Handler) startSignup(ctx context.Context, input *signupStartInput) (*si
 
 // startSignupCheckout handles POST /api/v1/signup/checkout-start.
 // Public endpoint called by /mel when the user clicks "Start trial" with
-// card-up-front. Pre-creates a Stripe customer + Checkout session (14-day
+// card-up-front. Pre-creates a Stripe customer + Checkout session (21-day
 // trial), mints a handoff JWT carrying the cus_… as Stripe success_url,
 // and returns the Checkout URL. Browser redirects to checkout_url; on
 // success Stripe redirects to the handoff URL which provisions the clinic.

@@ -642,9 +642,21 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 	return resp, nil
 }
 
-// DiscardDraft deletes the current draft of a form. Returns ErrNotFound if
-// no draft exists. The latest published version (if any) is unaffected and
-// remains the active version.
+// DiscardDraft deletes the current draft of a form.
+//
+// Two semantics, branched on whether the form has ever been published:
+//
+//   - **Has a published version** — the draft is dropped, the latest
+//     published version remains the active one. Returns
+//     [domain.ErrNotFound] if there's nothing to drop.
+//   - **Never published** — the entire form row is cascade-deleted along
+//     with its draft, draft fields, and `form_policies` links. The
+//     "discard draft" affordance doubles as "delete this form" while
+//     it's still draft-only, since there's no published artefact left
+//     to keep.
+//
+// Retired forms always reject — use the rollback workflow if you need
+// the fields back from a prior published version.
 func (s *Service) DiscardDraft(ctx context.Context, formID, clinicID uuid.UUID) error {
 	form, err := s.repo.GetFormByID(ctx, formID, clinicID)
 	if err != nil {
@@ -653,6 +665,21 @@ func (s *Service) DiscardDraft(ctx context.Context, formID, clinicID uuid.UUID) 
 	if form.ArchivedAt != nil {
 		return fmt.Errorf("forms.service.DiscardDraft: form is retired: %w", domain.ErrConflict)
 	}
+
+	// Detect "never published" by asking for the latest published row.
+	// Anything other than ErrNotFound means a real publish exists OR the
+	// repo blew up — surface both as errors.
+	if _, err := s.repo.GetLatestPublishedVersion(ctx, formID); err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			if err := s.repo.DeleteFormCascade(ctx, formID, clinicID); err != nil {
+				return fmt.Errorf("forms.service.DiscardDraft: cascade: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("forms.service.DiscardDraft: check published: %w", err)
+	}
+
+	// Has a published version — drop only the draft.
 	if err := s.repo.DeleteDraftVersion(ctx, formID); err != nil {
 		return fmt.Errorf("forms.service.DiscardDraft: %w", err)
 	}

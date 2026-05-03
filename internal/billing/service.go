@@ -22,8 +22,8 @@ import (
 )
 
 // trialPeriodDays is the trial length offered when a clinic upgrades from
-// the in-app Checkout flow. Pricing model v3 requires 14 days.
-const trialPeriodDays = 14
+// the in-app Checkout flow. Pricing model v3 requires 21 days.
+const trialPeriodDays = 21
 
 // ClinicUpdater is implemented by an app.go adapter bridging to
 // clinic.Service. Billing never imports the clinic package directly.

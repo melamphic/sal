@@ -45,6 +45,12 @@ type repo interface {
 	// DeleteDraftVersion deletes the current draft version of a form. Returns
 	// domain.ErrNotFound if no draft exists.
 	DeleteDraftVersion(ctx context.Context, formID uuid.UUID) error
+	// DeleteFormCascade hard-deletes a form along with all of its versions,
+	// fields, and form_policies links, and NULLs out any marketplace
+	// acquisition reference. Used by Service.DiscardDraft when the form has
+	// never been published. Returns domain.ErrNotFound when no row matches
+	// (id, clinic_id).
+	DeleteFormCascade(ctx context.Context, formID, clinicID uuid.UUID) error
 	// PublishDraftVersion freezes the draft: sets status=published, assigns
 	// version_major/minor, and records who published it and when.
 	PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*FormVersionRecord, error)

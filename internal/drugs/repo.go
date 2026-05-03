@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/melamphic/sal/internal/domain"
 )
 
 // repo is the internal data-access interface for the drugs module. The
@@ -37,11 +38,20 @@ type repo interface {
 	// clinic_drug_shelf.balance atomically, with a FOR UPDATE lock on the
 	// shelf row to detect concurrent balance changes.
 	LogOperation(ctx context.Context, p CreateOperationParams) (*OperationRecord, error)
+	// BatchLogOperationsTx is the cart-checkout atomic path: every line
+	// commits together or none do. Caller (service) is responsible for
+	// computing per-line BalanceBefore/After in submit order so that
+	// multiple lines on the same shelf chain correctly.
+	BatchLogOperationsTx(ctx context.Context, params []CreateOperationParams) ([]*OperationRecord, error)
 	GetOperationByID(ctx context.Context, id, clinicID uuid.UUID) (*OperationRecord, error)
 	ListOperations(ctx context.Context, clinicID uuid.UUID, p ListOperationsParams) ([]*OperationRecord, int, error)
 	// ConfirmOperation flips a pending_confirm row (created via a
 	// system.drug_op widget) to confirmed. Idempotent.
 	ConfirmOperation(ctx context.Context, id, clinicID, staffID uuid.UUID) (*OperationRecord, error)
+	// UpdateWitnessStatus flips the witness_status snapshot column on
+	// the ledger row. Called by the approvals service when an async
+	// review transitions pending → approved | challenged.
+	UpdateWitnessStatus(ctx context.Context, id, clinicID uuid.UUID, status domain.EntityReviewStatus) error
 	// ListPendingConfirmForNote returns ops linked to a note that are
 	// still in pending_confirm. Used by the note-submit gate.
 	ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error)
@@ -60,4 +70,36 @@ type repo interface {
 	LockOperationsToReconciliation(ctx context.Context, p LockOperationsParams) (int64, error)
 	ListReconciliations(ctx context.Context, clinicID uuid.UUID, p ListReconciliationsParams) ([]*ReconciliationRecord, int, error)
 	HasOpenReconciliation(ctx context.Context, shelfID uuid.UUID, periodEnd time.Time) (bool, error)
+
+	// ── Compliance v2 chain verification ────────────────────────────────────
+
+	// VerifyChain walks every row in a chain in order, recomputing the
+	// canonical hash for each and comparing to the stored row_hash.
+	// Returns the first broken row's entry_seq_in_chain (and a
+	// human-readable reason) or Intact=true if every hash matches.
+	VerifyChain(ctx context.Context, clinicID uuid.UUID, chainKey []byte) (*ChainStatus, error)
+
+	// ── Compliance v2 retention ──────────────────────────────────────────────
+
+	// GetRetentionPolicy returns the per-clinic retention years for
+	// the ledger / reconciliation / MAR. Seeded from country at clinic
+	// creation by migration 00068.
+	GetRetentionPolicy(ctx context.Context, clinicID uuid.UUID) (*RetentionPolicy, error)
+
+	// SoftDeleteOpsPastRetention soft-deletes (sets archived_at) any
+	// drug_operations_log row whose retention_until has passed. Returns
+	// the number of rows deleted. Used by the daily retention purge
+	// worker.
+	SoftDeleteOpsPastRetention(ctx context.Context, asOf time.Time) (int64, error)
+
+	// ── Compliance v2 backfill (one-shot, called by cmd/backfill-drug-chain) ─
+
+	// ListLegacyOpsForBackfill returns rows missing chain_key, ordered
+	// by created_at ASC, in pages. Pass a zero `since` for the first
+	// call.
+	ListLegacyOpsForBackfill(ctx context.Context, clinicID uuid.UUID, since time.Time, limit int) ([]*OperationRecord, error)
+
+	// BackfillChainRow stamps chain fields onto a legacy row in a
+	// transaction. Idempotent — skips rows where chain_key is already set.
+	BackfillChainRow(ctx context.Context, p BackfillChainRowParams) error
 }

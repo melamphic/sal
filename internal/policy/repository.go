@@ -583,6 +583,51 @@ func (r *Repository) DeleteDraftVersion(ctx context.Context, policyID uuid.UUID)
 	return nil
 }
 
+// DeletePolicyCascade hard-deletes a policy along with all of its versions
+// (and clauses, via the policy_clauses → policy_versions ON DELETE CASCADE)
+// and clears any form_policies links that reference it. Used by
+// Service.DiscardDraft when the policy has never been published — the
+// "discard draft" action then naturally collapses the whole row instead of
+// leaving an empty zombie record behind.
+//
+// Returns domain.ErrNotFound when no policy row matches (id, clinic_id).
+// All steps run in a single transaction so partial deletes can't strand
+// orphan rows.
+func (r *Repository) DeletePolicyCascade(ctx context.Context, policyID, clinicID uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// 1. Many-to-many link to forms — no FK cascade, clean up by hand.
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM form_policies WHERE policy_id = $1`, policyID); err != nil {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: form_policies: %w", err)
+	}
+
+	// 2. All versions of the policy (clauses cascade via ON DELETE CASCADE).
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM policy_versions WHERE policy_id = $1`, policyID); err != nil {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: policy_versions: %w", err)
+	}
+
+	// 3. The policy itself, scoped to the clinic.
+	tag, err := tx.Exec(ctx,
+		`DELETE FROM policies WHERE id = $1 AND clinic_id = $2`, policyID, clinicID)
+	if err != nil {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: policies: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: %w", domain.ErrNotFound)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("policy.repo.DeletePolicyCascade: commit: %w", err)
+	}
+	return nil
+}
+
 // PublishDraftVersion transitions the draft to published status.
 func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVersionParams) (*PolicyVersionRecord, error) {
 	changes := p.Changes

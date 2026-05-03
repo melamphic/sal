@@ -53,6 +53,10 @@ type recordPainBody struct {
 		Method        string  `json:"method"          enum:"manual,painchek,extracted_from_audio,flacc_observed,wong_baker"`
 		PainScaleUsed string  `json:"pain_scale_used" enum:"nrs,flacc,painad,wong_baker,vrs,vas"`
 		AssessedAt    *string `json:"assessed_at,omitempty" doc:"RFC3339; defaults to now."`
+		// SubmitForReview queues the score for second-rater verification.
+		// Used for PainAD (aged-care non-verbal) and high-score entries.
+		SubmitForReview bool    `json:"submit_for_review,omitempty"`
+		ReviewNote      *string `json:"review_note,omitempty" doc:"Optional context for the approver."`
 	}
 }
 
@@ -65,13 +69,16 @@ func (h *Handler) recordPain(ctx context.Context, input *recordPainBody) (*painH
 		return nil, huma.Error400BadRequest("invalid subject_id")
 	}
 	in := RecordPainScoreInput{
-		ClinicID:      clinicID,
-		StaffID:       staffID,
-		SubjectID:     subjectID,
-		Score:         input.Body.Score,
-		Note:          input.Body.Note,
-		Method:        input.Body.Method,
-		PainScaleUsed: input.Body.PainScaleUsed,
+		ClinicID:        clinicID,
+		StaffID:         staffID,
+		StaffRole:       string(mw.RoleFromContext(ctx)),
+		SubjectID:       subjectID,
+		Score:           input.Body.Score,
+		Note:            input.Body.Note,
+		Method:          input.Body.Method,
+		PainScaleUsed:   input.Body.PainScaleUsed,
+		SubmitForReview: input.Body.SubmitForReview,
+		ReviewNote:      input.Body.ReviewNote,
 	}
 	if input.Body.NoteID != nil && *input.Body.NoteID != "" {
 		id, err := uuid.Parse(*input.Body.NoteID)

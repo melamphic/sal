@@ -36,6 +36,8 @@ type DrugOpView struct {
 	SubjectName    *string
 	AdministeredBy string // resolved staff name
 	WitnessedBy    *string
+	WitnessKind    *string // staff / pending / external / self — drives the witness cell
+	WitnessStatus  *string // not_required / pending / approved / challenged
 	CreatedAt      time.Time
 }
 
@@ -422,6 +424,14 @@ func BuildControlledDrugsRegisterPDF(
 		drawReconciliationsTable(pdf, recons)
 	}
 
+	pendingOps := filterPendingWitness(ops)
+	challengedOps := filterChallengedWitness(ops)
+	selfOps := filterSelfWitness(ops)
+	if len(pendingOps) > 0 || len(challengedOps) > 0 || len(selfOps) > 0 {
+		pdf.AddPage()
+		drawWitnessAppendix(pdf, pendingOps, challengedOps, selfOps)
+	}
+
 	pdf.AddPage()
 	drawDeclaration(pdf, clinic, periodStart, periodEnd, regCtx)
 
@@ -430,6 +440,88 @@ func BuildControlledDrugsRegisterPDF(
 		return nil, "", fmt.Errorf("reports.pdf.BuildControlledDrugsRegisterPDF: %w", err)
 	}
 	return &buf, sha256Hex(buf.Bytes()), nil
+}
+
+// filterPendingWitness returns the ops that are still waiting on a
+// second-pair-of-eyes signature. Drives the appendix at the end of the
+// register PDF so a regulator scans straight to the open queue.
+func filterPendingWitness(ops []DrugOpView) []DrugOpView {
+	var out []DrugOpView
+	for _, op := range ops {
+		if op.WitnessStatus != nil && *op.WitnessStatus == "pending" {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+// filterChallengedWitness returns ops whose witness review came back
+// challenged. These need follow-up and the regulator should see them
+// listed alongside the pending queue.
+func filterChallengedWitness(ops []DrugOpView) []DrugOpView {
+	var out []DrugOpView
+	for _, op := range ops {
+		if op.WitnessStatus != nil && *op.WitnessStatus == "challenged" {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+// filterSelfWitness returns ops that were self-witnessed. UK Schedule 2
+// and AU S8 both restrict this to emergency cases — the appendix calls
+// them out so a regulator can review the attestations.
+func filterSelfWitness(ops []DrugOpView) []DrugOpView {
+	var out []DrugOpView
+	for _, op := range ops {
+		if op.WitnessKind != nil && *op.WitnessKind == "self" {
+			out = append(out, op)
+		}
+	}
+	return out
+}
+
+// drawWitnessAppendix prints a regulator-facing appendix listing
+// witness-pending, challenged, and self-witnessed rows. Each section
+// only renders when non-empty so the appendix collapses for a clean
+// register and grows visibly when something needs follow-up.
+func drawWitnessAppendix(pdf *fpdf.Fpdf, pending, challenged, self []DrugOpView) {
+	drawSectionTitle(pdf, "Witness exceptions (period)")
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetTextColor(80, 80, 80)
+	pdfMultiCell(pdf, 0, 5,
+		"Rows on this page require regulator-aware follow-up: pending "+
+			"second-pair-of-eyes sign-off, challenged by a colleague, or "+
+			"self-witnessed under emergency conditions.",
+		"", "L", false)
+	pdf.Ln(2)
+
+	if len(pending) > 0 {
+		pdf.SetFont("Helvetica", "B", 11)
+		pdf.SetTextColor(160, 100, 0)
+		pdfMultiCell(pdf, 0, 6,
+			fmt.Sprintf("Pending sign-off (%d)", len(pending)),
+			"", "L", false)
+		drawDrugOpsTable(pdf, pending, 0)
+		pdf.Ln(2)
+	}
+	if len(challenged) > 0 {
+		pdf.SetFont("Helvetica", "B", 11)
+		pdf.SetTextColor(160, 30, 30)
+		pdfMultiCell(pdf, 0, 6,
+			fmt.Sprintf("Challenged (%d)", len(challenged)),
+			"", "L", false)
+		drawDrugOpsTable(pdf, challenged, 0)
+		pdf.Ln(2)
+	}
+	if len(self) > 0 {
+		pdf.SetFont("Helvetica", "B", 11)
+		pdf.SetTextColor(160, 30, 30)
+		pdfMultiCell(pdf, 0, 6,
+			fmt.Sprintf("Self-witnessed (%d)", len(self)),
+			"", "L", false)
+		drawDrugOpsTable(pdf, self, 0)
+	}
 }
 
 // BuildAuditPackPDF renders a comprehensive audit pack (single PDF for v1)
@@ -570,8 +662,8 @@ func drawShelfSection(pdf *fpdf.Fpdf, label, schedule string, ops []DrugOpView) 
 }
 
 func drawDrugOpsTable(pdf *fpdf.Fpdf, ops []DrugOpView, maxRows int) {
-	header := []string{"Date", "Op", "Qty", "Balance", "Patient", "By", "Witness", "Batch"}
-	widths := []float64{24, 18, 15, 18, 32, 28, 28, 18}
+	header := []string{"Date", "Op", "Qty", "Balance", "Patient", "By", "Witness", "Status", "Batch"}
+	widths := []float64{22, 16, 14, 17, 28, 22, 24, 22, 14}
 
 	pdf.SetFont("Helvetica", "B", 9)
 	pdf.SetFillColor(245, 245, 245)
@@ -598,10 +690,8 @@ func drawDrugOpsTable(pdf *fpdf.Fpdf, ops []DrugOpView, maxRows int) {
 		if op.SubjectName != nil && *op.SubjectName != "" {
 			patient = *op.SubjectName
 		}
-		witness := "—"
-		if op.WitnessedBy != nil && *op.WitnessedBy != "" {
-			witness = *op.WitnessedBy
-		}
+		witness := witnessCellLabel(op)
+		statusCell := witnessStatusLabel(op)
 		batch := "—"
 		if op.BatchNumber != nil && *op.BatchNumber != "" {
 			batch = *op.BatchNumber
@@ -612,16 +702,65 @@ func drawDrugOpsTable(pdf *fpdf.Fpdf, ops []DrugOpView, maxRows int) {
 			op.Operation,
 			fmtQty(op.Quantity) + " " + op.Unit,
 			fmtQty(op.BalanceAfter) + " " + op.Unit,
-			truncate(patient, 22),
-			truncate(op.AdministeredBy, 18),
-			truncate(witness, 18),
-			truncate(batch, 12),
+			truncate(patient, 18),
+			truncate(op.AdministeredBy, 14),
+			truncate(witness, 16),
+			truncate(statusCell, 14),
+			truncate(batch, 10),
 		}
 		for i, v := range row {
 			pdfCellFormat(pdf, widths[i], 6, v, "B", 0, "L", fill, 0, "")
 		}
 		pdf.Ln(-1)
 		count++
+	}
+}
+
+// witnessCellLabel formats the Witness column for a drug op row. A staff
+// witness shows the staff name; external shows the captured name; self
+// shows "Self" (regulator-flagged); pending shows "—" and is paired with
+// "Pending" in the status column.
+func witnessCellLabel(op DrugOpView) string {
+	kind := ""
+	if op.WitnessKind != nil {
+		kind = *op.WitnessKind
+	}
+	switch kind {
+	case "external":
+		if op.WitnessedBy != nil && *op.WitnessedBy != "" {
+			return *op.WitnessedBy
+		}
+		return "External"
+	case "self":
+		return "Self (no second witness)"
+	case "pending":
+		return "—"
+	default:
+		if op.WitnessedBy != nil && *op.WitnessedBy != "" {
+			return *op.WitnessedBy
+		}
+		return "—"
+	}
+}
+
+// witnessStatusLabel translates the snapshot column into the regulator-
+// facing label rendered in the Status cell.
+func witnessStatusLabel(op DrugOpView) string {
+	status := ""
+	if op.WitnessStatus != nil {
+		status = *op.WitnessStatus
+	}
+	switch status {
+	case "pending":
+		return "Pending sign-off"
+	case "approved":
+		return "Witnessed"
+	case "challenged":
+		return "Challenged"
+	case "not_required":
+		return "—"
+	default:
+		return "—"
 	}
 }
 

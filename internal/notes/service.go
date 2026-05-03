@@ -172,6 +172,13 @@ type NoteFieldResponse struct {
 	// card / PDF can render what was captured instead of just an id.
 	// Resolved server-side from the typed entity table on GetNote.
 	SystemSummary []NoteFieldSystemSummaryItem `json:"system_summary,omitempty"`
+
+	// SystemReviewStatus — populated for materialised system widgets that
+	// participate in the compliance approval queue. Values:
+	// "not_required" / "pending" / "approved" / "challenged". Empty for
+	// non-system or non-reviewable fields. Drives the witness pill on
+	// the FE card and the equivalent PDF footer line.
+	SystemReviewStatus string `json:"system_review_status,omitempty"`
 }
 
 // NoteFieldSystemSummaryItem is one row in the system widget summary —
@@ -202,13 +209,20 @@ type NoteResponse struct {
 	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
 	// OverrideReason/By/At are populated when the submitter overrode a
 	// high-parity policy violation at submit time.
-	OverrideReason     *string              `json:"override_reason,omitempty"`
-	OverrideBy         *string              `json:"override_by,omitempty"`
-	OverrideAt         *string              `json:"override_at,omitempty"`
-	PDFStorageKey      *string              `json:"pdf_storage_key,omitempty"`
-	CreatedAt          string               `json:"created_at"`
-	UpdatedAt          string               `json:"updated_at"`
-	Fields             []*NoteFieldResponse `json:"fields,omitempty"`
+	OverrideReason *string `json:"override_reason,omitempty"`
+	OverrideBy     *string `json:"override_by,omitempty"`
+	OverrideAt     *string `json:"override_at,omitempty"`
+	// OverrideUnlocked* are populated when a privileged staff re-opens
+	// a submitted note for correction. Persisted across re-submits so
+	// the audit trail survives. OverrideCount increments each commit.
+	OverrideUnlockedAt     *string              `json:"override_unlocked_at,omitempty"`
+	OverrideUnlockedBy     *string              `json:"override_unlocked_by,omitempty"`
+	OverrideUnlockedReason *string              `json:"override_unlocked_reason,omitempty"`
+	OverrideCount          int                  `json:"override_count"`
+	PDFStorageKey          *string              `json:"pdf_storage_key,omitempty"`
+	CreatedAt              string               `json:"created_at"`
+	UpdatedAt              string               `json:"updated_at"`
+	Fields                 []*NoteFieldResponse `json:"fields,omitempty"`
 }
 
 // NoteListResponse is a paginated list of notes.
@@ -296,6 +310,27 @@ func (s *Service) CreateNote(ctx context.Context, input CreateNoteInput) (*NoteR
 		return nil, fmt.Errorf("notes.service.CreateNote: %w", err)
 	}
 
+	// Seed an empty note_fields row per form field so the FE can PATCH
+	// any field by id without hitting a 404. Required for manual notes
+	// (AI never runs); harmless for AI notes (the extraction worker's
+	// UpsertNoteFields fills the same rows via INSERT...ON CONFLICT).
+	// Best-effort: a failure here logs but does not block note creation
+	// — the user can still resume by re-trying field PATCH after the
+	// extraction worker writes the rows.
+	if s.fields != nil {
+		formFields, ferr := s.fields.GetFieldsByVersionID(ctx, input.FormVersionID)
+		if ferr != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: get fields: %w", ferr)
+		}
+		fieldIDs := make([]uuid.UUID, len(formFields))
+		for i, f := range formFields {
+			fieldIDs[i] = f.ID
+		}
+		if err := s.repo.SeedNoteFields(ctx, noteID, fieldIDs); err != nil {
+			return nil, fmt.Errorf("notes.service.CreateNote: seed fields: %w", err)
+		}
+	}
+
 	if !input.SkipExtraction {
 		// Enqueue extraction immediately. Two things keep this from
 		// burning a 60-second River retry on missing transcripts:
@@ -380,6 +415,7 @@ func (s *Service) enrichSystemSummaries(
 		for i, it := range summary.Items {
 			f.SystemSummary[i] = NoteFieldSystemSummaryItem(it)
 		}
+		f.SystemReviewStatus = summary.ReviewStatus
 	}
 }
 
@@ -478,14 +514,16 @@ func (s *Service) ListNotes(ctx context.Context, clinicID uuid.UUID, input ListN
 }
 
 // UpdateField records a staff override for a single note field.
-// Only allowed when the note is in 'draft' status.
+// Allowed when the note is in 'draft' status, or when it has been
+// re-opened post-submit via the override-unlock flow ('overriding').
 func (s *Service) UpdateField(ctx context.Context, input UpdateFieldInput) (*NoteFieldResponse, error) {
 	note, err := s.repo.GetNoteByID(ctx, input.NoteID, input.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.UpdateField: %w", err)
 	}
-	if note.Status != domain.NoteStatusDraft {
-		return nil, fmt.Errorf("notes.service.UpdateField: note not in draft: %w", domain.ErrConflict)
+	if note.Status != domain.NoteStatusDraft &&
+		note.Status != domain.NoteStatusOverriding {
+		return nil, fmt.Errorf("notes.service.UpdateField: note not editable: %w", domain.ErrConflict)
 	}
 
 	// Capture old value for the audit event before overwriting.
@@ -560,6 +598,10 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 		// system.drug_op widget must be explicitly confirmed before
 		// submission. Override does NOT bypass — the gate is for
 		// regulator-binding records (CD register), not policy alignment.
+		// Note: the new submit-time materialise path always creates drug
+		// op rows with status='confirmed' (via the materialiser adapter),
+		// so the only pending_confirm rows seen here come from any
+		// remaining legacy auto-materialise paths or out-of-band creates.
 		if s.drugConfirm != nil {
 			pending, err := s.drugConfirm.HasPendingConfirmForNote(ctx, noteID, clinicID)
 			if err != nil {
@@ -569,28 +611,24 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 				return nil, fmt.Errorf("notes.service.SubmitNote: cannot submit while drug operations are pending confirmation: %w", domain.ErrValidation)
 			}
 		}
-		// Regulator rail #2: every system.* field with an AI-extracted
-		// JSON payload must be materialised into its typed ledger row
-		// before submit. Raw JSON in note_fields.value means the
-		// clinician hasn't tapped Confirm — block submission with a
-		// list of titles so the UI can highlight which cards remain.
-		unmaterialised, err := s.ListUnmaterialisedSystemFields(ctx, noteID, clinicID)
-		if err != nil {
-			return nil, fmt.Errorf("notes.service.SubmitNote: system-field check: %w", err)
-		}
-		if len(unmaterialised) > 0 {
-			titles := make([]string, len(unmaterialised))
-			for i, f := range unmaterialised {
-				titles[i] = f.Title
-			}
-			return nil, fmt.Errorf(
-				"notes.service.SubmitNote: %d system widget%s pending confirmation: %s: %w",
-				len(unmaterialised),
-				pluralS(len(unmaterialised)),
-				strings.Join(titles, ", "),
-				domain.ErrValidation,
-			)
-		}
+	}
+
+	// Regulator rail #2: walk every system.* field, parse its
+	// structured payload, and materialise it into the typed ledger.
+	// Drafts are never written to the regulator-binding ledgers — the
+	// only ledger writes happen here, on submit, so deleting a draft
+	// leaves no orphans. Direct-from-patient creates still hit the
+	// entity services straight (no note involved).
+	if err := s.materialiseSystemFieldsForSubmit(ctx, noteID, clinicID, staffID); err != nil {
+		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
+	}
+
+	// Capture prior status BEFORE SubmitNote — repo update transitions to
+	// 'submitted', losing the signal that we came from 'overriding' which
+	// drives override-committed event emission below.
+	priorStatus := domain.NoteStatusDraft
+	if pre, perr := s.repo.GetNoteByID(ctx, noteID, clinicID); perr == nil {
+		priorStatus = pre.Status
 	}
 
 	now := domain.TimeNow()
@@ -607,11 +645,24 @@ func (s *Service) SubmitNote(ctx context.Context, noteID, clinicID, staffID uuid
 		return nil, fmt.Errorf("notes.service.SubmitNote: %w", err)
 	}
 
+	// First-submit fires note.submitted. Re-submit out of an overriding
+	// state fires note.override_committed instead so the timeline can
+	// render "Corrected by X" rather than a duplicate "Submitted by X".
+	emitType := NoteEventSubmitted
+	var emitReason *string
+	if priorStatus == domain.NoteStatusOverriding {
+		emitType = NoteEventOverrideCommitted
+		if note.OverrideUnlockedReason != nil {
+			r := *note.OverrideUnlockedReason
+			emitReason = &r
+		}
+	}
 	s.events.Emit(ctx, NoteEvent{
 		NoteID:    noteID,
 		SubjectID: note.SubjectID,
 		ClinicID:  clinicID,
-		EventType: NoteEventSubmitted,
+		EventType: emitType,
+		Reason:    emitReason,
 		ActorID:   staffID,
 		ActorRole: staffRole,
 	})
@@ -672,6 +723,65 @@ func (s *Service) ArchiveNote(ctx context.Context, noteID, clinicID, staffID uui
 	return s.GetNote(ctx, noteID, clinicID)
 }
 
+// UnlockForOverride re-opens a submitted note for post-submit correction.
+// Only the note's original creator OR a manage_staff member may unlock —
+// caller must enforce the permission gate before invoking. The note must
+// be in 'submitted' status (not draft, not extracting, not archived);
+// other states return ErrConflict. The reason is required and persisted
+// on the note for audit. A note.override_unlocked event is emitted so
+// the patient timeline carries an explicit "Re-opened by X: reason" row.
+func (s *Service) UnlockForOverride(ctx context.Context, noteID, clinicID, staffID uuid.UUID, staffRole, reason string) (*NoteResponse, error) {
+	r := strings.TrimSpace(reason)
+	if r == "" {
+		return nil, fmt.Errorf("notes.service.UnlockForOverride: reason required: %w", domain.ErrValidation)
+	}
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.UnlockForOverride: %w", err)
+	}
+	if note.ArchivedAt != nil {
+		return nil, fmt.Errorf("notes.service.UnlockForOverride: archived note: %w", domain.ErrConflict)
+	}
+	if note.Status != domain.NoteStatusSubmitted {
+		return nil, fmt.Errorf("notes.service.UnlockForOverride: not submitted: %w", domain.ErrConflict)
+	}
+	if _, err := s.repo.OverrideUnlock(ctx, OverrideUnlockParams{
+		ID:         noteID,
+		ClinicID:   clinicID,
+		UnlockedBy: staffID,
+		UnlockedAt: domain.TimeNow(),
+		Reason:     r,
+	}); err != nil {
+		return nil, fmt.Errorf("notes.service.UnlockForOverride: %w", err)
+	}
+	reasonCopy := r
+	s.events.Emit(ctx, NoteEvent{
+		NoteID:    noteID,
+		SubjectID: note.SubjectID,
+		ClinicID:  clinicID,
+		EventType: NoteEventOverrideUnlocked,
+		Reason:    &reasonCopy,
+		ActorID:   staffID,
+		ActorRole: staffRole,
+	})
+	return s.GetNote(ctx, noteID, clinicID)
+}
+
+// CanUnlockForOverride reports whether a staff member is authorised to
+// re-open the note for correction: the note's original creator OR any
+// staff member with manage_staff permission. Routes use this to gate the
+// UnlockForOverride call without coupling to the staff package directly.
+func (s *Service) CanUnlockForOverride(ctx context.Context, noteID, clinicID, staffID uuid.UUID, hasManageStaff bool) (bool, error) {
+	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
+	if err != nil {
+		return false, fmt.Errorf("notes.service.CanUnlockForOverride: %w", err)
+	}
+	if hasManageStaff {
+		return true, nil
+	}
+	return note.CreatedBy == staffID, nil
+}
+
 // GetNotePDFKey returns the S3 storage key for the note's PDF, if generated.
 // The handler is responsible for creating a presigned download URL from this key.
 func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID) (string, error) {
@@ -685,11 +795,14 @@ func (s *Service) GetNotePDFKey(ctx context.Context, noteID, clinicID uuid.UUID)
 	return *note.PDFStorageKey, nil
 }
 
-// RetryPDF re-enqueues the PDF generation job for a submitted note whose PDF
-// has not yet been produced (e.g. River job exhausted retries or never ran).
-// Idempotent: if the PDF key already exists the call is a no-op success;
-// rejects unsubmitted notes with ErrConflict.
-func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID) (*NoteResponse, error) {
+// RetryPDF re-renders the PDF for a submitted note. When [force] is
+// false this is the historical recovery path: render only if no key
+// exists yet (e.g. the worker exhausted retries). When [force] is true
+// the existing key is cleared first, so a backend renderer change
+// (Unicode handling, system widget cards, theme tweak) reaches an
+// already-rendered submitted note without making the user re-submit.
+// Rejects unsubmitted notes with ErrConflict.
+func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID, force bool) (*NoteResponse, error) {
 	note, err := s.repo.GetNoteByID(ctx, noteID, clinicID)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.RetryPDF: %w", err)
@@ -698,7 +811,16 @@ func (s *Service) RetryPDF(ctx context.Context, noteID, clinicID uuid.UUID) (*No
 		return nil, fmt.Errorf("notes.service.RetryPDF: not submitted: %w", domain.ErrConflict)
 	}
 	if note.PDFStorageKey != nil {
-		return s.GetNote(ctx, noteID, clinicID)
+		if !force {
+			return s.GetNote(ctx, noteID, clinicID)
+		}
+		// Force path — null the key so the renderer's idempotence
+		// check (note.PDFStorageKey != nil → no-op) doesn't short
+		// circuit. The actual artifact in object storage is left in
+		// place; the next render overwrites it under the same key.
+		if err := s.repo.ClearPDFKey(ctx, noteID, clinicID); err != nil {
+			return nil, fmt.Errorf("notes.service.RetryPDF: clear key: %w", err)
+		}
 	}
 
 	// Prefer a synchronous re-render so the response carries the new key.
@@ -983,6 +1105,16 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 		s := n.OverrideAt.Format(time.RFC3339)
 		r.OverrideAt = &s
 	}
+	if n.OverrideUnlockedAt != nil {
+		s := n.OverrideUnlockedAt.Format(time.RFC3339)
+		r.OverrideUnlockedAt = &s
+	}
+	if n.OverrideUnlockedBy != nil {
+		s := n.OverrideUnlockedBy.String()
+		r.OverrideUnlockedBy = &s
+	}
+	r.OverrideUnlockedReason = n.OverrideUnlockedReason
+	r.OverrideCount = n.OverrideCount
 	r.PDFStorageKey = n.PDFStorageKey
 	if fields != nil {
 		r.Fields = make([]*NoteFieldResponse, len(fields))

@@ -477,33 +477,8 @@ func (e *GeminiExtractor) CheckFormCoverage(ctx context.Context, vertical, overa
 		sb.WriteString(fmt.Sprintf("- block_id: %q, title: %q, parity: %q\n", c.BlockID, c.Title, c.Parity))
 	}
 
-	sb.WriteString(`
-## Instructions
-Return a JSON object with two keys:
-
-- "narrative": a markdown-formatted analysis with these four sections in order:
-
-    ## Overall
-    One sentence summary of how well the form covers the policy.
-
-    ## Covered
-    - One bullet per clause that is adequately addressed by one or more fields. Reference the clause title and the field(s) covering it.
-
-    ## Gaps
-    - One bullet per clause with no field capturing the required data, with a concrete suggestion for what field to add.
-
-    ## Suggestions
-    - Up to 3 actionable bullets to strengthen policy coverage, if any.
-
-    Use **bold** (with double asterisks) for field and clause names. Always separate sections with blank lines. Always end every list bullet with a newline.
-
-- "clauses": an array with one object per input clause (same block_id). Each object:
-    { "block_id": "<id>", "status": "satisfied"|"violated", "reasoning": "<one sentence>" }
-    status=satisfied if at least one form field captures the data needed to satisfy the clause.
-    status=violated if no field covers it.
-
-Respond with ONLY the JSON object. No markdown fences.
-`)
+	sb.WriteString(formCoveragePromptInstructions)
+	sb.WriteString("\nRespond with ONLY the JSON object. No markdown fences.\n")
 
 	resp, err := e.client.Models.GenerateContent(
 		ctx,

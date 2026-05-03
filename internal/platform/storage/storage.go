@@ -7,6 +7,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -95,13 +96,34 @@ func (s *Store) PresignDownload(ctx context.Context, key string, ttl time.Durati
 	return req.URL, nil
 }
 
-// Upload writes a server-generated file to storage. Used by report export jobs.
+// Upload writes a server-generated file to storage. Used by report export
+// jobs and the note PDF renderer.
+//
+// AWS SDK v2 PutObject signs the request with SigV4, which requires the
+// payload's SHA-256 hash. The signer reads the body once to compute the
+// hash, then seeks back to start to send. Non-seekable readers (e.g.
+// `*bytes.Buffer` from `gofpdf.Output`) fail at the seek with "request
+// stream is not seekable, failed to compute payload hash". To stay
+// caller-friendly we accept any io.Reader and slurp non-seekable bodies
+// into a bytes.Reader internally — uploads here are bounded (PDFs are
+// small, exports are sized at write time) so the temporary copy is fine.
 func (s *Store) Upload(ctx context.Context, key, contentType string, body io.Reader, size int64) error {
+	rs, ok := body.(io.ReadSeeker)
+	if !ok {
+		buf, err := io.ReadAll(body)
+		if err != nil {
+			return fmt.Errorf("storage.Upload: read body: %w", err)
+		}
+		rs = bytes.NewReader(buf)
+		if size <= 0 {
+			size = int64(len(buf))
+		}
+	}
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
 		Key:           aws.String(key),
 		ContentType:   aws.String(contentType),
-		Body:          body,
+		Body:          rs,
 		ContentLength: aws.Int64(size),
 	})
 	if err != nil {
