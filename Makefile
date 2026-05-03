@@ -1,4 +1,4 @@
-.PHONY: dev restart build test test-integration lint migrate migrate-down migrate-status orphans-report docs docs-api docs-install tidy smoke-billing
+.PHONY: dev restart build test test-integration lint migrate migrate-down migrate-status docs docs-api docs-install tidy smoke-billing
 SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -72,13 +72,6 @@ migrate-down:
 
 migrate-status:
 	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; $(_GOOSE) "$$DATABASE_URL" status
-
-# Read-only audit listing ledger rows (drug ops / incidents / consent /
-# pain) that point at an archived note. These are leftover orphans from
-# the legacy eager materialise-* path; the new submit-time materialise
-# never creates them. Review the output before deciding what to clean up.
-orphans-report:
-	@export $$(grep -v '^#' .env | xargs) 2>/dev/null; psql "$$DATABASE_URL" -f audits/orphan_ledger_rows.sql
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
