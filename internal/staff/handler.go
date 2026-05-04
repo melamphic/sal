@@ -55,6 +55,16 @@ type updatePermsInput struct {
 	}
 }
 
+// updateRegulatoryInput drives PATCH /staff/{staff_id}/regulatory-id.
+// Both fields are nullable — passing nil clears the column.
+type updateRegulatoryInput struct {
+	StaffID string `path:"staff_id" doc:"The staff member's UUID."`
+	Body    struct {
+		RegulatoryAuthority *string `json:"regulatory_authority,omitempty" maxLength:"40" doc:"Authority code: VCNZ | NMC | GMC | AHPRA | AVMA | RCVS | …"`
+		RegulatoryRegNo     *string `json:"regulatory_reg_no,omitempty"     maxLength:"60" doc:"Registration / membership identifier issued by the authority."`
+	}
+}
+
 type staffResponse struct {
 	Body *StaffResponse
 }
@@ -160,6 +170,23 @@ func (h *Handler) updatePermissions(ctx context.Context, input *updatePermsInput
 		return nil, mapStaffError(err)
 	}
 
+	return &staffResponse{Body: dto}, nil
+}
+
+// updateRegulatoryIdentity handles PATCH /api/v1/staff/{staff_id}/regulatory-id.
+// Sets (or clears) the regulator authority + reg-no on the staff
+// member — surfaces on every signed clinical record + report PDF that
+// cites this staff as the clinician of record.
+func (h *Handler) updateRegulatoryIdentity(ctx context.Context, input *updateRegulatoryInput) (*staffResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID, err := uuid.Parse(input.StaffID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid staff_id")
+	}
+	dto, err := h.svc.UpdateRegulatoryIdentity(ctx, staffID, clinicID, input.Body.RegulatoryAuthority, input.Body.RegulatoryRegNo)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
 	return &staffResponse{Body: dto}, nil
 }
 
