@@ -1,0 +1,182 @@
+<section class="page">
+  <header class="doc-header">
+    <div class="doc-header__brand">
+      <div class="doc-header__logo">CD</div>
+      <div class="doc-header__clinic">
+        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
+        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
+      </div>
+    </div>
+    <div class="doc-header__title">
+      <span class="doc-header__title-eyebrow">CD Reconciliation</span>
+      <span class="doc-header__title-text">{{ .PeriodLabel }}</span>
+      <span class="doc-header__title-meta">Reconciled {{ .ReconciledOn }}</span>
+    </div>
+  </header>
+
+  <div class="section">
+    <span class="section__eyebrow">Period summary</span>
+    <h1 class="section__title">Monthly Controlled Drug Reconciliation</h1>
+    <p class="section__hint">
+      Physical count vs. ledger balance for every Schedule B and C
+      controlled drug held by this clinic. Per RCVS / VCNZ best practice,
+      reconciliation is performed by two qualified staff and any
+      unexplained discrepancy is escalated.
+    </p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Drugs Counted</span>
+      <span class="kpi__value">{{ len .Drugs }}</span>
+      <span class="kpi__hint">All Sch B + C in stock</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Reconcilers</span>
+      <span class="kpi__value" style="font-size: 11pt;">2 staff</span>
+      <span class="kpi__hint">Vet + RVN</span>
+    </div>
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Period</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .PeriodLabel }}</span>
+      <span class="kpi__hint">Monthly cadence</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Bundle hash</span>
+      <span class="kpi__value" style="font-size: 8pt; font-family: monospace;">{{ .BundleHash }}</span>
+      <span class="kpi__hint">Tamper-evident</span>
+    </div>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Drug</th>
+        <th class="num">Ledger</th>
+        <th class="num">Physical</th>
+        <th class="num">Δ</th>
+        <th class="num">% Δ</th>
+        <th class="center" style="width: 100px">Status</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .Drugs }}
+      <tr>
+        <td>{{ .Drug }}</td>
+        <td class="num">{{ .Ledger }}</td>
+        <td class="num">{{ .Physical }}</td>
+        <td class="num"
+            {{- if ne .Delta 0.0 }} style="color: var(--salvia-warning); font-weight: 700;"{{ end }}
+        >{{ printf "%.1f" .Delta }}</td>
+        <td class="num">{{ printf "%.2f%%" .DeltaPct }}</td>
+        <td class="center"><span class="pill pill--{{ .StatusTone }}">{{ .Status }}</span></td>
+        <td>{{ if .Notes }}{{ .Notes }}{{ else }}—{{ end }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  <div class="chart-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0;">
+    <div class="chart-host">
+      <div class="chart-host__title" style="font-size: 9pt; font-weight: 800; color: var(--salvia-text-emphasis); margin-bottom: 4px;">
+        12-month reconciliation trend
+      </div>
+      <div class="chart-host__subtitle" style="font-size: 7.5pt; color: var(--salvia-muted); margin-bottom: 8px;">
+        Discrepancies per monthly reconciliation
+      </div>
+      <div style="position: relative; width: 100%; height: 180px;">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-host">
+      <div class="chart-host__title" style="font-size: 9pt; font-weight: 800; color: var(--salvia-text-emphasis); margin-bottom: 4px;">
+        Per-drug discrepancy magnitude
+      </div>
+      <div class="chart-host__subtitle" style="font-size: 7.5pt; color: var(--salvia-muted); margin-bottom: 8px;">
+        % deviation from ledger balance
+      </div>
+      <div style="position: relative; width: 100%; height: 180px;">
+        <canvas id="deltaChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="signature-grid">
+    <div class="signature">
+      <div class="signature__role">Primary reconciler</div>
+      <div class="signature__name">{{ .PrimaryReconciler }}</div>
+      <div class="signature__meta"><span></span><span>{{ .ReconciledOn }}</span></div>
+    </div>
+    <div class="signature">
+      <div class="signature__role">Secondary reconciler</div>
+      <div class="signature__name">{{ .SecondaryReconciler }}</div>
+      <div class="signature__meta"><span></span><span>{{ .ReconciledOn }}</span></div>
+    </div>
+  </div>
+
+  <footer class="doc-footer">
+    <div class="doc-footer__cell">
+      <span class="doc-footer__strong">{{ .ClinicName }}</span>
+      <span>CD Reconciliation · {{ .PeriodLabel }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--center">
+      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--right">
+      <span class="doc-footer__strong">Page 1 of 1</span>
+      <span>Per VCNZ best practice</span>
+    </div>
+  </footer>
+</section>
+
+<script>
+  (function() {
+    var labels = {{ jsonArr .TrendLabels }};
+    var disc   = {{ jsonArr .TrendDiscrepancies }};
+    var drugs  = {{ jsonArr .TrendDrugCount }};
+    var rows   = {{ jsonArr .Drugs }};
+
+    var trendCount = 0;
+    function maybeReady() {
+      trendCount += 1;
+      if (trendCount >= 2) { window.__chartsReady = true; }
+    }
+
+    new Chart(document.getElementById('trendChart').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Discrepancies', data: disc, borderColor: '#c2410c', backgroundColor: 'rgba(194,65,12,0.18)', borderWidth: 2, tension: 0.3, fill: true, pointRadius: 3 },
+          { label: 'Drugs counted', data: drugs, borderColor: '#0e7c66', borderWidth: 1, borderDash: [4,4], pointRadius: 0, fill: false }
+        ]
+      },
+      options: {
+        animation: { onComplete: maybeReady, duration: 0 },
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, boxWidth: 10 } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { font: { size: 9 } } },
+          x: { ticks: { font: { size: 9 } } }
+        }
+      }
+    });
+
+    var deltaLabels = rows.map(function(r) { return r.Drug; });
+    var deltaPcts = rows.map(function(r) { return Math.abs(r.DeltaPct); });
+    new Chart(document.getElementById('deltaChart').getContext('2d'), {
+      type: 'bar',
+      data: { labels: deltaLabels, datasets: [{ data: deltaPcts, backgroundColor: function(ctx) { return ctx.raw === 0 ? '#86efac' : '#fdba74'; }, borderRadius: 4 }] },
+      options: {
+        animation: { onComplete: maybeReady, duration: 0 },
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, ticks: { font: { size: 9 }, callback: function(v) { return v + '%'; } } },
+          y: { ticks: { font: { size: 8.5 } } }
+        }
+      }
+    });
+  })();
+</script>
