@@ -71,6 +71,10 @@ type ConsentResponse struct {
 	CapturedBy                  string  `json:"captured_by"`
 	CapturedAt                  string  `json:"captured_at"`
 	WitnessID                   *string `json:"witness_id,omitempty"`
+	WitnessKind                 *string `json:"witness_kind,omitempty"`
+	ExternalWitnessName         *string `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole         *string `json:"external_witness_role,omitempty"`
+	WitnessAttestation          *string `json:"witness_attestation,omitempty"`
 	ExpiresAt                   *string `json:"expires_at,omitempty"`
 	RenewalDueAt                *string `json:"renewal_due_at,omitempty"`
 	WithdrawalAt                *string `json:"withdrawal_at,omitempty"`
@@ -117,10 +121,22 @@ type CaptureConsentInput struct {
 	RenewalDueAt                *time.Time
 	AIAssistanceMetadata        *string
 
+	// 4-mode witness shape mirroring drug_operations_log:
+	//   - "" / "staff": synchronous internal witness (WitnessID set)
+	//   - "pending": async; submit_for_review queues an approvals row
+	//   - "external": sync paper-trail (non-Salvia user) — name +
+	//      role + attestation set
+	//   - "self":    emergency / solo; attestation only — flagged on
+	//      regulator export, forbidden for high-risk consents
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+
 	// SubmitForReview queues the consent row for second-pair-of-eyes
 	// review. Used for sensitive consents (euthanasia / sedation /
 	// invasive procedure) when an in-person witness wasn't available
-	// or capacity is contested.
+	// or capacity is contested. WitnessKind="pending" implies this.
 	SubmitForReview bool
 	ReviewNote      *string
 }
@@ -196,13 +212,56 @@ func (s *Service) CaptureConsent(ctx context.Context, in CaptureConsentInput) (*
 	if in.CapturedAt.IsZero() {
 		in.CapturedAt = domain.TimeNow()
 	}
-	// Verbal in-clinic consent must carry a witness — DB CHECK enforces
-	// this too, but we surface a clean error before hitting the row.
-	if in.CapturedVia == "verbal_clinic" && in.WitnessID == nil {
-		return nil, fmt.Errorf("consent.service.CaptureConsent: witness_id required for verbal_clinic consent: %w", domain.ErrValidation)
-	}
 	if in.ConsentingPartyRelationship != nil && !validRelationship(*in.ConsentingPartyRelationship) {
 		return nil, fmt.Errorf("consent.service.CaptureConsent: invalid consenting_party_relationship: %w", domain.ErrValidation)
+	}
+
+	// 4-mode witness validation — only kicks in for verbal_clinic
+	// (the regulator-binding mode that requires a second pair of eyes).
+	// Other captured_via values (verbal_telehealth, written_signature,
+	// electronic_signature, guardian) carry their own audit signal and
+	// don't gate on a witness here.
+	witnessKind := ""
+	if in.WitnessKind != nil {
+		witnessKind = strings.TrimSpace(*in.WitnessKind)
+	}
+	if in.CapturedVia == "verbal_clinic" {
+		switch witnessKind {
+		case "", "staff":
+			witnessKind = "staff"
+			if in.WitnessID == nil {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: witness required for verbal_clinic consent: %w", domain.ErrValidation)
+			}
+			if in.WitnessID != nil && *in.WitnessID == in.StaffID {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: witness must differ from capturing staff: %w", domain.ErrValidation)
+			}
+		case "pending":
+			if s.approvals == nil {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: async approvals not configured: %w", domain.ErrValidation)
+			}
+			// Pending mode is OK without WitnessID — the approvals row
+			// records the async second-pair-of-eyes commitment. Force
+			// SubmitForReview so the queue insert fires below.
+			in.SubmitForReview = true
+		case "external":
+			if in.ExternalWitnessName == nil || strings.TrimSpace(*in.ExternalWitnessName) == "" {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: external witness name required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 10 {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: external witness attestation too short: %w", domain.ErrValidation)
+			}
+		case "self":
+			// High-risk consents (euthanasia, controlled-drug admin,
+			// invasive procedure) shouldn't be self-witnessed.
+			if isHighRiskConsentType(in.ConsentType) {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: self-witness not permitted for %q consent: %w", in.ConsentType, domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 30 {
+				return nil, fmt.Errorf("consent.service.CaptureConsent: self-witness attestation too short (min 30 chars): %w", domain.ErrValidation)
+			}
+		default:
+			return nil, fmt.Errorf("consent.service.CaptureConsent: unknown witness_kind %q: %w", witnessKind, domain.ErrValidation)
+		}
 	}
 
 	// Apply default expiry if the caller didn't set one and the type has a
@@ -214,6 +273,13 @@ func (s *Service) CaptureConsent(ctx context.Context, in CaptureConsentInput) (*
 		}
 	}
 
+	// Persist the resolved witness kind so reads see the canonical
+	// value even if the caller passed nil/empty (legacy callers).
+	var witnessKindParam *string
+	if in.CapturedVia == "verbal_clinic" {
+		k := witnessKind
+		witnessKindParam = &k
+	}
 	rec, err := s.repo.CreateConsent(ctx, CreateConsentParams{
 		ID:                          domain.NewID(),
 		ClinicID:                    in.ClinicID,
@@ -234,6 +300,10 @@ func (s *Service) CaptureConsent(ctx context.Context, in CaptureConsentInput) (*
 		CapturedBy:                  in.StaffID,
 		CapturedAt:                  in.CapturedAt,
 		WitnessID:                   in.WitnessID,
+		WitnessKind:                 witnessKindParam,
+		ExternalWitnessName:         trimNonEmpty(in.ExternalWitnessName),
+		ExternalWitnessRole:         trimNonEmpty(in.ExternalWitnessRole),
+		WitnessAttestation:          trimNonEmpty(in.WitnessAttestation),
 		ExpiresAt:                   in.ExpiresAt,
 		RenewalDueAt:                in.RenewalDueAt,
 		AIAssistanceMetadata:        in.AIAssistanceMetadata,
@@ -358,6 +428,36 @@ func (s *Service) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.UUID
 
 // ── Validators ───────────────────────────────────────────────────────────────
 
+// isHighRiskConsentType — these consent kinds carry irreversible or
+// life-altering implications; self-witness is not regulator-acceptable
+// for them. Mirrors the drug-op rule that disallows self-witness on
+// 'discard' for the same reason (regulator-binding records need a
+// real second pair of eyes).
+func isHighRiskConsentType(t string) bool {
+	switch t {
+	case "euthanasia",
+		"sedation",
+		"invasive_procedure",
+		"controlled_drug_administration":
+		return true
+	}
+	return false
+}
+
+// trimNonEmpty returns nil for nil or whitespace-only strings; the
+// trimmed value otherwise. Keeps optional witness fields out of the
+// DB when callers send empty strings instead of nil.
+func trimNonEmpty(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
+}
+
 func validConsentType(t string) bool {
 	switch t {
 	case "audio_recording", "ai_processing", "telemedicine",
@@ -429,6 +529,10 @@ func recordToResponse(r *ConsentRecord) *ConsentResponse {
 		s := r.WitnessID.String()
 		out.WitnessID = &s
 	}
+	out.WitnessKind = r.WitnessKind
+	out.ExternalWitnessName = r.ExternalWitnessName
+	out.ExternalWitnessRole = r.ExternalWitnessRole
+	out.WitnessAttestation = r.WitnessAttestation
 	if r.ExpiresAt != nil {
 		s := r.ExpiresAt.Format(time.RFC3339)
 		out.ExpiresAt = &s
