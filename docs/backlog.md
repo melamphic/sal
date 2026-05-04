@@ -226,3 +226,131 @@ real customers tell us which bucket they need first.
 **Dependencies:** existing `consent_records`, `drug_operations_log`, `incident_events`
 tables ✅. Per-vertical / per-country regulator export formats need a small spike
 to confirm shape (CQC SIRS PDF, VCNZ format, etc).
+
+---
+
+## Pending: Reports v2 — vertical-specific reports (deferred from V1, 2026-05-04)
+
+**Context.** V1 of the HTML+Gotenberg report rebuild ships **6 universal reports**
+(audit pack, CD register, incident report, CD reconciliation, pain trend, MAR grid)
+that work across vet · dental · GP / general clinic · aged care. The items below
+are vertical-specific reports we identified during the per-(vertical, country)
+research but explicitly punted because they need new schema or new capture widgets
+that don't exist yet.
+
+Sandbox HTML mockups for the V1 visual spec live at
+`~/work/melamphic/reports-mockups/index.html`.
+
+### Dental
+
+- **Sterilisation / decontamination cycle log** — UK HTM 01-05, AU AS/NZS 4815/4187,
+  NZ infection control. **Gap:** no `sterilisation_cycles` table. Needs cycle id,
+  autoclave id, biological indicator result, operator, date.
+- **Odontogram + perio chart** in clinical record — all countries. **Gap:** no
+  system widget; clinical note can hold prose but not a structured tooth chart.
+- **PDMP query log** (US — CA CURES, TX PMP, NY I-STOP, others state-specific)
+  required before prescribing Sch II–IV. **Gap:** no `pdmp_queries` table.
+
+### General clinic / GP / Family Medicine
+
+- **Clinical audit cycle artifact** (UK CQC Reg 17 + AU RACGP Std 5th + NZ RNZCGP
+  Cornerstone CQI) — standards-vs-actual + intervention + remeasure. **Gap:** no
+  `audit_cycles` entity; events exist but no cycle wrapper.
+- **Significant Event Analysis log aggregator** (UK GP + UK dental + NZ GP) —
+  periodic SEA digest distinct from generic incident report. **Gap:** small —
+  uses `incident_events` filtered to a "lessons learned" SEA view; ~1 day, no
+  schema change. Could be promoted to V1.5 cheaply.
+- **QOF achievement scorecard** (UK NHS GMS) — annual indicator-level performance.
+  **Gap:** no eligibility + indicator tracking schema.
+- **MIPS Quality measures** (US CMS QPP) — annual eCQM aggregation. **Gap:** no
+  eCQM tracking.
+- **Cornerstone Equity module evidence** (NZ — demographic-stratified outcomes
+  by ethnicity). **Gap:** subjects table doesn't have structured demographics.
+
+### Vet (vertical-specific, beyond CD register / audit pack)
+
+- **Cascade prescribing log** (UK VMD reg) — written justification per Cascade
+  use, retain 5 yrs. **Gap:** notes hold narrative; no Cascade-specific
+  field/widget.
+- **ACVM record / Veterinary Operating Instructions** (NZ MPI) — formatted to MPI
+  VOI template. **Gap:** links exist, format doesn't match template.
+- **Anaesthesia / surgical monitoring time-series** (UK RCVS PSS · AU ASAVA · US
+  AAHA) — periodic vital-sign capture during procedures. **Gap:** no time-series
+  capture widget.
+- **Adverse drug event report (ADRS)** (NZ MPI portal) — structured form mirroring
+  portal schema. **Gap:** `incident_events` is generic; not ADRS-shaped.
+
+### Aged care (beyond V1's MAR)
+
+- **Restrictive practices / restraint / DoLS register** (AU Quality Standards · UK
+  MCA/DoLS · NZ Ngā Paerewa). AU adds behaviour-support-plan + consent linkage.
+  **Gap:** no register table.
+- **Per-jurisdiction regulator submission with classification + deadline timer**
+  (AU SIRS · NZ HQSC SAC · UK NHS LFPSE · UK CQC Reg 18 statutory notifications).
+  **Gap:** `incident_events` is generic; needs per-jurisdiction classifier +
+  deadline clock + submission lineage with regulator reference number tracking.
+- **MDS 3.0 resident assessments** (US LTC mandatory) — admission, quarterly,
+  annual, significant change. **Gap:** no MDS schema.
+- **National Quality Indicators (NQI)** (AU mandatory program) — quarterly
+  aggregation of pressure injuries · physical restraint · weight loss ·
+  falls/fractures · medication management. **Gap:** no aggregation entity.
+
+### Universal / cross-vertical
+
+- **Accreditation evidence bundle** (RCVS PSS · AAHA · ASAVA · CQC SAF · RACGP ·
+  Cornerstone) — multi-section bundle: cover sheet + sampled records + audit
+  cycles + CD audit + complaints + staff CPD. **Gap:** schema mostly OK; needs
+  orchestration entity to define + execute "bundle these N sources for this
+  accreditation cycle."
+- **Statutory regulator notification submissions as form-image archive** mirroring
+  portal forms (one-off PDF rendering of the submitted regulator form for our
+  records). **Gap:** per-jurisdiction structured forms.
+
+### Out of scope (not building, ever, unless product pivots)
+
+- HIPAA Accounting of Disclosures — billing/payer-adjacent; we don't do billing.
+- DEA Form 222 / CSOS records — billing/payer-adjacent.
+- Per-vertical/country regulator-portal API integrations — manual submission with
+  our PDF as evidence is enough for the foreseeable future.
+
+---
+
+## Pending: Doc-theme V2 differentiators (deferred from V1, 2026-05-04)
+
+V1 of the doc-theme HTML rebuild covers the table-stakes: logo, brand color with
+auto-contrast, header/footer with jurisdiction-aware footer library, page size +
+landscape toggle, margin presets, curated font list (4-6), per-document-type
+header/footer toggles, live preview with real sample data, theme versioning, and
+multi-site theme inheritance. Plus three differentiators that are cheap-to-build
+and visibly premium: per-document-type override matrix, watermark state presets
+(DRAFT/AMENDED/COPY/REGULATOR-SUBMITTED with AMENDED system-enforced), and the
+signature block designer.
+
+Deferred to V2:
+
+- **Accessibility checker on theme save** — WCAG 2.2 AA contrast (4.5:1 body, 3:1
+  large), minimum font size enforcement (≥10pt body, ≥8pt footer), tagged-PDF
+  readiness. Green/amber/red badge.
+- **Color-blind simulation toggle** in preview — deuteranopia / protanopia
+  one-click swap. Important for MAR sheets that use red/green for given/missed.
+- **Brand-voice / boilerplate phrase guard** — head-office-locked disclaimer
+  wording so a site can't accidentally reword the HIPAA / Privacy Act notice.
+- **Multi-language header/footer** — te reo Māori bilingual headers (NZ), Welsh
+  (UK), bilingual EN/ES (US). Field-level translation, not full template
+  duplication.
+- **Print-bleed-aware preview** — show trim line, safe area, 3mm bleed overlay
+  when positioning logo/header.
+- **Saved theme library / cross-clinic templates** beyond simple multi-site
+  inheritance — Salvia-curated starter packs per (vertical, country).
+
+### Explicitly NOT shipping (designer foot-guns)
+
+- Raw CSS editor / "advanced mode" — one bad selector breaks every PDF.
+- Arbitrary font upload — licensing nightmare + Chromium font fallback shifts
+  layout subtly. Curated Google Fonts + system fonts is enough.
+- Custom HTML injection in header/footer — XSS vector + lets users add tracking
+  pixels (HIPAA-bad).
+- Drag-to-position free-form canvas — clinical docs need predictable structure
+  for regulator submission.
+- Per-page background images — file size, accessibility tagging issues, conflicts
+  with the watermark system.
