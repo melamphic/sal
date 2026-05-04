@@ -52,7 +52,7 @@ func (r *Renderer) RenderCDReconciliation(ctx context.Context, in CDReconciliati
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDReconciliation: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_reconciliation")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDReconciliation: %w", err)
 	}
