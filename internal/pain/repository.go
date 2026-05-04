@@ -34,21 +34,35 @@ type PainScoreRecord struct {
 	PainScaleUsed string
 	AssessedBy    uuid.UUID
 	AssessedAt    time.Time
-	CreatedAt     time.Time
+	// 4-mode witness shape (00079) — most pain scores are routine
+	// observations and run with these all nil; PRN-driven assessments
+	// that gate controlled-drug administration use the same shape as
+	// drugs/consent/incidents.
+	WitnessID           *uuid.UUID
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	CreatedAt           time.Time
 }
 
 type CreatePainScoreParams struct {
-	ID            uuid.UUID
-	ClinicID      uuid.UUID
-	SubjectID     uuid.UUID
-	NoteID        *uuid.UUID
-	NoteFieldID   *uuid.UUID
-	Score         int
-	Note          *string
-	Method        string
-	PainScaleUsed string
-	AssessedBy    uuid.UUID
-	AssessedAt    time.Time
+	ID                  uuid.UUID
+	ClinicID            uuid.UUID
+	SubjectID           uuid.UUID
+	NoteID              *uuid.UUID
+	NoteFieldID         *uuid.UUID
+	Score               int
+	Note                *string
+	Method              string
+	PainScaleUsed       string
+	AssessedBy          uuid.UUID
+	AssessedAt          time.Time
+	WitnessID           *uuid.UUID
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
 }
 
 type ListPainScoresParams struct {
@@ -69,20 +83,24 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 const painCols = `id, clinic_id, subject_id, note_id, note_field_id,
 	score, note,
-	method, pain_scale_used, assessed_by, assessed_at, created_at`
+	method, pain_scale_used, assessed_by, assessed_at,
+	witness_id, witness_kind, external_witness_name, external_witness_role, witness_attestation,
+	created_at`
 
 func (r *Repository) CreatePainScore(ctx context.Context, p CreatePainScoreParams) (*PainScoreRecord, error) {
 	row := r.db.QueryRow(ctx, fmt.Sprintf(`
 		INSERT INTO pain_scores (
 			id, clinic_id, subject_id, note_id, note_field_id,
 			score, note, method, pain_scale_used,
-			assessed_by, assessed_at
+			assessed_by, assessed_at,
+			witness_id, witness_kind, external_witness_name, external_witness_role, witness_attestation
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING %s`, painCols),
 		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.Score, p.Note, p.Method, p.PainScaleUsed,
 		p.AssessedBy, p.AssessedAt,
+		p.WitnessID, p.WitnessKind, p.ExternalWitnessName, p.ExternalWitnessRole, p.WitnessAttestation,
 	)
 	rec, err := scanPain(row)
 	if err != nil {
@@ -244,7 +262,9 @@ func scanPain(row scannable) (*PainScoreRecord, error) {
 	err := row.Scan(
 		&p.ID, &p.ClinicID, &p.SubjectID, &p.NoteID, &p.NoteFieldID,
 		&p.Score, &p.Note, &p.Method, &p.PainScaleUsed,
-		&p.AssessedBy, &p.AssessedAt, &p.CreatedAt,
+		&p.AssessedBy, &p.AssessedAt,
+		&p.WitnessID, &p.WitnessKind, &p.ExternalWitnessName, &p.ExternalWitnessRole, &p.WitnessAttestation,
+		&p.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
