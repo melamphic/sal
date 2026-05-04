@@ -1,6 +1,7 @@
 package notes
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -586,6 +587,11 @@ type PDFRenderer struct {
 	// back to the raw value (id-pointer JSON), which is unhelpful but
 	// non-fatal.
 	svc *Service
+	// htmlRenderer is the new HTML+Gotenberg path. When non-nil the
+	// renderer ships HTML instead of fpdf — same input shape, far
+	// nicer output. nil = legacy fpdf path. Will become required
+	// once the fpdf path is deleted (P3-Q).
+	htmlRenderer *HTMLRenderer
 }
 
 // SetService wires the parent Service so the renderer can resolve
@@ -593,6 +599,11 @@ type PDFRenderer struct {
 // …) when laying out the PDF body. Called from app.go right after the
 // Service is constructed.
 func (r *PDFRenderer) SetService(s *Service) { r.svc = s }
+
+// SetHTMLRenderer enables the HTML+Gotenberg rendering path. Called
+// from app.go once the platform pdf renderer is constructed. Until
+// this is set the renderer falls back to the legacy fpdf path.
+func (r *PDFRenderer) SetHTMLRenderer(h *HTMLRenderer) { r.htmlRenderer = h }
 
 // NewPDFRenderer constructs a PDFRenderer. Pass nil for events to disable the
 // post-render notification (tests where the realtime bus isn't wired).
@@ -755,7 +766,7 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 	}
 
 	visitDate := note.CreatedAt
-	buf, err := BuildNotePDF(PDFInput{
+	input := PDFInput{
 		Theme:         theme,
 		ClinicName:    clinic.Name,
 		ClinicAddress: clinic.Address,
@@ -770,14 +781,32 @@ func (r *PDFRenderer) Render(ctx context.Context, noteID uuid.UUID) error {
 		SystemHeader:  sysHeader,
 		Subject:       subject,
 		VisitDate:     &visitDate,
-	})
-	if err != nil {
-		return fmt.Errorf("notes.pdf.Render: build: %w", err)
+	}
+
+	// Prefer the new HTML+Gotenberg renderer when it's wired
+	// (production once we cut over). Fall back to the legacy fpdf
+	// path so unit tests + tests-only construction paths still build.
+	var (
+		pdfBytes []byte
+		bodySize int64
+	)
+	if r.htmlRenderer != nil {
+		pdfBytes, err = r.htmlRenderer.RenderNoteAsPDF(ctx, input)
+		if err != nil {
+			return fmt.Errorf("notes.pdf.Render: html: %w", err)
+		}
+		bodySize = int64(len(pdfBytes))
+	} else {
+		buf, bErr := BuildNotePDF(input)
+		if bErr != nil {
+			return fmt.Errorf("notes.pdf.Render: build: %w", bErr)
+		}
+		pdfBytes = buf.Bytes()
+		bodySize = int64(buf.Len())
 	}
 
 	key := fmt.Sprintf("notes/%s/%s.pdf", note.ClinicID, noteID)
-	size := int64(buf.Len())
-	if err := r.store.Upload(ctx, key, "application/pdf", buf, size); err != nil {
+	if err := r.store.Upload(ctx, key, "application/pdf", bytes.NewReader(pdfBytes), bodySize); err != nil {
 		return fmt.Errorf("notes.pdf.Render: upload: %w", err)
 	}
 
