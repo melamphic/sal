@@ -1,0 +1,222 @@
+<!-- ===== Page 1 — Resident, event, timeline, outcome ============ -->
+<section class="page">
+  <header class="doc-header">
+    <div class="doc-header__brand">
+      <div class="doc-header__logo" style="background: #5b21b6;">IR</div>
+      <div class="doc-header__clinic">
+        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
+        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
+      </div>
+    </div>
+    <div class="doc-header__title">
+      <span class="doc-header__title-eyebrow">Incident Report</span>
+      <span class="doc-header__title-text">{{ .IncidentRef }}</span>
+      <span class="doc-header__title-meta">CQC Reg 18 statutory notification · Submitted {{ .GeneratedOn }}</span>
+    </div>
+  </header>
+
+  <div class="kpi-grid">
+    <div class="kpi kpi--{{ .SeverityTone }}">
+      <span class="kpi__label">Severity</span>
+      <span class="kpi__value" style="font-size: 13pt; color: var(--salvia-{{ .SeverityTone }});">{{ .SeverityLabel }}</span>
+      <span class="kpi__hint">{{ .SeverityHint }}</span>
+    </div>
+    <div class="kpi kpi--warn">
+      <span class="kpi__label">Type</span>
+      <span class="kpi__value" style="font-size: 13pt;">{{ .TypeLabel }}</span>
+      <span class="kpi__hint">{{ .TypeHint }}</span>
+    </div>
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">CQC Notifiable</span>
+      <span class="kpi__value" style="font-size: 13pt; color: var(--salvia-primary);">{{ if .CQCNotifiable }}Yes{{ else }}No{{ end }}</span>
+      <span class="kpi__hint">Reg 18(1) — serious injury</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">CQC Submitted</span>
+      <span class="kpi__value" style="font-size: 11pt;">{{ if .CQCSubmittedOn }}{{ .CQCSubmittedOn }}{{ else }}—{{ end }}</span>
+      <span class="kpi__hint">{{ if .CQCRefNumber }}Ref: {{ .CQCRefNumber }}{{ else }}Not submitted{{ end }}</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <span class="section__eyebrow">Section A</span>
+    <h2 class="section__title">Resident &amp; Event</h2>
+  </div>
+
+  <div class="meta-grid meta-grid--3">
+    <div class="meta"><span class="meta__label">Resident</span><span class="meta__value">{{ .ResidentName }} {{ .ResidentMeta }}</span></div>
+    <div class="meta"><span class="meta__label">Room</span><span class="meta__value">{{ .Room }}</span></div>
+    <div class="meta"><span class="meta__label">Care category</span><span class="meta__value">{{ .CareCategory }}</span></div>
+    <div class="meta"><span class="meta__label">Date / time of event</span><span class="meta__value">{{ .OccurredAt }}</span></div>
+    <div class="meta"><span class="meta__label">Location</span><span class="meta__value">{{ .Location }}</span></div>
+    <div class="meta"><span class="meta__label">Reported by</span><span class="meta__value">{{ .ReportedBy }}</span></div>
+  </div>
+
+  <div class="section">
+    <span class="section__eyebrow">Section B</span>
+    <h2 class="section__title">What Happened</h2>
+  </div>
+  <p style="font-size: 9.5pt;">{{ .BriefDescription }}</p>
+
+  {{- if .ActionsTimeline }}
+  <div class="section">
+    <span class="section__eyebrow">Section C</span>
+    <h2 class="section__title">Immediate Actions</h2>
+  </div>
+  <ul style="list-style: none; padding: 0; margin: 0;">
+    {{- range .ActionsTimeline }}
+    <li style="display: grid; grid-template-columns: 80px 14px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--salvia-border);">
+      <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 7.5pt; color: var(--salvia-muted);">{{ .WhenPretty }}</span>
+      <span style="width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: {{ if eq .Tone "warn" }}var(--salvia-warning){{ else if eq .Tone "ok" }}var(--salvia-success){{ else }}var(--salvia-primary){{ end }};"></span>
+      <span style="font-size: 8.5pt;">{{ .Body }}</span>
+    </li>
+    {{- end }}
+  </ul>
+  {{- end }}
+
+  {{- if .Outcome24h }}
+  <div class="section">
+    <span class="section__eyebrow">Section D</span>
+    <h2 class="section__title">Outcome (24h post-event)</h2>
+  </div>
+  <table class="tbl">
+    <tbody>
+      {{- range .Outcome24h }}
+      <tr><td style="width: 30%"><strong>{{ .Label }}</strong></td><td>{{ .Value }}</td></tr>
+      {{- end }}
+    </tbody>
+  </table>
+  {{- end }}
+
+  {{- if .Notifications }}
+  <div class="callout callout--danger">
+    <div class="callout__title">Mandatory regulator notifications — status</div>
+    <table class="tbl" style="margin: 6px 0 0;">
+      <tbody style="font-size: 8.5pt;">
+        {{- range .Notifications }}
+        <tr><td>{{ .Authority }}</td><td>{{ .Status }}</td><td><span class="pill pill--{{ .StatusTone }}">{{ .Status }}</span></td></tr>
+        {{- end }}
+      </tbody>
+    </table>
+  </div>
+  {{- end }}
+
+  <footer class="doc-footer">
+    <div class="doc-footer__cell">
+      <span class="doc-footer__strong">{{ .ClinicName }}</span>
+      <span>Incident {{ .IncidentRef }} · Resident {{ .ResidentName }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--center">
+      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--right">
+      <span class="doc-footer__strong">Page 1 of 2</span>
+      <span>Generated {{ .GeneratedOn }}</span>
+    </div>
+  </footer>
+</section>
+
+<!-- ===== Page 2 — RCA + Action Plan + Sign-off =================== -->
+<section class="page">
+  <header class="doc-header">
+    <div class="doc-header__brand">
+      <div class="doc-header__logo" style="background: #5b21b6;">IR</div>
+      <div class="doc-header__clinic">
+        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
+        <span class="doc-header__clinic-meta">{{ .ClinicMeta }}</span>
+      </div>
+    </div>
+    <div class="doc-header__title">
+      <span class="doc-header__title-eyebrow">Incident · Section E–G</span>
+      <span class="doc-header__title-text">RCA · Actions · Sign-off</span>
+      <span class="doc-header__title-meta">{{ .IncidentRef }}</span>
+    </div>
+  </header>
+
+  <div class="section">
+    <span class="section__eyebrow">Section E</span>
+    <h2 class="section__title">Root Cause Analysis</h2>
+    <p class="section__hint">Five Whys + contributory factor analysis.</p>
+  </div>
+
+  {{- if .RCA }}
+  <table class="tbl">
+    <thead>
+      <tr><th style="width: 20%">Factor</th><th>Finding</th><th class="center" style="width: 100px">Contributory?</th></tr>
+    </thead>
+    <tbody>
+      {{- range .RCA.Factors }}
+      <tr>
+        <td>{{ .Factor }}</td>
+        <td>{{ .Finding }}</td>
+        <td class="center"><span class="pill pill--{{ .Tone }}">{{ .Contributory }}</span></td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+  {{- else }}
+  <p style="font-size: 9pt; color: var(--salvia-muted); font-style: italic;">No structured RCA recorded.</p>
+  {{- end }}
+
+  {{- if .RootCause }}
+  <div class="callout callout--warn">
+    <div class="callout__title">Root cause</div>
+    {{ .RootCause }}
+  </div>
+  {{- end }}
+
+  {{- if .ActionPlan }}
+  <div class="section">
+    <span class="section__eyebrow">Section F</span>
+    <h2 class="section__title">Action Plan</h2>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr><th>Action</th><th>Owner</th><th class="center" style="width: 90px">Due</th><th class="center" style="width: 80px">Status</th></tr>
+    </thead>
+    <tbody>
+      {{- range .ActionPlan }}
+      <tr>
+        <td>{{ .Action }}</td>
+        <td>{{ .Owner }}</td>
+        <td class="center">{{ .DuePretty }}</td>
+        <td class="center"><span class="pill pill--{{ .StatusTone }}">{{ .Status }}</span></td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+  {{- end }}
+
+  <div class="section">
+    <span class="section__eyebrow">Section G</span>
+    <h2 class="section__title">Sign-off</h2>
+  </div>
+
+  <div class="signature-grid">
+    <div class="signature">
+      <div class="signature__role">Reported by</div>
+      <div class="signature__name">{{ .ReportedBySigName }}</div>
+      <div class="signature__meta"><span></span><span>{{ .OccurredAt }}</span></div>
+    </div>
+    <div class="signature">
+      <div class="signature__role">Reviewed by — Registered Manager</div>
+      <div class="signature__name">{{ .ReviewedBySigName }}</div>
+      <div class="signature__meta"><span></span><span>{{ .GeneratedOn }}</span></div>
+    </div>
+  </div>
+
+  <footer class="doc-footer">
+    <div class="doc-footer__cell">
+      <span class="doc-footer__strong">{{ .ClinicName }}</span>
+      <span>Incident {{ .IncidentRef }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--center">
+      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
+    </div>
+    <div class="doc-footer__cell doc-footer__cell--right">
+      <span class="doc-footer__strong">Page 2 of 2</span>
+      <span>Generated {{ .GeneratedOn }}</span>
+    </div>
+  </footer>
+</section>
