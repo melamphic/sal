@@ -53,6 +53,16 @@ type recordPainBody struct {
 		Method        string  `json:"method"          enum:"manual,painchek,extracted_from_audio,flacc_observed,wong_baker"`
 		PainScaleUsed string  `json:"pain_scale_used" enum:"nrs,flacc,painad,wong_baker,vrs,vas"`
 		AssessedAt    *string `json:"assessed_at,omitempty" doc:"RFC3339; defaults to now."`
+
+		// 4-mode witness shape — same widget/payload as drugs/consent/
+		// incidents. Optional for routine pain observations; the
+		// service enforces shape rules when WitnessKind is set.
+		WitnessKind         *string `json:"witness_kind,omitempty" enum:"staff,pending,external,self"`
+		WitnessID           *string `json:"witness_id,omitempty"`
+		ExternalWitnessName *string `json:"external_witness_name,omitempty"`
+		ExternalWitnessRole *string `json:"external_witness_role,omitempty"`
+		WitnessAttestation  *string `json:"witness_attestation,omitempty"`
+
 		// SubmitForReview queues the score for second-rater verification.
 		// Used for PainAD (aged-care non-verbal) and high-score entries.
 		SubmitForReview bool    `json:"submit_for_review,omitempty"`
@@ -69,16 +79,20 @@ func (h *Handler) recordPain(ctx context.Context, input *recordPainBody) (*painH
 		return nil, huma.Error400BadRequest("invalid subject_id")
 	}
 	in := RecordPainScoreInput{
-		ClinicID:        clinicID,
-		StaffID:         staffID,
-		StaffRole:       string(mw.RoleFromContext(ctx)),
-		SubjectID:       subjectID,
-		Score:           input.Body.Score,
-		Note:            input.Body.Note,
-		Method:          input.Body.Method,
-		PainScaleUsed:   input.Body.PainScaleUsed,
-		SubmitForReview: input.Body.SubmitForReview,
-		ReviewNote:      input.Body.ReviewNote,
+		ClinicID:            clinicID,
+		StaffID:             staffID,
+		StaffRole:           string(mw.RoleFromContext(ctx)),
+		SubjectID:           subjectID,
+		Score:               input.Body.Score,
+		Note:                input.Body.Note,
+		Method:              input.Body.Method,
+		PainScaleUsed:       input.Body.PainScaleUsed,
+		WitnessKind:         input.Body.WitnessKind,
+		ExternalWitnessName: input.Body.ExternalWitnessName,
+		ExternalWitnessRole: input.Body.ExternalWitnessRole,
+		WitnessAttestation:  input.Body.WitnessAttestation,
+		SubmitForReview:     input.Body.SubmitForReview,
+		ReviewNote:          input.Body.ReviewNote,
 	}
 	if input.Body.NoteID != nil && *input.Body.NoteID != "" {
 		id, err := uuid.Parse(*input.Body.NoteID)
@@ -86,6 +100,13 @@ func (h *Handler) recordPain(ctx context.Context, input *recordPainBody) (*painH
 			return nil, huma.Error400BadRequest("invalid note_id")
 		}
 		in.NoteID = &id
+	}
+	if input.Body.WitnessID != nil && *input.Body.WitnessID != "" {
+		id, err := uuid.Parse(*input.Body.WitnessID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid witness_id")
+		}
+		in.WitnessID = &id
 	}
 	if input.Body.AssessedAt != nil && *input.Body.AssessedAt != "" {
 		t, err := time.Parse(time.RFC3339, *input.Body.AssessedAt)
