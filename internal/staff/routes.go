@@ -72,6 +72,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.updatePermissions)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "update-staff-regulatory-id",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/staff/{staff_id}/regulatory-id",
+		Summary:     "Update staff regulatory identity",
+		Description: "Sets or clears the regulator authority + registration number for a staff member (VCNZ / NMC / GMC / AHPRA / AVMA / RCVS / etc.). Surfaces on every signed clinical record + report PDF that cites this staff as the clinician of record.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.updateRegulatoryIdentity)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "deactivate-staff",
 		Method:      http.MethodDelete,
 		Path:        "/api/v1/staff/{staff_id}",
