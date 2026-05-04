@@ -55,6 +55,13 @@ type updateInput struct {
 		Timezone           *string `json:"timezone,omitempty"            doc:"IANA timezone (e.g. 'Pacific/Auckland')."`
 		BusinessRegNo      *string `json:"business_reg_no,omitempty"     maxLength:"64" doc:"Business registration identifier — NZBN, ABN, CRN, GSTIN, etc., depending on country."`
 		AcceptTerms        *bool   `json:"accept_terms,omitempty"        doc:"Set to true to accept the Salvia terms of service. Stamps terms_accepted_at. Cannot be unset."`
+		// RegulatoryIDs is the per-jurisdiction identifier blob —
+		// keys like "nzbn", "cqc_location_id", "dea_id",
+		// "ahpra_practice_id". The FE picks which keys to render
+		// based on (vertical, country). Send the full post-edit map
+		// to replace the stored value; omit the field to leave the
+		// stored value unchanged.
+		RegulatoryIDs map[string]string `json:"regulatory_ids,omitempty" doc:"Map of jurisdiction-aware identifier names → values (NZBN, CQC location ID, DEA ID, etc.). Sent as a complete map; omitting leaves the stored value untouched."`
 	}
 }
 
@@ -135,6 +142,7 @@ func (h *Handler) update(ctx context.Context, input *updateInput) (*clinicRespon
 		Timezone:           input.Body.Timezone,
 		BusinessRegNo:      input.Body.BusinessRegNo,
 		AcceptTerms:        input.Body.AcceptTerms,
+		RegulatoryIDs:      input.Body.RegulatoryIDs,
 	})
 	if err != nil {
 		return nil, mapClinicError(err)
