@@ -54,6 +54,7 @@ import (
 	"github.com/melamphic/sal/internal/platform/pdf"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/policy"
+	reportsv2 "github.com/melamphic/sal/internal/reports/v2"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/tiering"
@@ -354,8 +355,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// renderer falls back to fpdf only when this isn't called
 	// (test-only construction paths).
 	platformPDF := pdf.New(cfg)
-	pdfRenderer.SetHTMLRenderer(notes.NewHTMLRenderer(platformPDF))
+	notesHTMLRenderer := notes.NewHTMLRenderer(platformPDF)
+	pdfRenderer.SetHTMLRenderer(notesHTMLRenderer)
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(pdfRenderer))
+
+	// v2 reports renderer + doc-theme preview handler. The renderer
+	// resolves clinic theme via the docThemeAdapter (same one notes
+	// uses) so production CD register / incident report / etc.
+	// pulls the saved theme. The preview endpoint mutates the
+	// renderer's theme provider in-place per call to surface the
+	// designer's in-progress theme without a DB write.
+	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
+	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer)
 
 	// Periodic jobs — declared at construction time so River drives them
 	// without an external cron. Currently just the schedule fire-loop;
@@ -716,6 +727,17 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	formsHandler.Mount(r, api, jwtSecret)
 	if formAIGenHandler != nil {
 		formAIGenHandler.Mount(r, api, jwtSecret)
+	}
+	// v2 reports preview — same auth + manage_forms permission as the
+	// rest of the form-style endpoints (the doc-theme designer is the
+	// caller; same caller, same permission gate).
+	{
+		auth := mw.AuthenticateHuma(api, jwtSecret)
+		manageForms := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageForms })
+		reportsv2.MountPreview(api, reportsV2Handler,
+			[]map[string][]string{{"bearerAuth": {}}},
+			huma.Middlewares{auth, manageForms},
+		)
 	}
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
@@ -3085,6 +3107,75 @@ func (a *docThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID uuid.U
 	theme, err := notes.DecodeDocTheme(style.Config)
 	if err != nil {
 		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// v2DocThemeAdapter implements reportsv2.ThemeProvider over the same
+// clinic_form_style_versions row docThemeAdapter consumes — but takes
+// the clinic ID as a string (the v2 package is already in production
+// service code where a clinic UUID is passed as a path / query param,
+// so plumbing the typed UUID into its tests would force every report
+// API surface through uuid.Parse first; string is fine here).
+type v2DocThemeAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *v2DocThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID string) (*pdf.DocTheme, error) {
+	uid, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: parse clinic_id: %w", err)
+	}
+	style, err := a.repo.GetCurrentStyle(ctx, uid)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: %w", err)
+	}
+	if style == nil || len(style.Config) == 0 {
+		return nil, nil
+	}
+	theme, err := pdf.DecodeDocTheme(style.Config)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// GetPerDocOverride implements reportsv2.PerDocThemeProvider — looks
+// up the per-doc-type override blob from clinic_form_style_versions.
+// per_doc_overrides and decodes the matching slug into a partial
+// DocTheme. Returns (nil, nil) when no override exists.
+func (a *v2DocThemeAdapter) GetPerDocOverride(ctx context.Context, clinicID, docType string) (*pdf.DocTheme, error) {
+	if docType == "" {
+		return nil, nil
+	}
+	uid, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: parse clinic_id: %w", err)
+	}
+	style, err := a.repo.GetCurrentStyle(ctx, uid)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: %w", err)
+	}
+	if style == nil || len(style.PerDocOverrides) == 0 {
+		return nil, nil
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(style.PerDocOverrides, &all); err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: unmarshal: %w", err)
+	}
+	raw, ok := all[docType]
+	if !ok || len(raw) == 0 {
+		return nil, nil
+	}
+	theme, err := pdf.DecodeDocTheme(raw)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: decode %q: %w", docType, err)
 	}
 	return theme, nil
 }
