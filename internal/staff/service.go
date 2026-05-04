@@ -82,6 +82,12 @@ type StaffResponse struct {
 	Status       domain.StaffStatus `json:"status"`
 	LastActiveAt *time.Time         `json:"last_active_at,omitempty"`
 	CreatedAt    time.Time          `json:"created_at"`
+	// Regulatory identity surfaced on every signed clinical record +
+	// report PDF that cites this staff member as the clinician of
+	// record. Both nullable until the user fills them in via the
+	// settings page.
+	RegulatoryAuthority *string `json:"regulatory_authority,omitempty"`
+	RegulatoryRegNo     *string `json:"regulatory_reg_no,omitempty"`
 }
 
 // Page is a paginated list of staff DTOs.
@@ -346,15 +352,27 @@ func (s *Service) decryptAndBuild(row *StaffRecord) (*StaffResponse, error) {
 
 func (s *Service) toDTO(row *StaffRecord, email, fullName string) *StaffResponse {
 	return &StaffResponse{
-		ID:           row.ID.String(),
-		ClinicID:     row.ClinicID.String(),
-		Email:        email,
-		FullName:     fullName,
-		Role:         row.Role,
-		NoteTier:     row.NoteTier,
-		Permissions:  row.Perms,
-		Status:       row.Status,
-		LastActiveAt: row.LastActiveAt,
-		CreatedAt:    row.CreatedAt,
+		ID:                  row.ID.String(),
+		ClinicID:            row.ClinicID.String(),
+		Email:               email,
+		FullName:            fullName,
+		Role:                row.Role,
+		NoteTier:            row.NoteTier,
+		Permissions:         row.Perms,
+		Status:              row.Status,
+		LastActiveAt:        row.LastActiveAt,
+		CreatedAt:           row.CreatedAt,
+		RegulatoryAuthority: row.RegulatoryAuthority,
+		RegulatoryRegNo:     row.RegulatoryRegNo,
 	}
+}
+
+// UpdateRegulatoryIdentity sets (or clears) the regulator authority +
+// reg-no for a staff member. Pass nil for either to clear it.
+func (s *Service) UpdateRegulatoryIdentity(ctx context.Context, staffID, clinicID uuid.UUID, authority, regNo *string) (*StaffResponse, error) {
+	row, err := s.repo.UpdateRegulatoryIdentity(ctx, staffID, clinicID, authority, regNo)
+	if err != nil {
+		return nil, fmt.Errorf("staff.service.UpdateRegulatoryIdentity: %w", err)
+	}
+	return s.decryptAndBuild(row)
 }
