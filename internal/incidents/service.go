@@ -639,6 +639,14 @@ func recordToResponse(r *IncidentRecord, witnesses []string, addendums []*Incide
 		s := r.CarePlanUpdatedAt.Format(time.RFC3339)
 		out.CarePlanUpdatedAt = &s
 	}
+	if r.WitnessID != nil {
+		s := r.WitnessID.String()
+		out.WitnessID = &s
+	}
+	out.WitnessKind = r.WitnessKind
+	out.ExternalWitnessName = r.ExternalWitnessName
+	out.ExternalWitnessRole = r.ExternalWitnessRole
+	out.WitnessAttestation = r.WitnessAttestation
 	return out
 }
 
