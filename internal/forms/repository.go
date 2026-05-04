@@ -114,6 +114,12 @@ type StyleVersionRecord struct {
 	IsActive     bool
 	CreatedBy    uuid.UUID
 	CreatedAt    time.Time
+	// PerDocOverrides keys partial DocTheme JSON blobs by doc-type
+	// slug (signed_note | cd_register | …). The renderer merges
+	// these over the base config when rendering the matching
+	// doc-type. Always non-NULL at the column level (default '{}');
+	// here represented as raw JSON for transport.
+	PerDocOverrides json.RawMessage
 }
 
 // ── Param types ───────────────────────────────────────────────────────────────
@@ -243,17 +249,18 @@ type CreateFieldParams struct {
 
 // CreateStyleVersionParams holds values for a new style version row.
 type CreateStyleVersionParams struct {
-	ID           uuid.UUID
-	ClinicID     uuid.UUID
-	Version      int
-	LogoKey      *string
-	PrimaryColor *string
-	FontFamily   *string
-	HeaderExtra  *string
-	FooterText   *string
-	Config       json.RawMessage
-	PresetID     *string
-	CreatedBy    uuid.UUID
+	ID              uuid.UUID
+	ClinicID        uuid.UUID
+	Version         int
+	LogoKey         *string
+	PrimaryColor    *string
+	FontFamily      *string
+	HeaderExtra     *string
+	FooterText      *string
+	Config          json.RawMessage
+	PresetID        *string
+	PerDocOverrides json.RawMessage // optional; nil falls back to '{}' in DB
+	CreatedBy       uuid.UUID
 }
 
 // ── Repository ────────────────────────────────────────────────────────────────
@@ -1119,7 +1126,7 @@ func (r *Repository) ListPolicyUnlinkEvents(ctx context.Context, formID uuid.UUI
 
 // ── Style ─────────────────────────────────────────────────────────────────────
 
-const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by, created_at`
+const styleCols = `id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by, created_at, per_doc_overrides`
 
 // GetCurrentStyle returns the active style record for the clinic.
 // Falls back to the highest-version row when no row is marked active (legacy rows).
@@ -1182,13 +1189,14 @@ func (r *Repository) CreateStyleVersion(ctx context.Context, p CreateStyleVersio
 
 	q := fmt.Sprintf(`
 		INSERT INTO clinic_form_style_versions
-		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11)
+		    (id, clinic_id, version, logo_key, primary_color, font_family, header_extra, footer_text, config, preset_id, is_active, created_by, per_doc_overrides)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11, COALESCE($12, '{}'::jsonb))
 		RETURNING %s`, styleCols)
 
 	row := tx.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.Version, p.LogoKey, p.PrimaryColor,
-		p.FontFamily, p.HeaderExtra, p.FooterText, p.Config, p.PresetID, p.CreatedBy,
+		p.FontFamily, p.HeaderExtra, p.FooterText, p.Config, p.PresetID,
+		p.CreatedBy, p.PerDocOverrides,
 	)
 	rec, err := scanStyle(row)
 	if err != nil {
@@ -1307,7 +1315,7 @@ func scanStyle(row scannable) (*StyleVersionRecord, error) {
 		&s.ID, &s.ClinicID, &s.Version, &s.LogoKey, &s.PrimaryColor,
 		&s.FontFamily, &s.HeaderExtra, &s.FooterText,
 		&s.Config, &s.PresetID, &s.IsActive,
-		&s.CreatedBy, &s.CreatedAt,
+		&s.CreatedBy, &s.CreatedAt, &s.PerDocOverrides,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
