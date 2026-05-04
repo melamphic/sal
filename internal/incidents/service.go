@@ -62,6 +62,11 @@ type IncidentResponse struct {
 	Status                   string                       `json:"status"`
 	CreatedAt                string                       `json:"created_at"`
 	UpdatedAt                string                       `json:"updated_at"`
+	WitnessID                *string                      `json:"witness_id,omitempty"`
+	WitnessKind              *string                      `json:"witness_kind,omitempty"`
+	ExternalWitnessName      *string                      `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole      *string                      `json:"external_witness_role,omitempty"`
+	WitnessAttestation       *string                      `json:"witness_attestation,omitempty"`
 	Witnesses                []string                     `json:"witnesses,omitempty"`
 	Addendums                []*IncidentAddendumResponse  `json:"addendums,omitempty"`
 }
