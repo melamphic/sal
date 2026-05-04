@@ -1,0 +1,181 @@
+{{- /*
+  signed_note.html.tmpl — body fragment for the signed clinical note.
+  Wrapped by the platform pdf package's _base.html.tmpl which adds
+  <html><head><body class="doc doc--signed_note">. Page chrome (header
+  + footer) repeats per page via CSS @page margin boxes (defined in
+  this template — Gotenberg/Chromium honours them).
+
+  Data shape: see notes.PDFInput. Fields, Subject, Theme are the bits
+  that drive everything visible. SystemHeader.Fields drives which
+  patient-identity rows render in the subject card.
+
+  System widgets render as inline cards via the .syscard pattern.
+*/ -}}
+<style>
+  /* Per-document page header / footer. Lives in this template (not the
+     shared theme CSS) because chrome differs per doc-type. */
+  @page {
+    @top-left   { content: var(--hdr-left,   ""); font: 700 8pt var(--salvia-body-font); color: var(--salvia-text-emphasis); }
+    @top-center { content: var(--hdr-center, ""); font: 7pt var(--salvia-body-font); color: var(--salvia-muted); }
+    @top-right  { content: var(--hdr-right,  ""); font: 7pt var(--salvia-body-font); color: var(--salvia-muted); }
+    @bottom-left   { content: "{{ .ClinicNameSafe }} · {{ .FormName }}"; font: 7pt var(--salvia-body-font); color: var(--salvia-muted); }
+    @bottom-center { content: "Note " "{{ .NoteIDShort }}"; font: 7pt 'JetBrains Mono', monospace; color: var(--salvia-muted); }
+    @bottom-right  { content: "Page " counter(page) " of " counter(pages); font: 700 7pt var(--salvia-body-font); color: var(--salvia-text-emphasis); }
+  }
+
+  /* Compact spacing for clinical density on a single page. */
+  .signed-note .doc-header { margin-top: 0; }
+  .signed-note .field {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 6px 12px;
+    padding: 6px 0;
+    border-bottom: 1px dotted var(--salvia-border);
+    font-size: 9pt;
+  }
+  .signed-note .field__label {
+    font-size: 7.5pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--salvia-muted);
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .signed-note .field__value { color: var(--salvia-text-emphasis); white-space: pre-wrap; }
+  .signed-note .field--empty .field__value { color: var(--salvia-muted); font-style: italic; }
+
+  /* Subject identity card — patient/animal/resident pre-content. */
+  .signed-note .subject-card {
+    background: var(--salvia-primary-soft);
+    border: 1px solid var(--salvia-primary);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 0 0 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px 18px;
+  }
+  .signed-note .subject-card .meta__value { font-size: 10pt; }
+
+  /* System widget card — typed payload (drug op / consent / incident / pain). */
+  .signed-note .syscard {
+    border: 1px solid var(--salvia-border);
+    border-left-width: 4px;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 8px 0 14px;
+    background: var(--salvia-surface);
+  }
+  .signed-note .syscard--drug_op    { border-left-color: var(--salvia-info); }
+  .signed-note .syscard--consent    { border-left-color: var(--salvia-success); }
+  .signed-note .syscard--incident   { border-left-color: var(--salvia-warning); }
+  .signed-note .syscard--pain_score { border-left-color: var(--salvia-warning); }
+
+  .signed-note .syscard__head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .signed-note .syscard__title {
+    font-size: 9pt; font-weight: 800;
+    color: var(--salvia-text-emphasis);
+    letter-spacing: -0.005em;
+  }
+  .signed-note .syscard__items {
+    display: grid; grid-template-columns: 140px 1fr;
+    gap: 4px 12px; font-size: 8.5pt;
+  }
+  .signed-note .syscard__item-label {
+    color: var(--salvia-muted);
+    font-size: 7.5pt;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .signed-note .syscard__pending-banner {
+    background: var(--salvia-warning-bg);
+    color: var(--salvia-warning);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 7.5pt;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+</style>
+
+<section class="signed-note">
+
+  <header class="doc-header">
+    <div class="doc-header__brand">
+      <div class="doc-header__logo">{{ .ClinicInitials }}</div>
+      <div class="doc-header__clinic">
+        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
+        <span class="doc-header__clinic-meta">{{ .ContactLine }}</span>
+      </div>
+    </div>
+    <div class="doc-header__title">
+      <span class="doc-header__title-eyebrow">Signed Clinical Note</span>
+      <span class="doc-header__title-text">{{ .FormName }} · v{{ .FormVersion }}</span>
+      <span class="doc-header__title-meta">Submitted {{ .SubmittedAtPretty }}</span>
+    </div>
+  </header>
+
+  {{- if .Subject }}
+  <div class="subject-card">
+    {{- range .SubjectRows }}
+    <div class="meta">
+      <span class="meta__label">{{ .Label }}</span>
+      <span class="meta__value">{{ .Value }}</span>
+    </div>
+    {{- end }}
+  </div>
+  {{- end }}
+
+  {{- range .Fields }}
+    {{- if eq .Kind "system" }}
+      <div class="syscard syscard--{{ .SystemKind }}">
+        {{- if .SystemPending }}
+        <div class="syscard__pending-banner">⚠ AI-suggested · pending clinician confirmation</div>
+        {{- end }}
+        <div class="syscard__head">
+          <span class="syscard__title">{{ .Label }}</span>
+          {{- if .ReviewBadge }}
+          <span class="pill pill--{{ .ReviewBadgeTone }}">{{ .ReviewBadge }}</span>
+          {{- end }}
+        </div>
+        <div class="syscard__items">
+        {{- range .SummaryItems }}
+          <span class="syscard__item-label">{{ .Label }}</span>
+          <span class="syscard__item-value">{{ .Value }}</span>
+        {{- end }}
+        </div>
+      </div>
+    {{- else }}
+      <div class="field {{ if not .Value }}field--empty{{ end }}">
+        <div class="field__label">{{ .Label }}</div>
+        <div class="field__value">{{ if .Value }}{{ .Value }}{{ else }}—{{ end }}</div>
+      </div>
+    {{- end }}
+  {{- end }}
+
+  <div class="signature-grid">
+    <div class="signature">
+      <div class="signature__role">Submitted by</div>
+      <div class="signature__name">{{ .SubmittedBy }}</div>
+      <div class="signature__meta">
+        <span>Note {{ .NoteIDShort }}</span>
+        <span>{{ .SubmittedAtPretty }}</span>
+      </div>
+    </div>
+    <div class="signature">
+      <div class="signature__role">Reviewed by</div>
+      <div class="signature__name">— not required —</div>
+      <div class="signature__meta">
+        <span>Routine encounter</span>
+        <span>—</span>
+      </div>
+    </div>
+  </div>
+
+</section>
