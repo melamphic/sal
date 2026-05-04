@@ -241,17 +241,22 @@ type FormGroupListResponse struct {
 //
 //nolint:revive
 type FormStyleResponse struct {
-	Version       int             `json:"version"`
-	LogoKey       *string         `json:"logo_key,omitempty"`
-	HeaderLogoURL *string         `json:"header_logo_url,omitempty"`
-	PrimaryColor  *string         `json:"primary_color,omitempty"`
-	FontFamily    *string         `json:"font_family,omitempty"`
-	HeaderExtra   *string         `json:"header_extra,omitempty"`
-	FooterText    *string         `json:"footer_text,omitempty"`
-	Config        json.RawMessage `json:"config,omitempty"`
-	PresetID      *string         `json:"preset_id,omitempty"`
-	IsActive      bool            `json:"is_active"`
-	UpdatedAt     string          `json:"updated_at"`
+	Version          int             `json:"version"`
+	LogoKey          *string         `json:"logo_key,omitempty"`
+	HeaderLogoURL    *string         `json:"header_logo_url,omitempty"`
+	PrimaryColor     *string         `json:"primary_color,omitempty"`
+	FontFamily       *string         `json:"font_family,omitempty"`
+	HeaderExtra      *string         `json:"header_extra,omitempty"`
+	FooterText       *string         `json:"footer_text,omitempty"`
+	Config           json.RawMessage `json:"config,omitempty"`
+	PresetID         *string         `json:"preset_id,omitempty"`
+	// PerDocOverrides is a JSON object keyed by doc-type slug
+	// (signed_note | cd_register | …) with partial DocTheme blobs
+	// the renderer merges over Config when rendering that doc-type.
+	// Always non-NULL ('{}'); omitted from JSON when empty.
+	PerDocOverrides json.RawMessage `json:"per_doc_overrides,omitempty"`
+	IsActive        bool            `json:"is_active"`
+	UpdatedAt       string          `json:"updated_at"`
 }
 
 // FormStyleVersionsResponse lists every published style version for a clinic.
@@ -417,15 +422,19 @@ type UpdateGroupInput struct {
 
 // UpdateStyleInput holds the desired style settings for the clinic.
 type UpdateStyleInput struct {
-	ClinicID     uuid.UUID
-	StaffID      uuid.UUID
-	LogoKey      *string
-	PrimaryColor *string
-	FontFamily   *string
-	HeaderExtra  *string
-	FooterText   *string
-	Config       json.RawMessage
-	PresetID     *string
+	ClinicID        uuid.UUID
+	StaffID         uuid.UUID
+	LogoKey         *string
+	PrimaryColor    *string
+	FontFamily      *string
+	HeaderExtra     *string
+	FooterText      *string
+	Config          json.RawMessage
+	PresetID        *string
+	// PerDocOverrides is the optional per-doc-type override map
+	// (slug → partial DocTheme JSON). nil leaves the existing
+	// column value untouched; '{}' clears it.
+	PerDocOverrides json.RawMessage
 }
 
 // ── Service methods ───────────────────────────────────────────────────────────
@@ -1405,18 +1414,27 @@ func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*For
 		}
 	}
 
+	// Per-doc overrides — when caller didn't supply, carry the
+	// existing column value forward so a save that only edits the
+	// base config doesn't clobber per-doc tweaks.
+	perDoc := input.PerDocOverrides
+	if perDoc == nil && current != nil {
+		perDoc = current.PerDocOverrides
+	}
+
 	style, err := s.repo.CreateStyleVersion(ctx, CreateStyleVersionParams{
-		ID:           domain.NewID(),
-		ClinicID:     input.ClinicID,
-		Version:      nextVer,
-		LogoKey:      logoKey,
-		PrimaryColor: primary,
-		FontFamily:   font,
-		HeaderExtra:  header,
-		FooterText:   footer,
-		Config:       input.Config,
-		PresetID:     input.PresetID,
-		CreatedBy:    input.StaffID,
+		ID:              domain.NewID(),
+		ClinicID:        input.ClinicID,
+		Version:         nextVer,
+		LogoKey:         logoKey,
+		PrimaryColor:    primary,
+		FontFamily:      font,
+		HeaderExtra:     header,
+		FooterText:      footer,
+		Config:          input.Config,
+		PresetID:        input.PresetID,
+		PerDocOverrides: perDoc,
+		CreatedBy:       input.StaffID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
@@ -1668,17 +1686,25 @@ func (s *Service) buildStyleResponse(ctx context.Context, rec *StyleVersionRecor
 }
 
 func toStyleResponse(s *StyleVersionRecord) *FormStyleResponse {
+	// Surface PerDocOverrides only when it carries a non-empty
+	// object (`'{}'` is the column default and not interesting to
+	// the FE).
+	var perDoc json.RawMessage
+	if len(s.PerDocOverrides) > 0 && string(s.PerDocOverrides) != "{}" {
+		perDoc = s.PerDocOverrides
+	}
 	return &FormStyleResponse{
-		Version:      s.Version,
-		LogoKey:      s.LogoKey,
-		PrimaryColor: s.PrimaryColor,
-		FontFamily:   s.FontFamily,
-		HeaderExtra:  s.HeaderExtra,
-		FooterText:   s.FooterText,
-		Config:       s.Config,
-		PresetID:     s.PresetID,
-		IsActive:     s.IsActive,
-		UpdatedAt:    s.CreatedAt.Format(time.RFC3339),
+		Version:         s.Version,
+		LogoKey:         s.LogoKey,
+		PrimaryColor:    s.PrimaryColor,
+		FontFamily:      s.FontFamily,
+		HeaderExtra:     s.HeaderExtra,
+		FooterText:      s.FooterText,
+		Config:          s.Config,
+		PresetID:        s.PresetID,
+		PerDocOverrides: perDoc,
+		IsActive:        s.IsActive,
+		UpdatedAt:       s.CreatedAt.Format(time.RFC3339),
 	}
 }
 
