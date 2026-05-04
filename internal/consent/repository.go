@@ -39,13 +39,22 @@ type ConsentRecord struct {
 	CapturedBy                  uuid.UUID
 	CapturedAt                  time.Time
 	WitnessID                   *uuid.UUID
-	ExpiresAt                   *time.Time
-	RenewalDueAt                *time.Time
-	WithdrawalAt                *time.Time
-	WithdrawalReason            *string
-	AIAssistanceMetadata        *string // JSONB as text
-	CreatedAt                   time.Time
-	UpdatedAt                   time.Time
+	// 4-mode witness shape (00077) — staff (sync internal),
+	// pending (async via approvals queue, ALSO see submit_for_review),
+	// external (sync paper-trail), self (emergency, attestation only).
+	// nil for legacy rows; service maps witness_id-only to 'staff' on
+	// read.
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	ExpiresAt           *time.Time
+	RenewalDueAt        *time.Time
+	WithdrawalAt        *time.Time
+	WithdrawalReason    *string
+	AIAssistanceMetadata *string // JSONB as text
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // CreateConsentParams holds values for capturing a new consent record.
@@ -69,6 +78,10 @@ type CreateConsentParams struct {
 	CapturedBy                  uuid.UUID
 	CapturedAt                  time.Time
 	WitnessID                   *uuid.UUID
+	WitnessKind                 *string
+	ExternalWitnessName         *string
+	ExternalWitnessRole         *string
+	WitnessAttestation          *string
 	ExpiresAt                   *time.Time
 	RenewalDueAt                *time.Time
 	AIAssistanceMetadata        *string
@@ -121,6 +134,7 @@ const consentCols = `id, clinic_id, subject_id, note_id, note_field_id,
 	captured_via, signature_image_key, transcript_recording_id,
 	consenting_party_relationship, consenting_party_name,
 	capacity_assessment_id, captured_by, captured_at, witness_id,
+	witness_kind, external_witness_name, external_witness_role, witness_attestation,
 	expires_at, renewal_due_at, withdrawal_at, withdrawal_reason,
 	ai_assistance_metadata::text, created_at, updated_at`
 
@@ -133,10 +147,11 @@ func (r *Repository) CreateConsent(ctx context.Context, p CreateConsentParams) (
 			captured_via, signature_image_key, transcript_recording_id,
 			consenting_party_relationship, consenting_party_name,
 			capacity_assessment_id, captured_by, captured_at, witness_id,
+			witness_kind, external_witness_name, external_witness_role, witness_attestation,
 			expires_at, renewal_due_at, ai_assistance_metadata
 		)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-		        $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb)
+		        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26::jsonb)
 		RETURNING %s`, consentCols),
 		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.ConsentType, p.Scope, p.ProcedureOrFormID,
@@ -144,6 +159,7 @@ func (r *Repository) CreateConsent(ctx context.Context, p CreateConsentParams) (
 		p.CapturedVia, p.SignatureImageKey, p.TranscriptRecordingID,
 		p.ConsentingPartyRelationship, p.ConsentingPartyName,
 		p.CapacityAssessmentID, p.CapturedBy, p.CapturedAt, p.WitnessID,
+		p.WitnessKind, p.ExternalWitnessName, p.ExternalWitnessRole, p.WitnessAttestation,
 		p.ExpiresAt, p.RenewalDueAt, p.AIAssistanceMetadata,
 	)
 	rec, err := scanConsent(row)
@@ -307,6 +323,7 @@ func scanConsent(row scannable) (*ConsentRecord, error) {
 		&c.CapturedVia, &c.SignatureImageKey, &c.TranscriptRecordingID,
 		&c.ConsentingPartyRelationship, &c.ConsentingPartyName,
 		&c.CapacityAssessmentID, &c.CapturedBy, &c.CapturedAt, &c.WitnessID,
+		&c.WitnessKind, &c.ExternalWitnessName, &c.ExternalWitnessRole, &c.WitnessAttestation,
 		&c.ExpiresAt, &c.RenewalDueAt, &c.WithdrawalAt, &c.WithdrawalReason,
 		&c.AIAssistanceMetadata, &c.CreatedAt, &c.UpdatedAt,
 	)
