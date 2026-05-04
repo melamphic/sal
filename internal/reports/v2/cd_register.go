@@ -73,7 +73,7 @@ func (r *Renderer) RenderCDRegister(ctx context.Context, in CDRegisterInput) ([]
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDRegister: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_register")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDRegister: %w", err)
 	}
