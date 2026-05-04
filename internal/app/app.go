@@ -51,6 +51,7 @@ import (
 	"github.com/melamphic/sal/internal/platform/logger"
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
+	"github.com/melamphic/sal/internal/platform/pdf"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/policy"
 	"github.com/melamphic/sal/internal/reports"
@@ -347,6 +348,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		store,
 		eventAdapter,
 	)
+	// Wire the new HTML+Gotenberg renderer onto the worker. Once
+	// fpdf is deleted (P3-Q) the legacy fallback path goes too;
+	// for now SetHTMLRenderer enables the new pipeline and the
+	// renderer falls back to fpdf only when this isn't called
+	// (test-only construction paths).
+	platformPDF := pdf.New(cfg)
+	pdfRenderer.SetHTMLRenderer(notes.NewHTMLRenderer(platformPDF))
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(pdfRenderer))
 
 	// Periodic jobs — declared at construction time so River drives them
