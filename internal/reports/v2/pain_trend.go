@@ -72,7 +72,7 @@ func (r *Renderer) RenderPainTrend(ctx context.Context, in PainTrendInput) ([]by
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderPainTrend: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "pain_trend")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderPainTrend: %w", err)
 	}
