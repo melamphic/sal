@@ -315,6 +315,61 @@ Sandbox HTML mockups for the V1 visual spec live at
 
 ---
 
+## Pending: Migrate legacy report worker → v2 + delete fpdf (follow-up to V1)
+
+**Status:** Reports v2 ships (Gotenberg sidecar + 6 universal report HTML
+templates + the signed clinical note PDF migrated). The signed clinical
+note worker (`internal/notes/jobs.go`) is already on the new HTML path.
+
+What's still on fpdf:
+
+`internal/reports/jobs.go` dispatches **7 compliance report types** to the
+legacy fpdf builders (`internal/reports/pdf.go` + `evidence_pack.go`):
+
+| Report type slug | Legacy builder | Has v2 equivalent? |
+|---|---|---|
+| `controlled_drugs_register` | `BuildControlledDrugsRegisterPDF` | ✅ `v2.RenderCDRegister` |
+| `audit_pack` | `BuildAuditPackPDF` | ✅ `v2.RenderAuditPack` |
+| `evidence_pack` | `BuildEvidencePackPDF` | ⚠ Partial — covered by audit_pack body |
+| `records_audit` | `BuildRecordsAuditPDF` | ❌ no v2 yet |
+| `incidents_log` | `BuildIncidentsLogPDF` | ⚠ Partial — v2 has single-incident, no log aggregator |
+| `sentinel_events_log` | `BuildSentinelEventsLogPDF` | ❌ no v2 yet |
+| `hipaa_disclosure_log` | `BuildHIPAADisclosureLogPDF` | ❌ out of scope (billing-adjacent) |
+
+**Why not deleted in V1:** the worker dispatch is still wired to the
+legacy builders and live in production. Pulling fpdf would break 7 hot
+report types. P3-Q (delete fpdf) shipped the runway (HTML pipeline, 6
+v2 templates, signed-note migration); flipping the remaining 7 types
+needs per-type service-data → v2-input mapping (each builder pulls
+different domain views — DrugOpView, EvidencePackInput, IncidentView,
+SubjectAccessView, etc.).
+
+**Steps to close out:**
+
+1. Write 5 mappers in `internal/reports/v2_dispatch.go`:
+   - `legacyToV2CDRegister` — drugs.Service ops + reconciliations → `v2.CDRegisterInput`
+   - `legacyToV2AuditPack` — clinic + ops + recons + counts → `v2.AuditPackInput`
+   - For the 3 still-needed types without v2 builders yet, add the v2 templates
+     first (records_audit, incidents_log, sentinel_events_log).
+   - HIPAA disclosure log is out of scope — drop it from the supported list
+     after a real customer either asks for it or doesn't.
+2. Migrate each `case` in `(*GenerateCompliancePDFWorker).buildPDF` to call the
+   v2 path through the mapper.
+3. Once dispatch is clean, delete `internal/reports/pdf.go` (958 LOC),
+   `internal/reports/evidence_pack.go` (983 LOC), and the related fpdf-only
+   test files.
+4. Drop `github.com/go-pdf/fpdf` from `go.mod`; run `go mod tidy`.
+5. Re-run integration tests + `make lint`.
+
+**Estimated effort:** ~1.5 days. No new infrastructure; pure refactor.
+
+**Why deferred:** safety. The user explicitly said "no shortcuts" — doing
+this without the per-type mapping would break shipped functionality. The
+v2 runway is in place; the migration is straightforward but mechanical
+work that should land in its own focused PR.
+
+---
+
 ## Pending: Doc-theme V2 differentiators (deferred from V1, 2026-05-04)
 
 V1 of the doc-theme HTML rebuild covers the table-stakes: logo, brand color with
