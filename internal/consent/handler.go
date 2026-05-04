@@ -56,6 +56,13 @@ type captureConsentBody struct {
 		ConsentingPartyName         *string `json:"consenting_party_name,omitempty"`
 		CapacityAssessmentID        *string `json:"capacity_assessment_id,omitempty"`
 		WitnessID                   *string `json:"witness_id,omitempty"`
+		// 4-mode witness shape — same enum as drug_operations_log.
+		// nil falls back to 'staff' for verbal_clinic capture (legacy
+		// behavior). 'pending' implies submit_for_review=true.
+		WitnessKind         *string `json:"witness_kind,omitempty" enum:"staff,pending,external,self"`
+		ExternalWitnessName *string `json:"external_witness_name,omitempty" maxLength:"200"`
+		ExternalWitnessRole *string `json:"external_witness_role,omitempty" maxLength:"80"`
+		WitnessAttestation  *string `json:"witness_attestation,omitempty" maxLength:"2000" doc:"Required (≥10) for external, required (≥30) for self."`
 		CapturedAt                  *string `json:"captured_at,omitempty"   doc:"RFC3339; defaults to now."`
 		ExpiresAt                   *string `json:"expires_at,omitempty"    doc:"RFC3339; default applied per consent_type."`
 		RenewalDueAt                *string `json:"renewal_due_at,omitempty" doc:"RFC3339"`
@@ -89,6 +96,10 @@ func (h *Handler) captureConsent(ctx context.Context, input *captureConsentBody)
 		SignatureImageKey:           input.Body.SignatureImageKey,
 		ConsentingPartyRelationship: input.Body.ConsentingPartyRelationship,
 		ConsentingPartyName:         input.Body.ConsentingPartyName,
+		WitnessKind:                 input.Body.WitnessKind,
+		ExternalWitnessName:         input.Body.ExternalWitnessName,
+		ExternalWitnessRole:         input.Body.ExternalWitnessRole,
+		WitnessAttestation:          input.Body.WitnessAttestation,
 		SubmitForReview:             input.Body.SubmitForReview,
 		ReviewNote:                  input.Body.ReviewNote,
 	}
