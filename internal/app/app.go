@@ -33,6 +33,7 @@ import (
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
 	"github.com/melamphic/sal/internal/consent"
+	"github.com/melamphic/sal/internal/dashboard"
 	"github.com/melamphic/sal/internal/incidents"
 	"github.com/melamphic/sal/internal/pain"
 	"github.com/melamphic/sal/internal/billing"
@@ -145,6 +146,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicNameAdapter := &clinicNameProviderAdapter{clinic: clinicSvc}
 	staffRepo := staff.NewRepository(db)
 	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL, inviteAdapter, clinicNameAdapter)
+	// Pricing model B (per-seat AI gating): staff.Service rejects new
+	// note_tier=standard seats once the clinic's plan-derived AI cap
+	// is reached. Resolver reads clinic.plan_code → domain.Plans
+	// registry. Always wired, regardless of Stripe availability —
+	// trial clinics fall back to the Practice cap (3).
+	staffSvc.SetAISeatCapResolver(&staffSeatCapAdapter{clinic: clinicSvc})
 	staffHandler := staff.NewHandler(staffSvc)
 
 	// Now both authSvc and staffSvc exist — set up lazy adapters.
@@ -373,6 +380,23 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	docThemeLogos := &docThemeLogoAdapter{store: store}
 	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
 	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos)
+
+	// Clinic home dashboard — single endpoint, single in-process LRU
+	// cache, vertical-aware payload. Cache invalidation hooks are
+	// wired into write-paths below (note submit, drug op, incident,
+	// consent) via a thin adapter so the next dashboard fetch after
+	// any meaningful action is immediately fresh — no SSE / WebSocket
+	// infra. Cache-miss + concurrent-fetch coalesces via singleflight.
+	dashboardRepo := dashboard.NewRepository(db)
+	dashboardCache := dashboard.NewCache()
+	dashboardSvc := dashboard.NewService(
+		dashboardRepo,
+		dashboardCache,
+		&dashboardVerticalAdapter{clinic: clinicSvc},
+		&dashboardSeatsAdapter{staff: staffSvc},
+		&dashboardClinicStateAdapter{clinic: clinicSvc},
+	)
+	dashboardHandler := dashboard.NewHandler(dashboardSvc)
 
 	// Periodic jobs — declared at construction time so River drives them
 	// without an external cron. Currently just the schedule fire-loop;
@@ -1264,6 +1288,75 @@ func (a *notecapNotesAdapter) CountSinceForClinic(ctx context.Context, clinicID 
 		return 0, fmt.Errorf("app.notecapNotesAdapter.CountSinceForClinic: %w", err)
 	}
 	return n, nil
+}
+
+// ── Dashboard cross-domain adapters ───────────────────────────────────────
+
+// dashboardVerticalAdapter implements dashboard.VerticalProvider.
+type dashboardVerticalAdapter struct{ clinic *clinic.Service }
+
+func (a *dashboardVerticalAdapter) GetVertical(ctx context.Context, clinicID uuid.UUID) (domain.Vertical, error) {
+	v, err := a.clinic.GetVertical(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.dashboardVerticalAdapter.GetVertical: %w", err)
+	}
+	return v, nil
+}
+
+// dashboardSeatsAdapter implements dashboard.SeatUsageProvider.
+type dashboardSeatsAdapter struct{ staff *staff.Service }
+
+func (a *dashboardSeatsAdapter) GetAISeatUsage(ctx context.Context, clinicID uuid.UUID) (staff.AISeatUsage, error) {
+	u, err := a.staff.GetAISeatUsage(ctx, clinicID)
+	if err != nil {
+		return staff.AISeatUsage{}, fmt.Errorf("app.dashboardSeatsAdapter.GetAISeatUsage: %w", err)
+	}
+	return u, nil
+}
+
+// dashboardClinicStateAdapter implements dashboard.ClinicStateProvider
+// by translating clinic.DashboardState into the dashboard package's
+// mirror struct (kept separate so the dashboard package doesn't need
+// to import clinic).
+type dashboardClinicStateAdapter struct{ clinic *clinic.Service }
+
+func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (dashboard.DashboardState, error) {
+	st, err := a.clinic.LoadDashboardState(ctx, clinicID)
+	if err != nil {
+		return dashboard.DashboardState{}, fmt.Errorf("app.dashboardClinicStateAdapter.LoadDashboardState: %w", err)
+	}
+	return dashboard.DashboardState{
+		NoteCap:            st.NoteCap,
+		NoteCount:          st.NoteCount,
+		TrialEndsAt:        st.TrialEndsAt,
+		OnboardingComplete: st.OnboardingComplete,
+	}, nil
+}
+
+// staffSeatCapAdapter implements staff.AISeatCapResolver by reading
+// clinic.plan_code and consulting the domain.Plans registry. Trial
+// clinics (no plan_code yet) fall back to the Practice ceiling so the
+// model-B gating still applies before they convert.
+type staffSeatCapAdapter struct{ clinic *clinic.Service }
+
+func (a *staffSeatCapAdapter) AISeatCap(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	st, err := a.clinic.LoadTierState(ctx, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("app.staffSeatCapAdapter.AISeatCap: %w", err)
+	}
+	if st.PlanCode == nil {
+		// Pre-conversion (trial) — apply the Practice ceiling so a
+		// trial owner can't stack 50 standard staff and then resist
+		// the upgrade conversation when they convert.
+		return domain.AISeatCapForTier(domain.PlanTierPractice), nil
+	}
+	plan, ok := domain.PlanFor(*st.PlanCode)
+	if !ok {
+		// Unknown plan_code (manual override / data-entry slip) —
+		// fail closed at Practice rather than silently grant unlimited.
+		return domain.AISeatCapForTier(domain.PlanTierPractice), nil
+	}
+	return plan.AISeatCap, nil
 }
 
 // tieringClinicAdapter implements tiering.ClinicReader against
