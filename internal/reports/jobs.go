@@ -252,6 +252,29 @@ func (w *GenerateCompliancePDFWorker) buildPDF(ctx context.Context, rec *Complia
 		if err != nil {
 			return nil, "", fmt.Errorf("recons: %w", err)
 		}
+		// Prefer v2 HTML pipeline — same doc-themed chrome the rest
+		// of the app uses. Falls back to fpdf when no v2 wired.
+		if w.v2 != nil {
+			bytesOut, err := w.v2.RenderCDRegister(ctx, V2CDRegisterInput{
+				ClinicID:    rec.ClinicID.String(),
+				Clinic:      clinicSnapshotToV2(clinic),
+				PeriodLabel: rec.PeriodStart.UTC().Format("Jan 2006") + " · " + rec.PeriodStart.UTC().Format("02") + "–" + rec.PeriodEnd.UTC().Format("02"),
+				PeriodStart: rec.PeriodStart,
+				PeriodEnd:   rec.PeriodEnd,
+				Drugs:       drugOpsToCDRegisterDrugs(ops),
+				ReconciliationOK: reconciliationsAllClean(recons),
+				ReconciledOn:     reconciledOnLabel(recons),
+				ReconciledByA:    reconciledByA(recons),
+				ReconciledByB:    reconciledByB(recons),
+				NextDueOn:        rec.PeriodEnd.UTC().AddDate(0, 1, 0).Format("2006-01-02"),
+				BundleHash:       shortReportIDHelper(rec.ID.String()),
+			})
+			if err != nil {
+				return nil, "", fmt.Errorf("v2 cd_register: %w", err)
+			}
+			buf := bytes.NewBuffer(bytesOut)
+			return buf, sha256Hex(bytesOut), nil
+		}
 		return BuildControlledDrugsRegisterPDF(clinic, rec.PeriodStart, rec.PeriodEnd, ops, recons, rec.ID.String())
 
 	case "audit_pack":
@@ -854,4 +877,178 @@ func derefSubject(s *string) string {
 		return "—"
 	}
 	return *s
+}
+
+// drugOpsToCDRegisterDrugs groups a flat ops list by shelf label →
+// per-drug pages with running totals. Used by both the request-flow
+// worker and the inline-preview path so the CD register always
+// renders identically regardless of how it was triggered.
+//
+// One drug "page" per unique shelf label; class is stamped from the
+// op's Schedule field; opening balance is derived as
+// `BalanceAfter - QuantitySigned` of the FIRST op in the period.
+// Closing is the BalanceAfter of the LAST op. In/Out totals fan out
+// across the operation kind.
+func drugOpsToCDRegisterDrugs(ops []DrugOpView) []V2CDRegisterDrug {
+	groups := map[string]*V2CDRegisterDrug{}
+	order := []string{}
+	for _, o := range ops {
+		key := o.ShelfLabel
+		if _, ok := groups[key]; !ok {
+			groups[key] = &V2CDRegisterDrug{
+				Class:        cdClassFor(o.Schedule),
+				Name:         o.ShelfLabel,
+				FormStrength: "",
+				Storage:      o.Location,
+				CatalogID:    o.ShelfID,
+				BatchExp:     derefSubject(o.BatchNumber),
+				Unit:         o.Unit,
+				Operations:   []V2CDOperation{},
+			}
+			order = append(order, key)
+		}
+		g := groups[key]
+		// Quantity sign: receive/transfer-in are positive; everything
+		// else is treated as negative. Reflects the running balance
+		// already maintained on the row, so we just label.
+		signed := o.Quantity
+		isOut := true
+		switch o.Operation {
+		case "receive":
+			isOut = false
+		}
+		if isOut {
+			g.OutTotal += signed
+		} else {
+			g.InTotal += signed
+		}
+		// Opening = before-balance of the first op (which is the
+		// LAST one in the slice if the repo returns DESC; we assume
+		// ASC here per ListControlledDrugOps contract).
+		if len(g.Operations) == 0 {
+			g.Opening = o.BalanceAfter - signedDelta(o.Operation, o.Quantity)
+		}
+		g.ClosingBal = o.BalanceAfter
+		g.Operations = append(g.Operations, V2CDOperation{
+			WhenPretty:   o.CreatedAt.UTC().Format("02 Jan 15:04"),
+			OpKind:       strings.ToUpper(o.Operation),
+			OpTone:       toneForOpKind(o.Operation),
+			Subject:      derefSubject(o.SubjectName),
+			QtyDelta:     signedQtyLabel(o.Operation, o.Quantity),
+			BalBefore:    fmt.Sprintf("%.1f", o.BalanceAfter-signedDelta(o.Operation, o.Quantity)),
+			BalAfter:     fmt.Sprintf("%.1f", o.BalanceAfter),
+			StaffShort:   shortName(o.AdministeredBy),
+			WitnessShort: derefSubject(o.WitnessedBy),
+		})
+	}
+	out := make([]V2CDRegisterDrug, 0, len(order))
+	for _, k := range order {
+		out = append(out, *groups[k])
+	}
+	return out
+}
+
+func cdClassFor(schedule string) string {
+	s := strings.ToUpper(strings.TrimSpace(schedule))
+	switch s {
+	case "S1", "B", "C2", "CD2":
+		return "B"
+	case "S2", "S3", "C3", "CD3", "CIV", "CV":
+		return "C"
+	default:
+		if s == "" {
+			return "B"
+		}
+		return s
+	}
+}
+
+// signedDelta returns the signed quantity delta the operation
+// applied to the shelf balance. receive = +qty, everything else = -qty.
+// Used to back-compute "balance before" from the stored "balance after".
+func signedDelta(op string, qty float64) float64 {
+	if op == "receive" {
+		return qty
+	}
+	return -qty
+}
+
+func signedQtyLabel(op string, qty float64) string {
+	if op == "receive" {
+		return fmt.Sprintf("+%.1f", qty)
+	}
+	return fmt.Sprintf("−%.1f", qty)
+}
+
+func shortName(full string) string {
+	full = strings.TrimSpace(full)
+	if full == "" {
+		return "—"
+	}
+	parts := strings.Fields(full)
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return string([]rune(parts[0])[0]) + ". " + parts[len(parts)-1]
+}
+
+// reconciliationsAllClean returns true when every reconciliation in
+// the period has the "clean" status. Drives the green callout on the
+// CD-register cover page.
+func reconciliationsAllClean(recs []DrugReconciliationView) bool {
+	if len(recs) == 0 {
+		return true
+	}
+	for _, r := range recs {
+		if !strings.EqualFold(r.Status, "clean") {
+			return false
+		}
+	}
+	return true
+}
+
+// reconciledOnLabel returns the most-recent reconciliation timestamp
+// for the cover page. Empty when no reconciliation in period.
+func reconciledOnLabel(recs []DrugReconciliationView) string {
+	if len(recs) == 0 {
+		return "—"
+	}
+	latest := recs[0].PeriodEnd
+	for _, r := range recs[1:] {
+		if r.PeriodEnd.After(latest) {
+			latest = r.PeriodEnd
+		}
+	}
+	return latest.UTC().Format("2006-01-02")
+}
+
+// reconciledByA returns the primary signatory of the most-recent
+// reconciliation. Empty when no recon.
+func reconciledByA(recs []DrugReconciliationView) string {
+	if len(recs) == 0 {
+		return "—"
+	}
+	return recs[len(recs)-1].PrimarySignedBy
+}
+
+// reconciledByB returns the secondary signatory of the most-recent
+// reconciliation. Falls back to "—" when none signed off.
+func reconciledByB(recs []DrugReconciliationView) string {
+	if len(recs) == 0 {
+		return "—"
+	}
+	r := recs[len(recs)-1]
+	if r.SecondarySignedBy != nil && *r.SecondarySignedBy != "" {
+		return *r.SecondarySignedBy
+	}
+	return "—"
+}
+
+// shortReportIDHelper trims to 12 chars for the footer hash chip.
+// Local helper to avoid colliding with v2.shortReportID; same intent.
+func shortReportIDHelper(id string) string {
+	if len(id) >= 12 {
+		return id[:12]
+	}
+	return id
 }
