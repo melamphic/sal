@@ -1,19 +1,9 @@
 <!-- ===== Cover page ============================================== -->
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">CD</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Controlled Drug Register</span>
-      <span class="doc-header__title-text">{{ .PeriodLabel }}</span>
-      <span class="doc-header__title-meta">Misuse of Drugs Regs 1977 reg 25-28</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Controlled Drug Register"
+      .PeriodLabel
+      "Misuse of Drugs Regs 1977 reg 25-28" }}
 
   <div class="section">
     <span class="section__eyebrow">Statutory Record</span>
@@ -96,38 +86,19 @@
   </div>
   {{- end }}
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>CD Register · {{ .PeriodLabel }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Cover</span>
-      <span>Per Misuse of Drugs Regs reg 25-28</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "CD Register · %s" .PeriodLabel)
+      "Cover"
+      "Per Misuse of Drugs Regs reg 25-28" }}
 </section>
 
 <!-- ===== Per-drug pages ========================================== -->
 {{- range $idx, $d := .Drugs }}
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">CD</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ $.ClinicName }}</span>
-        <span class="doc-header__clinic-meta">CD Register · {{ $.PeriodLabel }} · {{ $.ClinicAddr }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Drug Page · Class {{ $d.Class }}</span>
-      <span class="doc-header__title-text">{{ $d.Name }}</span>
-      <span class="doc-header__title-meta">{{ $d.FormStrength }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      (printf "Drug Page · Class %s" $d.Class)
+      $d.Name
+      $d.FormStrength }}
 
   <div class="meta-grid meta-grid--3">
     <div class="meta"><span class="meta__label">Storage</span><span class="meta__value">{{ $d.Storage }}</span></div>
@@ -194,18 +165,9 @@
     </div>
   </div>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ $.ClinicName }}</span>
-      <span>CD Register · {{ $.PeriodLabel }} · {{ $d.Name }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ $.BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Page {{ add $idx 2 }}</span>
-      <span>Per MoD Regs reg 25-28</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "CD Register · %s · %s" $.PeriodLabel $d.Name)
+      (printf "Page %d" (add $idx 2))
+      "Per MoD Regs reg 25-28" }}
 </section>
 {{- end }}
