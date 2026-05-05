@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
 	"time"
 
 	"github.com/melamphic/sal/internal/platform/pdf"
@@ -14,11 +13,14 @@ import (
 // register for a clinic over a period. The package leaves data
 // fetching to the caller (app.go assembles this from drugs +
 // reconciliation services) so v2 stays repo-agnostic.
+//
+// Header chrome (clinic name, address, regulatory meta, logo) is
+// supplied via Clinic — the renderer's shared `doc-header` partial
+// stamps the brand mark from this same source on every page. Templates
+// MUST NOT hardcode clinic strings or brand colors.
 type CDRegisterInput struct {
-	ClinicID    string
-	ClinicName  string
-	ClinicAddr  string
-	ClinicMeta  string // e.g. "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412"
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	PeriodLabel string    // "Q2 2026 · Apr–Jun"
 	PeriodStart time.Time // for footer / hash inputs
@@ -69,11 +71,12 @@ type CDOperation struct {
 
 // RenderCDRegister returns PDF bytes for the controlled-drug register.
 func (r *Renderer) RenderCDRegister(ctx context.Context, in CDRegisterInput) ([]byte, error) {
-	body, err := buildCDRegisterBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_register")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDRegister: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_register")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, err := buildCDRegisterBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDRegister: %w", err)
 	}
@@ -83,6 +86,7 @@ func (r *Renderer) RenderCDRegister(ctx context.Context, in CDRegisterInput) ([]
 		Lang:    "en",
 		Body:    string(body),
 		Theme:   theme,
+		Clinic:  clinic,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDRegister: %w", err)
@@ -90,7 +94,16 @@ func (r *Renderer) RenderCDRegister(ctx context.Context, in CDRegisterInput) ([]
 	return out, nil
 }
 
-func buildCDRegisterBody(in CDRegisterInput) ([]byte, error) {
+// cdRegisterView is the per-template data: the input plus the resolved
+// clinic struct (so the template can build pdf.HeaderInfo / FooterInfo
+// from it without re-resolving). Kept here instead of leaning on
+// reflection so the template stays explicit about what it consumes.
+type cdRegisterView struct {
+	CDRegisterInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildCDRegisterBody(in CDRegisterInput, clinic pdf.ClinicInfo) ([]byte, error) {
 	funcs := commonFuncs()
 	funcs["classTone"] = func(class string) string {
 		if class == "B" {
@@ -103,15 +116,31 @@ func buildCDRegisterBody(in CDRegisterInput) ([]byte, error) {
 	}
 	funcs["qtyDeltaIn"] = func(v float64, _ string) string { return fmt.Sprintf("+%.1f", v) }
 	funcs["qtyDeltaOut"] = func(v float64, _ string) string { return fmt.Sprintf("−%.1f", v) }
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHash,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
 
-	tmpl, err := template.New("cd_register.html.tmpl").
-		Funcs(funcs).
+	tmpl, err := pdf.NewReportTemplate("cd_register.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("partials: %w", err)
+	}
+	tmpl, err = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/cd_register.html.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "cd_register.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "cd_register.html.tmpl",
+		cdRegisterView{CDRegisterInput: in, Clinic: clinic}); err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), nil
