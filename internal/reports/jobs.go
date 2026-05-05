@@ -3,6 +3,7 @@ package reports
 import (
 	"bytes"
 	"context"
+	"strings"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -39,12 +40,91 @@ type GenerateCompliancePDFWorker struct {
 	store         *storage.Store
 	data          ComplianceDataSource
 	emailEnqueuer jobEnqueuer
+	// v2 is the HTML/Gotenberg-pipelined renderer that produces
+	// doc-themed compliance PDFs. When non-nil the dispatch routes
+	// supported types through it (audit_pack today, more migrating
+	// behind it). When nil, falls back to the legacy fpdf builders.
+	v2 V2ComplianceRenderer
+}
+
+// V2ComplianceRenderer is the cross-package port through which the
+// worker calls into the v2 HTML pipeline. Implemented by a thin
+// adapter in app.go around `*reportsv2.Renderer` so this package
+// stays free of an import on its own subpackage.
+type V2ComplianceRenderer interface {
+	// RenderAuditPack returns PDF bytes for the period-wide
+	// compliance audit pack. The clinic info / period / data lists
+	// the worker has gathered get projected into the v2 input.
+	RenderAuditPack(ctx context.Context, in V2ComplianceAuditPackInput) ([]byte, error)
+}
+
+// V2ComplianceAuditPackInput mirrors v2.ComplianceAuditPackInput
+// without leaking the v2 types — the adapter in app.go does the
+// final type translation. Field semantics follow v2.
+type V2ComplianceAuditPackInput struct {
+	ClinicID        string
+	Clinic          V2ClinicInfo
+	ReportID        string
+	PeriodStart     time.Time
+	PeriodEnd       time.Time
+	GeneratedAt     time.Time
+	Vertical        string
+	Country         string
+	NoteCounts      map[string]int
+	DrugOps         []V2ComplianceDrugOp
+	Reconciliations []V2ComplianceReconciliation
+}
+
+// V2ClinicInfo is the slim clinic projection v2 partials need.
+type V2ClinicInfo struct {
+	Name         string
+	AddressLine1 string
+	Meta         string
+}
+
+// V2ComplianceDrugOp is the styled-table row for the drug-ops
+// section. Tone hints drive the pill colour in the template.
+type V2ComplianceDrugOp struct {
+	When           string
+	Drug           string
+	Operation      string
+	OperationTone  string
+	Quantity       string
+	BalanceAfter   string
+	Subject        string
+	AdministeredBy string
+	WitnessedBy    string
+}
+
+// V2ComplianceReconciliation is one row of the reconciliations table.
+type V2ComplianceReconciliation struct {
+	Drug              string
+	Period            string
+	Physical          string
+	Ledger            string
+	DiscrepancyDelta  string
+	Status            string
+	StatusTone        string
+	PrimarySignedBy   string
+	SecondarySignedBy string
+	Explanation       string
 }
 
 // NewGenerateCompliancePDFWorker constructs the worker. emailEnqueuer can
-// be nil; the post-generation fan-out is then skipped.
-func NewGenerateCompliancePDFWorker(repo *Repository, store *storage.Store, data ComplianceDataSource, emailEnqueuer jobEnqueuer) *GenerateCompliancePDFWorker {
-	return &GenerateCompliancePDFWorker{repo: repo, store: store, data: data, emailEnqueuer: emailEnqueuer}
+// be nil; the post-generation fan-out is then skipped. v2 may also be nil
+// for tests / local dev — the worker falls back to the fpdf builders.
+func NewGenerateCompliancePDFWorker(
+	repo *Repository,
+	store *storage.Store,
+	data ComplianceDataSource,
+	emailEnqueuer jobEnqueuer,
+	v2 V2ComplianceRenderer,
+) *GenerateCompliancePDFWorker {
+	return &GenerateCompliancePDFWorker{
+		repo: repo, store: store, data: data,
+		emailEnqueuer: emailEnqueuer,
+		v2:            v2,
+	}
 }
 
 // Work runs the compliance PDF generation pipeline:
@@ -133,6 +213,31 @@ func (w *GenerateCompliancePDFWorker) buildPDF(ctx context.Context, rec *Complia
 		counts, err := w.data.CountNotesByStatus(ctx, rec.ClinicID, rec.PeriodStart, rec.PeriodEnd)
 		if err != nil {
 			return nil, "", fmt.Errorf("note counts: %w", err)
+		}
+		// Prefer the v2 HTML pipeline when the renderer is wired —
+		// gives the regulator-facing PDF the same doc-themed chrome
+		// the rest of the app uses (header logo, brand colors,
+		// footer hash). Falls back to the legacy fpdf builder when
+		// the v2 renderer is nil so tests/local dev keep working.
+		if w.v2 != nil {
+			bytesOut, err := w.v2.RenderAuditPack(ctx, V2ComplianceAuditPackInput{
+				ClinicID:        rec.ClinicID.String(),
+				Clinic:          clinicSnapshotToV2(clinic),
+				ReportID:        rec.ID.String(),
+				PeriodStart:     rec.PeriodStart,
+				PeriodEnd:       rec.PeriodEnd,
+				GeneratedAt:     time.Now().UTC(),
+				Vertical:        clinic.Vertical,
+				Country:         clinic.Country,
+				NoteCounts:      counts,
+				DrugOps:         drugOpsToV2(ops),
+				Reconciliations: reconsToV2(recons),
+			})
+			if err != nil {
+				return nil, "", fmt.Errorf("v2 audit_pack: %w", err)
+			}
+			buf := bytes.NewBuffer(bytesOut)
+			return buf, sha256Hex(bytesOut), nil
 		}
 		return BuildAuditPackPDF(clinic, rec.PeriodStart, rec.PeriodEnd, ops, recons, counts, rec.ID.String())
 
@@ -585,6 +690,115 @@ func nilUUID(u *uuid.UUID) string {
 func nilStr(s *string) string {
 	if s == nil {
 		return ""
+	}
+	return *s
+}
+
+// ── v2 projection helpers ───────────────────────────────────────────
+
+// clinicSnapshotToV2 projects the worker-side clinic snapshot into the
+// v2 brand-mark struct. Concatenates address + phone + email into the
+// AddressLine1 field — the partial renders one line under the clinic
+// name and that's the most-useful thing to put there.
+func clinicSnapshotToV2(c *ClinicSnapshot) V2ClinicInfo {
+	out := V2ClinicInfo{Name: c.Name}
+	parts := []string{}
+	if c.Address != nil && *c.Address != "" {
+		parts = append(parts, *c.Address)
+	}
+	if c.Phone != nil && *c.Phone != "" {
+		parts = append(parts, *c.Phone)
+	}
+	if c.Email != nil && *c.Email != "" {
+		parts = append(parts, *c.Email)
+	}
+	out.AddressLine1 = strings.Join(parts, " · ")
+	if c.License != nil && *c.License != "" {
+		out.Meta = "License " + *c.License
+	}
+	return out
+}
+
+// drugOpsToV2 projects the drug-op view rows into the styled
+// table-row shape the v2 template expects. Operation tone drives the
+// pill colour; we map the existing op vocab to the same tone palette
+// the v2.cd_register template uses (DISCARD = danger, RECEIVE = info,
+// everything else = ok).
+func drugOpsToV2(ops []DrugOpView) []V2ComplianceDrugOp {
+	out := make([]V2ComplianceDrugOp, 0, len(ops))
+	for _, o := range ops {
+		out = append(out, V2ComplianceDrugOp{
+			When:           o.CreatedAt.UTC().Format("02 Jan 15:04"),
+			Drug:           o.ShelfLabel,
+			Operation:      strings.ToUpper(o.Operation),
+			OperationTone:  toneForOpKind(o.Operation),
+			Quantity:       fmt.Sprintf("%.1f %s", o.Quantity, o.Unit),
+			BalanceAfter:   fmt.Sprintf("%.1f %s", o.BalanceAfter, o.Unit),
+			Subject:        derefSubject(o.SubjectName),
+			AdministeredBy: o.AdministeredBy,
+			WitnessedBy:    derefSubject(o.WitnessedBy),
+		})
+	}
+	return out
+}
+
+// reconsToV2 projects reconciliation rows into the v2 table shape.
+// Status tone follows: clean=ok, explained=warn, anything else=danger.
+func reconsToV2(recs []DrugReconciliationView) []V2ComplianceReconciliation {
+	out := make([]V2ComplianceReconciliation, 0, len(recs))
+	for _, r := range recs {
+		delta := fmt.Sprintf("%+.1f", r.Discrepancy)
+		secondary := ""
+		if r.SecondarySignedBy != nil {
+			secondary = *r.SecondarySignedBy
+		}
+		expl := ""
+		if r.Explanation != nil {
+			expl = *r.Explanation
+		}
+		out = append(out, V2ComplianceReconciliation{
+			Drug:              r.ShelfLabel,
+			Period:            r.PeriodStart.UTC().Format("02 Jan") + " → " + r.PeriodEnd.UTC().Format("02 Jan"),
+			Physical:          fmt.Sprintf("%.1f", r.PhysicalCount),
+			Ledger:            fmt.Sprintf("%.1f", r.LedgerCount),
+			DiscrepancyDelta:  delta,
+			Status:            r.Status,
+			StatusTone:        toneForReconStatus(r.Status),
+			PrimarySignedBy:   r.PrimarySignedBy,
+			SecondarySignedBy: secondary,
+			Explanation:       expl,
+		})
+	}
+	return out
+}
+
+func toneForOpKind(op string) string {
+	switch op {
+	case "discard":
+		return "danger"
+	case "receive":
+		return "info"
+	case "transfer":
+		return "warn"
+	default:
+		return "ok"
+	}
+}
+
+func toneForReconStatus(s string) string {
+	switch strings.ToLower(s) {
+	case "clean":
+		return "ok"
+	case "explained":
+		return "warn"
+	default:
+		return "danger"
+	}
+}
+
+func derefSubject(s *string) string {
+	if s == nil || *s == "" {
+		return "—"
 	}
 	return *s
 }
