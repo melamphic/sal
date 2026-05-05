@@ -364,6 +364,33 @@ func (s *Service) PreviewComplianceReport(ctx context.Context, in PreviewComplia
 			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render: %w", err)
 		}
 		return out, nil
+	case "controlled_drugs_register":
+		ops, err := s.data.ListControlledDrugOps(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: ops: %w", err)
+		}
+		recons, err := s.data.ListReconciliationsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: recons: %w", err)
+		}
+		bytesOut, err := s.v2.RenderCDRegister(ctx, V2CDRegisterInput{
+			ClinicID:         in.ClinicID.String(),
+			Clinic:           clinicSnapshotToV2(clinic),
+			PeriodLabel:      in.PeriodStart.UTC().Format("Jan 2006") + " · " + in.PeriodStart.UTC().Format("02") + "–" + in.PeriodEnd.UTC().Format("02"),
+			PeriodStart:      in.PeriodStart,
+			PeriodEnd:        in.PeriodEnd,
+			Drugs:            drugOpsToCDRegisterDrugs(ops),
+			ReconciliationOK: reconciliationsAllClean(recons),
+			ReconciledOn:     reconciledOnLabel(recons),
+			ReconciledByA:    reconciledByA(recons),
+			ReconciledByB:    reconciledByB(recons),
+			NextDueOn:        in.PeriodEnd.UTC().AddDate(0, 1, 0).Format("2006-01-02"),
+			BundleHash:       "preview",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render cd: %w", err)
+		}
+		return bytesOut, nil
 	default:
 		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: type %q has no v2 renderer yet: %w", in.Type, domain.ErrValidation)
 	}
