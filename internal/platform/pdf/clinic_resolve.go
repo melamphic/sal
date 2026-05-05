@@ -10,6 +10,14 @@ import (
 // contact_line, tagline}) so the doc-builder's "use this name on
 // every PDF" intent actually flows. Theme overrides win when set.
 //
+// Slot toggles (theme.header.slots.{clinic_name, contact_line, tagline})
+// drive which fields the partial actually renders. When the theme
+// doesn't supply slots the defaults are: clinic name on, contact line
+// on, tagline off — same defaults the designer ships.
+//
+// Extra text (theme.header.extra_text) is forwarded as-is for the
+// right-aligned strapline.
+//
 // Initials are derived from the resolved Name when the caller didn't
 // supply them — keeps the brand mark non-empty even on minimal input.
 //
@@ -18,20 +26,43 @@ import (
 // (the platform pdf package can't reach storage).
 func ResolveClinicFromTheme(in ClinicInfo, theme *DocTheme) ClinicInfo {
 	out := in
-	if theme != nil && theme.Header != nil && theme.Header.Content != nil {
-		c := theme.Header.Content
-		if c.ClinicName != nil && strings.TrimSpace(*c.ClinicName) != "" {
-			out.Name = strings.TrimSpace(*c.ClinicName)
+	// Defaults — designer ships these on for clinic-name and
+	// contact-line and off for tagline.
+	out.ShowName = true
+	out.ShowAddressLine = true
+	out.ShowMeta = false
+
+	if theme != nil && theme.Header != nil {
+		h := theme.Header
+		if h.Content != nil {
+			c := h.Content
+			if c.ClinicName != nil && strings.TrimSpace(*c.ClinicName) != "" {
+				out.Name = strings.TrimSpace(*c.ClinicName)
+			}
+			// theme.header.content.contact_line is the user's free-text
+			// override for the address line ("14 Ponsonby Rd · 021 555…").
+			if c.ContactLine != nil && strings.TrimSpace(*c.ContactLine) != "" {
+				out.AddressLine1 = strings.TrimSpace(*c.ContactLine)
+			}
+			// theme.header.content.tagline always populates Meta when
+			// supplied — the slot toggle below controls visibility.
+			if c.Tagline != nil && strings.TrimSpace(*c.Tagline) != "" {
+				out.Meta = strings.TrimSpace(*c.Tagline)
+			}
 		}
-		// theme.header.content.contact_line is the user's free-text
-		// override for the address line ("14 Ponsonby Rd · 021 555…").
-		if c.ContactLine != nil && strings.TrimSpace(*c.ContactLine) != "" {
-			out.AddressLine1 = strings.TrimSpace(*c.ContactLine)
+		if h.Slots != nil {
+			if h.Slots.ClinicName != nil {
+				out.ShowName = *h.Slots.ClinicName
+			}
+			if h.Slots.ContactLine != nil {
+				out.ShowAddressLine = *h.Slots.ContactLine
+			}
+			if h.Slots.Tagline != nil {
+				out.ShowMeta = *h.Slots.Tagline
+			}
 		}
-		// theme.header.content.tagline maps to the regulatory meta line
-		// when the caller hasn't provided one explicitly.
-		if c.Tagline != nil && strings.TrimSpace(*c.Tagline) != "" && out.Meta == "" {
-			out.Meta = strings.TrimSpace(*c.Tagline)
+		if h.ExtraText != nil {
+			out.ExtraText = strings.TrimSpace(*h.ExtraText)
 		}
 	}
 	if out.Initials == "" {
