@@ -11,6 +11,7 @@
 package dashboard
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -87,7 +88,7 @@ func (c *Cache) Do(clinicID uuid.UUID, fn func() ([]byte, error)) ([]byte, error
 		return fn()
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("dashboard.Cache.Do: %w", err)
 	}
 	return v.([]byte), nil
 }
