@@ -49,20 +49,10 @@
 </style>
 
 <section>
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo" style="background: #5b21b6;">SH</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Medication Administration Record</span>
-      <span class="doc-header__title-text">{{ .ResidentName }} · {{ .PeriodLabel }}</span>
-      <span class="doc-header__title-meta">{{ .Room }}{{ if .ResidentMeta }} · {{ .ResidentMeta }}{{ end }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Medication Administration Record"
+      (printf "%s · %s" .ResidentName .PeriodLabel)
+      (printf "%s · %s" .Room .ResidentMeta) }}
 
   <div class="meta-grid meta-grid--3">
     <div class="meta"><span class="meta__label">Resident</span><span class="meta__value">{{ .ResidentName }} {{ .ResidentMeta }}</span></div>
@@ -148,17 +138,8 @@
     </div>
   </div>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>MAR · {{ .ResidentName }} · {{ .PeriodLabel }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Page 1 of 1</span>
-      <span>Per CQC Reg 12 / NICE NG67</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "MAR · %s · %s" .ResidentName .PeriodLabel)
+      "Page 1 of 1"
+      "Per CQC Reg 12 / NICE NG67" }}
 </section>
