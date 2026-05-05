@@ -258,6 +258,23 @@ func (r *Repository) GetTranscript(ctx context.Context, id uuid.UUID) (*string, 
 	return transcript, nil
 }
 
+// GetStatus returns the processing status and last error for a recording.
+// No clinic_id check — for internal pipeline use (River workers + retry path).
+func (r *Repository) GetStatus(ctx context.Context, id uuid.UUID) (domain.RecordingStatus, *string, error) {
+	var status string
+	var errMsg *string
+	err := r.db.QueryRow(ctx,
+		`SELECT status, error_message FROM recordings WHERE id = $1`, id,
+	).Scan(&status, &errMsg)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", nil, fmt.Errorf("audio.repo.GetStatus: %w", domain.ErrNotFound)
+		}
+		return "", nil, fmt.Errorf("audio.repo.GetStatus: %w", err)
+	}
+	return domain.RecordingStatus(status), errMsg, nil
+}
+
 // ── Scan helper ───────────────────────────────────────────────────────────────
 
 // scanner is satisfied by both pgx.Row and pgx.Rows.
