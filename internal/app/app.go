@@ -1962,6 +1962,57 @@ func (l *lazyV2Compliance) RenderAuditPack(
 	return out, nil
 }
 
+// RenderCDRegister forwards the CD register through the v2 HTML
+// pipeline. Same lazy + projection pattern as RenderAuditPack.
+func (l *lazyV2Compliance) RenderCDRegister(
+	ctx context.Context,
+	in reports.V2CDRegisterInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderCDRegister(ctx, reportsv2.CDRegisterInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		PeriodLabel: in.PeriodLabel,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		Drugs:       v2CDDrugs(in.Drugs),
+		ReconciliationOK: in.ReconciliationOK,
+		ReconciledOn:     in.ReconciledOn,
+		ReconciledByA:    in.ReconciledByA,
+		ReconciledByB:    in.ReconciledByB,
+		NextDueOn:        in.NextDueOn,
+		BundleHash:       in.BundleHash,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderCDRegister: %w", err)
+	}
+	return out, nil
+}
+
+func v2CDDrugs(in []reports.V2CDRegisterDrug) []reportsv2.CDRegisterDrug {
+	out := make([]reportsv2.CDRegisterDrug, len(in))
+	for i, d := range in {
+		ops := make([]reportsv2.CDOperation, len(d.Operations))
+		for j, o := range d.Operations {
+			ops[j] = reportsv2.CDOperation{
+				WhenPretty: o.WhenPretty, OpKind: o.OpKind, OpTone: o.OpTone,
+				Subject: o.Subject, QtyDelta: o.QtyDelta,
+				BalBefore: o.BalBefore, BalAfter: o.BalAfter,
+				StaffShort: o.StaffShort, WitnessShort: o.WitnessShort,
+			}
+		}
+		out[i] = reportsv2.CDRegisterDrug{
+			Class: d.Class, Name: d.Name, FormStrength: d.FormStrength,
+			Storage: d.Storage, CatalogID: d.CatalogID, BatchExp: d.BatchExp,
+			Unit: d.Unit, Opening: d.Opening, ClosingBal: d.ClosingBal,
+			InTotal: d.InTotal, OutTotal: d.OutTotal, Operations: ops,
+		}
+	}
+	return out
+}
+
 func v2DrugOps(in []reports.V2ComplianceDrugOp) []reportsv2.ComplianceDrugOp {
 	out := make([]reportsv2.ComplianceDrugOp, len(in))
 	for i, o := range in {
