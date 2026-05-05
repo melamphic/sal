@@ -161,6 +161,9 @@ func (s *Service) build(ctx context.Context, clinicID uuid.UUID) (*Snapshot, err
 	// Watchcards.
 	snap.Watchcards = s.buildWatchcards(ctx, clinicID, snap.SeatUsage)
 
+	// Hero metric — big number + sparkline.
+	snap.Hero = s.buildHero(ctx, clinicID, vert, startOfDay)
+
 	// KPI strip — vertical-aware.
 	snap.KPIStrip = s.buildKPIStrip(ctx, clinicID, vert, startOfDay, startOfWeek)
 
