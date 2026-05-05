@@ -144,6 +144,13 @@ type ShelfResponse struct {
 	Unit           string  `json:"unit"`
 	ParLevel       *float64 `json:"par_level,omitempty"`
 	Notes          *string `json:"notes,omitempty"`
+	// WitnessRequired tells the FE whether this drug requires a
+	// witness on administer/dispense/discard/transfer (per the
+	// catalog or override schedule). Populated by shelfWithName /
+	// shelfWithNameCached when the shelf is hydrated for client use.
+	// The cart UI uses this to gate the witness picker — controlled
+	// lines need a witness, uncontrolled lines don't.
+	WitnessRequired bool   `json:"witness_required"`
 	CreatedAt      string  `json:"created_at"`
 	UpdatedAt      string  `json:"updated_at"`
 	ArchivedAt     *string `json:"archived_at,omitempty"`
@@ -672,12 +679,18 @@ func (s *Service) UpdateShelfMeta(ctx context.Context, in UpdateShelfMetaInput) 
 func (s *Service) shelfWithName(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord) *ShelfResponse {
 	resp := shelfRecordToResponse(r)
 	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, nil)
+	if rw, err := s.shelfRequiresWitness(ctx, clinicID, r); err == nil {
+		resp.WitnessRequired = rw
+	}
 	return resp
 }
 
 func (s *Service) shelfWithNameCached(ctx context.Context, clinicID uuid.UUID, r *ShelfRecord, overrideNames map[uuid.UUID]string) *ShelfResponse {
 	resp := shelfRecordToResponse(r)
 	resp.DisplayName = s.lookupShelfName(ctx, clinicID, r, overrideNames)
+	if rw, err := s.shelfRequiresWitness(ctx, clinicID, r); err == nil {
+		resp.WitnessRequired = rw
+	}
 	return resp
 }
 
