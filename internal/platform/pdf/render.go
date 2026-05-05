@@ -9,13 +9,31 @@ import (
 	"strings"
 )
 
-//go:embed templates/_base.html.tmpl templates/_theme.css.tmpl
+//go:embed templates/_base.html.tmpl templates/_theme.css.tmpl templates/_partials.html.tmpl
 var baseFS embed.FS
+
+// NewReportTemplate returns a fresh html/template tree pre-parsed with
+// the shared `doc-header` and `doc-footer` partials. Per-report builders
+// MUST construct their template trees from this so they can call
+// {{ template "doc-header" .Header }} from inside their own template.
+//
+// The returned template name is `name` (e.g. "cd_register") — callers
+// add their own report template via tmpl.ParseFS(...) and execute by
+// the matching template name (typically "{name}.html.tmpl").
+func NewReportTemplate(name string) (*template.Template, error) {
+	tmpl, err := template.New(name).ParseFS(baseFS, "templates/_partials.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("pdf.NewReportTemplate: %w", err)
+	}
+	return tmpl, nil
+}
 
 // ReportInput is what every report builder passes to RenderReport. The
 // builder fills in DocType (slug used for per-doc-type override + CSS
-// class) and Body (the actual content HTML — header, sections, tables,
-// signatures). The theme + clinic context are picked up from Theme.
+// class) and Body (the actual content HTML — sections, tables,
+// signatures). Header/footer chrome is rendered centrally from the
+// shared doc theme + the supplied Clinic data — templates do NOT
+// hand-roll the brand mark.
 type ReportInput struct {
 	// DocType identifies the report — drives per-doc-type override
 	// resolution and the CSS class on <body>. Slugs:
@@ -36,6 +54,10 @@ type ReportInput struct {
 	// Body is the report content as HTML. The base template wraps it
 	// with <html><head>…</head><body class="doc doc--{{ DocType }}">.
 	// Include any per-page <section class="page"> structure here.
+	// Templates call {{ template "doc-header" . }} / {{ template
+	// "doc-footer" . }} (with a HeaderInfo / FooterInfo data arg) to
+	// stamp branded chrome — they do NOT hardcode logo letters or
+	// brand colors.
 	Body string
 
 	// ExtraHead is optional raw HTML appended to <head>. Use for inline
@@ -47,11 +69,63 @@ type ReportInput struct {
 	// Pass nil to render with the renderer defaults.
 	Theme *DocTheme
 
+	// Clinic carries the brand-anchored fields every report's header
+	// and footer needs (clinic name, address line, regulatory meta,
+	// optional logo image). Falls back to theme overrides when set
+	// (theme.header.content overrides Clinic.Name etc.). Required for
+	// any production render — empty struct is OK for the smoke path
+	// but produces a blank header.
+	Clinic ClinicInfo
+
 	// Render options forwarded to Gotenberg. The renderer fills in
 	// PrintBackground=true automatically (every doc theme has banded
 	// chrome that needs background printing) and resolves Paper /
 	// Landscape / margins from Theme when the option fields are zero.
 	Options Options
+}
+
+// ClinicInfo is the brand-anchored data every header / footer renders
+// from. Populated by the builder from clinic profile + signed logo URL
+// (when theme.header.logoKey is set). The HTML template falls back to
+// the supplied Initials when LogoURL is empty so brand marks never
+// fail to render.
+type ClinicInfo struct {
+	// Name shown in the header (large, bold). Theme can override via
+	// header.content.clinic_name; the builder resolves precedence
+	// before populating this.
+	Name string
+	// AddressLine1 / Meta render under the clinic name as a single
+	// "{address} · {meta}" line — typical use:
+	//   AddressLine1 = "14 Ponsonby Rd, Auckland 1011"
+	//   Meta         = "VCNZ Registered Practice"
+	AddressLine1 string
+	Meta         string
+	// LogoURL is a fully-qualified URL the renderer can <img src> from.
+	// When empty the template falls back to Initials inside a
+	// rounded-square brand mark.
+	LogoURL string
+	// Initials — 1-2 uppercase letters used as a logo fallback. Builder
+	// derives from Name when not supplied.
+	Initials string
+}
+
+// HeaderInfo is what `doc-header` partial expects as its data arg.
+// Builders construct one per page (eyebrow + title + meta differ
+// per page in multi-page reports like the audit pack).
+type HeaderInfo struct {
+	Clinic       ClinicInfo
+	Eyebrow      string // "Audit Pack" · "Controlled Drug Register" · …
+	Title        string // "Note 018e7f6d" · "Q2 2026 · Apr–Jun" · …
+	Meta         string // "Generated 2026-05-04 16:42 NZST"
+}
+
+// FooterInfo is the corresponding partial-data type for the footer.
+type FooterInfo struct {
+	Clinic     ClinicInfo
+	Subject    string // "CD Register · Q2 2026"
+	BundleHash string // SHA-256 first-32 chars
+	PageLabel  string // "Page 2 of 8" or "Cover"
+	Footnote   string // jurisdiction / regulator citation
 }
 
 // RenderReport renders an HTML report to PDF bytes via Gotenberg.
