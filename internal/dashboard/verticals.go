@@ -172,7 +172,7 @@ func toneForIncidents(current int, dir string) string {
 // urgency); the other verticals surface a recent-encounters teaser.
 // Vet's "today's surgical list" needs an appointments table we don't
 // have yet — falls back to the universal teaser until that ships.
-func (s *Service) buildVerticalCard(ctx context.Context, clinicID uuid.UUID, vert domain.Vertical, startOfDay time.Time) *VerticalCard {
+func (s *Service) buildVerticalCard(ctx context.Context, clinicID uuid.UUID, vert domain.Vertical, _ time.Time) *VerticalCard {
 	switch vert {
 	case domain.VerticalAgedCare:
 		// Surface open incidents so the duty nurse sees what needs
