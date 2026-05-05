@@ -764,13 +764,6 @@ func accessRowsForLog(rows []SubjectAccessView) []V2ComplianceLogRow {
 	return out
 }
 
-func derefStr(p *string) string {
-	if p == nil || *p == "" {
-		return "—"
-	}
-	return *p
-}
-
 func regulatorForCountry(country, vertical string) string {
 	if vertical != "aged_care" {
 		return ""
