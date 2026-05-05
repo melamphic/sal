@@ -754,6 +754,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	staffHandler.Mount(r, api, jwtSecret)
 	patientHandler.Mount(r, api, jwtSecret)
 	verticalsHandler.Mount(r, api, jwtSecret)
+	dashboardHandler.Mount(api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
 	if formAIGenHandler != nil {
