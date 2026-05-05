@@ -62,6 +62,64 @@ type V2ComplianceRenderer interface {
 	// status. Mirrors v2.CDRegisterInput conceptually but kept as a
 	// port-local type so reports doesn't import its own subpackage.
 	RenderCDRegister(ctx context.Context, in V2CDRegisterInput) ([]byte, error)
+
+	// RenderLog renders the generic compliance-log template — used
+	// by all the list-shaped types (records audit, incidents log,
+	// sentinel events, evidence pack, HIPAA disclosure log, DEA
+	// biennial inventory). Each report supplies its own title +
+	// section list; the template handles styled chrome.
+	RenderLog(ctx context.Context, in V2ComplianceLogInput) ([]byte, error)
+
+	// RenderPlaceholder returns a tiny styled "this report needs
+	// more inputs" PDF — used by per-resident reports (MAR / Pain
+	// Trend) when the preview path can't pick a sample resident.
+	RenderPlaceholder(ctx context.Context, clinicID, title, message string, clinic V2ClinicInfo) ([]byte, error)
+}
+
+// V2ComplianceLogInput mirrors v2.ComplianceLogInput — port-local so
+// reports doesn't import its own subpackage.
+type V2ComplianceLogInput struct {
+	ClinicID    string
+	Clinic      V2ClinicInfo
+	ReportID    string
+	ReportTitle string
+	Eyebrow     string
+	Description string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	GeneratedAt time.Time
+	Vertical    string
+	Country     string
+	Regulator   string
+	Sections    []V2ComplianceLogSection
+}
+
+// V2ComplianceLogSection — one titled table on the report.
+type V2ComplianceLogSection struct {
+	Title    string
+	Hint     string
+	Columns  []V2ComplianceLogColumn
+	Rows     []V2ComplianceLogRow
+	EmptyMsg string
+}
+
+// V2ComplianceLogColumn — header + alignment.
+type V2ComplianceLogColumn struct {
+	Label string
+	Width string
+	Align string
+}
+
+// V2ComplianceLogRow — one row's cells.
+type V2ComplianceLogRow struct {
+	Cells      []V2ComplianceLogCell
+	StatusTone string
+}
+
+// V2ComplianceLogCell — one cell; Pill replaces Value with a coloured pill.
+type V2ComplianceLogCell struct {
+	Value string
+	Pill  string
 }
 
 // V2CDRegisterInput is the projected shape for the CD register.
