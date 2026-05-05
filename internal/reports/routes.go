@@ -100,6 +100,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.requestComplianceReport)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "preview-compliance-report",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/reports/compliance/preview",
+		Summary:     "Inline preview of a compliance report against real data",
+		Description: "Renders the supplied report type with REAL clinic data for the supplied period (defaults to the last 7 days) and streams PDF bytes back inline. No DB row, no S3 upload, no email. Used by the reports-catalog Preview drawer so users see actual data before committing to a generated report.",
+		Tags:        []string{"Reports"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, auditExport},
+	}, h.previewComplianceReport)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "list-compliance-reports",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/reports/compliance",
