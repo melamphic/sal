@@ -134,9 +134,11 @@ func smokeSignedNote(ctx context.Context, r *notes.HTMLRenderer, _ *v2.Renderer)
 //nolint:wrapcheck // smoke CLI; render errors surface verbatim
 func smokeCDRegister(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer) ([]byte, error) {
 	return r.RenderCDRegister(ctx, v2.CDRegisterInput{
-		ClinicName:  "Riverside Veterinary Hospital",
-		ClinicAddr:  "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:  "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Riverside Veterinary Hospital",
+			AddressLine1: "14 Ponsonby Rd, Auckland 1011",
+			Meta:         "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412",
+		},
 		PeriodLabel: "Q2 2026 · Apr–Jun",
 		PeriodStart: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:   time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC),
@@ -180,9 +182,11 @@ func smokeCDRegister(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer)
 //nolint:wrapcheck // smoke CLI; render errors surface verbatim
 func smokeCDReconciliation(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer) ([]byte, error) {
 	return r.RenderCDReconciliation(ctx, v2.CDReconciliationInput{
-		ClinicName:   "Riverside Veterinary Hospital",
-		ClinicAddr:   "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:   "Class B/C licence #PHA-CLB-04412",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Riverside Veterinary Hospital",
+			AddressLine1: "14 Ponsonby Rd, Auckland 1011",
+			Meta:         "Class B/C licence #PHA-CLB-04412",
+		},
 		PeriodLabel:  "April 2026",
 		ReconciledOn: "2026-04-30 17:42 NZST",
 		Drugs: []v2.CDReconRow{
@@ -203,9 +207,11 @@ func smokeCDReconciliation(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Ren
 //nolint:wrapcheck // smoke CLI; render errors surface verbatim
 func smokeIncident(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer) ([]byte, error) {
 	return r.RenderIncidentReport(ctx, v2.IncidentReportInput{
-		ClinicName:     "Sycamore House Care Home",
-		ClinicAddr:     "42 Elm Lane, Bristol BS6 7XR",
-		ClinicMeta:     "CQC location ID 1-247118331",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Sycamore House Care Home",
+			AddressLine1: "42 Elm Lane, Bristol BS6 7XR",
+			Meta:         "CQC location ID 1-247118331",
+		},
 		IncidentRef:    "INC-2026-00184",
 		GeneratedOn:    "2026-04-29",
 		SeverityLabel:  "High",
@@ -267,8 +273,10 @@ func smokePainTrend(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer) 
 	days := []string{"01 Apr", "05 Apr", "10 Apr", "15 Apr", "20 Apr", "23 Apr", "24 Apr", "25 Apr", "26 Apr", "27 Apr", "28 Apr", "29 Apr", "30 Apr"}
 	scores := []int{2, 1, 2, 1, 2, 3, 5, 5, 6, 5, 7, 4, 3}
 	return r.RenderPainTrend(ctx, v2.PainTrendInput{
-		ClinicName:    "Sycamore House Care Home",
-		ClinicAddr:    "42 Elm Lane, Bristol BS6 7XR",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Sycamore House Care Home",
+			AddressLine1: "42 Elm Lane, Bristol BS6 7XR",
+		},
 		SubjectName:   "Mary White (age 87)",
 		SubjectRoom:   "Maple wing · Room 14",
 		SubjectMeta:   "Residential — moderate dementia",
@@ -316,9 +324,11 @@ func smokeMAR(ctx context.Context, _ *notes.HTMLRenderer, r *v2.Renderer) ([]byt
 		return base
 	}
 	return r.RenderMARGrid(ctx, v2.MARGridInput{
-		ClinicName:    "Sycamore House Care Home",
-		ClinicAddr:    "42 Elm Lane, Bristol BS6 7XR",
-		ClinicMeta:    "CQC location ID 1-247118331",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Sycamore House Care Home",
+			AddressLine1: "42 Elm Lane, Bristol BS6 7XR",
+			Meta:         "CQC location ID 1-247118331",
+		},
 		ResidentName:  "Mary White",
 		ResidentMeta:  "(age 87)",
 		Room:          "Maple wing · Room 14",
@@ -375,9 +385,11 @@ func smokeAuditPack(ctx context.Context, n *notes.HTMLRenderer, r *v2.Renderer) 
 
 	notePlaceholder := `<div class="callout"><div class="callout__title">Signed clinical note (embedded)</div>The signed note PDF is included in the bundle as page 2; this section reproduces its body inline. In the production renderer the body string is passed via SignedNoteBody.</div>`
 	return r.RenderAuditPack(ctx, v2.AuditPackInput{
-		ClinicName:      "Riverside Veterinary Hospital",
-		ClinicAddr:      "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:      "VCNZ Registered Practice",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Riverside Veterinary Hospital",
+			AddressLine1: "14 Ponsonby Rd, Auckland 1011",
+			Meta:         "VCNZ Registered Practice",
+		},
 		NoteID:          "018e7f6d-aaaa-bbbb-cccc-000000000000",
 		NoteIDShort:     "018e7f6d",
 		GeneratedOn:     "2026-05-04 16:42 NZST",
