@@ -1,19 +1,9 @@
 <!-- ===== Page 1 — Cover + Bundle index ============================ -->
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">AP</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Audit Pack</span>
-      <span class="doc-header__title-text">Note&nbsp;&nbsp;{{ .NoteIDShort }}</span>
-      <span class="doc-header__title-meta">Generated {{ .GeneratedOn }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Audit Pack"
+      (printf "Note %s" .NoteIDShort)
+      (printf "Generated %s" .GeneratedOn) }}
 
   <div class="section">
     <span class="section__eyebrow">Compliance Artifact</span>
@@ -69,74 +59,36 @@
     this bundle for verification.
   </div>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Audit Pack · Note {{ .NoteIDShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">Bundle SHA-256 · {{ .BundleHashShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Cover</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s" .NoteIDShort)
+      "Cover"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 
 <!-- ===== Page 2 — Signed Clinical Note ============================ -->
 {{- if .SignedNoteBody }}
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">AP</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">Audit Pack · Note {{ .NoteIDShort }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Section 1 of {{ len .Artifacts }}</span>
-      <span class="doc-header__title-text">Signed Clinical Note</span>
-      <span class="doc-header__title-meta">Embedded verbatim</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      (printf "Section 1 of %d" (len .Artifacts))
+      "Signed Clinical Note"
+      "Embedded verbatim" }}
 
   {{ safeHTML .SignedNoteBody }}
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Audit Pack · Note {{ .NoteIDShort }} · Patient {{ .Patient }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">Bundle SHA-256 · {{ .BundleHashShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Section 1</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s · Patient %s" .NoteIDShort .Patient)
+      "Section 1"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 {{- end }}
 
 <!-- ===== Evidence Trace =========================================== -->
 {{- if .Evidence }}
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">AP</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">Audit Pack · Note {{ .NoteIDShort }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Section 4</span>
-      <span class="doc-header__title-text">Evidence Trace</span>
-      <span class="doc-header__title-meta">Field → Transcript Source</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Section 4"
+      "Evidence Trace"
+      "Field → Transcript Source" }}
 
   <p class="section__hint">
     Every extracted field below is linked to the audio segment + transcript
@@ -171,39 +123,20 @@
     </tbody>
   </table>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Audit Pack · Note {{ .NoteIDShort }} · Evidence Trace</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">Bundle SHA-256 · {{ .BundleHashShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Section 4</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s · Evidence Trace" .NoteIDShort)
+      "Section 4"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 {{- end }}
 
 <!-- ===== Edit history + Policy ===================================== -->
 {{- if or .EditHistory .PolicyClauses }}
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">AP</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">Audit Pack · Note {{ .NoteIDShort }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Sections 5 + 7</span>
-      <span class="doc-header__title-text">Edit History · Policy Check</span>
-      <span class="doc-header__title-meta">Sign-off chain</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Sections 5 + 7"
+      "Edit History · Policy Check"
+      "Sign-off chain" }}
 
   {{- if .EditHistory }}
   <div class="section">
@@ -256,18 +189,9 @@
   </table>
   {{- end }}
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Audit Pack · Note {{ .NoteIDShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">Bundle SHA-256 · {{ .BundleHashShort }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Sections 5 + 7</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s" .NoteIDShort)
+      "Sections 5 + 7"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 {{- end }}
