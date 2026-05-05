@@ -22,6 +22,7 @@ type Service struct {
 	repo    *Repository
 	enqueue jobEnqueuer
 	data    ComplianceDataSource // optional — only required for compliance PDFs
+	v2      V2ComplianceRenderer // optional — when set, preview/render hits the HTML pipeline
 }
 
 // NewService constructs a reports Service. The compliance data source can be
@@ -29,6 +30,15 @@ type Service struct {
 // methods will return ErrValidation if invoked without it.
 func NewService(repo *Repository, enqueue jobEnqueuer, data ComplianceDataSource) *Service {
 	return &Service{repo: repo, enqueue: enqueue, data: data}
+}
+
+// SetV2Renderer wires the HTML/Gotenberg renderer used by the inline
+// preview endpoint. Setter (rather than constructor arg) so app.go
+// can keep the existing NewService signature stable while plumbing
+// the renderer separately. nil = preview endpoint returns
+// ErrValidation.
+func (s *Service) SetV2Renderer(r V2ComplianceRenderer) {
+	s.v2 = r
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -279,6 +289,84 @@ type ListComplianceReportsInput struct {
 	Status *string
 	From   *time.Time
 	To     *time.Time
+}
+
+// PreviewComplianceReportInput drives the inline-preview endpoint —
+// same shape as a request input but no DB row is created. The bytes
+// stream back to the caller, the worker queue is untouched, and S3
+// stays unwritten. Cheap end-to-end so a clinician can preview a
+// week's worth of activity without paying a Stripe-billable render.
+type PreviewComplianceReportInput struct {
+	ClinicID    uuid.UUID
+	Type        string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+}
+
+// PreviewComplianceReport renders the supplied report type for the
+// supplied period against REAL data and returns the PDF bytes inline
+// — no compliance_report row, no S3 upload, no email. Used by the
+// reports-catalog Preview drawer so users see what the report will
+// actually contain (last 7 days by default), then pick a custom
+// period if they want to commit to a generated report row.
+//
+// Today only `audit_pack` is wired through this path because that's
+// the only type the v2 HTML renderer covers (the rest still fall
+// through the legacy fpdf builders in the worker). When the other
+// types migrate to v2 they'll add cases here.
+func (s *Service) PreviewComplianceReport(ctx context.Context, in PreviewComplianceReportInput) ([]byte, error) {
+	if s.data == nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: compliance data source not configured: %w", domain.ErrValidation)
+	}
+	if s.v2 == nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: v2 renderer not configured: %w", domain.ErrValidation)
+	}
+	if !isSupportedComplianceType(in.Type) {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: unsupported type %q: %w", in.Type, domain.ErrValidation)
+	}
+	if !in.PeriodEnd.After(in.PeriodStart) {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: period_end must be after period_start: %w", domain.ErrValidation)
+	}
+
+	clinic, err := s.data.GetClinic(ctx, in.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: clinic: %w", err)
+	}
+
+	switch in.Type {
+	case "audit_pack":
+		ops, err := s.data.ListControlledDrugOps(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: ops: %w", err)
+		}
+		recons, err := s.data.ListReconciliationsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: recons: %w", err)
+		}
+		counts, err := s.data.CountNotesByStatus(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: note counts: %w", err)
+		}
+		out, err := s.v2.RenderAuditPack(ctx, V2ComplianceAuditPackInput{
+			ClinicID:        in.ClinicID.String(),
+			Clinic:          clinicSnapshotToV2(clinic),
+			ReportID:        "preview",
+			PeriodStart:     in.PeriodStart,
+			PeriodEnd:       in.PeriodEnd,
+			GeneratedAt:     time.Now().UTC(),
+			Vertical:        clinic.Vertical,
+			Country:         clinic.Country,
+			NoteCounts:      counts,
+			DrugOps:         drugOpsToV2(ops),
+			Reconciliations: reconsToV2(recons),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render: %w", err)
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: type %q has no v2 renderer yet: %w", in.Type, domain.ErrValidation)
+	}
 }
 
 // RequestComplianceReport validates input, inserts a queued report row, and
