@@ -217,6 +217,88 @@ WHERE clinic_id = $1
 	return n, nil
 }
 
+// DailyNoteSeries returns the count of submitted notes per day for the
+// last 7 days, oldest first. Drives the hero-card sparkline. One
+// indexed scan over (clinic_id, status, submitted_at) bucketed via
+// generate_series so empty days come back as zero (no client-side
+// gap-filling needed).
+func (r *Repository) DailyNoteSeries(ctx context.Context, clinicID uuid.UUID, since time.Time) ([]int, error) {
+	const q = `
+WITH days AS (
+  SELECT generate_series(
+    date_trunc('day', $2::timestamptz),
+    date_trunc('day', $2::timestamptz) + interval '6 days',
+    interval '1 day'
+  ) AS day
+)
+SELECT COALESCE(COUNT(n.id), 0)::int AS c
+FROM days
+LEFT JOIN notes n
+  ON n.clinic_id = $1
+ AND n.status = 'submitted'
+ AND n.submitted_at >= days.day
+ AND n.submitted_at <  days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day
+`
+	rows, err := r.db.Query(ctx, q, clinicID, since)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard.repo.DailyNoteSeries: query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]int, 0, 7)
+	for rows.Next() {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("dashboard.repo.DailyNoteSeries: scan: %w", err)
+		}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard.repo.DailyNoteSeries: rows: %w", err)
+	}
+	return out, nil
+}
+
+// DailyIncidentSeries — same shape as DailyNoteSeries but for
+// incident_events.created_at. Drives the aged-care hero sparkline.
+func (r *Repository) DailyIncidentSeries(ctx context.Context, clinicID uuid.UUID, since time.Time) ([]int, error) {
+	const q = `
+WITH days AS (
+  SELECT generate_series(
+    date_trunc('day', $2::timestamptz),
+    date_trunc('day', $2::timestamptz) + interval '6 days',
+    interval '1 day'
+  ) AS day
+)
+SELECT COALESCE(COUNT(i.id), 0)::int
+FROM days
+LEFT JOIN incident_events i
+  ON i.clinic_id = $1
+ AND i.created_at >= days.day
+ AND i.created_at <  days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day
+`
+	rows, err := r.db.Query(ctx, q, clinicID, since)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard.repo.DailyIncidentSeries: query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]int, 0, 7)
+	for rows.Next() {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("dashboard.repo.DailyIncidentSeries: scan: %w", err)
+		}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("dashboard.repo.DailyIncidentSeries: rows: %w", err)
+	}
+	return out, nil
+}
+
 // CountHighPainSince returns pain assessments with score >= 7 since
 // `since` — aged-care + vet KPI tile.
 func (r *Repository) CountHighPainSince(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
