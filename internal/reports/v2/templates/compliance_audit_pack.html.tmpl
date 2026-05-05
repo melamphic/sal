@@ -1,0 +1,185 @@
+<!-- ===== Cover ====================================================== -->
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Compliance Audit Pack"
+      .PeriodStr
+      (printf "Generated %s" .GeneratedStr) }}
+
+  <div class="section">
+    <span class="section__eyebrow">Regulator-facing evidence</span>
+    <h1 class="section__title">Compliance Audit Pack</h1>
+    <p class="section__hint">
+      A consolidated record for the period covering clinical-note
+      activity, the controlled-drug ledger highlights, and any
+      reconciliations completed. Every artifact in this PDF is bound
+      to the report hash printed in the footer — tampering invalidates
+      the bundle.
+    </p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Reporting Period</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .PeriodStr }}</span>
+      <span class="kpi__hint">Inclusive</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Vertical</span>
+      <span class="kpi__value" style="font-size: 12pt; text-transform: capitalize;">
+        {{ .Vertical }}
+      </span>
+      <span class="kpi__hint">{{ .Country }}</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Drug Operations</span>
+      <span class="kpi__value">{{ len .DrugOps }}</span>
+      <span class="kpi__hint">In period</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Reconciliations</span>
+      <span class="kpi__value">{{ len .Reconciliations }}</span>
+      <span class="kpi__hint">Completed</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <span class="section__eyebrow">Section 1</span>
+    <h2 class="section__title">Records activity</h2>
+    <p class="section__hint">Clinical-note volume by lifecycle status.</p>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th class="num">Count</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .NoteRows }}
+      <tr>
+        <td>
+          {{- if .Tone }}<span class="pill pill--{{ .Tone }}">{{ .Label }}</span>
+          {{- else }}{{ .Label }}{{ end }}
+        </td>
+        <td class="num"><strong>{{ .Count }}</strong></td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · %s" .PeriodStr)
+      "Cover"
+      "Regulator-ready evidence pack" }}
+</section>
+
+<!-- ===== Drug ops ==================================================== -->
+{{- if .HasDrugOps }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Section 2"
+      "Controlled drug ledger — highlights"
+      .PeriodStr }}
+
+  <p class="section__hint">
+    Up to the most recent {{ len .DrugOps }} operation(s) in the
+    period. The full ledger ships in the dedicated Controlled Drugs
+    Register report.
+  </p>
+
+  <table class="tbl tbl--zebra-strong">
+    <thead>
+      <tr>
+        <th style="width: 90px">When</th>
+        <th>Drug</th>
+        <th class="center" style="width: 80px">Op</th>
+        <th class="num" style="width: 80px">Qty</th>
+        <th class="num" style="width: 80px">Bal. after</th>
+        <th>Subject</th>
+        <th>Administered by</th>
+        <th>Witness</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .DrugOps }}
+      <tr>
+        <td>{{ .When }}</td>
+        <td>{{ .Drug }}</td>
+        <td class="center">
+          <span class="pill pill--{{ .OperationTone }}">{{ .Operation }}</span>
+        </td>
+        <td class="num">{{ .Quantity }}</td>
+        <td class="num">{{ .BalanceAfter }}</td>
+        <td>{{ .Subject }}</td>
+        <td>{{ .AdministeredBy }}</td>
+        <td>{{ .WitnessedBy }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · %s · Drug ledger" .PeriodStr)
+      "Section 2"
+      "Per Misuse of Drugs Regs reg 25-28" }}
+</section>
+{{- end }}
+
+<!-- ===== Reconciliations ============================================ -->
+{{- if .HasRecons }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Section 3"
+      "Reconciliations"
+      .PeriodStr }}
+
+  <p class="section__hint">
+    Two-person counts performed in the period — physical vs ledger.
+    Discrepancies require an explanation row.
+  </p>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>Drug</th>
+        <th>Period</th>
+        <th class="num">Physical</th>
+        <th class="num">Ledger</th>
+        <th class="num">Δ</th>
+        <th class="center" style="width: 100px">Status</th>
+        <th>Primary</th>
+        <th>Secondary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .Reconciliations }}
+      <tr>
+        <td>{{ .Drug }}</td>
+        <td>{{ .Period }}</td>
+        <td class="num">{{ .Physical }}</td>
+        <td class="num">{{ .Ledger }}</td>
+        <td class="num">{{ .DiscrepancyDelta }}</td>
+        <td class="center">
+          <span class="pill pill--{{ .StatusTone }}">{{ .Status }}</span>
+        </td>
+        <td>{{ .PrimarySignedBy }}</td>
+        <td>{{ if .SecondarySignedBy }}{{ .SecondarySignedBy }}{{ else }}—{{ end }}</td>
+      </tr>
+      {{- if .Explanation }}
+      <tr>
+        <td colspan="8" style="background: var(--salvia-warning-bg); color: var(--salvia-warning); font-size: 8pt;">
+          <strong>Explanation:</strong> {{ .Explanation }}
+        </td>
+      </tr>
+      {{- end }}
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · %s · Reconciliations" .PeriodStr)
+      "Section 3"
+      "Two-person count required for controlled drugs" }}
+</section>
+{{- end }}
