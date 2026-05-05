@@ -313,6 +313,27 @@ type batchLogBody struct {
 		// receive-stock line with no patient).
 		SubjectID *string `json:"subject_id,omitempty" doc:"Default subject for every line that omits one"`
 
+		// Common witness applied to every controlled-drug line that
+		// doesn't supply its own. Same UX rationale as SubjectID:
+		// when a vet runs a procedure with 5 controlled drugs, ONE
+		// witness covers the whole event — the cart asks once at
+		// checkout and we fan out to every CD line. Per-line fields
+		// still win for mixed carts.
+		//
+		// Four modes (mirrors MultiModeWitnessField on the FE):
+		//   staff    — WitnessedBy = a colleague's UUID
+		//   pending  — async approval; WitnessNote optional
+		//   external — non-Salvia witness; ExternalWitnessName +
+		//              Role + Attestation
+		//   self     — emergency/solo; Attestation required;
+		//              regulator-flagged for high-risk types
+		WitnessedBy            *string `json:"witnessed_by,omitempty"             doc:"Default staff witness UUID. Used when WitnessKind=staff (or omitted)."`
+		WitnessKind            *string `json:"witness_kind,omitempty" enum:"staff,pending,external,self" doc:"Default witness mode applied to controlled lines. Defaults to 'staff' when WitnessedBy is set."`
+		ExternalWitnessName    *string `json:"external_witness_name,omitempty"    maxLength:"200" doc:"Default external-witness name (witness_kind=external)."`
+		ExternalWitnessRole    *string `json:"external_witness_role,omitempty"    maxLength:"80"  doc:"Default external-witness role (e.g. 'Owner', 'Pharmacist')."`
+		WitnessAttestation     *string `json:"witness_attestation,omitempty"      maxLength:"2000" doc:"Default attestation text — required for self/external modes."`
+		WitnessNote            *string `json:"witness_note,omitempty"             maxLength:"500" doc:"Default pending-mode note explaining why deferred."`
+
 		Lines []batchLogLineBody `json:"lines" minItems:"1" maxItems:"50"`
 	}
 }
@@ -332,6 +353,17 @@ func (h *Handler) batchLogOperations(ctx context.Context, input *batchLogBody) (
 	defaultSubject, err := optUUIDPtr(input.Body.SubjectID, "subject_id")
 	if err != nil {
 		return nil, err
+	}
+	defaultWitness, err := optUUIDPtr(input.Body.WitnessedBy, "witnessed_by")
+	if err != nil {
+		return nil, err
+	}
+	defaultWitnessKind := input.Body.WitnessKind
+	if defaultWitness != nil && (defaultWitnessKind == nil || *defaultWitnessKind == "") {
+		// Caller picked a staff member but didn't say so — fill it in
+		// so per-line schemas don't see a witnessed_by without a kind.
+		k := "staff"
+		defaultWitnessKind = &k
 	}
 
 	lines := make([]LogOperationInput, len(input.Body.Lines))
@@ -376,6 +408,26 @@ func (h *Handler) batchLogOperations(ctx context.Context, input *batchLogBody) (
 				return nil, huma.Error400BadRequest(fmt.Sprintf("line %d: invalid witnessed_by", i))
 			}
 			line.WitnessedBy = &id
+		} else if line.WitnessKind == nil || *line.WitnessKind == "" {
+			// Per-line had no witness configuration — fan out the
+			// cart-level payload (kind + payload-fields). The
+			// service layer still re-validates per-line that the
+			// witness shape matches the drug's requirement, so
+			// non-controlled lines just ignore the inherited values.
+			line.WitnessedBy = defaultWitness
+			line.WitnessKind = defaultWitnessKind
+			if line.ExternalWitnessName == nil {
+				line.ExternalWitnessName = input.Body.ExternalWitnessName
+			}
+			if line.ExternalWitnessRole == nil {
+				line.ExternalWitnessRole = input.Body.ExternalWitnessRole
+			}
+			if line.WitnessAttestation == nil {
+				line.WitnessAttestation = input.Body.WitnessAttestation
+			}
+			if line.WitnessNote == nil {
+				line.WitnessNote = input.Body.WitnessNote
+			}
 		}
 		lines[i] = line
 	}
