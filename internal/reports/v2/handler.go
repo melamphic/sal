@@ -13,21 +13,38 @@ import (
 	"github.com/melamphic/sal/internal/platform/pdf"
 )
 
+// LogoSigner resolves a doc-theme storage key (header.logo_key) to a
+// short-lived signed GET URL the renderer can <img src> from. Same
+// interface shape as forms.StyleLogoSigner — kept here as a local
+// alias so v2 doesn't import the forms package.
+type LogoSigner interface {
+	SignStyleLogoURL(ctx context.Context, key string) (string, error)
+}
+
 // Handler exposes the doc-theme preview endpoint. Lives in v2 so the
 // preview path delegates to the same Renderer + sample fixtures the
 // production reports use — no second source of truth for what a
 // report looks like.
+//
+// LogoSigner is optional — when present the preview path resolves the
+// in-progress theme's header.logo_key to a signed URL and stamps it
+// into the sample fixtures so the user's uploaded logo renders in the
+// preview pane. When nil, the brand mark falls back to derived
+// initials.
 type Handler struct {
-	renderer *Renderer
-	notes    *notes.HTMLRenderer
+	renderer   *Renderer
+	notes      *notes.HTMLRenderer
+	logoSigner LogoSigner
 }
 
 // NewHandler builds a Handler. notesR is the notes-package HTML
 // renderer (so the signed-note preview goes through the same builder
 // as production); pass nil to disable signed_note previews (the
-// endpoint will return 503 for that doc-type).
-func NewHandler(r *Renderer, notesR *notes.HTMLRenderer) *Handler {
-	return &Handler{renderer: r, notes: notesR}
+// endpoint will return 503 for that doc-type). logoSigner resolves
+// uploaded doc-theme logos to signed URLs for the live preview; pass
+// nil to fall back to initials.
+func NewHandler(r *Renderer, notesR *notes.HTMLRenderer, logoSigner LogoSigner) *Handler {
+	return &Handler{renderer: r, notes: notesR, logoSigner: logoSigner}
 }
 
 // previewBodyInput is the request body for POST .../preview-pdf.
@@ -75,7 +92,15 @@ func (h *Handler) preview(ctx context.Context, in *previewBodyInput) (*previewHT
 		return nil, huma.Error503ServiceUnavailable("signed-note preview not wired (notes renderer missing)")
 	}
 
-	out, err := h.renderer.RenderPreview(ctx, docType, theme, h.notes)
+	logoURL, err := resolveThemeLogoURL(ctx, theme, h.logoSigner)
+	if err != nil {
+		// Logo resolution failures should not break the preview — the
+		// renderer falls back to initials. Log via the error message
+		// in the PDF would leak storage internals, so swallow here.
+		logoURL = ""
+	}
+
+	out, err := h.renderer.RenderPreview(ctx, docType, theme, logoURL, h.notes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("preview render failed: " + err.Error())
 	}
