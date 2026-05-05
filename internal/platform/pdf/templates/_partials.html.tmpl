@@ -13,6 +13,11 @@
   (driven by the doc theme). Templates DO NOT inline `style="…"`
   for the brand mark — the variable carries the brand color
   through automatically.
+
+  Slot toggles (Clinic.ShowName / ShowAddressLine / ShowMeta) drive
+  whether each header field renders, mirroring the designer's
+  "Show in header" checkboxes. Clinic.ExtraText is the optional
+  right-aligned strapline shown above the doc-specific eyebrow.
 */ -}}
 
 {{ define "doc-header" -}}
@@ -25,10 +30,12 @@
         {{ .Clinic.Initials }}
       {{- end -}}
     </div>
+    {{- $hasName := and .Clinic.ShowName (ne .Clinic.Name "") -}}
+    {{- $hasAddr := and .Clinic.ShowAddressLine (ne .Clinic.AddressLine1 "") -}}
+    {{- $hasMeta := and .Clinic.ShowMeta (ne .Clinic.Meta "") -}}
+    {{- if or $hasName $hasAddr $hasMeta }}
     <div class="doc-header__clinic">
-      <span class="doc-header__clinic-name">{{ .Clinic.Name }}</span>
-      {{- $hasAddr := ne .Clinic.AddressLine1 "" -}}
-      {{- $hasMeta := ne .Clinic.Meta "" -}}
+      {{- if $hasName }}<span class="doc-header__clinic-name">{{ .Clinic.Name }}</span>{{ end }}
       {{- if or $hasAddr $hasMeta }}
       <span class="doc-header__clinic-meta">
         {{- if $hasAddr }}{{ .Clinic.AddressLine1 }}{{ end -}}
@@ -37,8 +44,10 @@
       </span>
       {{- end }}
     </div>
+    {{- end }}
   </div>
   <div class="doc-header__title">
+    {{- if .Clinic.ExtraText }}<span class="doc-header__title-extra">{{ .Clinic.ExtraText }}</span>{{ end }}
     {{- if .Eyebrow }}<span class="doc-header__title-eyebrow">{{ .Eyebrow }}</span>{{ end }}
     {{- if .Title }}<span class="doc-header__title-text">{{ .Title }}</span>{{ end }}
     {{- if .Meta }}<span class="doc-header__title-meta">{{ .Meta }}</span>{{ end }}
