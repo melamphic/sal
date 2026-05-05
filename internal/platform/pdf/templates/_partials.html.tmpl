@@ -1,0 +1,65 @@
+{{- /*
+  Shared brand-chrome partials. Every report template includes these
+  via pdf.NewReportTemplate("…") + ParseFS, then calls
+
+      {{ template "doc-header" .Header }}
+      {{ template "doc-footer" .Footer }}
+
+  from inside its own template. The .Header / .Footer view-model
+  values are pdf.HeaderInfo / pdf.FooterInfo respectively — see
+  render.go for the field definitions.
+
+  Brand colors come from CSS variables in _theme.css.tmpl
+  (driven by the doc theme). Templates DO NOT inline `style="…"`
+  for the brand mark — the variable carries the brand color
+  through automatically.
+*/ -}}
+
+{{ define "doc-header" -}}
+<header class="doc-header">
+  <div class="doc-header__brand">
+    <div class="doc-header__logo">
+      {{- if .Clinic.LogoURL -}}
+        <img src="{{ .Clinic.LogoURL }}" alt="{{ .Clinic.Name }}" class="doc-header__logo-img">
+      {{- else -}}
+        {{ .Clinic.Initials }}
+      {{- end -}}
+    </div>
+    <div class="doc-header__clinic">
+      <span class="doc-header__clinic-name">{{ .Clinic.Name }}</span>
+      {{- $hasAddr := ne .Clinic.AddressLine1 "" -}}
+      {{- $hasMeta := ne .Clinic.Meta "" -}}
+      {{- if or $hasAddr $hasMeta }}
+      <span class="doc-header__clinic-meta">
+        {{- if $hasAddr }}{{ .Clinic.AddressLine1 }}{{ end -}}
+        {{- if and $hasAddr $hasMeta }} · {{ end -}}
+        {{- if $hasMeta }}{{ .Clinic.Meta }}{{ end -}}
+      </span>
+      {{- end }}
+    </div>
+  </div>
+  <div class="doc-header__title">
+    {{- if .Eyebrow }}<span class="doc-header__title-eyebrow">{{ .Eyebrow }}</span>{{ end }}
+    {{- if .Title }}<span class="doc-header__title-text">{{ .Title }}</span>{{ end }}
+    {{- if .Meta }}<span class="doc-header__title-meta">{{ .Meta }}</span>{{ end }}
+  </div>
+</header>
+{{- end }}
+
+{{ define "doc-footer" -}}
+<footer class="doc-footer">
+  <div class="doc-footer__cell">
+    <span class="doc-footer__strong">{{ .Clinic.Name }}</span>
+    {{- if .Subject }}<span>{{ .Subject }}</span>{{ end }}
+  </div>
+  <div class="doc-footer__cell doc-footer__cell--center">
+    {{- if .BundleHash -}}
+    <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
+    {{- end -}}
+  </div>
+  <div class="doc-footer__cell doc-footer__cell--right">
+    {{- if .PageLabel }}<span class="doc-footer__strong">{{ .PageLabel }}</span>{{ end }}
+    {{- if .Footnote }}<span>{{ .Footnote }}</span>{{ end }}
+  </div>
+</footer>
+{{- end }}
