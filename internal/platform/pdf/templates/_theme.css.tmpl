@@ -74,9 +74,35 @@ h1, h2, h3, h4 {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  padding-bottom: 12px;
+  padding-bottom: {{ .HeaderPadBottom }};
+  {{- if .HeaderFillCSS }}
+  {{ .HeaderFillCSS }}
+  padding: 14px 16px {{ .HeaderPadBottom }};
+  border-radius: var(--salvia-corner-radius) var(--salvia-corner-radius) 0 0;
+  border-bottom: 0;
+  {{- else }}
   border-bottom: 2px solid var(--salvia-primary);
+  {{- end }}
   margin-bottom: 18px;
+}
+{{- if .HeaderTextOnFill }}
+.doc-header .doc-header__clinic-name,
+.doc-header .doc-header__title-text { color: {{ .HeaderTextOnFill }}; }
+.doc-header .doc-header__clinic-meta,
+.doc-header .doc-header__title-eyebrow,
+.doc-header .doc-header__title-meta,
+.doc-header .doc-header__title-extra { color: rgba(255,255,255,0.78); }
+.doc-header .doc-header__logo {
+  background: rgba(255,255,255,0.2);
+  color: {{ .HeaderTextOnFill }};
+}
+{{- end }}
+.doc-header__title-extra {
+  font-size: 8.5pt;
+  letter-spacing: 0.04em;
+  color: var(--salvia-text-emphasis);
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 .doc-header__brand { display: flex; align-items: center; gap: 12px; }
 .doc-header__logo {
