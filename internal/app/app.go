@@ -2013,6 +2013,74 @@ func v2CDDrugs(in []reports.V2CDRegisterDrug) []reportsv2.CDRegisterDrug {
 	return out
 }
 
+// RenderLog forwards generic-log requests through the v2 pipeline.
+func (l *lazyV2Compliance) RenderLog(
+	ctx context.Context,
+	in reports.V2ComplianceLogInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderComplianceLog(ctx, reportsv2.ComplianceLogInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		ReportID:    in.ReportID,
+		ReportTitle: in.ReportTitle,
+		Eyebrow:     in.Eyebrow,
+		Description: in.Description,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		GeneratedAt: in.GeneratedAt,
+		Vertical:    in.Vertical,
+		Country:     in.Country,
+		Regulator:   in.Regulator,
+		Sections:    v2LogSections(in.Sections),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderLog: %w", err)
+	}
+	return out, nil
+}
+
+// RenderPlaceholder forwards "this report needs more inputs" PDFs.
+func (l *lazyV2Compliance) RenderPlaceholder(
+	ctx context.Context,
+	clinicID, title, message string,
+	clinic reports.V2ClinicInfo,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderPlaceholderPDF(ctx, clinicID, title, message,
+		pdf.ClinicInfo{Name: clinic.Name, AddressLine1: clinic.AddressLine1, Meta: clinic.Meta})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderPlaceholder: %w", err)
+	}
+	return out, nil
+}
+
+func v2LogSections(in []reports.V2ComplianceLogSection) []reportsv2.ComplianceLogSection {
+	out := make([]reportsv2.ComplianceLogSection, len(in))
+	for i, s := range in {
+		cols := make([]reportsv2.ComplianceLogColumn, len(s.Columns))
+		for j, c := range s.Columns {
+			cols[j] = reportsv2.ComplianceLogColumn{Label: c.Label, Width: c.Width, Align: c.Align}
+		}
+		rows := make([]reportsv2.ComplianceLogRow, len(s.Rows))
+		for j, r := range s.Rows {
+			cells := make([]reportsv2.ComplianceLogCell, len(r.Cells))
+			for k, c := range r.Cells {
+				cells[k] = reportsv2.ComplianceLogCell{Value: c.Value, Pill: c.Pill}
+			}
+			rows[j] = reportsv2.ComplianceLogRow{Cells: cells, StatusTone: r.StatusTone}
+		}
+		out[i] = reportsv2.ComplianceLogSection{
+			Title: s.Title, Hint: s.Hint, Columns: cols, Rows: rows, EmptyMsg: s.EmptyMsg,
+		}
+	}
+	return out
+}
+
 func v2DrugOps(in []reports.V2ComplianceDrugOp) []reportsv2.ComplianceDrugOp {
 	out := make([]reportsv2.ComplianceDrugOp, len(in))
 	for i, o := range in {
