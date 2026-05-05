@@ -14,11 +14,11 @@ import (
 // Administration Record) grid. Caller assembles from
 // mar_prescriptions + mar_administration_events for the given
 // (clinic, resident, month). Landscape A4 — see Options below.
+// Header chrome stamps from Clinic via the shared `doc-header` partial;
+// the template MUST NOT hardcode brand letters or colors.
 type MARGridInput struct {
-	ClinicID   string
-	ClinicName string
-	ClinicAddr string
-	ClinicMeta string
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	ResidentName  string
 	ResidentMeta  string // "(age 87)"
@@ -71,11 +71,12 @@ type MARCell struct {
 
 // RenderMARGrid returns landscape PDF bytes for the MAR grid.
 func (r *Renderer) RenderMARGrid(ctx context.Context, in MARGridInput) ([]byte, error) {
-	body, err := buildMARGridBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "mar_grid")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderMARGrid: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "mar_grid")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, err := buildMARGridBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderMARGrid: %w", err)
 	}
@@ -85,6 +86,7 @@ func (r *Renderer) RenderMARGrid(ctx context.Context, in MARGridInput) ([]byte, 
 		Lang:    "en",
 		Body:    string(body),
 		Theme:   theme,
+		Clinic:  clinic,
 		Options: pdf.Options{
 			// Landscape A4 with tight margins for grid density.
 			Landscape:      true,
@@ -100,17 +102,39 @@ func (r *Renderer) RenderMARGrid(ctx context.Context, in MARGridInput) ([]byte, 
 	return out, nil
 }
 
-func buildMARGridBody(in MARGridInput) ([]byte, error) {
+type marGridView struct {
+	MARGridInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildMARGridBody(in MARGridInput, clinic pdf.ClinicInfo) ([]byte, error) {
 	funcs := commonFuncs()
 	funcs["safeHTML"] = func(s string) template.HTML { return template.HTML(s) }
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHash,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
 
-	tmpl, err := template.New("mar_grid.html.tmpl").Funcs(funcs).
+	tmpl, err := pdf.NewReportTemplate("mar_grid.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("partials: %w", err)
+	}
+	tmpl, err = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/mar_grid.html.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "mar_grid.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "mar_grid.html.tmpl",
+		marGridView{MARGridInput: in, Clinic: clinic}); err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), nil
