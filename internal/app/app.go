@@ -1321,12 +1321,12 @@ func (a *dashboardSeatsAdapter) GetAISeatUsage(ctx context.Context, clinicID uui
 // to import clinic).
 type dashboardClinicStateAdapter struct{ clinic *clinic.Service }
 
-func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (dashboard.DashboardState, error) {
+func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (dashboard.ClinicSnapshotState, error) {
 	st, err := a.clinic.LoadDashboardState(ctx, clinicID)
 	if err != nil {
-		return dashboard.DashboardState{}, fmt.Errorf("app.dashboardClinicStateAdapter.LoadDashboardState: %w", err)
+		return dashboard.ClinicSnapshotState{}, fmt.Errorf("app.dashboardClinicStateAdapter.LoadDashboardState: %w", err)
 	}
-	return dashboard.DashboardState{
+	return dashboard.ClinicSnapshotState{
 		NoteCap:            st.NoteCap,
 		NoteCount:          st.NoteCount,
 		TrialEndsAt:        st.TrialEndsAt,
