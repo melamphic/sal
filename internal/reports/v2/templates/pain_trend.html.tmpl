@@ -1,18 +1,8 @@
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">PT</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Resident Trend Report</span>
-      <span class="doc-header__title-text">Pain Score · {{ .PeriodLabel }}</span>
-      <span class="doc-header__title-meta">Generated {{ .GeneratedOn }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Resident Trend Report"
+      (printf "Pain Score · %s" .PeriodLabel)
+      (printf "Generated %s" .GeneratedOn) }}
 
   <div class="section">
     <span class="section__eyebrow">Resident</span>
@@ -129,19 +119,10 @@
     </div>
   </div>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Pain Trend · {{ .SubjectName }} · {{ .PeriodLabel }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Page 1 of 1</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Pain Trend · %s · %s" .SubjectName .PeriodLabel)
+      "Page 1 of 1"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 
 <script>
