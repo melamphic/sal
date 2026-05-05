@@ -365,8 +365,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// pulls the saved theme. The preview endpoint mutates the
 	// renderer's theme provider in-place per call to surface the
 	// designer's in-progress theme without a DB write.
+	//
+	// docThemeLogos is built here (early) so the preview handler can
+	// resolve the in-progress theme's header.logo_key to a signed URL
+	// and stamp it into sample fixtures — the user sees their uploaded
+	// logo in the preview pane immediately after upload.
+	docThemeLogos := &docThemeLogoAdapter{store: store}
 	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
-	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer)
+	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos)
 
 	// Periodic jobs — declared at construction time so River drives them
 	// without an external cron. Currently just the schedule fire-loop;
@@ -414,7 +420,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	docThemeLogos := &docThemeLogoAdapter{store: store}
+	// docThemeLogos was constructed above (alongside the v2 reports
+	// preview handler) so both share one adapter instance.
 	formsSvc := forms.NewService(
 		formsRepo,
 		&formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo},
