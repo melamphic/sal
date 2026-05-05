@@ -212,3 +212,79 @@ func escapeForCSSContent(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return r.Replace(s)
 }
+
+// headerPadFromHeight maps the designer's small/medium/tall picker
+// into a CSS padding-bottom value applied to the .doc-header band.
+// Empty / unknown → defaultHeaderPad.
+func headerPadFromHeight(h string) string {
+	switch strings.ToLower(strings.TrimSpace(h)) {
+	case "small":
+		return "6px"
+	case "medium":
+		return "12px"
+	case "tall":
+		return "22px"
+	default:
+		return defaultHeaderPad
+	}
+}
+
+// headerFillCSS turns theme.header.fill into a `background: …;`
+// declaration spliced into the .doc-header rule, plus a contrasting
+// text colour for the brand strap when the fill is dark. Returns
+// ("", "") for nil / "none" / image fills (image fills not yet
+// supported — they'd need a signed URL pipeline like the logo).
+func headerFillCSS(f *DocThemeFill) (bg, textOnFill string) {
+	if f == nil {
+		return "", ""
+	}
+	switch strings.ToLower(strings.TrimSpace(f.Kind)) {
+	case "solid":
+		c := strings.TrimSpace(derefStr(f.Color, ""))
+		if c == "" {
+			return "", ""
+		}
+		return fmt.Sprintf("background: %s;", c), contrastColorFor(c)
+	case "gradient":
+		from := strings.TrimSpace(derefStr(f.From, ""))
+		to := strings.TrimSpace(derefStr(f.To, ""))
+		if from == "" || to == "" {
+			return "", ""
+		}
+		return fmt.Sprintf("background: linear-gradient(135deg, %s 0%%, %s 100%%);", from, to),
+			contrastColorFor(from)
+	default:
+		return "", ""
+	}
+}
+
+// contrastColorFor returns "#ffffff" for hex colours that read as
+// dark, otherwise the default emphasis text. Cheap luma test —
+// (R*299 + G*587 + B*114) / 1000 < 128 → dark. Designed for the
+// header band's brand strap text only; fine-grained accessibility
+// contrast is the designer's job at swatch-pick time.
+func contrastColorFor(hex string) string {
+	h := strings.TrimPrefix(strings.TrimSpace(hex), "#")
+	if len(h) != 6 {
+		return ""
+	}
+	r, err1 := parseHexByte(h[0:2])
+	g, err2 := parseHexByte(h[2:4])
+	b, err3 := parseHexByte(h[4:6])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return ""
+	}
+	luma := (int(r)*299 + int(g)*587 + int(b)*114) / 1000
+	if luma < 140 {
+		return "#ffffff"
+	}
+	return ""
+}
+
+func parseHexByte(s string) (uint8, error) {
+	var n uint8
+	if _, err := fmt.Sscanf(s, "%x", &n); err != nil {
+		return 0, fmt.Errorf("pdf.parseHexByte: %w", err)
+	}
+	return n, nil
+}
