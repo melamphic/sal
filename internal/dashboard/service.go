@@ -30,12 +30,12 @@ type SeatUsageProvider interface {
 // Single call shape so the adapter in app.go doesn't fan out to N
 // clinic-service methods per dashboard build.
 type ClinicStateProvider interface {
-	LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (DashboardState, error)
+	LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (ClinicSnapshotState, error)
 }
 
-// DashboardState mirrors clinic.DashboardState (avoids importing the
+// ClinicSnapshotState mirrors clinic.ClinicSnapshotState (avoids importing the
 // clinic package from dashboard). Only the fields the watchcards read.
-type DashboardState struct {
+type ClinicSnapshotState struct {
 	NoteCap            *int
 	NoteCount          int
 	TrialEndsAt        time.Time
