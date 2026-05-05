@@ -1,6 +1,10 @@
 package v2
 
-import "time"
+import (
+	"time"
+
+	"github.com/melamphic/sal/internal/platform/pdf"
+)
 
 // Per-doc-type sample fixtures used by the doc-theme preview endpoint
 // to render the user's in-progress theme against realistic data without
@@ -8,10 +12,33 @@ import "time"
 //
 // Mutating any field here changes what the designer's live preview
 // shows — keep the data plausible and clinical.
+//
+// Each fixture supplies a generic placeholder Clinic. The doc-theme
+// preview path overrides the resolved ClinicInfo from the in-progress
+// theme's content overrides + uploaded logo, so what the user sees
+// reflects their real branding even though the report data is canned.
 
-// SampleSignedNoteFromTheme is the signed-note view fed to the
-// notes.HTMLRenderer. Returned as a function (not a global var) so
-// nullable pointer fields don't get aliased across requests.
+// vetSampleClinic / agedCareSampleClinic / dentalSampleClinic — the
+// generic placeholder clinics used across the sample fixtures. Anything
+// the user enters in the doc theme designer overrides Name + AddressLine1
+// + Meta + LogoURL via pdf.ResolveClinicFromTheme before the partial
+// renders the brand mark.
+var (
+	vetSampleClinic = pdf.ClinicInfo{
+		Name:         "Riverside Veterinary Hospital",
+		AddressLine1: "14 Ponsonby Rd, Auckland 1011",
+		Meta:         "VCNZ Registered Practice",
+	}
+	agedCareSampleClinic = pdf.ClinicInfo{
+		Name:         "Sycamore House Care Home",
+		AddressLine1: "42 Elm Lane, Bristol BS6 7XR",
+		Meta:         "CQC location ID 1-247118331",
+	}
+)
+
+// SampleSignedNoteFields is the de-facto data used by the signed-note
+// preview path. Returned as a tuple (not a struct) so nullable pointer
+// fields don't get aliased across requests.
 func SampleSignedNoteFields() (formName, formVersion, noteID, submittedBy, clinicName, clinicAddr, clinicPhone string,
 	submittedAt, visit time.Time,
 	subjectName, species, breed, microchip string, weight float64,
@@ -19,8 +46,8 @@ func SampleSignedNoteFields() (formName, formVersion, noteID, submittedBy, clini
 	return "SOAP — Small Animal", "3.2",
 		"018e7f6d-aaaa-bbbb-cccc-000000000000",
 		"Dr. Aroha Williams",
-		"Riverside Veterinary Hospital",
-		"14 Ponsonby Rd, Auckland 1011",
+		vetSampleClinic.Name,
+		vetSampleClinic.AddressLine1,
 		"021 555 4127",
 		time.Date(2026, 4, 28, 15, 8, 0, 0, time.UTC),
 		time.Date(2026, 4, 28, 14, 32, 0, 0, time.UTC),
@@ -32,9 +59,7 @@ func SampleSignedNoteFields() (formName, formVersion, noteID, submittedBy, clini
 // (NZ-vet flavor) for the doc-theme preview.
 func SampleCDRegisterInput() CDRegisterInput {
 	return CDRegisterInput{
-		ClinicName:  "Riverside Veterinary Hospital",
-		ClinicAddr:  "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:  "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412",
+		Clinic:      vetSampleClinic,
 		PeriodLabel: "Q2 2026 · Apr–Jun",
 		PeriodStart: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:   time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC),
@@ -75,12 +100,9 @@ func SampleCDRegisterInput() CDRegisterInput {
 	}
 }
 
-// SampleCDReconciliationInput — monthly reconciliation preview fixture.
 func SampleCDReconciliationInput() CDReconciliationInput {
 	return CDReconciliationInput{
-		ClinicName:   "Riverside Veterinary Hospital",
-		ClinicAddr:   "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:   "Class B/C licence #PHA-CLB-04412",
+		Clinic:       vetSampleClinic,
 		PeriodLabel:  "April 2026",
 		ReconciledOn: "2026-04-30 17:42 NZST",
 		Drugs: []CDReconRow{
@@ -98,12 +120,9 @@ func SampleCDReconciliationInput() CDReconciliationInput {
 	}
 }
 
-// SampleIncidentReportInput — single-event incident preview fixture.
 func SampleIncidentReportInput() IncidentReportInput {
 	return IncidentReportInput{
-		ClinicName:     "Sycamore House Care Home",
-		ClinicAddr:     "42 Elm Lane, Bristol BS6 7XR",
-		ClinicMeta:     "CQC location ID 1-247118331",
+		Clinic:         agedCareSampleClinic,
 		IncidentRef:    "INC-2026-00184",
 		GeneratedOn:    "2026-04-29",
 		SeverityLabel:  "High",
@@ -160,11 +179,9 @@ func SampleIncidentReportInput() IncidentReportInput {
 	}
 }
 
-// SamplePainTrendInput — resident pain trend preview fixture (with charts).
 func SamplePainTrendInput() PainTrendInput {
 	return PainTrendInput{
-		ClinicName:    "Sycamore House Care Home",
-		ClinicAddr:    "42 Elm Lane, Bristol BS6 7XR",
+		Clinic:        agedCareSampleClinic,
 		SubjectName:   "Mary White (age 87)",
 		SubjectRoom:   "Maple wing · Room 14",
 		SubjectMeta:   "Residential — moderate dementia",
@@ -195,7 +212,6 @@ func SamplePainTrendInput() PainTrendInput {
 	}
 }
 
-// SampleMARGridInput — monthly MAR preview fixture (landscape A4).
 func SampleMARGridInput() MARGridInput {
 	days, dow, weekend := MonthDays(2026, 4, time.UTC)
 	cells := func(initials string, n int) []MARCell {
@@ -212,9 +228,7 @@ func SampleMARGridInput() MARGridInput {
 		return base
 	}
 	return MARGridInput{
-		ClinicName:   "Sycamore House Care Home",
-		ClinicAddr:   "42 Elm Lane, Bristol BS6 7XR",
-		ClinicMeta:   "CQC location ID 1-247118331",
+		Clinic:       agedCareSampleClinic,
 		ResidentName: "Mary White",
 		ResidentMeta: "(age 87)",
 		Room:         "Maple wing · Room 14",
@@ -254,13 +268,9 @@ func SampleMARGridInput() MARGridInput {
 	}
 }
 
-// SampleAuditPackInput — audit-pack preview fixture (cover + signed
-// note placeholder + evidence + edit history + policy check).
 func SampleAuditPackInput() AuditPackInput {
 	return AuditPackInput{
-		ClinicName:      "Riverside Veterinary Hospital",
-		ClinicAddr:      "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:      "VCNZ Registered Practice",
+		Clinic:          vetSampleClinic,
 		NoteID:          "018e7f6d-aaaa-bbbb-cccc-000000000000",
 		NoteIDShort:     "018e7f6d",
 		GeneratedOn:     "2026-05-04 16:42 NZST",
