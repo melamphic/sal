@@ -56,6 +56,59 @@ type V2ComplianceRenderer interface {
 	// compliance audit pack. The clinic info / period / data lists
 	// the worker has gathered get projected into the v2 input.
 	RenderAuditPack(ctx context.Context, in V2ComplianceAuditPackInput) ([]byte, error)
+
+	// RenderCDRegister returns PDF bytes for the controlled-drugs
+	// register — flat drug-op list grouped per-drug + reconciliation
+	// status. Mirrors v2.CDRegisterInput conceptually but kept as a
+	// port-local type so reports doesn't import its own subpackage.
+	RenderCDRegister(ctx context.Context, in V2CDRegisterInput) ([]byte, error)
+}
+
+// V2CDRegisterInput is the projected shape for the CD register.
+// Built from clinic snapshot + flat DrugOpView list + reconciliations,
+// then grouped per-drug in the adapter.
+type V2CDRegisterInput struct {
+	ClinicID         string
+	Clinic           V2ClinicInfo
+	PeriodLabel      string
+	PeriodStart      time.Time
+	PeriodEnd        time.Time
+	Drugs            []V2CDRegisterDrug
+	ReconciliationOK bool
+	ReconciledOn     string
+	ReconciledByA    string
+	ReconciledByB    string
+	NextDueOn        string
+	BundleHash       string
+}
+
+// V2CDRegisterDrug is one drug page in the register.
+type V2CDRegisterDrug struct {
+	Class        string // "B" | "C"
+	Name         string
+	FormStrength string
+	Storage      string
+	CatalogID    string
+	BatchExp     string
+	Unit         string
+	Opening      float64
+	ClosingBal   float64
+	InTotal      float64
+	OutTotal     float64
+	Operations   []V2CDOperation
+}
+
+// V2CDOperation is one row of the per-drug page table.
+type V2CDOperation struct {
+	WhenPretty   string
+	OpKind       string
+	OpTone       string
+	Subject      string
+	QtyDelta     string
+	BalBefore    string
+	BalAfter     string
+	StaffShort   string
+	WitnessShort string
 }
 
 // V2ComplianceAuditPackInput mirrors v2.ComplianceAuditPackInput
