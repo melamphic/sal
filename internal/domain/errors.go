@@ -36,6 +36,13 @@ var (
 	// ErrClinicSuspended is returned when an operation is attempted on a suspended clinic.
 	ErrClinicSuspended = errors.New("clinic suspended")
 
+	// ErrAISeatCapReached is returned when an admin tries to grant a
+	// new "standard" note tier (AI / audio-recording access) but the
+	// clinic has already used all of its plan's AI seats. Practice = 3,
+	// Pro = 7. Mapped to HTTP 402 Payment Required at the handler so
+	// the UI can surface an upgrade CTA instead of a generic 400.
+	ErrAISeatCapReached = errors.New("ai seat cap reached")
+
 	// ErrNoteCap is returned when a clinic has reached its monthly note cap.
 	ErrNoteCap = errors.New("note cap reached")
 
