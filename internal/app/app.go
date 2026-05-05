@@ -316,7 +316,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// dependencies (drugs / clinic / staff services) are constructed below,
 	// after river.NewClient. The lazy wrapper resolves at job-run time.
 	complianceData := &lazyComplianceData{}
-	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData, lazy))
+	// lazyV2Compliance gets its inner *reportsv2.Renderer set after
+	// the renderer is constructed below — same deferred pattern as
+	// complianceData. Plumbed into the worker so audit_pack (and
+	// other migrating types) render through the doc-themed HTML
+	// pipeline instead of the legacy fpdf builders.
+	complianceV2 := &lazyV2Compliance{}
+	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData, lazy, complianceV2))
 	// Schedule fire loop + email delivery worker (D2). lazy lets the fire
 	// loop enqueue compliance generation; the email worker depends on
 	// adapters wired after river.NewClient.
@@ -380,6 +386,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	docThemeLogos := &docThemeLogoAdapter{store: store}
 	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
 	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos)
+	// Resolve the lazy v2 wrapper now that the renderer exists —
+	// the compliance-PDF worker (declared above before this line)
+	// reads through the lazy on every job run.
+	complianceV2.inner = reportsV2Renderer
 
 	// Clinic home dashboard — single endpoint, single in-process LRU
 	// cache, vertical-aware payload. Cache invalidation hooks are
@@ -693,6 +703,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		patientRepo:  patientRepo,
 	}
 	reportsSvc := reports.NewService(reportsRepo, riverClient, complianceData)
+	// Wire the v2 HTML renderer into the service so the inline-preview
+	// endpoint streams real-data PDFs through the same Gotenberg
+	// pipeline the worker uses for stored reports.
+	reportsSvc.SetV2Renderer(complianceV2)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
 
 	// ── Marketplace module ───────────────────────────────────────────────────
@@ -1914,6 +1928,67 @@ func (a *drugsStaffPermAdapter) HasPermission(ctx context.Context, staffID, clin
 // before drugs / clinic / staff services exist; this lazy wrapper lets the
 // worker compile-time bind to the data source without forcing all those
 // services to be created earlier.
+// lazyV2Compliance defers the *reportsv2.Renderer reference until the
+// renderer is constructed (which happens after the compliance-PDF
+// worker is registered with River). On job run the worker calls
+// through this lazy → the inner renderer's RenderComplianceAuditPack.
+type lazyV2Compliance struct {
+	inner *reportsv2.Renderer
+}
+
+func (l *lazyV2Compliance) RenderAuditPack(
+	ctx context.Context,
+	in reports.V2ComplianceAuditPackInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderComplianceAuditPack(ctx, reportsv2.ComplianceAuditPackInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		ReportID:    in.ReportID,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		GeneratedAt: in.GeneratedAt,
+		Vertical:    in.Vertical,
+		Country:     in.Country,
+		NoteCounts:  in.NoteCounts,
+		DrugOps:     v2DrugOps(in.DrugOps),
+		Reconciliations: v2Recons(in.Reconciliations),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderAuditPack: %w", err)
+	}
+	return out, nil
+}
+
+func v2DrugOps(in []reports.V2ComplianceDrugOp) []reportsv2.ComplianceDrugOp {
+	out := make([]reportsv2.ComplianceDrugOp, len(in))
+	for i, o := range in {
+		out[i] = reportsv2.ComplianceDrugOp{
+			When: o.When, Drug: o.Drug, Operation: o.Operation,
+			OperationTone: o.OperationTone, Quantity: o.Quantity,
+			BalanceAfter: o.BalanceAfter, Subject: o.Subject,
+			AdministeredBy: o.AdministeredBy, WitnessedBy: o.WitnessedBy,
+		}
+	}
+	return out
+}
+
+func v2Recons(in []reports.V2ComplianceReconciliation) []reportsv2.ComplianceReconciliation {
+	out := make([]reportsv2.ComplianceReconciliation, len(in))
+	for i, r := range in {
+		out[i] = reportsv2.ComplianceReconciliation{
+			Drug: r.Drug, Period: r.Period, Physical: r.Physical,
+			Ledger: r.Ledger, DiscrepancyDelta: r.DiscrepancyDelta,
+			Status: r.Status, StatusTone: r.StatusTone,
+			PrimarySignedBy: r.PrimarySignedBy, SecondarySignedBy: r.SecondarySignedBy,
+			Explanation: r.Explanation,
+		}
+	}
+	return out
+}
+
 type lazyComplianceData struct {
 	inner reports.ComplianceDataSource
 }
