@@ -14,15 +14,34 @@ import (
 // without polling — the auto-refresh tick is `TTLSeconds` after
 // `FetchedAt`, plus immediate invalidation on local actions.
 type Snapshot struct {
-	FetchedAt   time.Time       `json:"fetched_at"`
-	TTLSeconds  int             `json:"ttl_seconds"`
-	Vertical    domain.Vertical `json:"vertical"`
-	KPIStrip    []KPI           `json:"kpi_strip"`
-	VerticalCard *VerticalCard  `json:"vertical_card,omitempty"`
-	Watchcards  []Watchcard     `json:"watchcards"`
-	DraftsCount int             `json:"drafts_count"`
-	SeatUsage   SeatUsage       `json:"seat_usage"`
-	Activity    []ActivityEvent `json:"activity"`
+	FetchedAt    time.Time       `json:"fetched_at"`
+	TTLSeconds   int             `json:"ttl_seconds"`
+	Vertical     domain.Vertical `json:"vertical"`
+	Hero         *HeroMetric     `json:"hero,omitempty"`
+	KPIStrip     []KPI           `json:"kpi_strip"`
+	VerticalCard *VerticalCard   `json:"vertical_card,omitempty"`
+	Watchcards   []Watchcard     `json:"watchcards"`
+	DraftsCount  int             `json:"drafts_count"`
+	SeatUsage    SeatUsage       `json:"seat_usage"`
+	Activity     []ActivityEvent `json:"activity"`
+}
+
+// HeroMetric powers the headline card at the top of the dashboard —
+// a big number, a one-line label, a 7-day sparkline series, and an
+// optional delta-vs-last-week chip. Vertical-aware: vet headline is
+// notes signed; aged-care is open incidents; etc.
+//
+// Series carries one integer per day, oldest first, length=7. Empty
+// series renders the card without a sparkline (still readable).
+type HeroMetric struct {
+	Label       string  `json:"label"`         // "Notes signed this week"
+	Value       int     `json:"value"`         // 142
+	Suffix      string  `json:"suffix,omitempty"` // "" or "%" or "patients"
+	Series      []int   `json:"series"`        // 7 daily counts, Mon..Sun
+	DeltaPct    float64 `json:"delta_pct,omitempty"`
+	DeltaDir    string  `json:"delta_dir,omitempty"` // up | down | flat
+	SubLabel    string  `json:"sub_label,omitempty"` // "vs last 7 days"
+	Tone        string  `json:"tone,omitempty"`      // "ok" | "warn" | "info"
 }
 
 // KPI is one tile in the four-tile strip at the top of the vertical
