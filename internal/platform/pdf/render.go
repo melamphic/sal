@@ -107,6 +107,16 @@ type ClinicInfo struct {
 	// Initials — 1-2 uppercase letters used as a logo fallback. Builder
 	// derives from Name when not supplied.
 	Initials string
+	// Slots controls which header fields actually render. Driven by the
+	// designer's "Show in header" checkboxes (theme.header.slots.*).
+	// Default true so unspecified fields keep rendering.
+	ShowName        bool
+	ShowAddressLine bool
+	ShowMeta        bool
+	// ExtraText is the right-aligned strapline the designer exposes as
+	// "Extra text (right-aligned)" (e.g. "Tax invoice"). Renders in the
+	// title column above the doc-specific eyebrow.
+	ExtraText string
 }
 
 // HeaderInfo is what `doc-header` partial expects as its data arg.
