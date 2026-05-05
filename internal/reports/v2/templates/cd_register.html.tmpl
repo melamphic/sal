@@ -1,0 +1,173 @@
+<!-- ===== Cover page ============================================== -->
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Controlled Drug Register"
+      .PeriodLabel
+      "Misuse of Drugs Regs 1977 reg 25-28" }}
+
+  <div class="section">
+    <span class="section__eyebrow">Statutory Record</span>
+    <h1 class="section__title">Controlled Drug Register</h1>
+    <p class="section__hint">
+      Maintained under the New Zealand Misuse of Drugs Regulations 1977
+      and Veterinary Council of New Zealand Code of Professional Conduct.
+      Each drug is recorded on a separate page with running balance,
+      witness signatures, and balance reconciliation. This register may
+      be inspected by an authorised officer at any time.
+    </p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Reporting Period</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .PeriodLabel }}</span>
+      <span class="kpi__hint">{{ .PeriodStart.Format "02 Jan" }} – {{ .PeriodEnd.Format "02 Jan 2006" }}</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Drugs in Register</span>
+      <span class="kpi__value">{{ len .Drugs }}</span>
+      <span class="kpi__hint">Class B + C controlled</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Reconciled On</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .ReconciledOn }}</span>
+      <span class="kpi__hint">Next due {{ .NextDueOn }}</span>
+    </div>
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Reconciliation Status</span>
+      <span class="kpi__value" style="font-size: 11pt; color: {{ if .ReconciliationOK }}var(--salvia-success){{ else }}var(--salvia-warning){{ end }};">
+        {{ if .ReconciliationOK }}Clean{{ else }}Discrepancy{{ end }}
+      </span>
+      <span class="kpi__hint">{{ if .ReconciliationOK }}All drugs balanced{{ else }}See per-drug pages{{ end }}</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <span class="section__eyebrow">Drug Index</span>
+    <h2 class="section__title">Drugs covered in this register</h2>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th class="center" style="width: 60px">Class</th>
+        <th>Drug</th>
+        <th>Form &amp; strength</th>
+        <th class="num">Opening</th>
+        <th class="num">In</th>
+        <th class="num">Out</th>
+        <th class="num">Closing</th>
+        <th class="center" style="width: 70px">Page</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range $i, $d := .Drugs }}
+      <tr>
+        <td class="center"><span class="pill pill--{{ classTone $d.Class }}">{{ $d.Class }}</span></td>
+        <td>{{ $d.Name }}</td>
+        <td>{{ $d.FormStrength }}</td>
+        <td class="num">{{ qtyFmt $d.Opening $d.Unit }}</td>
+        <td class="num">{{ qtyDeltaIn $d.InTotal $d.Unit }}</td>
+        <td class="num">{{ qtyDeltaOut $d.OutTotal $d.Unit }}</td>
+        <td class="num"><strong>{{ qtyFmt $d.ClosingBal $d.Unit }}</strong></td>
+        <td class="center">{{ add $i 2 }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{- if .ReconciliationOK }}
+  <div class="callout callout--ok">
+    <div class="callout__title">Reconciliation</div>
+    Physical count vs. ledger balance reconciled on <strong>{{ .ReconciledOn }}</strong>
+    by {{ .ReconciledByA }} (primary) and {{ .ReconciledByB }} (secondary).
+    All drugs balanced to within unit precision. No discrepancies. Next reconciliation
+    due <strong>{{ .NextDueOn }}</strong>.
+  </div>
+  {{- end }}
+
+  {{ template "doc-footer" footerInfo
+      (printf "CD Register · %s" .PeriodLabel)
+      "Cover"
+      "Per Misuse of Drugs Regs reg 25-28" }}
+</section>
+
+<!-- ===== Per-drug pages ========================================== -->
+{{- range $idx, $d := .Drugs }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      (printf "Drug Page · Class %s" $d.Class)
+      $d.Name
+      $d.FormStrength }}
+
+  <div class="meta-grid meta-grid--3">
+    <div class="meta"><span class="meta__label">Storage</span><span class="meta__value">{{ $d.Storage }}</span></div>
+    <div class="meta"><span class="meta__label">Catalog ID</span><span class="meta__value">{{ $d.CatalogID }}</span></div>
+    <div class="meta"><span class="meta__label">Current Batch</span><span class="meta__value">{{ $d.BatchExp }}</span></div>
+    <div class="meta"><span class="meta__label">Opening Balance</span><span class="meta__value">{{ qtyFmt $d.Opening $d.Unit }}</span></div>
+    <div class="meta"><span class="meta__label">Closing Balance</span><span class="meta__value">{{ qtyFmt $d.ClosingBal $d.Unit }}</span></div>
+    <div class="meta">
+      <span class="meta__label">Period Net</span>
+      <span class="meta__value" style="color: var(--salvia-success);">
+        {{ if gt (sub $d.ClosingBal $d.Opening) 0.0 }}+{{ end }}{{ printf "%.1f" (sub $d.ClosingBal $d.Opening) }} {{ $d.Unit }}
+      </span>
+    </div>
+  </div>
+
+  <table class="tbl tbl--zebra-strong">
+    <thead>
+      <tr>
+        <th style="width: 80px">Date</th>
+        <th class="center" style="width: 76px">Op</th>
+        <th>Subject / Reason</th>
+        <th class="num">Qty</th>
+        <th class="num">Bal. before</th>
+        <th class="num">Bal. after</th>
+        <th>Administered by</th>
+        <th>Witness</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range $d.Operations }}
+      <tr>
+        <td>{{ .WhenPretty }}</td>
+        <td class="center"><span class="pill pill--{{ .OpTone }}">{{ .OpKind }}</span></td>
+        <td>{{ .Subject }}</td>
+        <td class="num">{{ .QtyDelta }} {{ $d.Unit }}</td>
+        <td class="num">{{ .BalBefore }}</td>
+        <td class="num"><strong>{{ .BalAfter }}</strong></td>
+        <td>{{ .StaffShort }}</td>
+        <td>{{ .WitnessShort }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3" class="num"><strong>Period totals</strong></td>
+        <td class="num">In +{{ printf "%.1f" $d.InTotal }} / Out −{{ printf "%.1f" $d.OutTotal }}</td>
+        <td class="num">{{ printf "%.1f" $d.Opening }}</td>
+        <td class="num"><strong>{{ qtyFmt $d.ClosingBal $d.Unit }}</strong></td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="signature-grid">
+    <div class="signature">
+      <div class="signature__role">Reconciled by — primary</div>
+      <div class="signature__name">{{ $.ReconciledByA }}</div>
+      <div class="signature__meta"><span></span><span>{{ $.ReconciledOn }}</span></div>
+    </div>
+    <div class="signature">
+      <div class="signature__role">Reconciled by — secondary</div>
+      <div class="signature__name">{{ $.ReconciledByB }}</div>
+      <div class="signature__meta"><span></span><span>{{ $.ReconciledOn }}</span></div>
+    </div>
+  </div>
+
+  {{ template "doc-footer" footerInfo
+      (printf "CD Register · %s · %s" $.PeriodLabel $d.Name)
+      (printf "Page %d" (add $idx 2))
+      "Per MoD Regs reg 25-28" }}
+</section>
+{{- end }}

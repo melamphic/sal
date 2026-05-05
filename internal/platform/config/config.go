@@ -95,6 +95,15 @@ type Config struct {
 	// (i.e. where the browser lands when a user abandons Checkout).
 	MelBaseURL string `env:"MEL_BASE_URL,default=http://localhost:3001"`
 
+	// PDF rendering — Gotenberg sidecar (headless Chromium) handles every
+	// generated PDF (signed clinical notes, compliance reports, audit packs).
+	// In dev: docker compose ships a `gotenberg` service on :3050. In prod:
+	// run as a sidecar / separate deployment, point this at its internal URL.
+	// GotenbergTimeout caps how long a single render can take server-side;
+	// the client also has its own deadline.
+	GotenbergURL     string        `env:"GOTENBERG_URL,default=http://localhost:3050"`
+	GotenbergTimeout time.Duration `env:"GOTENBERG_TIMEOUT,default=60s"`
+
 	// Stripe — shared across billing (v78 portal/webhook) and marketplace
 	// (v82 Connect). STRIPE_API_KEY is the secret key (sk_…) used by both
 	// modules; STRIPE_WEBHOOK_SECRET signs incoming webhooks.

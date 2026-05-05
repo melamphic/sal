@@ -55,6 +55,28 @@ services:
       mc mb --ignore-existing local/salvia-audio
       "
 
+  # Headless-Chromium-based HTML→PDF renderer used by the reports module
+  # and signed clinical-note PDFs. We POST HTML + assets to /forms/chromium/
+  # convert/html and get back a PDF byte stream.
+  #
+  # --chromium-restart-after=20 caps Chromium's per-process conversion count
+  # so the inevitable memory drift gets reset before it bites — Gotenberg
+  # forks a fresh Chromium after every 20 renders.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    command:
+      - gotenberg
+      - --api-port=3000
+      - --chromium-restart-after=20
+      - --api-timeout=60s
+    ports:
+      - "3050:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   minio_data:

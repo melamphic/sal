@@ -57,6 +57,15 @@ type createIncidentBody struct {
 		ImmediateActions *string `json:"immediate_actions,omitempty"`
 		WitnessesText    *string `json:"witnesses_text,omitempty"`
 		SubjectOutcome   *string `json:"subject_outcome,omitempty" enum:"no_harm,minor_injury,moderate_injury,hospitalised,deceased,complaint_resolved,unknown"`
+		// 4-mode witness shape — same enum as drug_operations_log +
+		// consent_records. nil/empty means no structured witness
+		// (legacy WitnessesText narrative still applies). 'pending'
+		// implies submit_for_review=true.
+		WitnessKind         *string `json:"witness_kind,omitempty" enum:"staff,pending,external,self"`
+		WitnessID           *string `json:"witness_id,omitempty"`
+		ExternalWitnessName *string `json:"external_witness_name,omitempty" maxLength:"200"`
+		ExternalWitnessRole *string `json:"external_witness_role,omitempty" maxLength:"80"`
+		WitnessAttestation  *string `json:"witness_attestation,omitempty" maxLength:"2000"`
 		// SubmitForReview, when true, queues the row for second sign-off
 		// in the witness queue. Used for high/critical severity, mandatory
 		// reportable incidents, or when the original signer wants verification.
@@ -78,20 +87,31 @@ func (h *Handler) createIncident(ctx context.Context, input *createIncidentBody)
 		return nil, huma.Error400BadRequest("invalid occurred_at (RFC3339)")
 	}
 	in := CreateIncidentInput{
-		ClinicID:         clinicID,
-		StaffID:          staffID,
-		StaffRole:        string(mw.RoleFromContext(ctx)),
-		SubjectID:        subjectID,
-		IncidentType:     input.Body.IncidentType,
-		Severity:         input.Body.Severity,
-		OccurredAt:       occurred,
-		Location:         input.Body.Location,
-		BriefDescription: input.Body.BriefDescription,
-		ImmediateActions: input.Body.ImmediateActions,
-		WitnessesText:    input.Body.WitnessesText,
-		SubjectOutcome:   input.Body.SubjectOutcome,
-		SubmitForReview:  input.Body.SubmitForReview,
-		ReviewNote:       input.Body.ReviewNote,
+		ClinicID:            clinicID,
+		StaffID:             staffID,
+		StaffRole:           string(mw.RoleFromContext(ctx)),
+		SubjectID:           subjectID,
+		IncidentType:        input.Body.IncidentType,
+		Severity:            input.Body.Severity,
+		OccurredAt:          occurred,
+		Location:            input.Body.Location,
+		BriefDescription:    input.Body.BriefDescription,
+		ImmediateActions:    input.Body.ImmediateActions,
+		WitnessesText:       input.Body.WitnessesText,
+		SubjectOutcome:      input.Body.SubjectOutcome,
+		WitnessKind:         input.Body.WitnessKind,
+		ExternalWitnessName: input.Body.ExternalWitnessName,
+		ExternalWitnessRole: input.Body.ExternalWitnessRole,
+		WitnessAttestation:  input.Body.WitnessAttestation,
+		SubmitForReview:     input.Body.SubmitForReview,
+		ReviewNote:          input.Body.ReviewNote,
+	}
+	if input.Body.WitnessID != nil && *input.Body.WitnessID != "" {
+		id, err := uuid.Parse(*input.Body.WitnessID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid witness_id")
+		}
+		in.WitnessID = &id
 	}
 	if input.Body.NoteID != nil && *input.Body.NoteID != "" {
 		id, err := uuid.Parse(*input.Body.NoteID)

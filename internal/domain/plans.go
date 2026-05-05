@@ -77,6 +77,14 @@ type Plan struct {
 	// upgrade-conversation alerts at 80%/110%/150% (pricing v3 §7).
 	// Public marketing says "Unlimited" — never expose this number.
 	NoteCap int
+	// AISeatCap is the maximum number of staff that may have
+	// note_tier=standard (i.e. AI / audio recording / extraction
+	// access). Practice = 3, Pro = 7. Enforced server-side when the
+	// owner promotes a staff member; the UI surfaces the cap and the
+	// upgrade CTA when they hit the ceiling. Marketing positioning
+	// (mel) calls these "AI seats". Distinct from NoteCap, which is
+	// per-month and soft.
+	AISeatCap int
 }
 
 const annualDiscount = 0.83 // 17% off — pricing v3 §8.
@@ -87,67 +95,86 @@ var Plans = map[PlanCode]Plan{
 	PlanPawsPracticeMonthly: {
 		Code: PlanPawsPracticeMonthly, Product: PlanProductPaws,
 		Tier: PlanTierPractice, Cycle: PlanCycleMonthly,
-		Vertical: VerticalVeterinary, PriceUSDCents: 22900, NoteCap: 1500,
+		Vertical: VerticalVeterinary, PriceUSDCents: 22900, NoteCap: 1500, AISeatCap: 3,
 	},
 	PlanPawsPracticeAnnual: {
 		Code: PlanPawsPracticeAnnual, Product: PlanProductPaws,
 		Tier: PlanTierPractice, Cycle: PlanCycleAnnual,
-		Vertical: VerticalVeterinary, PriceUSDCents: 22900, NoteCap: 1500,
+		Vertical: VerticalVeterinary, PriceUSDCents: 22900, NoteCap: 1500, AISeatCap: 3,
 	},
 	PlanPawsProMonthly: {
 		Code: PlanPawsProMonthly, Product: PlanProductPaws,
 		Tier: PlanTierPro, Cycle: PlanCycleMonthly,
-		Vertical: VerticalVeterinary, PriceUSDCents: 49900, NoteCap: 4000,
+		Vertical: VerticalVeterinary, PriceUSDCents: 49900, NoteCap: 4000, AISeatCap: 7,
 	},
 	PlanPawsProAnnual: {
 		Code: PlanPawsProAnnual, Product: PlanProductPaws,
 		Tier: PlanTierPro, Cycle: PlanCycleAnnual,
-		Vertical: VerticalVeterinary, PriceUSDCents: 49900, NoteCap: 4000,
+		Vertical: VerticalVeterinary, PriceUSDCents: 49900, NoteCap: 4000, AISeatCap: 7,
 	},
 
 	// ── Salvia Smile (Dental) ──────────────────────────────────────────────
 	PlanSmilePracticeMonthly: {
 		Code: PlanSmilePracticeMonthly, Product: PlanProductSmile,
 		Tier: PlanTierPractice, Cycle: PlanCycleMonthly,
-		Vertical: VerticalDental, PriceUSDCents: 22900, NoteCap: 1200,
+		Vertical: VerticalDental, PriceUSDCents: 22900, NoteCap: 1200, AISeatCap: 3,
 	},
 	PlanSmilePracticeAnnual: {
 		Code: PlanSmilePracticeAnnual, Product: PlanProductSmile,
 		Tier: PlanTierPractice, Cycle: PlanCycleAnnual,
-		Vertical: VerticalDental, PriceUSDCents: 22900, NoteCap: 1200,
+		Vertical: VerticalDental, PriceUSDCents: 22900, NoteCap: 1200, AISeatCap: 3,
 	},
 	PlanSmileProMonthly: {
 		Code: PlanSmileProMonthly, Product: PlanProductSmile,
 		Tier: PlanTierPro, Cycle: PlanCycleMonthly,
-		Vertical: VerticalDental, PriceUSDCents: 49900, NoteCap: 3000,
+		Vertical: VerticalDental, PriceUSDCents: 49900, NoteCap: 3000, AISeatCap: 7,
 	},
 	PlanSmileProAnnual: {
 		Code: PlanSmileProAnnual, Product: PlanProductSmile,
 		Tier: PlanTierPro, Cycle: PlanCycleAnnual,
-		Vertical: VerticalDental, PriceUSDCents: 49900, NoteCap: 3000,
+		Vertical: VerticalDental, PriceUSDCents: 49900, NoteCap: 3000, AISeatCap: 7,
 	},
 
 	// ── Salvia Clinic (General primary care) ───────────────────────────────
 	PlanClinicPracticeMonthly: {
 		Code: PlanClinicPracticeMonthly, Product: PlanProductClinic,
 		Tier: PlanTierPractice, Cycle: PlanCycleMonthly,
-		Vertical: VerticalGeneralClinic, PriceUSDCents: 24900, NoteCap: 2000,
+		Vertical: VerticalGeneralClinic, PriceUSDCents: 24900, NoteCap: 2000, AISeatCap: 3,
 	},
 	PlanClinicPracticeAnnual: {
 		Code: PlanClinicPracticeAnnual, Product: PlanProductClinic,
 		Tier: PlanTierPractice, Cycle: PlanCycleAnnual,
-		Vertical: VerticalGeneralClinic, PriceUSDCents: 24900, NoteCap: 2000,
+		Vertical: VerticalGeneralClinic, PriceUSDCents: 24900, NoteCap: 2000, AISeatCap: 3,
 	},
 	PlanClinicProMonthly: {
 		Code: PlanClinicProMonthly, Product: PlanProductClinic,
 		Tier: PlanTierPro, Cycle: PlanCycleMonthly,
-		Vertical: VerticalGeneralClinic, PriceUSDCents: 59900, NoteCap: 5000,
+		Vertical: VerticalGeneralClinic, PriceUSDCents: 59900, NoteCap: 5000, AISeatCap: 7,
 	},
 	PlanClinicProAnnual: {
 		Code: PlanClinicProAnnual, Product: PlanProductClinic,
 		Tier: PlanTierPro, Cycle: PlanCycleAnnual,
-		Vertical: VerticalGeneralClinic, PriceUSDCents: 59900, NoteCap: 5000,
+		Vertical: VerticalGeneralClinic, PriceUSDCents: 59900, NoteCap: 5000, AISeatCap: 7,
 	},
+}
+
+// AISeatCapForTier returns the per-tier ceiling on note_tier=standard
+// staff. Mirrors the registry but exposed as a function so callers
+// without a PlanCode (e.g. trial clinics) can still resolve a cap from
+// just the tier band. Defaults to 3 (Practice) for an unrecognised tier
+// — fail closed rather than silently grant unlimited AI seats.
+func AISeatCapForTier(tier PlanTier) int {
+	switch tier {
+	case PlanTierPro:
+		return 7
+	case PlanTierEnterprise:
+		// Enterprise customers negotiate caps in their contract; the
+		// app-level cap is high enough to never bind in practice.
+		// Sales/CS adjusts via direct DB / admin tool when needed.
+		return 999
+	default:
+		return 3
+	}
 }
 
 // PlanFor returns the plan registered for the given code. The bool is

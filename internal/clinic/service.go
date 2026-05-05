@@ -2,6 +2,7 @@ package clinic
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -98,7 +99,12 @@ type ClinicResponse struct {
 	DPAVersion                      *string    `json:"dpa_version,omitempty"`
 	ComplianceOnboardingCompletedAt *time.Time `json:"compliance_onboarding_completed_at,omitempty"`
 	ComplianceOnboardingVersion     *string    `json:"compliance_onboarding_version,omitempty"`
-	CreatedAt                       time.Time  `json:"created_at"`
+	// RegulatoryIDs is the per-jurisdiction identifier blob — keys
+	// like "nzbn", "cqc_location_id", "dea_id" surfaced verbatim. The
+	// FE picks which keys to render based on (vertical, country).
+	// Empty map → field absent from response.
+	RegulatoryIDs map[string]string `json:"regulatory_ids,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
 }
 
 // RegisterInput holds the data required to register a new clinic.
@@ -390,6 +396,33 @@ type TierState struct {
 	StripeSubscriptionID *string
 }
 
+// DashboardState is the slim slice of clinic fields the dashboard
+// service needs to render watchcards (note cap progress, trial
+// countdown, onboarding-incomplete pill). One row read; no
+// decryption — none of the fields here hold PII/PHI.
+type DashboardState struct {
+	NoteCap            *int
+	NoteCount          int
+	TrialEndsAt        time.Time
+	OnboardingComplete bool
+}
+
+// LoadDashboardState fetches the per-clinic dashboard inputs in a
+// single GetByID call. Cross-domain port — never called from HTTP
+// handlers.
+func (s *Service) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (DashboardState, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return DashboardState{}, fmt.Errorf("clinic.service.LoadDashboardState: %w", err)
+	}
+	return DashboardState{
+		NoteCap:            row.NoteCap,
+		NoteCount:          row.NoteCount,
+		TrialEndsAt:        row.TrialEndsAt,
+		OnboardingComplete: row.OnboardingComplete,
+	}, nil
+}
+
 // LoadTierState fetches the slice of clinic fields the tiering module
 // needs to decide whether to swap Stripe subscription items.
 func (s *Service) LoadTierState(ctx context.Context, clinicID uuid.UUID) (TierState, error) {
@@ -456,6 +489,10 @@ type UpdateInput struct {
 	// time. Passing false (or leaving nil) does not clear an existing
 	// acceptance — terms can only be accepted, not unaccepted.
 	AcceptTerms *bool
+	// RegulatoryIDs is the per-jurisdiction identifier map. Pass nil
+	// to leave unchanged; pass an empty map to clear all IDs;
+	// pass a populated map to replace.
+	RegulatoryIDs map[string]string
 }
 
 // Update applies a partial update to the clinic settings.
@@ -477,6 +514,13 @@ func (s *Service) Update(ctx context.Context, clinicID uuid.UUID, in UpdateInput
 	if in.AcceptTerms != nil && *in.AcceptTerms {
 		now := domain.TimeNow()
 		p.TermsAcceptedAt = &now
+	}
+	if in.RegulatoryIDs != nil {
+		raw, err := json.Marshal(in.RegulatoryIDs)
+		if err != nil {
+			return nil, fmt.Errorf("clinic.service.Update: marshal regulatory_ids: %w", err)
+		}
+		p.RegulatoryIDs = raw
 	}
 
 	if in.Phone != nil {
@@ -643,6 +687,26 @@ func (s *Service) decryptAndBuild(ctx context.Context, row *Clinic) (*ClinicResp
 	return dto, nil
 }
 
+// decodeRegulatoryIDs unmarshals the JSONB blob into a string→string
+// map, returning nil when the column is empty so the response omits
+// the JSON key entirely.
+func decodeRegulatoryIDs(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out map[string]string
+	if err := json.Unmarshal(raw, &out); err != nil {
+		// A bad blob in the DB should never happen — service-side
+		// validates on every write. Surface as nil so the response
+		// stays well-formed; the operator can fix the row manually.
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *ClinicResponse {
 	return &ClinicResponse{
 		ID:                 row.ID.String(),
@@ -683,6 +747,7 @@ func (s *Service) toDTO(row *Clinic, email string, phone, address *string) *Clin
 		DPAVersion:                      row.DPAVersion,
 		ComplianceOnboardingCompletedAt: row.ComplianceOnboardingCompletedAt,
 		ComplianceOnboardingVersion:     row.ComplianceOnboardingVersion,
+		RegulatoryIDs:                   decodeRegulatoryIDs(row.RegulatoryIDs),
 		CreatedAt:                       row.CreatedAt,
 	}
 }

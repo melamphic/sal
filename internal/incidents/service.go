@@ -62,6 +62,11 @@ type IncidentResponse struct {
 	Status                   string                       `json:"status"`
 	CreatedAt                string                       `json:"created_at"`
 	UpdatedAt                string                       `json:"updated_at"`
+	WitnessID                *string                      `json:"witness_id,omitempty"`
+	WitnessKind              *string                      `json:"witness_kind,omitempty"`
+	ExternalWitnessName      *string                      `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole      *string                      `json:"external_witness_role,omitempty"`
+	WitnessAttestation       *string                      `json:"witness_attestation,omitempty"`
 	Witnesses                []string                     `json:"witnesses,omitempty"`
 	Addendums                []*IncidentAddendumResponse  `json:"addendums,omitempty"`
 }
@@ -99,6 +104,15 @@ type CreateIncidentInput struct {
 	ImmediateActions *string
 	WitnessesText    *string
 	SubjectOutcome   *string
+
+	// 4-mode witness shape mirroring drug_operations_log + consent.
+	// nil/empty kind treated as "not required" for routine incidents;
+	// 'pending' implies SubmitForReview.
+	WitnessKind         *string
+	WitnessID           *uuid.UUID
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
 
 	// SubmitForReview, when true, queues the row for second-pair-of-
 	// eyes review via the approvals service after the incident lands.
@@ -205,6 +219,50 @@ func (s *Service) CreateIncident(ctx context.Context, in CreateIncidentInput) (*
 		return nil, fmt.Errorf("incidents.service.CreateIncident: occurred_at required: %w", domain.ErrValidation)
 	}
 
+	// 4-mode witness validation. Witness is optional for incidents in
+	// general (the legacy WitnessesText narrative carries the audit
+	// signal for routine logs); but when the caller does ask for a
+	// structured witness, the rules are the same as drugs/consent.
+	witnessKind := ""
+	if in.WitnessKind != nil {
+		witnessKind = strings.TrimSpace(*in.WitnessKind)
+	}
+	if witnessKind != "" {
+		switch witnessKind {
+		case "staff":
+			if in.WitnessID == nil {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: witness_id required for staff witness: %w", domain.ErrValidation)
+			}
+			if *in.WitnessID == in.StaffID {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: witness must differ from reporting staff: %w", domain.ErrValidation)
+			}
+		case "pending":
+			if s.approvals == nil {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: async approvals not configured: %w", domain.ErrValidation)
+			}
+			in.SubmitForReview = true
+		case "external":
+			if in.ExternalWitnessName == nil || strings.TrimSpace(*in.ExternalWitnessName) == "" {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: external witness name required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 10 {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: external witness attestation too short: %w", domain.ErrValidation)
+			}
+		case "self":
+			// Self-witness on a critical-severity incident isn't
+			// regulator-acceptable. The classifier already gates SIRS
+			// notification but the witness rail is independent.
+			if in.Severity == "critical" {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: self-witness not permitted for critical incidents: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 30 {
+				return nil, fmt.Errorf("incidents.service.CreateIncident: self-witness attestation too short (min 30 chars): %w", domain.ErrValidation)
+			}
+		default:
+			return nil, fmt.Errorf("incidents.service.CreateIncident: unknown witness_kind %q: %w", witnessKind, domain.ErrValidation)
+		}
+	}
+
 	vertical, country, err := s.clinics.GetVerticalAndCountry(ctx, in.ClinicID)
 	if err != nil {
 		return nil, fmt.Errorf("incidents.service.CreateIncident: clinic lookup: %w", err)
@@ -219,6 +277,11 @@ func (s *Service) CreateIncident(ctx context.Context, in CreateIncidentInput) (*
 		OccurredAt:     in.OccurredAt,
 	})
 
+	var witnessKindParam *string
+	if witnessKind != "" {
+		k := witnessKind
+		witnessKindParam = &k
+	}
 	params := CreateIncidentParams{
 		ID:                   domain.NewID(),
 		ClinicID:             in.ClinicID,
@@ -236,6 +299,11 @@ func (s *Service) CreateIncident(ctx context.Context, in CreateIncidentInput) (*
 		ReportedBy:           in.StaffID,
 		CQCNotifiable:        classification.CQCNotifiable,
 		NotificationDeadline: classification.NotificationDeadline,
+		WitnessID:            in.WitnessID,
+		WitnessKind:          witnessKindParam,
+		ExternalWitnessName:  trimNonEmpty(in.ExternalWitnessName),
+		ExternalWitnessRole:  trimNonEmpty(in.ExternalWitnessRole),
+		WitnessAttestation:   trimNonEmpty(in.WitnessAttestation),
 	}
 	if classification.SIRSPriority != "" {
 		v := classification.SIRSPriority
@@ -571,6 +639,14 @@ func recordToResponse(r *IncidentRecord, witnesses []string, addendums []*Incide
 		s := r.CarePlanUpdatedAt.Format(time.RFC3339)
 		out.CarePlanUpdatedAt = &s
 	}
+	if r.WitnessID != nil {
+		s := r.WitnessID.String()
+		out.WitnessID = &s
+	}
+	out.WitnessKind = r.WitnessKind
+	out.ExternalWitnessName = r.ExternalWitnessName
+	out.ExternalWitnessRole = r.ExternalWitnessRole
+	out.WitnessAttestation = r.WitnessAttestation
 	return out
 }
 
@@ -609,4 +685,19 @@ func derefOr(p *string, fallback string) string {
 		return fallback
 	}
 	return *p
+}
+
+// trimNonEmpty returns nil for nil or whitespace-only strings; the
+// trimmed value otherwise. Mirrors the helper of the same name in
+// drugs/consent — keeps optional witness fields out of the DB when
+// callers send empty strings instead of nil.
+func trimNonEmpty(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
 }

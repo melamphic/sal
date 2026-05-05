@@ -1,0 +1,310 @@
+/* Salvia doc-theme — generated CSS keyed by clinic config.
+ * Produced by pdf.buildThemeCSS at render time. The variables defined
+ * here are consumed by every report template + the shared layout chrome.
+ * Override any of them by setting the matching field in DocTheme.
+ */
+:root {
+  --salvia-primary:        {{ .PrimaryColor }};
+  --salvia-primary-soft:   {{ .PrimarySoft }};
+  --salvia-secondary:      {{ .SecondaryColor }};
+  --salvia-accent:         {{ .AccentColor }};
+  --salvia-text:           {{ .TextColor }};
+  --salvia-text-emphasis:  {{ .TextEmphasis }};
+  --salvia-muted:          {{ .MutedTextColor }};
+  --salvia-border:         {{ .BorderColor }};
+  --salvia-border-subtle:  {{ .BorderSubtle }};
+  --salvia-surface:        #ffffff;
+  --salvia-surface-muted:  {{ .SurfaceMuted }};
+
+  --salvia-success:        #16a34a;
+  --salvia-success-bg:     #dcfce7;
+  --salvia-warning:        #c2410c;
+  --salvia-warning-bg:     #ffedd5;
+  --salvia-danger:         #b91c1c;
+  --salvia-danger-bg:      #fee2e2;
+  --salvia-info:           #1e6cd1;
+  --salvia-info-bg:        #dbeafe;
+
+  --salvia-heading-font:   {{ .HeadingFont }};
+  --salvia-body-font:      {{ .BodyFont }};
+  --salvia-base-size:      {{ .BaseSize }};
+  --salvia-line-height:    {{ .LineHeight }};
+  --salvia-corner-radius:  {{ .CornerRadius }};
+}
+
+@page {
+  size: {{ .PageSize }} {{ .PageOrientation }};
+  margin: {{ .MarginMm }}mm;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  font-family: var(--salvia-body-font);
+  font-size: var(--salvia-base-size);
+  line-height: var(--salvia-line-height);
+  color: var(--salvia-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--salvia-heading-font);
+  color: var(--salvia-text-emphasis);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+/* Page surface — used by reports that emit explicit <section class="page">. */
+.page {
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - {{ .MarginMm }}mm);
+}
+
+.page:last-of-type { page-break-after: auto; }
+
+.page__body { flex: 1 1 auto; }
+
+/* Header band ----------------------------------------------------- */
+.doc-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: {{ .HeaderPadBottom }};
+  {{- if .HeaderFillCSS }}
+  {{ .HeaderFillCSS }}
+  padding: 14px 16px {{ .HeaderPadBottom }};
+  border-radius: var(--salvia-corner-radius) var(--salvia-corner-radius) 0 0;
+  border-bottom: 0;
+  {{- else }}
+  border-bottom: 2px solid var(--salvia-primary);
+  {{- end }}
+  margin-bottom: 18px;
+}
+{{- if .HeaderTextOnFill }}
+.doc-header .doc-header__clinic-name,
+.doc-header .doc-header__title-text { color: {{ .HeaderTextOnFill }}; }
+.doc-header .doc-header__clinic-meta,
+.doc-header .doc-header__title-eyebrow,
+.doc-header .doc-header__title-meta,
+.doc-header .doc-header__title-extra { color: rgba(255,255,255,0.78); }
+.doc-header .doc-header__logo {
+  background: rgba(255,255,255,0.2);
+  color: {{ .HeaderTextOnFill }};
+}
+{{- end }}
+.doc-header__title-extra {
+  font-size: 8.5pt;
+  letter-spacing: 0.04em;
+  color: var(--salvia-text-emphasis);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.doc-header__brand { display: flex; align-items: center; gap: 12px; }
+.doc-header__logo {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: var(--salvia-primary);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 22px; letter-spacing: -0.04em;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+/* When the clinic has uploaded a logo image, the partial replaces the
+ * initials with an <img>. Constrain it to fit inside the rounded
+ * square; cover keeps logos centered without stretching. */
+.doc-header__logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.doc-header__clinic { display: flex; flex-direction: column; }
+.doc-header__clinic-name {
+  font-size: 14pt; font-weight: 800;
+  color: var(--salvia-text-emphasis);
+  letter-spacing: -0.01em; line-height: 1.1;
+}
+.doc-header__clinic-meta { font-size: 8pt; color: var(--salvia-muted); margin-top: 2px; }
+.doc-header__title { text-align: right; display: flex; flex-direction: column; }
+.doc-header__title-eyebrow {
+  font-size: 7.5pt; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--salvia-muted); font-weight: 700;
+}
+.doc-header__title-text {
+  font-size: 13pt; color: var(--salvia-text-emphasis);
+  font-weight: 800; letter-spacing: -0.01em;
+}
+.doc-header__title-meta { font-size: 8pt; color: var(--salvia-muted); margin-top: 2px; }
+
+/* Footer band ----------------------------------------------------- */
+.doc-footer {
+  margin-top: auto; padding-top: 8px;
+  flex-shrink: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 7.5pt; color: var(--salvia-muted);
+  border-top: 1px solid var(--salvia-border);
+}
+.doc-footer__cell { display: flex; flex-direction: column; gap: 1px; }
+.doc-footer__cell--center { align-items: center; }
+.doc-footer__cell--right  { align-items: flex-end; }
+.doc-footer__strong { color: var(--salvia-text-emphasis); font-weight: 700; }
+.doc-footer__hash {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 6.8pt; letter-spacing: 0.02em;
+}
+
+/* Watermark ------------------------------------------------------- */
+{{- if .WatermarkText }}
+body::before {
+  content: "{{ .WatermarkText }}";
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+  font-size: 130pt; font-weight: 900;
+  letter-spacing: -0.04em;
+  color: rgba(15,23,42,{{ .WatermarkOpacity }});
+  transform: rotate(-22deg);
+  text-transform: uppercase;
+}
+.page > * { position: relative; z-index: 1; }
+{{- end }}
+
+/* Section chrome -------------------------------------------------- */
+.section { margin: 22px 0 8px; }
+.section__eyebrow {
+  font-size: 7.5pt; letter-spacing: 0.16em;
+  text-transform: uppercase; font-weight: 800;
+  color: var(--salvia-muted); margin-bottom: 4px;
+}
+.section__title {
+  font-size: 14pt; font-weight: 800;
+  color: var(--salvia-text-emphasis);
+  letter-spacing: -0.01em; margin: 0 0 10px; line-height: 1.15;
+}
+.section__hint { font-size: 8.5pt; color: var(--salvia-muted); margin: -6px 0 12px; }
+
+.h-divider { border: 0; border-top: 1px solid var(--salvia-border); margin: 14px 0; }
+
+/* Tables ---------------------------------------------------------- */
+.tbl { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 6px 0 12px; }
+.tbl th, .tbl td {
+  text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid var(--salvia-border);
+  vertical-align: top;
+}
+.tbl thead th {
+  background: var(--salvia-primary); color: #fff;
+  font-weight: 700; font-size: 8pt;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  border-bottom: 0;
+}
+.tbl tbody tr:nth-child(even) td { background: var(--salvia-surface-muted); }
+.tbl--zebra-strong tbody tr:nth-child(even) td { background: var(--salvia-primary-soft); }
+.tbl td.num, .tbl th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8.4pt;
+}
+.tbl td.center, .tbl th.center { text-align: center; }
+.tbl tfoot td {
+  background: var(--salvia-surface-muted);
+  font-weight: 700;
+  border-top: 2px solid var(--salvia-text-emphasis);
+  border-bottom: 0;
+}
+
+/* Pills ----------------------------------------------------------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 7.5pt; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.pill--ok      { background: var(--salvia-success-bg); color: var(--salvia-success); }
+.pill--warn    { background: var(--salvia-warning-bg); color: var(--salvia-warning); }
+.pill--danger  { background: var(--salvia-danger-bg);  color: var(--salvia-danger); }
+.pill--info    { background: var(--salvia-info-bg);    color: var(--salvia-info); }
+.pill--muted   {
+  background: var(--salvia-surface-muted);
+  color: var(--salvia-muted);
+  border: 1px solid var(--salvia-border);
+}
+.pill--lg { font-size: 9pt; padding: 4px 10px; }
+
+/* KPI tiles ------------------------------------------------------- */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 6px 0 14px; }
+.kpi-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.kpi-grid--2 { grid-template-columns: repeat(2, 1fr); }
+.kpi {
+  border: 1px solid var(--salvia-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--salvia-surface);
+  display: flex; flex-direction: column;
+}
+.kpi--accent { background: var(--salvia-primary-soft); border-color: rgba(14,124,102,0.25); }
+.kpi--warn   { background: var(--salvia-warning-bg);   border-color: rgba(194,65,12,0.25); }
+.kpi--danger { background: var(--salvia-danger-bg);    border-color: rgba(185,28,28,0.25); }
+.kpi__label { font-size: 7.5pt; letter-spacing: 0.12em; text-transform: uppercase; color: var(--salvia-muted); font-weight: 700; }
+.kpi__value {
+  font-size: 18pt; font-weight: 800;
+  color: var(--salvia-text-emphasis);
+  line-height: 1.1; margin-top: 4px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.kpi__hint { font-size: 7.5pt; color: var(--salvia-muted); margin-top: 2px; }
+
+/* Meta grid ------------------------------------------------------- */
+.meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; margin: 6px 0 14px; }
+.meta-grid--3 { grid-template-columns: repeat(3, 1fr); }
+.meta { display: flex; flex-direction: column; border-bottom: 1px dotted var(--salvia-border); padding: 4px 0; }
+.meta__label { font-size: 7pt; letter-spacing: 0.14em; text-transform: uppercase; color: var(--salvia-muted); font-weight: 700; }
+.meta__value { font-size: 9.5pt; color: var(--salvia-text-emphasis); font-weight: 600; }
+
+/* Callouts -------------------------------------------------------- */
+.callout {
+  border-left: 3px solid var(--salvia-info);
+  background: var(--salvia-info-bg);
+  padding: 10px 12px;
+  border-radius: 0 6px 6px 0;
+  font-size: 8.5pt;
+  margin: 10px 0;
+}
+.callout--warn   { border-left-color: var(--salvia-warning); background: var(--salvia-warning-bg); }
+.callout--danger { border-left-color: var(--salvia-danger);  background: var(--salvia-danger-bg); }
+.callout--ok     { border-left-color: var(--salvia-success); background: var(--salvia-success-bg); }
+.callout__title { font-weight: 800; color: var(--salvia-text-emphasis); font-size: 9pt; margin-bottom: 2px; }
+
+/* Signature box --------------------------------------------------- */
+.signature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+.signature {
+  border: 1px solid var(--salvia-border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--salvia-surface-muted);
+}
+.signature__role { font-size: 7.5pt; letter-spacing: 0.12em; text-transform: uppercase; color: var(--salvia-muted); font-weight: 700; margin-bottom: 6px; }
+.signature__name {
+  font-size: 11pt; font-weight: 700;
+  color: var(--salvia-text-emphasis);
+  border-bottom: 1px solid var(--salvia-text-emphasis);
+  padding-bottom: 4px; margin-bottom: 6px;
+  font-style: italic;
+  font-family: 'Brush Script MT', cursive;
+}
+.signature__meta { font-size: 7.5pt; color: var(--salvia-muted); display: flex; justify-content: space-between; }
+
+/* Print --------------------------------------------------------- */
+@media print {
+  html, body { background: #fff; }
+}

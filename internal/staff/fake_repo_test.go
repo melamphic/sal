@@ -111,6 +111,19 @@ func (f *fakeRepo) UpdatePermissions(_ context.Context, staffID, clinicID uuid.U
 	return s, nil
 }
 
+func (f *fakeRepo) UpdateRegulatoryIdentity(_ context.Context, staffID, clinicID uuid.UUID, authority, regNo *string) (*StaffRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.byID[staffID]
+	if !ok || s.ClinicID != clinicID || s.ArchivedAt != nil {
+		return nil, domain.ErrNotFound
+	}
+	s.RegulatoryAuthority = authority
+	s.RegulatoryRegNo = regNo
+	s.UpdatedAt = time.Now().UTC()
+	return s, nil
+}
+
 func (f *fakeRepo) Deactivate(_ context.Context, staffID, clinicID uuid.UUID) (*StaffRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

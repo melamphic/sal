@@ -2,6 +2,7 @@ package clinic
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -55,6 +56,13 @@ type Clinic struct {
 	Timezone               string // IANA tz (e.g. Pacific/Auckland)
 	BusinessRegNo          *string
 	TermsAcceptedAt        *time.Time
+	// RegulatoryIDs is a JSONB blob keyed by jurisdiction-aware
+	// identifier name (nzbn, cqc_location_id, dea_id, ahpra_practice_id,
+	// vmd_premises_id, …). Always non-NULL ('{}') at column level;
+	// empty map = no IDs configured. Surfaced verbatim to clients —
+	// the FE picks which keys to render based on clinic vertical +
+	// country.
+	RegulatoryIDs json.RawMessage
 	// Compliance onboarding (NZ Privacy Act 2020 / HIPC 2020 / AU Privacy
 	// Act 1988 APPs / AU Voluntary AI Safety Standard 2024). All fields are
 	// nullable — a null timestamp means "not yet attested".
@@ -97,6 +105,10 @@ type UpdateParams struct {
 	Timezone           *string
 	BusinessRegNo      *string
 	TermsAcceptedAt    *time.Time
+	// RegulatoryIDs is a partial JSONB blob — when non-nil it
+	// replaces the column wholesale (the FE always sends the full
+	// post-edit map).
+	RegulatoryIDs json.RawMessage
 }
 
 // Repository handles all database interactions for the clinic module.
@@ -129,6 +141,7 @@ const clinicCols = `
 	dpa_accepted_at, dpa_version,
 	compliance_onboarding_completed_at, compliance_onboarding_version,
 	host(compliance_onboarding_ip)::text, compliance_onboarding_user_id,
+	regulatory_ids,
 	created_at, updated_at, archived_at
 `
 
@@ -261,6 +274,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (
 			timezone            = COALESCE($15, timezone),
 			business_reg_no     = COALESCE($16, business_reg_no),
 			terms_accepted_at   = COALESCE($17, terms_accepted_at),
+			regulatory_ids      = COALESCE($18::jsonb, regulatory_ids),
 			updated_at          = NOW()
 		WHERE id = $1 AND archived_at IS NULL
 		RETURNING `+clinicCols,
@@ -269,6 +283,7 @@ func (r *Repository) Update(ctx context.Context, id uuid.UUID, p UpdateParams) (
 		p.PDFHeaderText, p.PDFFooterText, p.PDFPrimaryColor, p.PDFFont,
 		p.OnboardingStep, p.OnboardingComplete,
 		p.LegalName, p.Country, p.Timezone, p.BusinessRegNo, p.TermsAcceptedAt,
+		p.RegulatoryIDs,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -465,6 +480,7 @@ func (r *Repository) scanOne(ctx context.Context, query string, args ...any) (*C
 		&c.DPAAcceptedAt, &c.DPAVersion,
 		&c.ComplianceOnboardingCompletedAt, &c.ComplianceOnboardingVersion,
 		&c.ComplianceOnboardingIP, &c.ComplianceOnboardingUserID,
+		&c.RegulatoryIDs,
 		&c.CreatedAt, &c.UpdatedAt, &c.ArchivedAt,
 	); err != nil {
 		return nil, fmt.Errorf("clinic.repo.scanOne: %w", err)

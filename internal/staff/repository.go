@@ -28,6 +28,13 @@ type StaffRecord struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	ArchivedAt   *time.Time
+	// Regulatory identity — captured for the "Vet of record" /
+	// "Reviewed by" lines on every signed clinical record + report
+	// PDF. NZ vet: VCNZ; UK GP: GMC; UK nurse: NMC; AU clinician:
+	// AHPRA; US vet: AVMA. Both nullable; populated via the
+	// regulator-IDs settings page (P3-P).
+	RegulatoryAuthority *string
+	RegulatoryRegNo     *string
 }
 
 // CreateParams holds the values needed to insert a new staff row.
@@ -86,7 +93,7 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRecord, 
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
 			perm_marketplace_manage, perm_marketplace_download,
-			status, last_active_at, created_at, updated_at, archived_at
+			status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 	`,
 		p.ID, p.ClinicID, p.Email, p.EmailHash, p.FullName, p.Role, p.NoteTier,
 		p.Perms.ManageStaff, p.Perms.ManageForms, p.Perms.ManagePolicies,
@@ -110,7 +117,7 @@ func (r *Repository) GetByID(ctx context.Context, staffID, clinicID uuid.UUID) (
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
 		       perm_marketplace_manage, perm_marketplace_download,
-		       status, last_active_at, created_at, updated_at, archived_at
+		       status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 		FROM staff
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 	`, staffID, clinicID)
@@ -132,7 +139,7 @@ func (r *Repository) GetByEmailHash(ctx context.Context, emailHash string, clini
 		       perm_manage_billing, perm_rollback_policies, perm_record_audio,
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
-		       status, last_active_at, created_at, updated_at, archived_at
+		       status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 		FROM staff
 		WHERE email_hash = $1 AND clinic_id = $2 AND archived_at IS NULL
 	`, emailHash, clinicID)
@@ -167,7 +174,7 @@ func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams)
 		       perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 		       perm_dispense, perm_generate_audit_export, perm_manage_patients,
 		       perm_marketplace_manage, perm_marketplace_download,
-		       status, last_active_at, created_at, updated_at, archived_at
+		       status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 		FROM staff
 		WHERE clinic_id = $1 AND archived_at IS NULL
 		ORDER BY created_at ASC
@@ -198,6 +205,37 @@ func (r *Repository) List(ctx context.Context, clinicID uuid.UUID, p ListParams)
 	return staff, total, nil
 }
 
+// UpdateRegulatoryIdentity sets (or clears) the regulator authority +
+// registration number for a staff member. Captured via the regulator-IDs
+// settings page; surfaces on every signed clinical record + report PDF.
+//
+// Pass (nil, nil) to clear both — useful when a clinician moves between
+// jurisdictions or steps off the register.
+func (r *Repository) UpdateRegulatoryIdentity(ctx context.Context, staffID, clinicID uuid.UUID, authority, regNo *string) (*StaffRecord, error) {
+	row, err := r.scanOne(ctx, `
+		UPDATE staff SET
+			regulatory_authority = $3,
+			regulatory_reg_no    = $4,
+			updated_at           = NOW()
+		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
+		RETURNING
+			id, clinic_id, email, email_hash, full_name, role, note_tier,
+			perm_manage_staff, perm_manage_forms, perm_manage_policies,
+			perm_manage_billing, perm_rollback_policies, perm_record_audio,
+			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
+			perm_dispense, perm_generate_audit_export, perm_manage_patients,
+			perm_marketplace_manage, perm_marketplace_download,
+			status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
+	`, staffID, clinicID, authority, regNo)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("staff.repo.UpdateRegulatoryIdentity: %w", err)
+	}
+	return row, nil
+}
+
 // UpdatePermissions updates the permission flags for a staff member.
 func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uuid.UUID, p UpdatePermsParams) (*StaffRecord, error) {
 	row, err := r.scanOne(ctx, `
@@ -225,7 +263,7 @@ func (r *Repository) UpdatePermissions(ctx context.Context, staffID, clinicID uu
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
 			perm_marketplace_manage, perm_marketplace_download,
-			status, last_active_at, created_at, updated_at, archived_at
+			status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 	`,
 		staffID, clinicID,
 		p.Perms.ManageStaff, p.Perms.ManageForms, p.Perms.ManagePolicies,
@@ -274,7 +312,7 @@ func (r *Repository) Deactivate(ctx context.Context, staffID, clinicID uuid.UUID
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
 			perm_marketplace_manage, perm_marketplace_download,
-			status, last_active_at, created_at, updated_at, archived_at
+			status, last_active_at, created_at, updated_at, archived_at, regulatory_authority, regulatory_reg_no
 	`, staffID, clinicID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -306,6 +344,7 @@ func scanRow(row pgxRows, s *StaffRecord) error {
 		&s.Perms.Dispense, &s.Perms.GenerateAuditExport, &s.Perms.ManagePatients,
 		&s.Perms.MarketplaceManage, &s.Perms.MarketplaceDownload,
 		&s.Status, &s.LastActiveAt, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
+		&s.RegulatoryAuthority, &s.RegulatoryRegNo,
 	); err != nil {
 		return fmt.Errorf("staff.repo.scanRow: %w", err)
 	}

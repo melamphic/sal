@@ -50,8 +50,16 @@ type IncidentRecord struct {
 	PreventivePlanSummary    *string
 	CarePlanUpdatedAt        *time.Time
 	Status                   string
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	// 4-mode witness shape (00078) — matches drug_operations_log +
+	// consent_records. WitnessID + WitnessKind=staff for sync; nil
+	// for legacy rows.
+	WitnessID           *uuid.UUID
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // IncidentAddendumRecord is one row of incident_addendums.
@@ -84,6 +92,11 @@ type CreateIncidentParams struct {
 	CQCNotifiable        bool
 	CQCNotificationType  *string
 	NotificationDeadline *time.Time
+	WitnessID            *uuid.UUID
+	WitnessKind          *string
+	ExternalWitnessName  *string
+	ExternalWitnessRole  *string
+	WitnessAttestation   *string
 }
 
 type UpdateIncidentParams struct {
@@ -150,6 +163,7 @@ const incidentCols = `id, clinic_id, subject_id, note_id, note_field_id,
 	notification_deadline, escalation_reason, escalated_at, escalated_by,
 	reported_by, reviewed_by, reviewed_at,
 	preventive_plan_summary, care_plan_updated_at, status,
+	witness_id, witness_kind, external_witness_name, external_witness_role, witness_attestation,
 	created_at, updated_at`
 
 // Repository wraps the incidents tables behind hand-written pgx queries.
@@ -172,15 +186,18 @@ func (r *Repository) CreateIncident(ctx context.Context, p CreateIncidentParams)
 			incident_type, severity, occurred_at, location,
 			brief_description, immediate_actions, witnesses_text, subject_outcome,
 			reported_by,
-			sirs_priority, cqc_notifiable, cqc_notification_type, notification_deadline
+			sirs_priority, cqc_notifiable, cqc_notification_type, notification_deadline,
+			witness_id, witness_kind, external_witness_name, external_witness_role, witness_attestation
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+		        $19, $20, $21, $22, $23)
 		RETURNING %s`, incidentCols),
 		p.ID, p.ClinicID, p.SubjectID, p.NoteID, p.NoteFieldID,
 		p.IncidentType, p.Severity, p.OccurredAt, p.Location,
 		p.BriefDescription, p.ImmediateActions, p.WitnessesText, p.SubjectOutcome,
 		p.ReportedBy,
 		p.SIRSPriority, p.CQCNotifiable, p.CQCNotificationType, p.NotificationDeadline,
+		p.WitnessID, p.WitnessKind, p.ExternalWitnessName, p.ExternalWitnessRole, p.WitnessAttestation,
 	)
 	rec, err := scanIncident(row)
 	if err != nil {
@@ -499,6 +516,7 @@ func scanIncident(row scannable) (*IncidentRecord, error) {
 		&i.NotificationDeadline, &i.EscalationReason, &i.EscalatedAt, &i.EscalatedBy,
 		&i.ReportedBy, &i.ReviewedBy, &i.ReviewedAt,
 		&i.PreventivePlanSummary, &i.CarePlanUpdatedAt, &i.Status,
+		&i.WitnessID, &i.WitnessKind, &i.ExternalWitnessName, &i.ExternalWitnessRole, &i.WitnessAttestation,
 		&i.CreatedAt, &i.UpdatedAt,
 	)
 	if err != nil {

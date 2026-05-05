@@ -54,6 +54,12 @@ type PainScoreResponse struct {
 	AssessedBy    string  `json:"assessed_by"`
 	AssessedAt    string  `json:"assessed_at"`
 	CreatedAt     string  `json:"created_at"`
+
+	WitnessID           *string `json:"witness_id,omitempty"`
+	WitnessKind         *string `json:"witness_kind,omitempty"`
+	ExternalWitnessName *string `json:"external_witness_name,omitempty"`
+	ExternalWitnessRole *string `json:"external_witness_role,omitempty"`
+	WitnessAttestation  *string `json:"witness_attestation,omitempty"`
 }
 
 //nolint:revive
@@ -92,6 +98,16 @@ type RecordPainScoreInput struct { //nolint:revive // mirrored to repo
 	Method        string
 	PainScaleUsed string
 	AssessedAt    time.Time
+
+	// 4-mode witness shape — mirrors drugs/consent/incidents. Witness
+	// is optional for routine pain observations; PRN-driven assessments
+	// gating controlled-drug administration carry a regulator-binding
+	// signal and use the same widget/validation everywhere.
+	WitnessID           *uuid.UUID
+	WitnessKind         *string
+	ExternalWitnessName *string
+	ExternalWitnessRole *string
+	WitnessAttestation  *string
 
 	// SubmitForReview queues the pain score for second-rater
 	// verification. Common for PainAD scoring (aged-care non-verbal
@@ -164,18 +180,72 @@ func (s *Service) RecordPainScore(ctx context.Context, in RecordPainScoreInput) 
 		in.Note = &t
 	}
 
+	// 4-mode witness validation. Witness is optional for routine pain
+	// observations — only enforce shape rules when the caller asks for
+	// a structured witness. Mirrors drugs/consent/incidents.
+	witnessKind := ""
+	if in.WitnessKind != nil {
+		witnessKind = strings.TrimSpace(*in.WitnessKind)
+	}
+	if witnessKind != "" {
+		switch witnessKind {
+		case "staff":
+			if in.WitnessID == nil {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: witness_id required for staff witness: %w", domain.ErrValidation)
+			}
+			if *in.WitnessID == in.StaffID {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: witness must differ from assessing staff: %w", domain.ErrValidation)
+			}
+		case "pending":
+			if s.approvals == nil {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: async approvals not configured: %w", domain.ErrValidation)
+			}
+			in.SubmitForReview = true
+		case "external":
+			if in.ExternalWitnessName == nil || strings.TrimSpace(*in.ExternalWitnessName) == "" {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: external witness name required: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 10 {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: external witness attestation too short: %w", domain.ErrValidation)
+			}
+		case "self":
+			// Self-witness on a high-score (≥7) pain assessment isn't
+			// regulator-acceptable — those are exactly the scores that
+			// gate PRN controlled-drug administration.
+			if in.Score >= 7 {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: self-witness not permitted for high-score (≥7) pain assessments: %w", domain.ErrValidation)
+			}
+			if in.WitnessAttestation == nil || len(strings.TrimSpace(*in.WitnessAttestation)) < 30 {
+				return nil, fmt.Errorf("pain.service.RecordPainScore: self-witness attestation too short (min 30 chars): %w", domain.ErrValidation)
+			}
+		default:
+			return nil, fmt.Errorf("pain.service.RecordPainScore: unknown witness_kind %q: %w", witnessKind, domain.ErrValidation)
+		}
+	}
+
+	var witnessKindParam *string
+	if witnessKind != "" {
+		k := witnessKind
+		witnessKindParam = &k
+	}
+
 	rec, err := s.repo.CreatePainScore(ctx, CreatePainScoreParams{
-		ID:            domain.NewID(),
-		ClinicID:      in.ClinicID,
-		SubjectID:     in.SubjectID,
-		NoteID:        in.NoteID,
-		NoteFieldID:   in.NoteFieldID,
-		Score:         in.Score,
-		Note:          in.Note,
-		Method:        in.Method,
-		PainScaleUsed: in.PainScaleUsed,
-		AssessedBy:    in.StaffID,
-		AssessedAt:    in.AssessedAt,
+		ID:                  domain.NewID(),
+		ClinicID:            in.ClinicID,
+		SubjectID:           in.SubjectID,
+		NoteID:              in.NoteID,
+		NoteFieldID:         in.NoteFieldID,
+		Score:               in.Score,
+		Note:                in.Note,
+		Method:              in.Method,
+		PainScaleUsed:       in.PainScaleUsed,
+		AssessedBy:          in.StaffID,
+		AssessedAt:          in.AssessedAt,
+		WitnessID:           in.WitnessID,
+		WitnessKind:         witnessKindParam,
+		ExternalWitnessName: trimNonEmpty(in.ExternalWitnessName),
+		ExternalWitnessRole: trimNonEmpty(in.ExternalWitnessRole),
+		WitnessAttestation:  trimNonEmpty(in.WitnessAttestation),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("pain.service.RecordPainScore: %w", err)
@@ -308,19 +378,42 @@ func validScale(s string) bool {
 
 func recordToResponse(r *PainScoreRecord) *PainScoreResponse {
 	out := &PainScoreResponse{
-		ID:            r.ID.String(),
-		SubjectID:     r.SubjectID.String(),
-		Score:         r.Score,
-		Note:          r.Note,
-		Method:        r.Method,
-		PainScaleUsed: r.PainScaleUsed,
-		AssessedBy:    r.AssessedBy.String(),
-		AssessedAt:    r.AssessedAt.Format(time.RFC3339),
-		CreatedAt:     r.CreatedAt.Format(time.RFC3339),
+		ID:                  r.ID.String(),
+		SubjectID:           r.SubjectID.String(),
+		Score:               r.Score,
+		Note:                r.Note,
+		Method:              r.Method,
+		PainScaleUsed:       r.PainScaleUsed,
+		AssessedBy:          r.AssessedBy.String(),
+		AssessedAt:          r.AssessedAt.Format(time.RFC3339),
+		CreatedAt:           r.CreatedAt.Format(time.RFC3339),
+		WitnessKind:         r.WitnessKind,
+		ExternalWitnessName: r.ExternalWitnessName,
+		ExternalWitnessRole: r.ExternalWitnessRole,
+		WitnessAttestation:  r.WitnessAttestation,
 	}
 	if r.NoteID != nil {
 		s := r.NoteID.String()
 		out.NoteID = &s
 	}
+	if r.WitnessID != nil {
+		s := r.WitnessID.String()
+		out.WitnessID = &s
+	}
 	return out
+}
+
+// trimNonEmpty returns nil for nil or whitespace-only strings; the
+// trimmed value otherwise. Mirrors the helper of the same name in
+// drugs/consent/incidents — keeps optional witness fields out of the
+// DB when callers send empty strings instead of nil.
+func trimNonEmpty(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	t := strings.TrimSpace(*s)
+	if t == "" {
+		return nil
+	}
+	return &t
 }

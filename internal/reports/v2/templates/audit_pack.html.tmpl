@@ -1,0 +1,197 @@
+<!-- ===== Page 1 — Cover + Bundle index ============================ -->
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Audit Pack"
+      (printf "Note %s" .NoteIDShort)
+      (printf "Generated %s" .GeneratedOn) }}
+
+  <div class="section">
+    <span class="section__eyebrow">Compliance Artifact</span>
+    <h1 class="section__title">Audit Pack — Single Note Bundle</h1>
+    <p class="section__hint">
+      One file contains everything an auditor, insurer, or regulator needs to
+      verify this clinical record: the signed note PDF, the original
+      recording, the full transcript with per-word confidence, the AI
+      extraction trace, the edit/version history, and the policy
+      satisfaction report. Every artifact is content-hashed and the bundle
+      hash is shown in the footer.
+    </p>
+  </div>
+
+  <div class="meta-grid meta-grid--3">
+    <div class="meta"><span class="meta__label">Patient</span><span class="meta__value">{{ .Patient }}</span></div>
+    <div class="meta"><span class="meta__label">Species / Breed</span><span class="meta__value">{{ .PatientMeta }}</span></div>
+    <div class="meta"><span class="meta__label">Owner</span><span class="meta__value">{{ .Owner }}</span></div>
+    <div class="meta"><span class="meta__label">Encounter Date</span><span class="meta__value">{{ .EncounterDate }}</span></div>
+    <div class="meta"><span class="meta__label">Form</span><span class="meta__value">{{ .FormName }}</span></div>
+    <div class="meta"><span class="meta__label">Vet of Record</span><span class="meta__value">{{ .VetOfRecord }}</span></div>
+  </div>
+
+  <div class="section">
+    <span class="section__eyebrow">Bundle Contents</span>
+    <h2 class="section__title">{{ len .Artifacts }} Artifacts</h2>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width: 40%">Artifact</th>
+        <th>What it proves</th>
+        <th class="num">Hash (SHA-256, first 12)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .Artifacts }}
+      <tr>
+        <td><strong>{{ .Idx }}.</strong> {{ .Title }}</td>
+        <td>{{ .What }}</td>
+        <td class="num">{{ .HashShort }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  <div class="callout callout--ok">
+    <div class="callout__title">Defensible chain-of-custody</div>
+    Every artifact in this bundle is bound to a content hash. Tampering
+    with any byte invalidates the bundle hash printed in the footer of
+    every page. The signed note PDF includes a QR code linking back to
+    this bundle for verification.
+  </div>
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s" .NoteIDShort)
+      "Cover"
+      (printf "Generated %s" .GeneratedOn) }}
+</section>
+
+<!-- ===== Page 2 — Signed Clinical Note ============================ -->
+{{- if .SignedNoteBody }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      (printf "Section 1 of %d" (len .Artifacts))
+      "Signed Clinical Note"
+      "Embedded verbatim" }}
+
+  {{ safeHTML .SignedNoteBody }}
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s · Patient %s" .NoteIDShort .Patient)
+      "Section 1"
+      (printf "Generated %s" .GeneratedOn) }}
+</section>
+{{- end }}
+
+<!-- ===== Evidence Trace =========================================== -->
+{{- if .Evidence }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Section 4"
+      "Evidence Trace"
+      "Field → Transcript Source" }}
+
+  <p class="section__hint">
+    Every extracted field below is linked to the audio segment + transcript
+    line it was derived from.
+  </p>
+
+  <div class="kpi-grid">
+    <div class="kpi"><span class="kpi__label">Fields</span><span class="kpi__value">{{ .EvidenceFieldsCount }}</span></div>
+    <div class="kpi kpi--accent"><span class="kpi__label">Mean confidence</span><span class="kpi__value">{{ printf "%.2f" .EvidenceConfMean }}</span></div>
+    <div class="kpi"><span class="kpi__label">Audio length</span><span class="kpi__value">{{ .AudioLength }}</span></div>
+    <div class="kpi"><span class="kpi__label">Tokens</span><span class="kpi__value">{{ .AudioTokens }}</span></div>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width: 22%">Field</th>
+        <th>Extracted Value</th>
+        <th>Source line (audio @ MM:SS)</th>
+        <th class="num">Conf.</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .Evidence }}
+      <tr>
+        <td>{{ .Field }}</td>
+        <td>{{ .Value }}</td>
+        <td>{{ safeHTML .Source }}</td>
+        <td class="num">{{ .Confidence }}</td>
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s · Evidence Trace" .NoteIDShort)
+      "Section 4"
+      (printf "Generated %s" .GeneratedOn) }}
+</section>
+{{- end }}
+
+<!-- ===== Edit history + Policy ===================================== -->
+{{- if or .EditHistory .PolicyClauses }}
+<section class="page">
+  {{ template "doc-header" headerInfo
+      "Sections 5 + 7"
+      "Edit History · Policy Check"
+      "Sign-off chain" }}
+
+  {{- if .EditHistory }}
+  <div class="section">
+    <span class="section__eyebrow">Section 5</span>
+    <h2 class="section__title">Edit History</h2>
+  </div>
+
+  <ul style="list-style: none; padding: 0; margin: 0;">
+    {{- range .EditHistory }}
+    <li style="display: grid; grid-template-columns: 80px 14px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--salvia-border);">
+      <span style="font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 7.5pt; color: var(--salvia-muted);">{{ .WhenPretty }}</span>
+      <span style="width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: {{ if eq .Tone "warn" }}var(--salvia-warning){{ else if eq .Tone "ok" }}var(--salvia-success){{ else }}var(--salvia-primary){{ end }};"></span>
+      <span style="font-size: 8.5pt;">{{ safeHTML .Body }}</span>
+    </li>
+    {{- end }}
+  </ul>
+  {{- end }}
+
+  {{- if .PolicyClauses }}
+  <hr class="h-divider">
+
+  <div class="section">
+    <span class="section__eyebrow">Section 7</span>
+    <h2 class="section__title">Policy Satisfaction Report</h2>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width: 36%">Policy · Clause</th>
+        <th>Requirement</th>
+        <th class="center" style="width: 80px">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{- range .PolicyClauses }}
+      <tr>
+        <td><strong>{{ .Policy }}</strong> · {{ .Clause }}</td>
+        <td>{{ .Requirement }}</td>
+        <td class="center"><span class="pill pill--{{ .StatusTone }}">{{ .Status }}</span></td>
+      </tr>
+      {{- end }}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2" class="num">Overall policy alignment</td>
+        <td class="center"><span class="pill pill--ok pill--lg">{{ .PolicyAlignmentPct }}%</span></td>
+      </tr>
+    </tfoot>
+  </table>
+  {{- end }}
+
+  {{ template "doc-footer" footerInfo
+      (printf "Audit Pack · Note %s" .NoteIDShort)
+      "Sections 5 + 7"
+      (printf "Generated %s" .GeneratedOn) }}
+</section>
+{{- end }}

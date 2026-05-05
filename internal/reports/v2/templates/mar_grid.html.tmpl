@@ -1,0 +1,145 @@
+<style>
+  /* MAR-specific overrides — landscape A4, tight grid. */
+  .mar-grid { width: 100%; border-collapse: collapse; font-size: 7.5pt; table-layout: fixed; }
+  .mar-grid th, .mar-grid td {
+    border: 1px solid var(--salvia-border);
+    padding: 3px; text-align: center; vertical-align: middle; height: 22px;
+  }
+  .mar-grid thead th {
+    background: var(--salvia-primary); color: #fff;
+    font-size: 7pt; letter-spacing: 0.04em; font-weight: 700; text-transform: uppercase;
+  }
+  .mar-grid thead .day-of-week {
+    background: var(--salvia-primary-soft); color: var(--salvia-primary);
+    font-size: 6pt; font-weight: 700; letter-spacing: 0.06em;
+  }
+  .mar-grid .drug-cell {
+    text-align: left; padding: 6px 8px; width: 180px;
+    background: var(--salvia-surface);
+  }
+  .mar-grid .drug-cell strong { display: block; color: var(--salvia-text-emphasis); font-size: 8pt; line-height: 1.1; }
+  .mar-grid .drug-cell em { font-style: normal; color: var(--salvia-muted); font-size: 7pt; }
+  .mar-grid .time-cell {
+    width: 38px; text-align: center;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 6.5pt; color: var(--salvia-muted);
+    background: var(--salvia-surface-muted);
+  }
+  .mar-grid td.day {
+    width: 23px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 7.5pt; font-weight: 700;
+  }
+  .mar-grid td.given        { color: var(--salvia-success);  background: rgba(22,163,74,0.05); }
+  .mar-grid td.refused      { color: var(--salvia-warning);  background: rgba(194,65,12,0.10); font-weight: 700; }
+  .mar-grid td.omit-clinical{ color: var(--salvia-muted);    background: rgba(15,23,42,0.04); }
+  .mar-grid td.missed       { background: var(--salvia-danger); color: #fff; font-weight: 700; }
+  .mar-grid td.held         { color: var(--salvia-info);    background: rgba(30,108,209,0.08); font-weight: 700; }
+  .mar-grid .weekend        { background: rgba(15,23,42,0.03); }
+
+  .mar-legend { display: flex; gap: 14px; margin: 10px 0 12px; font-size: 8pt; color: var(--salvia-muted); flex-wrap: wrap; }
+  .mar-legend__item { display: inline-flex; align-items: center; gap: 4px; }
+  .mar-legend__swatch {
+    display: inline-block; width: 18px; height: 14px;
+    border: 1px solid var(--salvia-border);
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 7pt; font-weight: 700; line-height: 14px;
+  }
+</style>
+
+<section>
+  {{ template "doc-header" headerInfo
+      "Medication Administration Record"
+      (printf "%s · %s" .ResidentName .PeriodLabel)
+      (printf "%s · %s" .Room .ResidentMeta) }}
+
+  <div class="meta-grid meta-grid--3">
+    <div class="meta"><span class="meta__label">Resident</span><span class="meta__value">{{ .ResidentName }} {{ .ResidentMeta }}</span></div>
+    <div class="meta"><span class="meta__label">NHS no.</span><span class="meta__value">{{ .NHSNumber }}</span></div>
+    <div class="meta"><span class="meta__label">GP</span><span class="meta__value">{{ .GP }}</span></div>
+    <div class="meta"><span class="meta__label">Allergies</span><span class="meta__value">{{ .Allergies }}</span></div>
+    <div class="meta"><span class="meta__label">Care plan reviewed</span><span class="meta__value">{{ .CarePlanRev }}</span></div>
+    <div class="meta"><span class="meta__label">Pharmacy</span><span class="meta__value">{{ .Pharmacy }}</span></div>
+  </div>
+
+  <div class="mar-legend">
+    <span class="mar-legend__item"><span class="mar-legend__swatch given">SO</span> Given (initials)</span>
+    <span class="mar-legend__item"><span class="mar-legend__swatch refused">R</span> Refused</span>
+    <span class="mar-legend__item"><span class="mar-legend__swatch omit-clinical">C</span> Clinical hold</span>
+    <span class="mar-legend__item"><span class="mar-legend__swatch missed">M</span> Missed dose</span>
+    <span class="mar-legend__item"><span class="mar-legend__swatch held">H</span> On hold (hospital)</span>
+    <span class="mar-legend__item"><span class="mar-legend__swatch">·</span> Not scheduled</span>
+  </div>
+
+  <table class="mar-grid">
+    <thead>
+      <tr>
+        <th class="drug-cell" rowspan="2" style="vertical-align: bottom; text-align: left;">Drug · Dose · Route</th>
+        <th class="time-cell" rowspan="2" style="vertical-align: bottom;">Time</th>
+        <th colspan="{{ len .Days }}">{{ .PeriodLabel }}</th>
+      </tr>
+      <tr>
+        {{- range .DOWLabels }}<th class="day-of-week">{{ . }}</th>{{ end }}
+      </tr>
+      <tr>
+        <th class="drug-cell"></th>
+        <th class="time-cell"></th>
+        {{- range $i, $d := .Days }}
+          <th class="day{{ if index $.IsWeekend $i }} weekend{{ end }}">{{ $d }}</th>
+        {{- end }}
+      </tr>
+    </thead>
+    <tbody>
+      {{- range $rx := .Prescriptions }}
+      <tr>
+        <td class="drug-cell">
+          {{ safeHTML $rx.DrugLine }}
+          {{- if $rx.IsCD }}<br><span class="pill pill--danger" style="margin-top: 2px;">SCHEDULE 5 CD · WITNESS</span>{{ end }}
+          {{- if $rx.IsFallsRisk }}<br><span class="pill pill--warn" style="margin-top: 2px;">⚠ FALLS RISK</span>{{ end }}
+        </td>
+        <td class="time-cell">{{ $rx.Time }}</td>
+        {{- if $rx.StartsLate }}
+          <td colspan="{{ $rx.StartsAtCol }}" style="background: rgba(15,23,42,0.05); color: var(--salvia-muted); font-style: italic; font-size: 6.5pt;">
+            Not yet prescribed
+          </td>
+          {{- range $i, $cell := $rx.Cells }}
+            {{- if ge $i $rx.StartsAtCol }}
+              <td class="{{ $cell.OutcomeCode }}{{ if $cell.Weekend }} weekend{{ end }}">{{ $cell.Initials }}</td>
+            {{- end }}
+          {{- end }}
+        {{- else }}
+          {{- range $cell := $rx.Cells }}
+            <td class="{{ $cell.OutcomeCode }}{{ if $cell.Weekend }} weekend{{ end }}">{{ if $cell.Initials }}{{ $cell.Initials }}{{ else if eq $cell.OutcomeCode "" }}·{{ end }}</td>
+          {{- end }}
+        {{- end }}
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+
+  {{- if .Notes }}
+  <div class="callout callout--warn" style="margin-top: 12px;">
+    <div class="callout__title">Notable events this period</div>
+    {{ safeHTML .Notes }}
+  </div>
+  {{- end }}
+
+  <div class="signature-grid" style="margin-top: 14px;">
+    <div class="signature">
+      <div class="signature__role">Initials key — staff signing this MAR</div>
+      <div class="signature__name" style="font-style: normal; font-family: inherit; font-size: 9pt;">{{ .StaffInitialsKey }}</div>
+      <div class="signature__meta"><span></span><span>—</span></div>
+    </div>
+    <div class="signature">
+      <div class="signature__role">Monthly review &amp; sign-off</div>
+      <div class="signature__name">{{ .ReviewedBy }}</div>
+      <div class="signature__meta"><span></span><span></span></div>
+    </div>
+  </div>
+
+  {{ template "doc-footer" footerInfo
+      (printf "MAR · %s · %s" .ResidentName .PeriodLabel)
+      "Page 1 of 1"
+      "Per CQC Reg 12 / NICE NG67" }}
+</section>

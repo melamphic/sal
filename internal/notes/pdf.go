@@ -66,6 +66,12 @@ type PDFInput struct {
 	ClinicAddress *string
 	ClinicPhone   *string
 	ClinicEmail   *string
+	// ClinicLogoURL is a fully-qualified GET URL for the clinic's
+	// uploaded logo image (resolved by the caller from
+	// theme.header.logo_key via the doc-theme storage signer). When
+	// non-empty the renderer stamps the image inside the brand mark;
+	// otherwise the brand mark falls back to derived initials.
+	ClinicLogoURL *string
 	FormName      string
 	FormVersion   string
 	Fields        []PDFField

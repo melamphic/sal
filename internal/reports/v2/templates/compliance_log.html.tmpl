@@ -1,0 +1,98 @@
+<!-- ===== Cover ====================================================== -->
+<section class="page">
+  {{ template "doc-header" headerInfo
+      .ReportTitle
+      .PeriodStr
+      (printf "Generated %s" .GeneratedStr) }}
+
+  <div class="section">
+    {{- if .Eyebrow }}
+    <span class="section__eyebrow">{{ .Eyebrow }}</span>
+    {{- end }}
+    <h1 class="section__title">{{ .ReportTitle }}</h1>
+    {{- if .Description }}
+    <p class="section__hint">{{ .Description }}</p>
+    {{- end }}
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi kpi--accent">
+      <span class="kpi__label">Reporting Period</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .PeriodStr }}</span>
+      <span class="kpi__hint">Inclusive</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">Vertical</span>
+      <span class="kpi__value" style="font-size: 12pt; text-transform: capitalize;">
+        {{ .Vertical }}
+      </span>
+      <span class="kpi__hint">{{ .Country }}</span>
+    </div>
+    {{- if .Regulator }}
+    <div class="kpi">
+      <span class="kpi__label">Regulator</span>
+      <span class="kpi__value" style="font-size: 12pt;">{{ .Regulator }}</span>
+      <span class="kpi__hint">Inspector context</span>
+    </div>
+    {{- end }}
+    <div class="kpi">
+      <span class="kpi__label">Sections</span>
+      <span class="kpi__value">{{ len .Sections }}</span>
+      <span class="kpi__hint">Total in report</span>
+    </div>
+  </div>
+
+  {{- range $i, $sec := .Sections }}
+  <div class="section">
+    <span class="section__eyebrow">Section {{ add $i 1 }}</span>
+    <h2 class="section__title">{{ $sec.Title }}</h2>
+    {{- if $sec.Hint }}
+    <p class="section__hint">{{ $sec.Hint }}</p>
+    {{- end }}
+  </div>
+
+  {{- if $sec.Rows }}
+  <table class="tbl">
+    <thead>
+      <tr>
+        {{- range $sec.Columns }}
+        <th
+          {{- if .Width }} style="width: {{ .Width }}"{{ end }}
+          {{- if eq .Align "right" }} class="num"{{ end }}
+          {{- if eq .Align "center" }} class="center"{{ end }}>
+          {{- .Label -}}
+        </th>
+        {{- end }}
+      </tr>
+    </thead>
+    <tbody>
+      {{- range $sec.Rows }}
+      <tr>
+        {{- range $i, $cell := .Cells }}
+        <td
+          {{- $col := index $sec.Columns $i }}
+          {{- if eq $col.Align "right" }} class="num"{{ end }}
+          {{- if eq $col.Align "center" }} class="center"{{ end }}>
+          {{- if $cell.Pill -}}
+          <span class="pill pill--{{ $cell.Pill }}">{{ $cell.Value }}</span>
+          {{- else -}}
+          {{ $cell.Value }}
+          {{- end -}}
+        </td>
+        {{- end }}
+      </tr>
+      {{- end }}
+    </tbody>
+  </table>
+  {{- else }}
+  <p style="font-size: 9pt; color: var(--salvia-muted); font-style: italic; padding: 8px 0;">
+    {{ if $sec.EmptyMsg }}{{ $sec.EmptyMsg }}{{ else }}No rows in period.{{ end }}
+  </p>
+  {{- end }}
+  {{- end }}
+
+  {{ template "doc-footer" footerInfo
+      (printf "%s · %s" .ReportTitle .PeriodStr)
+      "Page 1"
+      "Regulator-ready evidence" }}
+</section>

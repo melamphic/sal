@@ -55,12 +55,29 @@ type updatePermsInput struct {
 	}
 }
 
+// updateRegulatoryInput drives PATCH /staff/{staff_id}/regulatory-id.
+// Both fields are nullable — passing nil clears the column.
+type updateRegulatoryInput struct {
+	StaffID string `path:"staff_id" doc:"The staff member's UUID."`
+	Body    struct {
+		RegulatoryAuthority *string `json:"regulatory_authority,omitempty" maxLength:"40" doc:"Authority code: VCNZ | NMC | GMC | AHPRA | AVMA | RCVS | …"`
+		RegulatoryRegNo     *string `json:"regulatory_reg_no,omitempty"     maxLength:"60" doc:"Registration / membership identifier issued by the authority."`
+	}
+}
+
 type staffResponse struct {
 	Body *StaffResponse
 }
 
 type staffListResponse struct {
 	Body *StaffListResponse
+}
+
+// staffSeatUsageResponse wraps AISeatUsage for the GET /staff/seats
+// endpoint. Public so other packages (dashboard) can consume the same
+// JSON shape via a typed Go client if needed.
+type staffSeatUsageResponse struct {
+	Body *AISeatUsage
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -163,6 +180,35 @@ func (h *Handler) updatePermissions(ctx context.Context, input *updatePermsInput
 	return &staffResponse{Body: dto}, nil
 }
 
+// updateRegulatoryIdentity handles PATCH /api/v1/staff/{staff_id}/regulatory-id.
+// Sets (or clears) the regulator authority + reg-no on the staff
+// member — surfaces on every signed clinical record + report PDF that
+// cites this staff as the clinician of record.
+func (h *Handler) updateRegulatoryIdentity(ctx context.Context, input *updateRegulatoryInput) (*staffResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID, err := uuid.Parse(input.StaffID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid staff_id")
+	}
+	dto, err := h.svc.UpdateRegulatoryIdentity(ctx, staffID, clinicID, input.Body.RegulatoryAuthority, input.Body.RegulatoryRegNo)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
+	return &staffResponse{Body: dto}, nil
+}
+
+// seatUsage handles GET /api/v1/staff/seats — returns the AI-seat
+// counter for the current clinic. Cheap (1 SQL + 1 plan-registry
+// lookup); safe to call on every dashboard refresh.
+func (h *Handler) seatUsage(ctx context.Context, _ *struct{}) (*staffSeatUsageResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	usage, err := h.svc.GetAISeatUsage(ctx, clinicID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal server error")
+	}
+	return &staffSeatUsageResponse{Body: &usage}, nil
+}
+
 // deactivate handles DELETE /api/v1/staff/{staff_id}.
 func (h *Handler) deactivate(ctx context.Context, input *staffIDInput) (*staffResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
@@ -210,6 +256,11 @@ func mapStaffError(err error) error {
 		return huma.Error409Conflict("a staff member with this email already exists in this clinic")
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
+	case errors.Is(err, domain.ErrAISeatCapReached):
+		// 402 Payment Required — semantically "your plan is in the way";
+		// the UI surfaces an upgrade CTA instead of a generic validation
+		// error.
+		return huma.NewError(402, "ai seat cap reached — upgrade your plan to add more recording seats")
 	default:
 		return huma.Error500InternalServerError("internal server error")
 	}

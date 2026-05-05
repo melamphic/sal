@@ -33,6 +33,7 @@ import (
 	"github.com/melamphic/sal/internal/drugs"
 	drugscatalog "github.com/melamphic/sal/internal/drugs/catalog"
 	"github.com/melamphic/sal/internal/consent"
+	"github.com/melamphic/sal/internal/dashboard"
 	"github.com/melamphic/sal/internal/incidents"
 	"github.com/melamphic/sal/internal/pain"
 	"github.com/melamphic/sal/internal/billing"
@@ -51,8 +52,10 @@ import (
 	"github.com/melamphic/sal/internal/platform/logger"
 	"github.com/melamphic/sal/internal/platform/mailer"
 	mw "github.com/melamphic/sal/internal/platform/middleware"
+	"github.com/melamphic/sal/internal/platform/pdf"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/policy"
+	reportsv2 "github.com/melamphic/sal/internal/reports/v2"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
 	"github.com/melamphic/sal/internal/tiering"
@@ -143,6 +146,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicNameAdapter := &clinicNameProviderAdapter{clinic: clinicSvc}
 	staffRepo := staff.NewRepository(db)
 	staffSvc := staff.NewService(staffRepo, cipher, m, cfg.AppURL, inviteAdapter, clinicNameAdapter)
+	// Pricing model B (per-seat AI gating): staff.Service rejects new
+	// note_tier=standard seats once the clinic's plan-derived AI cap
+	// is reached. Resolver reads clinic.plan_code → domain.Plans
+	// registry. Always wired, regardless of Stripe availability —
+	// trial clinics fall back to the Practice cap (3).
+	staffSvc.SetAISeatCapResolver(&staffSeatCapAdapter{clinic: clinicSvc})
 	staffHandler := staff.NewHandler(staffSvc)
 
 	// Now both authSvc and staffSvc exist — set up lazy adapters.
@@ -307,7 +316,13 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// dependencies (drugs / clinic / staff services) are constructed below,
 	// after river.NewClient. The lazy wrapper resolves at job-run time.
 	complianceData := &lazyComplianceData{}
-	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData, lazy))
+	// lazyV2Compliance gets its inner *reportsv2.Renderer set after
+	// the renderer is constructed below — same deferred pattern as
+	// complianceData. Plumbed into the worker so audit_pack (and
+	// other migrating types) render through the doc-themed HTML
+	// pipeline instead of the legacy fpdf builders.
+	complianceV2 := &lazyV2Compliance{}
+	river.AddWorker(workers, reports.NewGenerateCompliancePDFWorker(reportsRepo, store, complianceData, lazy, complianceV2))
 	// Schedule fire loop + email delivery worker (D2). lazy lets the fire
 	// loop enqueue compliance generation; the email worker depends on
 	// adapters wired after river.NewClient.
@@ -347,7 +362,51 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		store,
 		eventAdapter,
 	)
+	// Wire the new HTML+Gotenberg renderer onto the worker. Once
+	// fpdf is deleted (P3-Q) the legacy fallback path goes too;
+	// for now SetHTMLRenderer enables the new pipeline and the
+	// renderer falls back to fpdf only when this isn't called
+	// (test-only construction paths).
+	platformPDF := pdf.New(cfg)
+	notesHTMLRenderer := notes.NewHTMLRenderer(platformPDF)
+	pdfRenderer.SetHTMLRenderer(notesHTMLRenderer)
 	river.AddWorker(workers, notes.NewGenerateNotePDFWorker(pdfRenderer))
+
+	// v2 reports renderer + doc-theme preview handler. The renderer
+	// resolves clinic theme via the docThemeAdapter (same one notes
+	// uses) so production CD register / incident report / etc.
+	// pulls the saved theme. The preview endpoint mutates the
+	// renderer's theme provider in-place per call to surface the
+	// designer's in-progress theme without a DB write.
+	//
+	// docThemeLogos is built here (early) so the preview handler can
+	// resolve the in-progress theme's header.logo_key to a signed URL
+	// and stamp it into sample fixtures — the user sees their uploaded
+	// logo in the preview pane immediately after upload.
+	docThemeLogos := &docThemeLogoAdapter{store: store}
+	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
+	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos)
+	// Resolve the lazy v2 wrapper now that the renderer exists —
+	// the compliance-PDF worker (declared above before this line)
+	// reads through the lazy on every job run.
+	complianceV2.inner = reportsV2Renderer
+
+	// Clinic home dashboard — single endpoint, single in-process LRU
+	// cache, vertical-aware payload. Cache invalidation hooks are
+	// wired into write-paths below (note submit, drug op, incident,
+	// consent) via a thin adapter so the next dashboard fetch after
+	// any meaningful action is immediately fresh — no SSE / WebSocket
+	// infra. Cache-miss + concurrent-fetch coalesces via singleflight.
+	dashboardRepo := dashboard.NewRepository(db)
+	dashboardCache := dashboard.NewCache()
+	dashboardSvc := dashboard.NewService(
+		dashboardRepo,
+		dashboardCache,
+		&dashboardVerticalAdapter{clinic: clinicSvc},
+		&dashboardSeatsAdapter{staff: staffSvc},
+		&dashboardClinicStateAdapter{clinic: clinicSvc},
+	)
+	dashboardHandler := dashboard.NewHandler(dashboardSvc)
 
 	// Periodic jobs — declared at construction time so River drives them
 	// without an external cron. Currently just the schedule fire-loop;
@@ -395,7 +454,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	audioHandler := audio.NewHandler(audioSvc)
 
 	// ── Forms module ──────────────────────────────────────────────────────────
-	docThemeLogos := &docThemeLogoAdapter{store: store}
+	// docThemeLogos was constructed above (alongside the v2 reports
+	// preview handler) so both share one adapter instance.
 	formsSvc := forms.NewService(
 		formsRepo,
 		&formPolicyClauseFetcherAdapter{forms: formsRepo, policy: policyRepo},
@@ -643,6 +703,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		patientRepo:  patientRepo,
 	}
 	reportsSvc := reports.NewService(reportsRepo, riverClient, complianceData)
+	// Wire the v2 HTML renderer into the service so the inline-preview
+	// endpoint streams real-data PDFs through the same Gotenberg
+	// pipeline the worker uses for stored reports.
+	reportsSvc.SetV2Renderer(complianceV2)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
 
 	// ── Marketplace module ───────────────────────────────────────────────────
@@ -704,10 +768,22 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	staffHandler.Mount(r, api, jwtSecret)
 	patientHandler.Mount(r, api, jwtSecret)
 	verticalsHandler.Mount(r, api, jwtSecret)
+	dashboardHandler.Mount(api, jwtSecret)
 	audioHandler.Mount(r, api, jwtSecret)
 	formsHandler.Mount(r, api, jwtSecret)
 	if formAIGenHandler != nil {
 		formAIGenHandler.Mount(r, api, jwtSecret)
+	}
+	// v2 reports preview — same auth + manage_forms permission as the
+	// rest of the form-style endpoints (the doc-theme designer is the
+	// caller; same caller, same permission gate).
+	{
+		auth := mw.AuthenticateHuma(api, jwtSecret)
+		manageForms := mw.RequirePermissionHuma(api, func(p domain.Permissions) bool { return p.ManageForms })
+		reportsv2.MountPreview(api, reportsV2Handler,
+			[]map[string][]string{{"bearerAuth": {}}},
+			huma.Middlewares{auth, manageForms},
+		)
 	}
 	notesHandler.Mount(r, api, jwtSecret)
 	timelineHandler.Mount(r, api, jwtSecret)
@@ -1227,6 +1303,75 @@ func (a *notecapNotesAdapter) CountSinceForClinic(ctx context.Context, clinicID 
 		return 0, fmt.Errorf("app.notecapNotesAdapter.CountSinceForClinic: %w", err)
 	}
 	return n, nil
+}
+
+// ── Dashboard cross-domain adapters ───────────────────────────────────────
+
+// dashboardVerticalAdapter implements dashboard.VerticalProvider.
+type dashboardVerticalAdapter struct{ clinic *clinic.Service }
+
+func (a *dashboardVerticalAdapter) GetVertical(ctx context.Context, clinicID uuid.UUID) (domain.Vertical, error) {
+	v, err := a.clinic.GetVertical(ctx, clinicID)
+	if err != nil {
+		return "", fmt.Errorf("app.dashboardVerticalAdapter.GetVertical: %w", err)
+	}
+	return v, nil
+}
+
+// dashboardSeatsAdapter implements dashboard.SeatUsageProvider.
+type dashboardSeatsAdapter struct{ staff *staff.Service }
+
+func (a *dashboardSeatsAdapter) GetAISeatUsage(ctx context.Context, clinicID uuid.UUID) (staff.AISeatUsage, error) {
+	u, err := a.staff.GetAISeatUsage(ctx, clinicID)
+	if err != nil {
+		return staff.AISeatUsage{}, fmt.Errorf("app.dashboardSeatsAdapter.GetAISeatUsage: %w", err)
+	}
+	return u, nil
+}
+
+// dashboardClinicStateAdapter implements dashboard.ClinicStateProvider
+// by translating clinic.DashboardState into the dashboard package's
+// mirror struct (kept separate so the dashboard package doesn't need
+// to import clinic).
+type dashboardClinicStateAdapter struct{ clinic *clinic.Service }
+
+func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (dashboard.ClinicSnapshotState, error) {
+	st, err := a.clinic.LoadDashboardState(ctx, clinicID)
+	if err != nil {
+		return dashboard.ClinicSnapshotState{}, fmt.Errorf("app.dashboardClinicStateAdapter.LoadDashboardState: %w", err)
+	}
+	return dashboard.ClinicSnapshotState{
+		NoteCap:            st.NoteCap,
+		NoteCount:          st.NoteCount,
+		TrialEndsAt:        st.TrialEndsAt,
+		OnboardingComplete: st.OnboardingComplete,
+	}, nil
+}
+
+// staffSeatCapAdapter implements staff.AISeatCapResolver by reading
+// clinic.plan_code and consulting the domain.Plans registry. Trial
+// clinics (no plan_code yet) fall back to the Practice ceiling so the
+// model-B gating still applies before they convert.
+type staffSeatCapAdapter struct{ clinic *clinic.Service }
+
+func (a *staffSeatCapAdapter) AISeatCap(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	st, err := a.clinic.LoadTierState(ctx, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("app.staffSeatCapAdapter.AISeatCap: %w", err)
+	}
+	if st.PlanCode == nil {
+		// Pre-conversion (trial) — apply the Practice ceiling so a
+		// trial owner can't stack 50 standard staff and then resist
+		// the upgrade conversation when they convert.
+		return domain.AISeatCapForTier(domain.PlanTierPractice), nil
+	}
+	plan, ok := domain.PlanFor(*st.PlanCode)
+	if !ok {
+		// Unknown plan_code (manual override / data-entry slip) —
+		// fail closed at Practice rather than silently grant unlimited.
+		return domain.AISeatCapForTier(domain.PlanTierPractice), nil
+	}
+	return plan.AISeatCap, nil
 }
 
 // tieringClinicAdapter implements tiering.ClinicReader against
@@ -1783,6 +1928,186 @@ func (a *drugsStaffPermAdapter) HasPermission(ctx context.Context, staffID, clin
 // before drugs / clinic / staff services exist; this lazy wrapper lets the
 // worker compile-time bind to the data source without forcing all those
 // services to be created earlier.
+// lazyV2Compliance defers the *reportsv2.Renderer reference until the
+// renderer is constructed (which happens after the compliance-PDF
+// worker is registered with River). On job run the worker calls
+// through this lazy → the inner renderer's RenderComplianceAuditPack.
+type lazyV2Compliance struct {
+	inner *reportsv2.Renderer
+}
+
+func (l *lazyV2Compliance) RenderAuditPack(
+	ctx context.Context,
+	in reports.V2ComplianceAuditPackInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderComplianceAuditPack(ctx, reportsv2.ComplianceAuditPackInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		ReportID:    in.ReportID,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		GeneratedAt: in.GeneratedAt,
+		Vertical:    in.Vertical,
+		Country:     in.Country,
+		NoteCounts:  in.NoteCounts,
+		DrugOps:     v2DrugOps(in.DrugOps),
+		Reconciliations: v2Recons(in.Reconciliations),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderAuditPack: %w", err)
+	}
+	return out, nil
+}
+
+// RenderCDRegister forwards the CD register through the v2 HTML
+// pipeline. Same lazy + projection pattern as RenderAuditPack.
+func (l *lazyV2Compliance) RenderCDRegister(
+	ctx context.Context,
+	in reports.V2CDRegisterInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderCDRegister(ctx, reportsv2.CDRegisterInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		PeriodLabel: in.PeriodLabel,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		Drugs:       v2CDDrugs(in.Drugs),
+		ReconciliationOK: in.ReconciliationOK,
+		ReconciledOn:     in.ReconciledOn,
+		ReconciledByA:    in.ReconciledByA,
+		ReconciledByB:    in.ReconciledByB,
+		NextDueOn:        in.NextDueOn,
+		BundleHash:       in.BundleHash,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderCDRegister: %w", err)
+	}
+	return out, nil
+}
+
+func v2CDDrugs(in []reports.V2CDRegisterDrug) []reportsv2.CDRegisterDrug {
+	out := make([]reportsv2.CDRegisterDrug, len(in))
+	for i, d := range in {
+		ops := make([]reportsv2.CDOperation, len(d.Operations))
+		for j, o := range d.Operations {
+			ops[j] = reportsv2.CDOperation{
+				WhenPretty: o.WhenPretty, OpKind: o.OpKind, OpTone: o.OpTone,
+				Subject: o.Subject, QtyDelta: o.QtyDelta,
+				BalBefore: o.BalBefore, BalAfter: o.BalAfter,
+				StaffShort: o.StaffShort, WitnessShort: o.WitnessShort,
+			}
+		}
+		out[i] = reportsv2.CDRegisterDrug{
+			Class: d.Class, Name: d.Name, FormStrength: d.FormStrength,
+			Storage: d.Storage, CatalogID: d.CatalogID, BatchExp: d.BatchExp,
+			Unit: d.Unit, Opening: d.Opening, ClosingBal: d.ClosingBal,
+			InTotal: d.InTotal, OutTotal: d.OutTotal, Operations: ops,
+		}
+	}
+	return out
+}
+
+// RenderLog forwards generic-log requests through the v2 pipeline.
+func (l *lazyV2Compliance) RenderLog(
+	ctx context.Context,
+	in reports.V2ComplianceLogInput,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderComplianceLog(ctx, reportsv2.ComplianceLogInput{
+		ClinicID:    in.ClinicID,
+		Clinic:      pdf.ClinicInfo{Name: in.Clinic.Name, AddressLine1: in.Clinic.AddressLine1, Meta: in.Clinic.Meta},
+		ReportID:    in.ReportID,
+		ReportTitle: in.ReportTitle,
+		Eyebrow:     in.Eyebrow,
+		Description: in.Description,
+		PeriodStart: in.PeriodStart,
+		PeriodEnd:   in.PeriodEnd,
+		GeneratedAt: in.GeneratedAt,
+		Vertical:    in.Vertical,
+		Country:     in.Country,
+		Regulator:   in.Regulator,
+		Sections:    v2LogSections(in.Sections),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderLog: %w", err)
+	}
+	return out, nil
+}
+
+// RenderPlaceholder forwards "this report needs more inputs" PDFs.
+func (l *lazyV2Compliance) RenderPlaceholder(
+	ctx context.Context,
+	clinicID, title, message string,
+	clinic reports.V2ClinicInfo,
+) ([]byte, error) {
+	if l.inner == nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance: not yet wired")
+	}
+	out, err := l.inner.RenderPlaceholderPDF(ctx, clinicID, title, message,
+		pdf.ClinicInfo{Name: clinic.Name, AddressLine1: clinic.AddressLine1, Meta: clinic.Meta})
+	if err != nil {
+		return nil, fmt.Errorf("app.lazyV2Compliance.RenderPlaceholder: %w", err)
+	}
+	return out, nil
+}
+
+func v2LogSections(in []reports.V2ComplianceLogSection) []reportsv2.ComplianceLogSection {
+	out := make([]reportsv2.ComplianceLogSection, len(in))
+	for i, s := range in {
+		cols := make([]reportsv2.ComplianceLogColumn, len(s.Columns))
+		for j, c := range s.Columns {
+			cols[j] = reportsv2.ComplianceLogColumn{Label: c.Label, Width: c.Width, Align: c.Align}
+		}
+		rows := make([]reportsv2.ComplianceLogRow, len(s.Rows))
+		for j, r := range s.Rows {
+			cells := make([]reportsv2.ComplianceLogCell, len(r.Cells))
+			for k, c := range r.Cells {
+				cells[k] = reportsv2.ComplianceLogCell{Value: c.Value, Pill: c.Pill}
+			}
+			rows[j] = reportsv2.ComplianceLogRow{Cells: cells, StatusTone: r.StatusTone}
+		}
+		out[i] = reportsv2.ComplianceLogSection{
+			Title: s.Title, Hint: s.Hint, Columns: cols, Rows: rows, EmptyMsg: s.EmptyMsg,
+		}
+	}
+	return out
+}
+
+func v2DrugOps(in []reports.V2ComplianceDrugOp) []reportsv2.ComplianceDrugOp {
+	out := make([]reportsv2.ComplianceDrugOp, len(in))
+	for i, o := range in {
+		out[i] = reportsv2.ComplianceDrugOp{
+			When: o.When, Drug: o.Drug, Operation: o.Operation,
+			OperationTone: o.OperationTone, Quantity: o.Quantity,
+			BalanceAfter: o.BalanceAfter, Subject: o.Subject,
+			AdministeredBy: o.AdministeredBy, WitnessedBy: o.WitnessedBy,
+		}
+	}
+	return out
+}
+
+func v2Recons(in []reports.V2ComplianceReconciliation) []reportsv2.ComplianceReconciliation {
+	out := make([]reportsv2.ComplianceReconciliation, len(in))
+	for i, r := range in {
+		out[i] = reportsv2.ComplianceReconciliation{
+			Drug: r.Drug, Period: r.Period, Physical: r.Physical,
+			Ledger: r.Ledger, DiscrepancyDelta: r.DiscrepancyDelta,
+			Status: r.Status, StatusTone: r.StatusTone,
+			PrimarySignedBy: r.PrimarySignedBy, SecondarySignedBy: r.SecondarySignedBy,
+			Explanation: r.Explanation,
+		}
+	}
+	return out
+}
+
 type lazyComplianceData struct {
 	inner reports.ComplianceDataSource
 }
@@ -3077,6 +3402,75 @@ func (a *docThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID uuid.U
 	theme, err := notes.DecodeDocTheme(style.Config)
 	if err != nil {
 		return nil, fmt.Errorf("app.docThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// v2DocThemeAdapter implements reportsv2.ThemeProvider over the same
+// clinic_form_style_versions row docThemeAdapter consumes — but takes
+// the clinic ID as a string (the v2 package is already in production
+// service code where a clinic UUID is passed as a path / query param,
+// so plumbing the typed UUID into its tests would force every report
+// API surface through uuid.Parse first; string is fine here).
+type v2DocThemeAdapter struct {
+	repo *forms.Repository
+}
+
+func (a *v2DocThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID string) (*pdf.DocTheme, error) {
+	uid, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: parse clinic_id: %w", err)
+	}
+	style, err := a.repo.GetCurrentStyle(ctx, uid)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: %w", err)
+	}
+	if style == nil || len(style.Config) == 0 {
+		return nil, nil
+	}
+	theme, err := pdf.DecodeDocTheme(style.Config)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter: %w", err)
+	}
+	return theme, nil
+}
+
+// GetPerDocOverride implements reportsv2.PerDocThemeProvider — looks
+// up the per-doc-type override blob from clinic_form_style_versions.
+// per_doc_overrides and decodes the matching slug into a partial
+// DocTheme. Returns (nil, nil) when no override exists.
+func (a *v2DocThemeAdapter) GetPerDocOverride(ctx context.Context, clinicID, docType string) (*pdf.DocTheme, error) {
+	if docType == "" {
+		return nil, nil
+	}
+	uid, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: parse clinic_id: %w", err)
+	}
+	style, err := a.repo.GetCurrentStyle(ctx, uid)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: %w", err)
+	}
+	if style == nil || len(style.PerDocOverrides) == 0 {
+		return nil, nil
+	}
+	var all map[string]json.RawMessage
+	if err := json.Unmarshal(style.PerDocOverrides, &all); err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: unmarshal: %w", err)
+	}
+	raw, ok := all[docType]
+	if !ok || len(raw) == 0 {
+		return nil, nil
+	}
+	theme, err := pdf.DecodeDocTheme(raw)
+	if err != nil {
+		return nil, fmt.Errorf("app.v2DocThemeAdapter.PerDoc: decode %q: %w", docType, err)
 	}
 	return theme, nil
 }

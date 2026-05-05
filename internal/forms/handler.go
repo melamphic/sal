@@ -593,13 +593,14 @@ type stylePresetsHTTPResponse struct {
 
 type updateStyleBodyInput struct {
 	Body struct {
-		LogoKey      *string         `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
-		PrimaryColor *string         `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
-		FontFamily   *string         `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
-		HeaderExtra  *string         `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
-		FooterText   *string         `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
-		Config       json.RawMessage `json:"config,omitempty"        doc:"Rich doc-theme config blob produced by the three-pane designer. Free-form JSON; the top-level colour/font/header/footer fields are mirrored into the flat columns."`
-		PresetID     *string         `json:"preset_id,omitempty"     doc:"ID of the preset this config was derived from, e.g. 'dental.clean_clinical'."`
+		LogoKey         *string         `json:"logo_key,omitempty"      doc:"Object-storage key for the clinic logo image."`
+		PrimaryColor    *string         `json:"primary_color,omitempty" pattern:"^#[0-9A-Fa-f]{6}$" doc:"Hex colour e.g. #3B82F6."`
+		FontFamily      *string         `json:"font_family,omitempty"   doc:"Font family name recognised by the Flutter PDF renderer."`
+		HeaderExtra     *string         `json:"header_extra,omitempty"  doc:"Extra header text shown below the clinic name/logo."`
+		FooterText      *string         `json:"footer_text,omitempty"   doc:"Custom footer text; form version and approver are appended automatically."`
+		Config          json.RawMessage `json:"config,omitempty"        doc:"Rich doc-theme config blob produced by the three-pane designer. Free-form JSON; the top-level colour/font/header/footer fields are mirrored into the flat columns."`
+		PresetID        *string         `json:"preset_id,omitempty"     doc:"ID of the preset this config was derived from, e.g. 'dental.clean_clinical'."`
+		PerDocOverrides json.RawMessage `json:"per_doc_overrides,omitempty" doc:"Per-doc-type theme overrides keyed by doc-type slug (signed_note | cd_register | …). Each value is a partial DocTheme blob the renderer merges over Config when rendering that doc-type. Omit to leave existing column value untouched."`
 	}
 }
 
@@ -624,15 +625,16 @@ func (h *Handler) updateStyle(ctx context.Context, input *updateStyleBodyInput) 
 	staffID := mw.StaffIDFromContext(ctx)
 
 	resp, err := h.svc.UpdateStyle(ctx, UpdateStyleInput{
-		ClinicID:     clinicID,
-		StaffID:      staffID,
-		LogoKey:      input.Body.LogoKey,
-		PrimaryColor: input.Body.PrimaryColor,
-		FontFamily:   input.Body.FontFamily,
-		HeaderExtra:  input.Body.HeaderExtra,
-		FooterText:   input.Body.FooterText,
-		Config:       input.Body.Config,
-		PresetID:     input.Body.PresetID,
+		ClinicID:        clinicID,
+		StaffID:         staffID,
+		LogoKey:         input.Body.LogoKey,
+		PrimaryColor:    input.Body.PrimaryColor,
+		FontFamily:      input.Body.FontFamily,
+		HeaderExtra:     input.Body.HeaderExtra,
+		FooterText:      input.Body.FooterText,
+		Config:          input.Body.Config,
+		PresetID:        input.Body.PresetID,
+		PerDocOverrides: input.Body.PerDocOverrides,
 	})
 	if err != nil {
 		return nil, mapFormError(err)

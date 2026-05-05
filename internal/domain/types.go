@@ -342,6 +342,12 @@ type Permissions struct {
 
 // DefaultPermissions returns the minimum permissions for the given role.
 // These are the defaults at invite time — admins may grant additional permissions.
+//
+// Dispense (drug operations) is on for every clinical role + admin
+// because the drug ledger is part of normal practice — vets prescribe,
+// nurses administer, admins/owners dispense from stock. Receptionists
+// stay off it. Witness eligibility for controlled drugs flows from
+// the same Dispense flag (see drugs/batch_ops.go).
 func DefaultPermissions(role StaffRole) Permissions {
 	switch role {
 	case StaffRoleSuperAdmin:
@@ -349,26 +355,26 @@ func DefaultPermissions(role StaffRole) Permissions {
 			ManageStaff: true, ManageForms: true, ManagePolicies: true,
 			ManageBilling: true, RollbackPolicies: true, RecordAudio: true,
 			SubmitForms: true, ViewAllPatients: true, GenerateAuditExport: true,
-			ManagePatients: true,
+			ManagePatients: true, Dispense: true,
 			MarketplaceManage: true, MarketplaceDownload: true,
 		}
 	case StaffRoleAdmin:
 		return Permissions{
 			ManageStaff: true, ManageForms: true, ManagePolicies: true,
 			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
-			GenerateAuditExport: true, ManagePatients: true,
+			GenerateAuditExport: true, ManagePatients: true, Dispense: true,
 			MarketplaceDownload: true,
 		}
 	case StaffRoleVet:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
-			ManagePatients: true,
+			ManagePatients: true, Dispense: true,
 			MarketplaceDownload: true,
 		}
 	case StaffRoleVetNurse:
 		return Permissions{
 			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
-			ManagePatients: true,
+			ManagePatients: true, Dispense: true,
 			MarketplaceDownload: true,
 		}
 	case StaffRoleReceptionist:

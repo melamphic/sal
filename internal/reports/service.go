@@ -22,6 +22,7 @@ type Service struct {
 	repo    *Repository
 	enqueue jobEnqueuer
 	data    ComplianceDataSource // optional — only required for compliance PDFs
+	v2      V2ComplianceRenderer // optional — when set, preview/render hits the HTML pipeline
 }
 
 // NewService constructs a reports Service. The compliance data source can be
@@ -29,6 +30,15 @@ type Service struct {
 // methods will return ErrValidation if invoked without it.
 func NewService(repo *Repository, enqueue jobEnqueuer, data ComplianceDataSource) *Service {
 	return &Service{repo: repo, enqueue: enqueue, data: data}
+}
+
+// SetV2Renderer wires the HTML/Gotenberg renderer used by the inline
+// preview endpoint. Setter (rather than constructor arg) so app.go
+// can keep the existing NewService signature stable while plumbing
+// the renderer separately. nil = preview endpoint returns
+// ErrValidation.
+func (s *Service) SetV2Renderer(r V2ComplianceRenderer) {
+	s.v2 = r
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -215,6 +225,11 @@ var SupportedComplianceReportTypes = []string{
 	"hipaa_disclosure_log",
 	"dea_biennial_inventory",
 	"sentinel_events_log",
+	// Per-resident reports — preview returns a "pick a resident"
+	// placeholder PDF; Generate flow will route through the worker
+	// with a resident_id once the request modal grows that picker.
+	"mar_grid",
+	"pain_trend",
 }
 
 // fileFormatForType — every type knows its native output format.
@@ -227,6 +242,8 @@ var fileFormatForType = map[string]string{
 	"hipaa_disclosure_log":      "pdf",
 	"dea_biennial_inventory":    "pdf",
 	"sentinel_events_log":       "pdf",
+	"mar_grid":                  "pdf",
+	"pain_trend":                "pdf",
 }
 
 // ComplianceReportResponse is the API-safe representation of a compliance
@@ -279,6 +296,486 @@ type ListComplianceReportsInput struct {
 	Status *string
 	From   *time.Time
 	To     *time.Time
+}
+
+// PreviewComplianceReportInput drives the inline-preview endpoint —
+// same shape as a request input but no DB row is created. The bytes
+// stream back to the caller, the worker queue is untouched, and S3
+// stays unwritten. Cheap end-to-end so a clinician can preview a
+// week's worth of activity without paying a Stripe-billable render.
+type PreviewComplianceReportInput struct {
+	ClinicID    uuid.UUID
+	Type        string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+}
+
+// PreviewComplianceReport renders the supplied report type for the
+// supplied period against REAL data and returns the PDF bytes inline
+// — no compliance_report row, no S3 upload, no email. Used by the
+// reports-catalog Preview drawer so users see what the report will
+// actually contain (last 7 days by default), then pick a custom
+// period if they want to commit to a generated report row.
+//
+// Today only `audit_pack` is wired through this path because that's
+// the only type the v2 HTML renderer covers (the rest still fall
+// through the legacy fpdf builders in the worker). When the other
+// types migrate to v2 they'll add cases here.
+func (s *Service) PreviewComplianceReport(ctx context.Context, in PreviewComplianceReportInput) ([]byte, error) {
+	if s.data == nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: compliance data source not configured: %w", domain.ErrValidation)
+	}
+	if s.v2 == nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: v2 renderer not configured: %w", domain.ErrValidation)
+	}
+	if !isSupportedComplianceType(in.Type) {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: unsupported type %q: %w", in.Type, domain.ErrValidation)
+	}
+	if !in.PeriodEnd.After(in.PeriodStart) {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: period_end must be after period_start: %w", domain.ErrValidation)
+	}
+
+	clinic, err := s.data.GetClinic(ctx, in.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: clinic: %w", err)
+	}
+
+	switch in.Type {
+	case "audit_pack":
+		ops, err := s.data.ListControlledDrugOps(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: ops: %w", err)
+		}
+		recons, err := s.data.ListReconciliationsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: recons: %w", err)
+		}
+		counts, err := s.data.CountNotesByStatus(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: note counts: %w", err)
+		}
+		out, err := s.v2.RenderAuditPack(ctx, V2ComplianceAuditPackInput{
+			ClinicID:        in.ClinicID.String(),
+			Clinic:          clinicSnapshotToV2(clinic),
+			ReportID:        "preview",
+			PeriodStart:     in.PeriodStart,
+			PeriodEnd:       in.PeriodEnd,
+			GeneratedAt:     time.Now().UTC(),
+			Vertical:        clinic.Vertical,
+			Country:         clinic.Country,
+			NoteCounts:      counts,
+			DrugOps:         drugOpsToV2(ops),
+			Reconciliations: reconsToV2(recons),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render: %w", err)
+		}
+		return out, nil
+	case "controlled_drugs_register":
+		ops, err := s.data.ListControlledDrugOps(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: ops: %w", err)
+		}
+		recons, err := s.data.ListReconciliationsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: recons: %w", err)
+		}
+		bytesOut, err := s.v2.RenderCDRegister(ctx, V2CDRegisterInput{
+			ClinicID:         in.ClinicID.String(),
+			Clinic:           clinicSnapshotToV2(clinic),
+			PeriodLabel:      in.PeriodStart.UTC().Format("Jan 2006") + " · " + in.PeriodStart.UTC().Format("02") + "–" + in.PeriodEnd.UTC().Format("02"),
+			PeriodStart:      in.PeriodStart,
+			PeriodEnd:        in.PeriodEnd,
+			Drugs:            drugOpsToCDRegisterDrugs(ops),
+			ReconciliationOK: reconciliationsAllClean(recons),
+			ReconciledOn:     reconciledOnLabel(recons),
+			ReconciledByA:    reconciledByA(recons),
+			ReconciledByB:    reconciledByB(recons),
+			NextDueOn:        in.PeriodEnd.UTC().AddDate(0, 1, 0).Format("2006-01-02"),
+			BundleHash:       "preview",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render cd: %w", err)
+		}
+		return bytesOut, nil
+	case "records_audit":
+		// Records-activity log: every signed/draft/extracting/failed
+		// note in the period. Same data the audit-pack first section
+		// uses, surfaced as a focused report.
+		counts, err := s.data.CountNotesByStatus(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: note counts: %w", err)
+		}
+		return s.renderLog(ctx, in, clinic, V2ComplianceLogInput{
+			ReportTitle: "Records Activity Audit",
+			Eyebrow:     "Per-record audit log",
+			Description: "Lifecycle counts of every clinical note in the period: signed, draft, extracting, failed. Reconstructs the chain of custody on demand.",
+			Sections: []V2ComplianceLogSection{
+				{
+					Title: "Notes by status",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "Status"},
+						{Label: "Count", Align: "right", Width: "100px"},
+					},
+					Rows: noteCountRowsForLog(counts),
+				},
+			},
+		})
+
+	case "incidents_log":
+		// Every incident in the period — severity + outcome + status.
+		// Aged-care monthly review board uses this as the agenda.
+		incs, err := s.data.ListIncidentsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: incidents: %w", err)
+		}
+		return s.renderLog(ctx, in, clinic, V2ComplianceLogInput{
+			ReportTitle: "Incidents Log",
+			Eyebrow:     "Operational register",
+			Description: "Every incident filed in the period with severity, outcome, and notification status.",
+			Sections: []V2ComplianceLogSection{
+				{
+					Title: "Incidents in period",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "When", Width: "110px"},
+						{Label: "Type"},
+						{Label: "Severity", Align: "center", Width: "90px"},
+						{Label: "Status", Align: "center", Width: "120px"},
+					},
+					Rows:     incidentRowsForLog(incs),
+					EmptyMsg: "No incidents filed in this period.",
+				},
+			},
+		})
+
+	case "sentinel_events_log":
+		// High-severity / never-event subset — fatalities,
+		// hospitalisations, sexual misconduct, neglect.
+		incs, err := s.data.ListIncidentsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: incidents: %w", err)
+		}
+		return s.renderLog(ctx, in, clinic, V2ComplianceLogInput{
+			ReportTitle: "Sentinel Events Log",
+			Eyebrow:     "Safeguarding register",
+			Description: "High-severity / never-event subset of the incidents log — fatalities, hospitalisations, sexual misconduct allegations.",
+			Sections: []V2ComplianceLogSection{
+				{
+					Title: "Sentinel events in period",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "When", Width: "110px"},
+						{Label: "Type"},
+						{Label: "Severity", Align: "center", Width: "90px"},
+						{Label: "Status", Align: "center", Width: "120px"},
+					},
+					Rows:     sentinelRowsForLog(incs),
+					EmptyMsg: "No sentinel events in this period.",
+				},
+			},
+		})
+
+	case "evidence_pack":
+		// Aged-care evidence pack — bundles records activity +
+		// incidents + consent coverage in a CQC/ACQSC-friendly
+		// structure.
+		counts, err := s.data.CountNotesByStatus(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: note counts: %w", err)
+		}
+		incs, err := s.data.ListIncidentsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: incidents: %w", err)
+		}
+		consents, err := s.data.ConsentSummaryInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: consent: %w", err)
+		}
+		return s.renderLog(ctx, in, clinic, V2ComplianceLogInput{
+			ReportTitle: "Aged-Care Evidence Pack",
+			Eyebrow:     "Inspection-ready bundle",
+			Description: "Folds records activity, incident outcomes, and consent coverage into one inspector-ready document for CQC (UK) / ACQSC (AU).",
+			Regulator:   regulatorForCountry(clinic.Country, "aged_care"),
+			Sections: []V2ComplianceLogSection{
+				{
+					Title: "Records activity",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "Status"},
+						{Label: "Count", Align: "right", Width: "100px"},
+					},
+					Rows: noteCountRowsForLog(counts),
+				},
+				{
+					Title: "Incidents in period",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "When", Width: "110px"},
+						{Label: "Type"},
+						{Label: "Severity", Align: "center", Width: "90px"},
+						{Label: "Status", Align: "center", Width: "120px"},
+					},
+					Rows:     incidentRowsForLog(incs),
+					EmptyMsg: "No incidents filed in this period.",
+				},
+				{
+					Title:   "Consent coverage",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "Metric"},
+						{Label: "Value", Align: "right", Width: "100px"},
+					},
+					Rows: consentRowsForLog(consents),
+				},
+			},
+		})
+
+	case "hipaa_disclosure_log":
+		// US §164.528 accounting of disclosures — every PHI release
+		// in the period.
+		access, err := s.data.ListSubjectAccessInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: access: %w", err)
+		}
+		return s.renderLog(ctx, in, clinic, V2ComplianceLogInput{
+			ReportTitle: "HIPAA Disclosure Log",
+			Eyebrow:     "§164.528 accounting",
+			Description: "Every PHI release in the period — inter-clinic referrals, legal subpoenas, public health reporting.",
+			Regulator:   "HIPAA",
+			Sections: []V2ComplianceLogSection{
+				{
+					Title: "Disclosures in period",
+					Columns: []V2ComplianceLogColumn{
+						{Label: "When", Width: "120px"},
+						{Label: "Subject"},
+						{Label: "Action", Align: "center", Width: "110px"},
+						{Label: "Actor"},
+					},
+					Rows:     accessRowsForLog(access),
+					EmptyMsg: "No PHI disclosures in this period.",
+				},
+			},
+		})
+
+	case "dea_biennial_inventory":
+		// Two-yearly Schedule II–V controlled substance inventory
+		// required of every DEA registrant. Reuses the CD register
+		// shape since the data is structurally the same — a styled
+		// per-drug inventory snapshot.
+		ops, err := s.data.ListControlledDrugOps(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: ops: %w", err)
+		}
+		recons, err := s.data.ListReconciliationsInPeriod(ctx, in.ClinicID, in.PeriodStart, in.PeriodEnd)
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: recons: %w", err)
+		}
+		out, err := s.v2.RenderCDRegister(ctx, V2CDRegisterInput{
+			ClinicID:         in.ClinicID.String(),
+			Clinic:           clinicSnapshotToV2(clinic),
+			PeriodLabel:      "DEA Biennial · " + in.PeriodStart.UTC().Format("Jan 2006") + "–" + in.PeriodEnd.UTC().Format("Jan 2006"),
+			PeriodStart:      in.PeriodStart,
+			PeriodEnd:        in.PeriodEnd,
+			Drugs:            drugOpsToCDRegisterDrugs(ops),
+			ReconciliationOK: reconciliationsAllClean(recons),
+			ReconciledOn:     reconciledOnLabel(recons),
+			ReconciledByA:    reconciledByA(recons),
+			ReconciledByB:    reconciledByB(recons),
+			NextDueOn:        in.PeriodEnd.UTC().AddDate(2, 0, 0).Format("2006-01-02"),
+			BundleHash:       "preview",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render dea: %w", err)
+		}
+		return out, nil
+
+	case "mar_grid":
+		// Per-resident, per-month — needs a resident_id which the
+		// preview endpoint doesn't yet take. Surface a friendly
+		// styled placeholder so the user knows what's needed.
+		out, err := s.v2.RenderPlaceholder(ctx, in.ClinicID.String(),
+			"Medication Administration Record (MAR)",
+			"This report is per-resident and per-month. Pick a resident from Generate to render the MAR sheet for them.",
+			clinicSnapshotToV2(clinic))
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render mar placeholder: %w", err)
+		}
+		return out, nil
+
+	case "pain_trend":
+		// Same per-resident shape as MAR.
+		out, err := s.v2.RenderPlaceholder(ctx, in.ClinicID.String(),
+			"Pain Trend Report",
+			"This report is per-resident. Pick a resident from Generate to render their pain trend with PRN analgesia correlation.",
+			clinicSnapshotToV2(clinic))
+		if err != nil {
+			return nil, fmt.Errorf("reports.service.PreviewComplianceReport: render pain placeholder: %w", err)
+		}
+		return out, nil
+
+	default:
+		return nil, fmt.Errorf("reports.service.PreviewComplianceReport: type %q has no v2 renderer yet: %w", in.Type, domain.ErrValidation)
+	}
+}
+
+// renderLog wraps RenderLog with the common (clinic / period /
+// generated_at / vertical / country) plumbing so per-type cases stay
+// terse — they only specify title + sections.
+func (s *Service) renderLog(
+	ctx context.Context,
+	in PreviewComplianceReportInput,
+	clinic *ClinicSnapshot,
+	view V2ComplianceLogInput,
+) ([]byte, error) {
+	view.ClinicID = in.ClinicID.String()
+	view.Clinic = clinicSnapshotToV2(clinic)
+	view.ReportID = "preview"
+	view.PeriodStart = in.PeriodStart
+	view.PeriodEnd = in.PeriodEnd
+	view.GeneratedAt = time.Now().UTC()
+	view.Vertical = clinic.Vertical
+	view.Country = clinic.Country
+	out, err := s.v2.RenderLog(ctx, view)
+	if err != nil {
+		return nil, fmt.Errorf("reports.service.renderLog: %w", err)
+	}
+	return out, nil
+}
+
+// ── Row builders for the generic compliance-log template ──────────
+
+func noteCountRowsForLog(counts map[string]int) []V2ComplianceLogRow {
+	keys := []string{"submitted", "draft", "extracting", "failed"}
+	out := make([]V2ComplianceLogRow, 0, len(keys))
+	for _, k := range keys {
+		pill := ""
+		switch k {
+		case "submitted":
+			pill = "ok"
+		case "failed":
+			pill = "danger"
+		}
+		out = append(out, V2ComplianceLogRow{
+			Cells: []V2ComplianceLogCell{
+				{Value: prettyNoteStatusLog(k), Pill: pill},
+				{Value: fmt.Sprintf("%d", counts[k])},
+			},
+		})
+	}
+	return out
+}
+
+func prettyNoteStatusLog(s string) string {
+	switch s {
+	case "submitted":
+		return "Signed & submitted"
+	case "draft":
+		return "In draft"
+	case "extracting":
+		return "Extracting"
+	case "failed":
+		return "Failed"
+	default:
+		return s
+	}
+}
+
+func incidentRowsForLog(incs []IncidentView) []V2ComplianceLogRow {
+	out := make([]V2ComplianceLogRow, 0, len(incs))
+	for _, i := range incs {
+		sevPill := "info"
+		switch i.Severity {
+		case "low":
+			sevPill = ""
+		case "medium":
+			sevPill = "warn"
+		case "high", "critical":
+			sevPill = "danger"
+		}
+		statusPill := "info"
+		switch i.Status {
+		case "closed":
+			statusPill = "ok"
+		case "escalated", "reported_to_regulator":
+			statusPill = "warn"
+		}
+		out = append(out, V2ComplianceLogRow{
+			Cells: []V2ComplianceLogCell{
+				{Value: i.OccurredAt.UTC().Format("02 Jan 15:04")},
+				{Value: i.IncidentType},
+				{Value: i.Severity, Pill: sevPill},
+				{Value: i.Status, Pill: statusPill},
+			},
+		})
+	}
+	return out
+}
+
+func sentinelRowsForLog(incs []IncidentView) []V2ComplianceLogRow {
+	out := make([]V2ComplianceLogRow, 0)
+	for _, i := range incs {
+		// Filter to high/critical OR specific never-event types.
+		isSentinel := i.Severity == "high" || i.Severity == "critical"
+		switch i.IncidentType {
+		case "death", "sexual_misconduct", "neglect", "physical_abuse",
+			"financial_abuse", "psychological_abuse":
+			isSentinel = true
+		}
+		if !isSentinel {
+			continue
+		}
+		statusPill := "warn"
+		if i.Status == "closed" {
+			statusPill = "ok"
+		}
+		out = append(out, V2ComplianceLogRow{
+			Cells: []V2ComplianceLogCell{
+				{Value: i.OccurredAt.UTC().Format("02 Jan 15:04")},
+				{Value: i.IncidentType},
+				{Value: i.Severity, Pill: "danger"},
+				{Value: i.Status, Pill: statusPill},
+			},
+		})
+	}
+	return out
+}
+
+func consentRowsForLog(c *ConsentSummary) []V2ComplianceLogRow {
+	if c == nil {
+		return nil
+	}
+	rows := []V2ComplianceLogRow{
+		{Cells: []V2ComplianceLogCell{{Value: "Total consents captured"}, {Value: fmt.Sprintf("%d", c.Total)}}},
+		{Cells: []V2ComplianceLogCell{{Value: "Withdrawn"}, {Value: fmt.Sprintf("%d", c.Withdrawn)}}},
+		{Cells: []V2ComplianceLogCell{{Value: "Expiring within 30 days"}, {Value: fmt.Sprintf("%d", c.ExpiringIn30d)}}},
+		{Cells: []V2ComplianceLogCell{{Value: "Verbal w/ witness"}, {Value: fmt.Sprintf("%d", c.VerbalWitnessed)}}},
+	}
+	return rows
+}
+
+func accessRowsForLog(rows []SubjectAccessView) []V2ComplianceLogRow {
+	out := make([]V2ComplianceLogRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, V2ComplianceLogRow{
+			Cells: []V2ComplianceLogCell{
+				{Value: r.At.UTC().Format("02 Jan 15:04")},
+				{Value: r.SubjectID},
+				{Value: r.Action, Pill: "info"},
+				{Value: r.StaffName},
+			},
+		})
+	}
+	return out
+}
+
+func regulatorForCountry(country, vertical string) string {
+	if vertical != "aged_care" {
+		return ""
+	}
+	switch country {
+	case "AU":
+		return "ACQSC"
+	case "UK":
+		return "CQC"
+	default:
+		return ""
+	}
 }
 
 // RequestComplianceReport validates input, inserts a queued report row, and
