@@ -47,15 +47,25 @@ type TierReconciler interface {
 	Reconcile(ctx context.Context, clinicID uuid.UUID) error
 }
 
+// AISeatCapResolver looks up the AI-seat ceiling for the supplied
+// clinic — i.e. how many `note_tier=standard` staff that clinic's
+// current plan permits. Cross-domain port implemented by an adapter
+// in app.go that reads clinic.plan_code and consults the
+// domain.Plans registry. nil disables enforcement (tests / local dev).
+type AISeatCapResolver interface {
+	AISeatCap(ctx context.Context, clinicID uuid.UUID) (int, error)
+}
+
 // Service handles all staff business logic.
 type Service struct {
-	repo    repo // interface — see repo.go
-	cipher  *crypto.Cipher
-	mailer  mailer.Mailer
-	appURL  string
-	invites InviteCreator      // nil = invite tokens not created (test mode)
-	clinics ClinicNameProvider // nil = clinic name omitted from emails (test mode)
-	tier    TierReconciler     // nil = tier auto-derivation off
+	repo     repo // interface — see repo.go
+	cipher   *crypto.Cipher
+	mailer   mailer.Mailer
+	appURL   string
+	invites  InviteCreator      // nil = invite tokens not created (test mode)
+	clinics  ClinicNameProvider // nil = clinic name omitted from emails (test mode)
+	tier     TierReconciler     // nil = tier auto-derivation off
+	seatCaps AISeatCapResolver  // nil = AI-seat cap enforcement off
 }
 
 // NewService creates a new staff Service.
@@ -68,6 +78,39 @@ func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string
 // signature stable.
 func (s *Service) SetTierReconciler(t TierReconciler) {
 	s.tier = t
+}
+
+// SetAISeatCapResolver wires the AI-seat-cap port. nil disables the
+// pricing-model-B check, which matches test/local behaviour where no
+// plan registry is hooked up.
+func (s *Service) SetAISeatCapResolver(r AISeatCapResolver) {
+	s.seatCaps = r
+}
+
+// checkAISeatCap returns domain.ErrAISeatCapReached if the clinic
+// already holds as many `note_tier=standard` seats as its plan allows.
+// Called by Invite / Create before any DB write that would push a new
+// staff member into the standard tier. No-ops when no resolver is
+// wired so unit tests don't need to stub the cross-domain port.
+func (s *Service) checkAISeatCap(ctx context.Context, clinicID uuid.UUID, tier domain.NoteTier) error {
+	if s.seatCaps == nil || tier != domain.NoteTierStandard {
+		return nil
+	}
+	cap, err := s.seatCaps.AISeatCap(ctx, clinicID)
+	if err != nil {
+		return fmt.Errorf("staff.service.checkAISeatCap: resolve cap: %w", err)
+	}
+	if cap <= 0 {
+		return nil
+	}
+	current, err := s.repo.CountStandardActive(ctx, clinicID)
+	if err != nil {
+		return fmt.Errorf("staff.service.checkAISeatCap: count: %w", err)
+	}
+	if current >= cap {
+		return domain.ErrAISeatCapReached
+	}
+	return nil
 }
 
 // DTO is the decrypted service-layer representation of a staff member.
@@ -125,6 +168,7 @@ type CreateStaffInput struct {
 // Invite creates a pending invite token and (optionally) sends the invitation email.
 // Always returns the invite URL so callers can display or share it directly.
 // Returns domain.ErrConflict if an active staff member with that email already exists in this clinic.
+// Returns domain.ErrAISeatCapReached if the new seat would exceed the plan's AI-seat ceiling.
 func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in InviteInput) (string, error) {
 	emailHash := s.cipher.Hash(in.Email)
 
@@ -134,6 +178,10 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 	}
 	if exists {
 		return "", domain.ErrConflict
+	}
+
+	if err := s.checkAISeatCap(ctx, clinicID, in.NoteTier); err != nil {
+		return "", err
 	}
 
 	// Resolve clinic name for the invitation email.
@@ -177,7 +225,14 @@ func (s *Service) Invite(ctx context.Context, clinicID, callerID uuid.UUID, in I
 
 // Create inserts a new staff member from an accepted invite.
 // Called by the auth module when an invite token is verified.
+// Returns domain.ErrAISeatCapReached if the new seat would exceed the
+// plan's AI-seat ceiling (e.g. plan was downgraded between invite and
+// acceptance).
 func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffResponse, error) {
+	if err := s.checkAISeatCap(ctx, in.ClinicID, in.NoteTier); err != nil {
+		return nil, err
+	}
+
 	encEmail, err := s.cipher.Encrypt(in.Email)
 	if err != nil {
 		return nil, fmt.Errorf("staff.service.Create: encrypt email: %w", err)
@@ -304,6 +359,34 @@ func (s *Service) CountStandardActive(ctx context.Context, clinicID uuid.UUID) (
 		return 0, fmt.Errorf("staff.service.CountStandardActive: %w", err)
 	}
 	return n, nil
+}
+
+// AISeatUsage is the {used, cap} pair returned by GetAISeatUsage.
+// Renders directly into the dashboard's seat-usage widget and the
+// settings team page's seat-bar. Cap=0 means no resolver is wired
+// (test mode) and the UI should hide the meter.
+type AISeatUsage struct {
+	Used int `json:"used"`
+	Cap  int `json:"cap"`
+}
+
+// GetAISeatUsage reports how many AI seats (note_tier=standard) the
+// clinic currently uses + the cap their plan permits. Cheap: 1 SQL +
+// 1 plan-registry lookup; safe to call on every dashboard refresh.
+func (s *Service) GetAISeatUsage(ctx context.Context, clinicID uuid.UUID) (AISeatUsage, error) {
+	used, err := s.repo.CountStandardActive(ctx, clinicID)
+	if err != nil {
+		return AISeatUsage{}, fmt.Errorf("staff.service.GetAISeatUsage: count: %w", err)
+	}
+	cap := 0
+	if s.seatCaps != nil {
+		c, err := s.seatCaps.AISeatCap(ctx, clinicID)
+		if err != nil {
+			return AISeatUsage{}, fmt.Errorf("staff.service.GetAISeatUsage: cap: %w", err)
+		}
+		cap = c
+	}
+	return AISeatUsage{Used: used, Cap: cap}, nil
 }
 
 // Deactivate marks a staff member as deactivated. Cannot deactivate the caller's own account.
