@@ -50,6 +50,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.getMe)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-ai-seat-usage",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/staff/seats",
+		Summary:     "AI seat usage for the current clinic",
+		Description: "Returns {used, cap} where `used` is the number of staff with note_tier=standard and `cap` is the plan's AI-seat ceiling (Practice=3, Pro=7). Cap=0 means enforcement is disabled (test/local).",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth},
+	}, h.seatUsage)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-staff-member",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/staff/{staff_id}",
