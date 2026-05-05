@@ -85,6 +85,10 @@ type RecordingProvider interface {
 	// GetWordConfidences returns the ASR word confidence index for a recording.
 	// Returns nil (no error) when the recording has no word data (GeminiTranscriber).
 	GetWordConfidences(ctx context.Context, recordingID uuid.UUID) ([]confidence.WordConfidence, error)
+	// GetStatus returns the recording's processing status + last error message.
+	// Used by extract_note to detect permanent transcription failure (e.g. Gemini
+	// quota exhausted) and short-circuit the snooze loop.
+	GetStatus(ctx context.Context, recordingID uuid.UUID) (status domain.RecordingStatus, errMsg *string, err error)
 }
 
 // VerticalProvider returns the configured clinical vertical for a clinic
@@ -187,12 +191,33 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	}
 	if transcript == nil || *transcript == "" {
 		// Transcript not yet persisted by the parallel TranscribeAudio
-		// job. Snooze for 3s instead of returning a plain error — River's
-		// default exponential backoff would otherwise wait ~60s for the
-		// first retry, which is a poor first-time UX. The audio worker
-		// also fires a listener that enqueues this job again on transcript
-		// completion (UniqueOpts collapses to a single attempt), so the
-		// snooze is a backstop, not the primary trigger.
+		// job — but if the recording has *permanently* failed (e.g. Gemini
+		// quota exhausted), snoozing forever is wrong. Mark the note failed
+		// with the recording's error so the UI can surface it and the user
+		// can retry once the underlying issue is resolved.
+		recStatus, recErr, statusErr := w.recording.GetStatus(ctx, *note.RecordingID)
+		if statusErr == nil && recStatus == domain.RecordingStatusFailed {
+			msg := "Transcription failed"
+			if recErr != nil && *recErr != "" {
+				msg = "Transcription failed: " + humanizeExtractionError(fmt.Errorf("%s", *recErr))
+			}
+			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusFailed, &msg)
+			w.events.Emit(ctx, NoteEvent{
+				NoteID:    noteID,
+				SubjectID: note.SubjectID,
+				ClinicID:  note.ClinicID,
+				EventType: NoteEventExtractionFailed,
+				ActorID:   note.CreatedBy,
+				ActorRole: "system",
+			})
+			return nil
+		}
+		// Transcription still in flight — snooze for 3s instead of returning
+		// a plain error. River's default exponential backoff would wait ~60s
+		// otherwise, which is a poor first-time UX. The audio worker also
+		// fires a listener that re-enqueues this job on transcript completion
+		// (UniqueOpts collapses to a single attempt), so the snooze is a
+		// backstop, not the primary trigger.
 		return &rivertype.JobSnoozeError{Duration: 3 * time.Second}
 	}
 
@@ -256,20 +281,25 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	if len(specs) > 0 {
 		results, err = w.extractor.Extract(ctx, vertical, *transcript, formPrompt, specs)
 		if err != nil {
-			// Store a clean human-readable message; UI prefixes "Extraction failed:"
-			// itself, so don't double-stamp it. Keep the leaf error from the
-			// provider (e.g. "Gemini timed out (504)") rather than the wrapped
-			// internal chain.
-			errMsg := humanizeExtractionError(err)
-			_, _ = w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusFailed, &errMsg)
-			w.events.Emit(ctx, NoteEvent{
-				NoteID:    noteID,
-				SubjectID: note.SubjectID,
-				ClinicID:  note.ClinicID,
-				EventType: NoteEventExtractionFailed,
-				ActorID:   note.CreatedBy,
-				ActorRole: "system",
-			})
+			// Mark the note failed only on permanent errors or the last attempt.
+			// Transient errors (429 / 503 / timeout) flip the UI between "failed"
+			// and "draft" as River's background retries race the user's manual
+			// retry — keep status=extracting until River exhausts so the banner
+			// only appears when there's truly nothing more to try.
+			lastAttempt := job.Attempt >= job.MaxAttempts
+			retryable := isRetryableExtractionError(err)
+			if !retryable || lastAttempt {
+				errMsg := humanizeExtractionError(err)
+				_, _ = w.notes.UpdateNoteStatus(ctx, noteID, note.ClinicID, domain.NoteStatusFailed, &errMsg)
+				w.events.Emit(ctx, NoteEvent{
+					NoteID:    noteID,
+					SubjectID: note.SubjectID,
+					ClinicID:  note.ClinicID,
+					EventType: NoteEventExtractionFailed,
+					ActorID:   note.CreatedBy,
+					ActorRole: "system",
+				})
+			}
 			return fmt.Errorf("extract_note: %w", err)
 		}
 	}
@@ -361,6 +391,29 @@ func (w *ExtractNoteWorker) Work(ctx context.Context, job *river.Job[ExtractNote
 	})
 
 	return nil
+}
+
+// isRetryableExtractionError classifies whether an extractor failure is
+// worth retrying. 429 / 503 / 504 / timeouts are transient; River's
+// exponential backoff usually resolves them within a few retries. Other
+// errors (auth, schema parse) are permanent — surface them immediately.
+func isRetryableExtractionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	low := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(low, "429"),
+		strings.Contains(low, "rate limit"),
+		strings.Contains(low, "quota"),
+		strings.Contains(low, "503"),
+		strings.Contains(low, "504"),
+		strings.Contains(low, "unavailable"),
+		strings.Contains(low, "timed out"),
+		strings.Contains(low, "deadline exceeded"):
+		return true
+	}
+	return false
 }
 
 // humanizeExtractionError turns an internal-wrapped extraction error into a
