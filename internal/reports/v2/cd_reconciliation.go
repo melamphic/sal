@@ -11,12 +11,12 @@ import (
 )
 
 // CDReconciliationInput drives the monthly CD reconciliation report.
-// Caller assembles from drugs.Service + reconciliation repo.
+// Caller assembles from drugs.Service + reconciliation repo. Header
+// chrome is rendered from Clinic via the shared `doc-header` partial —
+// templates MUST NOT hardcode clinic name or brand mark colors.
 type CDReconciliationInput struct {
-	ClinicID   string
-	ClinicName string
-	ClinicAddr string
-	ClinicMeta string
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	PeriodLabel  string // "April 2026"
 	ReconciledOn string // "2026-04-30 17:42 NZST"
@@ -48,11 +48,12 @@ type CDReconRow struct {
 // RenderCDReconciliation returns PDF bytes for the monthly CD
 // reconciliation report including the discrepancy chart + trend.
 func (r *Renderer) RenderCDReconciliation(ctx context.Context, in CDReconciliationInput) ([]byte, error) {
-	body, head, err := buildCDReconciliationBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_reconciliation")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDReconciliation: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "cd_reconciliation")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, head, err := buildCDReconciliationBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderCDReconciliation: %w", err)
 	}
@@ -63,6 +64,7 @@ func (r *Renderer) RenderCDReconciliation(ctx context.Context, in CDReconciliati
 		Body:      string(body),
 		ExtraHead: head,
 		Theme:     theme,
+		Clinic:    clinic,
 		Options: pdf.Options{
 			// Wait until both Chart.js renders flag complete — set
 			// in chart-init scripts via window.__chartsReady = true.
@@ -75,7 +77,12 @@ func (r *Renderer) RenderCDReconciliation(ctx context.Context, in CDReconciliati
 	return out, nil
 }
 
-func buildCDReconciliationBody(in CDReconciliationInput) (body []byte, head string, err error) {
+type cdReconciliationView struct {
+	CDReconciliationInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildCDReconciliationBody(in CDReconciliationInput, clinic pdf.ClinicInfo) (body []byte, head string, err error) {
 	funcs := commonFuncs()
 	funcs["jsonArr"] = func(v any) (template.JS, error) {
 		b, jErr := json.Marshal(v)
@@ -84,15 +91,31 @@ func buildCDReconciliationBody(in CDReconciliationInput) (body []byte, head stri
 		}
 		return template.JS(b), nil
 	}
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHash,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
 
-	tmpl, parseErr := template.New("cd_reconciliation.html.tmpl").
-		Funcs(funcs).
+	tmpl, parseErr := pdf.NewReportTemplate("cd_reconciliation.html.tmpl")
+	if parseErr != nil {
+		return nil, "", fmt.Errorf("partials: %w", parseErr)
+	}
+	tmpl, parseErr = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/cd_reconciliation.html.tmpl")
 	if parseErr != nil {
 		return nil, "", fmt.Errorf("parse: %w", parseErr)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "cd_reconciliation.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "cd_reconciliation.html.tmpl",
+		cdReconciliationView{CDReconciliationInput: in, Clinic: clinic}); err != nil {
 		return nil, "", fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), chartJSCDN(), nil
