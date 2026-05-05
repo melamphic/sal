@@ -68,7 +68,8 @@ func TestBuildSignedNoteHTML_AllSections(t *testing.T) {
 		},
 	}
 
-	body, err := buildSignedNoteHTML(in)
+	clinic := pdf.ResolveClinicFromTheme(clinicInfoFromInput(in), in.Theme)
+	body, err := buildSignedNoteHTML(in, clinic)
 	if err != nil {
 		t.Fatalf("buildSignedNoteHTML: %v", err)
 	}
@@ -101,12 +102,13 @@ func TestSignedNoteViewModel_NoSubject(t *testing.T) {
 		FormName:    "Encounter",
 		SubmittedAt: time.Now(),
 	}
-	d := signedNoteViewModel(in)
+	clinic := pdf.ResolveClinicFromTheme(clinicInfoFromInput(in), in.Theme)
+	d := signedNoteViewModel(in, clinic)
 	if d.Subject {
 		t.Errorf("Subject should be false when input has nil Subject")
 	}
-	if d.ClinicInitials != "CC" {
-		t.Errorf("Initials = %q, want CC", d.ClinicInitials)
+	if d.Clinic.Initials != "CC" {
+		t.Errorf("Initials = %q, want CC", d.Clinic.Initials)
 	}
 }
 
@@ -122,11 +124,13 @@ func TestRenderNoteAsPDF_ComposesInputCorrectly(t *testing.T) {
 	if r == nil {
 		t.Fatal("NewHTMLRenderer returned nil")
 	}
-	body, err := buildSignedNoteHTML(PDFInput{
+	smokeIn := PDFInput{
 		ClinicName:  "x",
 		FormName:    "x",
 		SubmittedAt: time.Now(),
-	})
+	}
+	smokeClinic := pdf.ResolveClinicFromTheme(clinicInfoFromInput(smokeIn), nil)
+	body, err := buildSignedNoteHTML(smokeIn, smokeClinic)
 	if err != nil {
 		t.Fatalf("buildSignedNoteHTML: %v", err)
 	}
