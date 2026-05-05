@@ -46,6 +46,20 @@ type themeCSSVars struct {
 	PageSize        string // a4 | letter | legal
 	PageOrientation string // portrait | landscape
 	MarginMm        string
+	// HeaderPadBottom is the band's vertical breathing room. Driven by
+	// theme.header.height (small | medium | tall) — the designer maps
+	// this to a chunkier or tighter header band.
+	HeaderPadBottom string // e.g. "8px" | "14px" | "22px"
+	// HeaderFillCSS is one of:
+	//   ""                                  — no background (default flat band, brand colour comes from the bottom border)
+	//   "background: #abcdef;"              — solid fill from theme.header.fill.color
+	//   "background: linear-gradient(…);"   — gradient fill from theme.header.fill.{from,to}
+	// Spliced verbatim into the .doc-header rule.
+	HeaderFillCSS string
+	// HeaderTextOnFill colors the brand text + clinic strap when the
+	// header has a coloured fill (so dark backgrounds get white type).
+	// Empty string = use the default --salvia-text-emphasis.
+	HeaderTextOnFill string
 	WatermarkText   string
 	WatermarkOpacity string // "0.04"
 }
@@ -72,6 +86,7 @@ const (
 	defaultOrientation   = "portrait"
 	defaultMarginMm      = 18.0
 	defaultWatermarkA    = 0.04
+	defaultHeaderPad     = "12px"
 )
 
 func themeCSSData(t *DocTheme) themeCSSVars {
@@ -94,6 +109,7 @@ func themeCSSData(t *DocTheme) themeCSSVars {
 		PageSize:         defaultPageSize,
 		PageOrientation:  defaultOrientation,
 		MarginMm:         fmt.Sprintf("%g", defaultMarginMm),
+		HeaderPadBottom:  defaultHeaderPad,
 		WatermarkText:    "",
 		WatermarkOpacity: fmt.Sprintf("%g", defaultWatermarkA),
 	}
@@ -123,6 +139,10 @@ func themeCSSData(t *DocTheme) themeCSSVars {
 		if t.Theme.CornerRadius != nil {
 			v.CornerRadius = fmt.Sprintf("%gpx", *t.Theme.CornerRadius)
 		}
+	}
+	if t.Header != nil {
+		v.HeaderPadBottom = headerPadFromHeight(t.Header.Height)
+		v.HeaderFillCSS, v.HeaderTextOnFill = headerFillCSS(t.Header.Fill)
 	}
 	if t.Page != nil {
 		switch derefStr(t.Page.Size, "a4") {
