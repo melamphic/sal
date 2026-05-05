@@ -1,19 +1,9 @@
 <!-- ===== Page 1 — Resident, event, timeline, outcome ============ -->
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo" style="background: #5b21b6;">IR</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicAddr }}{{ if .ClinicMeta }} · {{ .ClinicMeta }}{{ end }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Incident Report</span>
-      <span class="doc-header__title-text">{{ .IncidentRef }}</span>
-      <span class="doc-header__title-meta">CQC Reg 18 statutory notification · Submitted {{ .GeneratedOn }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Incident Report"
+      .IncidentRef
+      (printf "CQC Reg 18 statutory notification · Submitted %s" .GeneratedOn) }}
 
   <div class="kpi-grid">
     <div class="kpi kpi--{{ .SeverityTone }}">
@@ -101,37 +91,18 @@
   </div>
   {{- end }}
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Incident {{ .IncidentRef }} · Resident {{ .ResidentName }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Page 1 of 2</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Incident %s · Resident %s" .IncidentRef .ResidentName)
+      "Page 1 of 2"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
 
 <!-- ===== Page 2 — RCA + Action Plan + Sign-off =================== -->
 <section class="page">
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo" style="background: #5b21b6;">IR</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ClinicMeta }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Incident · Section E–G</span>
-      <span class="doc-header__title-text">RCA · Actions · Sign-off</span>
-      <span class="doc-header__title-meta">{{ .IncidentRef }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Incident · Section E–G"
+      "RCA · Actions · Sign-off"
+      .IncidentRef }}
 
   <div class="section">
     <span class="section__eyebrow">Section E</span>
@@ -206,17 +177,8 @@
     </div>
   </div>
 
-  <footer class="doc-footer">
-    <div class="doc-footer__cell">
-      <span class="doc-footer__strong">{{ .ClinicName }}</span>
-      <span>Incident {{ .IncidentRef }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--center">
-      <span class="doc-footer__hash">SHA-256 · {{ .BundleHash }}</span>
-    </div>
-    <div class="doc-footer__cell doc-footer__cell--right">
-      <span class="doc-footer__strong">Page 2 of 2</span>
-      <span>Generated {{ .GeneratedOn }}</span>
-    </div>
-  </footer>
+  {{ template "doc-footer" footerInfo
+      (printf "Incident %s" .IncidentRef)
+      "Page 2 of 2"
+      (printf "Generated %s" .GeneratedOn) }}
 </section>
