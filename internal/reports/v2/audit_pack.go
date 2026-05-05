@@ -12,12 +12,11 @@ import (
 // AuditPackInput drives the audit-pack PDF — the bundled artifact
 // for one signed clinical note (cover + signed note + evidence trace
 // + edit history + policy check). The marketing site's "Audit Pack"
-// promise.
+// promise. Header chrome stamps from Clinic via the shared partial —
+// templates MUST NOT hardcode brand letters or colors.
 type AuditPackInput struct {
-	ClinicID   string
-	ClinicName string
-	ClinicAddr string
-	ClinicMeta string
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	NoteID         string
 	NoteIDShort    string
@@ -88,11 +87,12 @@ type AuditPackPolicyClause struct {
 }
 
 func (r *Renderer) RenderAuditPack(ctx context.Context, in AuditPackInput) ([]byte, error) {
-	body, err := buildAuditPackBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "audit_pack")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderAuditPack: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "audit_pack")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, err := buildAuditPackBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderAuditPack: %w", err)
 	}
@@ -102,6 +102,7 @@ func (r *Renderer) RenderAuditPack(ctx context.Context, in AuditPackInput) ([]by
 		Lang:    "en",
 		Body:    string(body),
 		Theme:   theme,
+		Clinic:  clinic,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderAuditPack: %w", err)
@@ -109,17 +110,39 @@ func (r *Renderer) RenderAuditPack(ctx context.Context, in AuditPackInput) ([]by
 	return out, nil
 }
 
-func buildAuditPackBody(in AuditPackInput) ([]byte, error) {
+type auditPackView struct {
+	AuditPackInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildAuditPackBody(in AuditPackInput, clinic pdf.ClinicInfo) ([]byte, error) {
 	funcs := commonFuncs()
 	funcs["safeHTML"] = func(s string) template.HTML { return template.HTML(s) }
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHashShort,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
 
-	tmpl, err := template.New("audit_pack.html.tmpl").Funcs(funcs).
+	tmpl, err := pdf.NewReportTemplate("audit_pack.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("partials: %w", err)
+	}
+	tmpl, err = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/audit_pack.html.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "audit_pack.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "audit_pack.html.tmpl",
+		auditPackView{AuditPackInput: in, Clinic: clinic}); err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), nil
