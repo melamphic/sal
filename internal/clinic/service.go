@@ -396,6 +396,33 @@ type TierState struct {
 	StripeSubscriptionID *string
 }
 
+// DashboardState is the slim slice of clinic fields the dashboard
+// service needs to render watchcards (note cap progress, trial
+// countdown, onboarding-incomplete pill). One row read; no
+// decryption — none of the fields here hold PII/PHI.
+type DashboardState struct {
+	NoteCap            *int
+	NoteCount          int
+	TrialEndsAt        time.Time
+	OnboardingComplete bool
+}
+
+// LoadDashboardState fetches the per-clinic dashboard inputs in a
+// single GetByID call. Cross-domain port — never called from HTTP
+// handlers.
+func (s *Service) LoadDashboardState(ctx context.Context, clinicID uuid.UUID) (DashboardState, error) {
+	row, err := s.repo.GetByID(ctx, clinicID)
+	if err != nil {
+		return DashboardState{}, fmt.Errorf("clinic.service.LoadDashboardState: %w", err)
+	}
+	return DashboardState{
+		NoteCap:            row.NoteCap,
+		NoteCount:          row.NoteCount,
+		TrialEndsAt:        row.TrialEndsAt,
+		OnboardingComplete: row.OnboardingComplete,
+	}, nil
+}
+
 // LoadTierState fetches the slice of clinic fields the tiering module
 // needs to decide whether to swap Stripe subscription items.
 func (s *Service) LoadTierState(ctx context.Context, clinicID uuid.UUID) (TierState, error) {
