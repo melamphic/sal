@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"html/template"
 
 	"github.com/melamphic/sal/internal/platform/pdf"
 )
 
 // IncidentReportInput drives the per-incident PDF (CQC Reg 18 / SIRS /
 // SAC equivalent format). Caller assembles from incidents.Service.
+// Header/footer chrome is rendered from Clinic via the shared partial —
+// templates MUST NOT hardcode brand letters or colors.
 type IncidentReportInput struct {
-	ClinicID   string
-	ClinicName string
-	ClinicAddr string
-	ClinicMeta string
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	IncidentRef     string // "INC-2026-00184"
 	GeneratedOn     string // "2026-04-29"
@@ -100,11 +99,12 @@ type IncidentActionItem struct {
 }
 
 func (r *Renderer) RenderIncidentReport(ctx context.Context, in IncidentReportInput) ([]byte, error) {
-	body, err := buildIncidentReportBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "incident_report")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderIncidentReport: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "incident_report")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, err := buildIncidentReportBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderIncidentReport: %w", err)
 	}
@@ -114,6 +114,7 @@ func (r *Renderer) RenderIncidentReport(ctx context.Context, in IncidentReportIn
 		Lang:    "en",
 		Body:    string(body),
 		Theme:   theme,
+		Clinic:  clinic,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderIncidentReport: %w", err)
@@ -121,15 +122,38 @@ func (r *Renderer) RenderIncidentReport(ctx context.Context, in IncidentReportIn
 	return out, nil
 }
 
-func buildIncidentReportBody(in IncidentReportInput) ([]byte, error) {
-	tmpl, err := template.New("incident_report.html.tmpl").
-		Funcs(commonFuncs()).
+type incidentReportView struct {
+	IncidentReportInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildIncidentReportBody(in IncidentReportInput, clinic pdf.ClinicInfo) ([]byte, error) {
+	funcs := commonFuncs()
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHash,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
+
+	tmpl, err := pdf.NewReportTemplate("incident_report.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("partials: %w", err)
+	}
+	tmpl, err = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/incident_report.html.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "incident_report.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "incident_report.html.tmpl",
+		incidentReportView{IncidentReportInput: in, Clinic: clinic}); err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), nil
