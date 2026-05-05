@@ -3,6 +3,7 @@ package v2
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/platform/pdf"
@@ -30,47 +31,88 @@ func IsPreviewDocType(s string) bool {
 	return false
 }
 
+// resolveThemeLogoURL turns an in-progress theme's header.logo_key
+// (storage object key) into a short-lived signed URL. Empty string
+// when no key is set or no signer is wired — the brand mark partial
+// falls back to initials.
+func resolveThemeLogoURL(ctx context.Context, theme *pdf.DocTheme, signer LogoSigner) (string, error) {
+	if signer == nil || theme == nil || theme.Header == nil || theme.Header.LogoKey == nil {
+		return "", nil
+	}
+	key := strings.TrimSpace(*theme.Header.LogoKey)
+	if key == "" {
+		return "", nil
+	}
+	url, err := signer.SignStyleLogoURL(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("v2.resolveThemeLogoURL: %w", err)
+	}
+	return url, nil
+}
+
+// stampLogoURL returns a copy of the supplied ClinicInfo with LogoURL
+// set when non-empty. Used by the preview path to inject the user's
+// uploaded logo into sample fixtures without mutating the package-
+// level placeholder vars.
+func stampLogoURL(in pdf.ClinicInfo, logoURL string) pdf.ClinicInfo {
+	if logoURL != "" {
+		in.LogoURL = logoURL
+	}
+	return in
+}
+
 // RenderPreview produces a sample-data render of the supplied doc-type
 // against the supplied theme. Used by the doc-theme designer's live
 // preview pane — the user sees what each report type looks like with
 // their in-progress branding before they save.
 //
+// logoURL is the signed GET URL for the in-progress theme's
+// header.logo_key (the handler resolves it via LogoSigner). Empty
+// string disables the logo image and the partial falls back to
+// initials.
+//
 // The notes-package signed note renderer is taken as a dependency so
 // the preview path uses the exact same builder as production.
-func (r *Renderer) RenderPreview(ctx context.Context, docType string, theme *pdf.DocTheme, notesR *notes.HTMLRenderer) ([]byte, error) {
+func (r *Renderer) RenderPreview(ctx context.Context, docType string, theme *pdf.DocTheme, logoURL string, notesR *notes.HTMLRenderer) ([]byte, error) {
 	if !IsPreviewDocType(docType) {
 		return nil, fmt.Errorf("v2.RenderPreview: unknown doc_type %q", docType)
 	}
 	switch docType {
 	case "signed_note":
-		return previewSignedNote(ctx, theme, notesR)
+		return previewSignedNote(ctx, theme, logoURL, notesR)
 	case "audit_pack":
 		in := SampleAuditPackInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderAuditPack(ctx, in)
 		})
 	case "cd_register":
 		in := SampleCDRegisterInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderCDRegister(ctx, in)
 		})
 	case "incident_report":
 		in := SampleIncidentReportInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderIncidentReport(ctx, in)
 		})
 	case "cd_reconciliation":
 		in := SampleCDReconciliationInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderCDReconciliation(ctx, in)
 		})
 	case "pain_trend":
 		in := SamplePainTrendInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderPainTrend(ctx, in)
 		})
 	case "mar_grid":
 		in := SampleMARGridInput()
+		in.Clinic = stampLogoURL(in.Clinic, logoURL)
 		return r.renderWithThemeOverride(ctx, theme, func(ctx context.Context) ([]byte, error) {
 			return r.RenderMARGrid(ctx, in)
 		})
@@ -109,8 +151,10 @@ func (s staticTheme) GetActiveDocTheme(_ context.Context, _ string) (*pdf.DocThe
 
 // previewSignedNote builds the signed-note input from sample data and
 // runs the supplied HTMLRenderer. Theme is forwarded so the same
-// PDFInput.Theme path drives chrome.
-func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, notesR *notes.HTMLRenderer) ([]byte, error) {
+// PDFInput.Theme path drives chrome. logoURL (when non-empty) is
+// passed through to the notes renderer's clinic-logo field so the
+// signed-note preview also reflects the in-progress logo upload.
+func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, logoURL string, notesR *notes.HTMLRenderer) ([]byte, error) {
 	if notesR == nil {
 		return nil, fmt.Errorf("v2.previewSignedNote: notes renderer not wired")
 	}
@@ -122,8 +166,7 @@ func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, notesR *notes.H
 	addr := clinicAddr
 	phone := clinicPhone
 	visitT := visit
-
-	out, err := notesR.RenderNoteAsPDF(ctx, notes.PDFInput{
+	in := notes.PDFInput{
 		Theme:         theme,
 		ClinicName:    clinicName,
 		ClinicAddress: &addr,
@@ -152,7 +195,12 @@ func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, notesR *notes.H
 				},
 			},
 		},
-	})
+	}
+	if logoURL != "" {
+		in.ClinicLogoURL = &logoURL
+	}
+
+	out, err := notesR.RenderNoteAsPDF(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("v2.previewSignedNote: %w", err)
 	}
