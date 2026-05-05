@@ -12,11 +12,11 @@ import (
 
 // PainTrendInput drives the per-resident / per-patient pain trend
 // report. Caller assembles from pain.Service + drug ops (PRN
-// correlation) over a chosen window.
+// correlation) over a chosen window. Header/footer chrome stamps from
+// Clinic via the shared partial — templates MUST NOT hardcode brand.
 type PainTrendInput struct {
-	ClinicID   string
-	ClinicName string
-	ClinicAddr string
+	ClinicID string
+	Clinic   pdf.ClinicInfo
 
 	SubjectName    string // "Mary White (age 87)"
 	SubjectRoom    string // "Maple wing · Room 14"
@@ -68,11 +68,12 @@ type PainHighScoreRow struct {
 }
 
 func (r *Renderer) RenderPainTrend(ctx context.Context, in PainTrendInput) ([]byte, error) {
-	body, head, err := buildPainTrendBody(in)
+	theme, err := r.resolveTheme(ctx, in.ClinicID, "pain_trend")
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderPainTrend: %w", err)
 	}
-	theme, err := r.resolveTheme(ctx, in.ClinicID, "pain_trend")
+	clinic := pdf.ResolveClinicFromTheme(in.Clinic, theme)
+	body, head, err := buildPainTrendBody(in, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("v2.RenderPainTrend: %w", err)
 	}
@@ -83,6 +84,7 @@ func (r *Renderer) RenderPainTrend(ctx context.Context, in PainTrendInput) ([]by
 		Body:      string(body),
 		ExtraHead: head,
 		Theme:     theme,
+		Clinic:    clinic,
 		Options: pdf.Options{
 			WaitForExpression: "window.__chartsReady === true",
 		},
@@ -93,7 +95,12 @@ func (r *Renderer) RenderPainTrend(ctx context.Context, in PainTrendInput) ([]by
 	return out, nil
 }
 
-func buildPainTrendBody(in PainTrendInput) (body []byte, head string, err error) {
+type painTrendView struct {
+	PainTrendInput
+	Clinic pdf.ClinicInfo
+}
+
+func buildPainTrendBody(in PainTrendInput, clinic pdf.ClinicInfo) (body []byte, head string, err error) {
 	funcs := commonFuncs()
 	funcs["jsonArr"] = func(v any) (template.JS, error) {
 		b, jErr := json.Marshal(v)
@@ -102,13 +109,31 @@ func buildPainTrendBody(in PainTrendInput) (body []byte, head string, err error)
 		}
 		return template.JS(b), nil
 	}
-	tmpl, parseErr := template.New("pain_trend.html.tmpl").Funcs(funcs).
+	funcs["headerInfo"] = func(eyebrow, title, meta string) pdf.HeaderInfo {
+		return pdf.HeaderInfo{Clinic: clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+	}
+	funcs["footerInfo"] = func(subject, pageLabel, footnote string) pdf.FooterInfo {
+		return pdf.FooterInfo{
+			Clinic:     clinic,
+			Subject:    subject,
+			BundleHash: in.BundleHash,
+			PageLabel:  pageLabel,
+			Footnote:   footnote,
+		}
+	}
+
+	tmpl, parseErr := pdf.NewReportTemplate("pain_trend.html.tmpl")
+	if parseErr != nil {
+		return nil, "", fmt.Errorf("partials: %w", parseErr)
+	}
+	tmpl, parseErr = tmpl.Funcs(funcs).
 		ParseFS(reportFS, "templates/pain_trend.html.tmpl")
 	if parseErr != nil {
 		return nil, "", fmt.Errorf("parse: %w", parseErr)
 	}
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, "pain_trend.html.tmpl", in); err != nil {
+	if err := tmpl.ExecuteTemplate(&buf, "pain_trend.html.tmpl",
+		painTrendView{PainTrendInput: in, Clinic: clinic}); err != nil {
 		return nil, "", fmt.Errorf("exec: %w", err)
 	}
 	return buf.Bytes(), chartJSCDN(), nil
