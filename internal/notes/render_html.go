@@ -41,9 +41,13 @@ func NewHTMLRenderer(p *pdf.Renderer) *HTMLRenderer {
 //
 // The PDFInput shape is reused verbatim from the legacy fpdf path so
 // jobs.go can swap one call for the other without re-plumbing
-// upstream services.
+// upstream services. Clinic chrome (name / contact line / uploaded
+// logo) is merged with theme overrides via pdf.ResolveClinicFromTheme
+// so the brand mark in the header renders identically to every other
+// V1 report.
 func (r *HTMLRenderer) RenderNoteAsPDF(ctx context.Context, input PDFInput) ([]byte, error) {
-	body, err := buildSignedNoteHTML(input)
+	clinic := pdf.ResolveClinicFromTheme(clinicInfoFromInput(input), input.Theme)
+	body, err := buildSignedNoteHTML(input, clinic)
 	if err != nil {
 		return nil, fmt.Errorf("notes.RenderNoteAsPDF: build body: %w", err)
 	}
@@ -53,6 +57,7 @@ func (r *HTMLRenderer) RenderNoteAsPDF(ctx context.Context, input PDFInput) ([]b
 		Lang:    "en",
 		Body:    string(body),
 		Theme:   input.Theme,
+		Clinic:  clinic,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("notes.RenderNoteAsPDF: %w", err)
@@ -60,15 +65,33 @@ func (r *HTMLRenderer) RenderNoteAsPDF(ctx context.Context, input PDFInput) ([]b
 	return out, nil
 }
 
+// clinicInfoFromInput projects the legacy notes.PDFInput clinic fields
+// into a pdf.ClinicInfo so the renderer's shared brand-mark partial
+// can stamp the same chrome every other V1 report uses. AddressLine1
+// gets the joined address+phone+email contact line because the
+// signed-note view already concatenates them; the doc-theme partial
+// renders one line under the clinic name.
+func clinicInfoFromInput(in PDFInput) pdf.ClinicInfo {
+	out := pdf.ClinicInfo{
+		Name:         in.ClinicName,
+		AddressLine1: contactLine(in),
+	}
+	if in.ClinicLogoURL != nil {
+		out.LogoURL = *in.ClinicLogoURL
+	}
+	return out
+}
+
 // signedNoteData is the html/template view-model. Keeping the
 // derivation in a typed struct (rather than passing PDFInput
 // directly) means the template stays simple and we centralise
-// nullable-pointer coercion + formatting.
+// nullable-pointer coercion + formatting. Header is rendered via the
+// shared `doc-header` partial — Clinic carries the brand-mark
+// payload (name, contact line, signed logo URL, derived initials)
+// that the partial consumes.
 type signedNoteData struct {
-	ClinicName        string
-	ClinicNameSafe    string // CSS-content-safe (no quote chars)
-	ClinicInitials    string
-	ContactLine       string
+	Clinic            pdf.ClinicInfo
+	ClinicNameSafe    string // CSS-content-safe (no quote chars), still needed for @page footer
 	FormName          string
 	FormVersion       string
 	SubmittedAtPretty string
@@ -101,14 +124,23 @@ type signedNoteField struct {
 	ReviewBadgeTone string // ok | warn | danger | info | muted
 }
 
-func buildSignedNoteHTML(in PDFInput) ([]byte, error) {
-	tmpl, err := template.New("signed_note.html.tmpl").ParseFS(
+func buildSignedNoteHTML(in PDFInput, clinic pdf.ClinicInfo) ([]byte, error) {
+	data := signedNoteViewModel(in, clinic)
+	funcs := template.FuncMap{
+		"headerInfo": func(eyebrow, title, meta string) pdf.HeaderInfo {
+			return pdf.HeaderInfo{Clinic: data.Clinic, Eyebrow: eyebrow, Title: title, Meta: meta}
+		},
+	}
+	tmpl, err := pdf.NewReportTemplate("signed_note.html.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("partials: %w", err)
+	}
+	tmpl, err = tmpl.Funcs(funcs).ParseFS(
 		notesTemplatesFS, "templates/signed_note.html.tmpl",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
-	data := signedNoteViewModel(in)
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, "signed_note.html.tmpl", data); err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
@@ -116,12 +148,16 @@ func buildSignedNoteHTML(in PDFInput) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func signedNoteViewModel(in PDFInput) signedNoteData {
+func signedNoteViewModel(in PDFInput, clinic pdf.ClinicInfo) signedNoteData {
+	if clinic.Name == "" {
+		clinic.Name = "Clinic"
+	}
+	if clinic.Initials == "" {
+		clinic.Initials = initials(clinic.Name)
+	}
 	d := signedNoteData{
-		ClinicName:        nonEmpty(in.ClinicName, "Clinic"),
-		ClinicNameSafe:    cssSafe(nonEmpty(in.ClinicName, "Clinic")),
-		ClinicInitials:    initials(nonEmpty(in.ClinicName, "Clinic")),
-		ContactLine:       contactLine(in),
+		Clinic:            clinic,
+		ClinicNameSafe:    cssSafe(clinic.Name),
 		FormName:          nonEmpty(in.FormName, "Clinical Note"),
 		FormVersion:       nonEmpty(in.FormVersion, "1"),
 		SubmittedAtPretty: prettyDateTime(in.SubmittedAt),
