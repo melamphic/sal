@@ -175,6 +175,32 @@ func (s *Service) ListRecordings(ctx context.Context, clinicID uuid.UUID, input 
 	}, nil
 }
 
+// RetryTranscription re-runs the TranscribeAudio job for a recording whose
+// transcription previously failed (e.g. transient provider error or quota
+// exhaustion). Resets status to uploaded, clears the prior error, and
+// re-enqueues the worker. The downstream extract_note worker is woken via
+// the OnRecordingTranscribed listener once the new transcript lands, so the
+// caller does not need to touch the note state directly.
+//
+// Rejects recordings that are not in the failed state with ErrConflict —
+// retrying a transcribed or in-flight recording would race the existing job.
+func (s *Service) RetryTranscription(ctx context.Context, id, clinicID uuid.UUID) error {
+	rec, err := s.repo.GetRecordingByID(ctx, id, clinicID)
+	if err != nil {
+		return fmt.Errorf("audio.service.RetryTranscription: %w", err)
+	}
+	if rec.Status != domain.RecordingStatusFailed {
+		return fmt.Errorf("audio.service.RetryTranscription: %w", domain.ErrConflict)
+	}
+	if _, err := s.repo.UpdateRecordingStatus(ctx, id, domain.RecordingStatusUploaded, nil); err != nil {
+		return fmt.Errorf("audio.service.RetryTranscription: reset status: %w", err)
+	}
+	if _, err := s.enqueue.Insert(ctx, TranscribeAudioArgs{RecordingID: id}, nil); err != nil {
+		return fmt.Errorf("audio.service.RetryTranscription: enqueue: %w", err)
+	}
+	return nil
+}
+
 // ConfirmUpload transitions a recording from pending_upload → uploaded and
 // enqueues a TranscribeAudio River job. This must be called by the client after
 // the direct S3 upload completes.
