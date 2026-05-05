@@ -3,6 +3,7 @@ package reports
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -269,6 +270,66 @@ func (h *Handler) requestComplianceReport(ctx context.Context, input *requestCom
 		return nil, mapReportError(err)
 	}
 	return &complianceReportHTTPResponse{Body: resp}, nil
+}
+
+// previewComplianceReportInput drives POST /api/v1/reports/compliance/preview.
+// Defaults the period to the last 7 days when caller omits one.
+type previewComplianceReportInput struct {
+	Body struct {
+		Type        string `json:"type"                   doc:"Report type slug. Must have a v2 renderer wired (audit_pack today)."`
+		PeriodStart string `json:"period_start,omitempty" doc:"RFC3339 inclusive. Defaults to 7 days ago when omitted."`
+		PeriodEnd   string `json:"period_end,omitempty"   doc:"RFC3339 inclusive. Defaults to now when omitted."`
+	}
+}
+
+// previewComplianceReportHTTPResponse streams PDF bytes back. No DB
+// row, no S3, no email — pure read.
+type previewComplianceReportHTTPResponse struct {
+	ContentType        string `header:"Content-Type"`
+	ContentDisposition string `header:"Content-Disposition"`
+	Body               []byte
+}
+
+// previewComplianceReport handles POST /api/v1/reports/compliance/preview.
+// Renders the supplied report type for the supplied period (or last 7
+// days by default) and returns the PDF bytes inline. Used by the
+// reports-catalog Preview drawer.
+func (h *Handler) previewComplianceReport(ctx context.Context, input *previewComplianceReportInput) (*previewComplianceReportHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	now := time.Now().UTC()
+	start := now.AddDate(0, 0, -7)
+	end := now
+	if input.Body.PeriodStart != "" {
+		s, err := time.Parse(time.RFC3339, input.Body.PeriodStart)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid period_start: use RFC3339")
+		}
+		start = s
+	}
+	if input.Body.PeriodEnd != "" {
+		e, err := time.Parse(time.RFC3339, input.Body.PeriodEnd)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid period_end: use RFC3339")
+		}
+		end = e
+	}
+
+	bytesOut, err := h.svc.PreviewComplianceReport(ctx, PreviewComplianceReportInput{
+		ClinicID:    clinicID,
+		Type:        input.Body.Type,
+		PeriodStart: start,
+		PeriodEnd:   end,
+	})
+	if err != nil {
+		return nil, mapReportError(err)
+	}
+	return &previewComplianceReportHTTPResponse{
+		ContentType: "application/pdf",
+		ContentDisposition: fmt.Sprintf(
+			`inline; filename="preview-%s.pdf"`, input.Body.Type),
+		Body: bytesOut,
+	}, nil
 }
 
 type listComplianceReportsInput struct {
