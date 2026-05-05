@@ -4,14 +4,18 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/melamphic/sal/internal/platform/pdf"
 )
 
 func sampleCDRegisterInput() CDRegisterInput {
 	return CDRegisterInput{
-		ClinicID:    "00000000-0000-0000-0000-000000000001",
-		ClinicName:  "Riverside Veterinary Hospital",
-		ClinicAddr:  "14 Ponsonby Rd, Auckland 1011",
-		ClinicMeta:  "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412",
+		ClinicID: "00000000-0000-0000-0000-000000000001",
+		Clinic: pdf.ClinicInfo{
+			Name:         "Riverside Veterinary Hospital",
+			AddressLine1: "14 Ponsonby Rd, Auckland 1011",
+			Meta:         "NZBN 9429048372910 · Class B/C licence #PHA-CLB-04412",
+		},
 		PeriodLabel: "Q2 2026 · Apr–Jun",
 		PeriodStart: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:   time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC),
@@ -55,7 +59,8 @@ func sampleCDRegisterInput() CDRegisterInput {
 
 func TestBuildCDRegisterBody(t *testing.T) {
 	t.Parallel()
-	body, err := buildCDRegisterBody(sampleCDRegisterInput())
+	in := sampleCDRegisterInput()
+	body, err := buildCDRegisterBody(in, in.Clinic)
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
