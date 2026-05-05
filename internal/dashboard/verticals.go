@@ -69,6 +69,105 @@ func (s *Service) buildKPIStrip(
 	}
 }
 
+// buildHero returns the headline metric for the supplied vertical.
+// 7-day sparkline + big number + delta-vs-prior-week. Aged-care
+// surfaces incidents (the SIRS deadline pressure); everything else
+// surfaces signed notes (the universal "is the AI documentation flow
+// working" pulse).
+func (s *Service) buildHero(ctx context.Context, clinicID uuid.UUID, vert domain.Vertical, today time.Time) *HeroMetric {
+	weekStart := today.AddDate(0, 0, -6) // 7 days inclusive of today
+	switch vert {
+	case domain.VerticalAgedCare:
+		series, err := s.repo.DailyIncidentSeries(ctx, clinicID, weekStart)
+		if err != nil || len(series) == 0 {
+			return nil
+		}
+		current := sumInts(series)
+		prior := s.priorWeekIncidents(ctx, clinicID, today)
+		delta, dir := pctDelta(current, prior)
+		return &HeroMetric{
+			Label:    "Incidents this week",
+			Value:    current,
+			Series:   series,
+			DeltaPct: delta,
+			DeltaDir: dir,
+			SubLabel: "vs last 7 days",
+			Tone:     toneForIncidents(current, dir),
+		}
+	default:
+		series, err := s.repo.DailyNoteSeries(ctx, clinicID, weekStart)
+		if err != nil || len(series) == 0 {
+			return nil
+		}
+		current := sumInts(series)
+		prior := s.priorWeekNotes(ctx, clinicID, today)
+		delta, dir := pctDelta(current, prior)
+		return &HeroMetric{
+			Label:    "Notes signed this week",
+			Value:    current,
+			Series:   series,
+			DeltaPct: delta,
+			DeltaDir: dir,
+			SubLabel: "vs last 7 days",
+			Tone:     "info",
+		}
+	}
+}
+
+func (s *Service) priorWeekNotes(ctx context.Context, clinicID uuid.UUID, today time.Time) int {
+	from := today.AddDate(0, 0, -13)
+	series, err := s.repo.DailyNoteSeries(ctx, clinicID, from)
+	if err != nil {
+		return 0
+	}
+	return sumInts(series)
+}
+
+func (s *Service) priorWeekIncidents(ctx context.Context, clinicID uuid.UUID, today time.Time) int {
+	from := today.AddDate(0, 0, -13)
+	series, err := s.repo.DailyIncidentSeries(ctx, clinicID, from)
+	if err != nil {
+		return 0
+	}
+	return sumInts(series)
+}
+
+func sumInts(xs []int) int {
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return t
+}
+
+func pctDelta(current, prior int) (float64, string) {
+	if prior == 0 {
+		if current > 0 {
+			return 100.0, "up"
+		}
+		return 0, "flat"
+	}
+	pct := float64(current-prior) * 100 / float64(prior)
+	switch {
+	case pct > 0.5:
+		return pct, "up"
+	case pct < -0.5:
+		return pct, "down"
+	default:
+		return 0, "flat"
+	}
+}
+
+func toneForIncidents(current int, dir string) string {
+	if current == 0 {
+		return "ok"
+	}
+	if dir == "up" {
+		return "warn"
+	}
+	return "info"
+}
+
 // buildVerticalCard returns the bigger action card under the KPI
 // strip. Today: aged-care surfaces the open-incidents list (SIRS
 // urgency); the other verticals surface a recent-encounters teaser.
@@ -185,22 +284,3 @@ func numericKPI(id, label string, n int, tone string) KPI {
 	}
 }
 
-// kpiHint formats a "vs prior" trend hint when both values are known.
-// Currently unused — kept for the next iteration when MoM trends ship
-// (requires the materialised view from the data audit's gap list).
-func kpiHint(now, prior int) string {
-	if prior == 0 {
-		return ""
-	}
-	delta := now - prior
-	pct := delta * 100 / prior
-	if pct == 0 {
-		return ""
-	}
-	sign := "+"
-	if pct < 0 {
-		sign = "−"
-		pct = -pct
-	}
-	return fmt.Sprintf("%s%d%% vs last", sign, pct)
-}
