@@ -106,20 +106,10 @@
 
 <section class="signed-note">
 
-  <header class="doc-header">
-    <div class="doc-header__brand">
-      <div class="doc-header__logo">{{ .ClinicInitials }}</div>
-      <div class="doc-header__clinic">
-        <span class="doc-header__clinic-name">{{ .ClinicName }}</span>
-        <span class="doc-header__clinic-meta">{{ .ContactLine }}</span>
-      </div>
-    </div>
-    <div class="doc-header__title">
-      <span class="doc-header__title-eyebrow">Signed Clinical Note</span>
-      <span class="doc-header__title-text">{{ .FormName }} · v{{ .FormVersion }}</span>
-      <span class="doc-header__title-meta">Submitted {{ .SubmittedAtPretty }}</span>
-    </div>
-  </header>
+  {{ template "doc-header" headerInfo
+      "Signed Clinical Note"
+      (printf "%s · v%s" .FormName .FormVersion)
+      (printf "Submitted %s" .SubmittedAtPretty) }}
 
   {{- if .Subject }}
   <div class="subject-card">
