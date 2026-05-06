@@ -186,6 +186,45 @@ func (r *Repository) UpdateReviewStatus(ctx context.Context, id, clinicID uuid.U
 	return nil
 }
 
+// StaffActivityRow is a slim pain-score projection for the per-staff
+// activity feed.
+type StaffActivityRow struct {
+	ID         uuid.UUID
+	SubjectID  uuid.UUID
+	NoteID     *uuid.UUID
+	Score      int
+	Scale      string
+	OccurredAt time.Time
+}
+
+// ListActivityByStaff returns pain scores recorded by the given staff
+// member, newest-first. Backed by pain_scores_assessed_by_idx (00086).
+func (r *Repository) ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error) {
+	const q = `
+		SELECT id, subject_id, note_id, score, pain_scale_used, assessed_at
+		FROM pain_scores
+		WHERE assessed_by = $1 AND clinic_id = $2
+		ORDER BY assessed_at DESC
+		LIMIT $3`
+	rows, err := r.db.Query(ctx, q, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("pain.repo.ListActivityByStaff: %w", err)
+	}
+	defer rows.Close()
+	var out []*StaffActivityRow
+	for rows.Next() {
+		var x StaffActivityRow
+		if err := rows.Scan(&x.ID, &x.SubjectID, &x.NoteID, &x.Score, &x.Scale, &x.OccurredAt); err != nil {
+			return nil, fmt.Errorf("pain.repo.ListActivityByStaff: scan: %w", err)
+		}
+		out = append(out, &x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pain.repo.ListActivityByStaff: rows: %w", err)
+	}
+	return out, nil
+}
+
 // SubjectTrend holds a compact (count, avg, latest) summary for the
 // subject hub. Period-bounded so a "last 30 days" view doesn't have to
 // pull the entire history.
