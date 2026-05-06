@@ -2,12 +2,22 @@ package v2
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"html/template"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/platform/pdf"
 )
+
+// logoFetchClient bounds logo HTTP fetches at 10s — Gotenberg has its
+// own ~60s budget but we want a fast-fail path so a wedged storage
+// layer doesn't make the whole preview hang.
+var logoFetchClient = &http.Client{Timeout: 10 * time.Second}
 
 // PreviewDocType lists every doc-type the doc-theme designer can
 // preview. Slugs match the templates and CSS classes elsewhere.
@@ -32,9 +42,14 @@ func IsPreviewDocType(s string) bool {
 }
 
 // resolveThemeLogoURL turns an in-progress theme's header.logo_key
-// (storage object key) into a short-lived signed URL. Empty string
-// when no key is set or no signer is wired — the brand mark partial
-// falls back to initials.
+// (storage object key) into a base64 `data:` URI the renderer can
+// embed inline. Empty string when no key is set or no signer is wired
+// — the brand mark partial falls back to initials.
+//
+// We can't return the raw signed S3 URL: Gotenberg runs in Docker and
+// can't resolve the host's `localhost:9000` (or any externally-facing
+// MinIO endpoint) to a reachable address from inside the container.
+// Inlining as a data URI removes the network hop entirely.
 func resolveThemeLogoURL(ctx context.Context, theme *pdf.DocTheme, signer LogoSigner) (string, error) {
 	if signer == nil || theme == nil || theme.Header == nil || theme.Header.LogoKey == nil {
 		return "", nil
@@ -47,7 +62,39 @@ func resolveThemeLogoURL(ctx context.Context, theme *pdf.DocTheme, signer LogoSi
 	if err != nil {
 		return "", fmt.Errorf("v2.resolveThemeLogoURL: %w", err)
 	}
-	return url, nil
+	dataURI, err := fetchAsDataURI(ctx, url)
+	if err != nil {
+		return "", fmt.Errorf("v2.resolveThemeLogoURL: %w", err)
+	}
+	return dataURI, nil
+}
+
+// fetchAsDataURI GETs url with the supplied context and returns a
+// `data:<content-type>;base64,<payload>` string. The backend is on
+// the host so it CAN reach the presigned MinIO URL — the data URI
+// is purely so the downstream Gotenberg render doesn't need to.
+func fetchAsDataURI(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("v2.fetchAsDataURI: build request: %w", err)
+	}
+	resp, err := logoFetchClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("v2.fetchAsDataURI: get: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("v2.fetchAsDataURI: status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("v2.fetchAsDataURI: read: %w", err)
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(body), nil
 }
 
 // stampLogoURL returns a copy of the supplied ClinicInfo with LogoURL
@@ -56,7 +103,7 @@ func resolveThemeLogoURL(ctx context.Context, theme *pdf.DocTheme, signer LogoSi
 // level placeholder vars.
 func stampLogoURL(in pdf.ClinicInfo, logoURL string) pdf.ClinicInfo {
 	if logoURL != "" {
-		in.LogoURL = logoURL
+		in.LogoURL = template.URL(logoURL)
 	}
 	return in
 }
