@@ -77,7 +77,7 @@ func clinicInfoFromInput(in PDFInput) pdf.ClinicInfo {
 		AddressLine1: contactLine(in),
 	}
 	if in.ClinicLogoURL != nil {
-		out.LogoURL = *in.ClinicLogoURL
+		out.LogoURL = template.URL(*in.ClinicLogoURL)
 	}
 	return out
 }
