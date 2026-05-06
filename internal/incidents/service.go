@@ -701,3 +701,14 @@ func trimNonEmpty(s *string) *string {
 	}
 	return &t
 }
+
+// ListActivityByStaff returns slim incident rows reported by a staff
+// member, newest-first. Backs the team-page activity feed via an
+// adapter in app.go.
+func (s *Service) ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error) {
+	rows, err := s.repo.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("incidents.service.ListActivityByStaff: %w", err)
+	}
+	return rows, nil
+}
