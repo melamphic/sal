@@ -169,6 +169,7 @@ type importInput struct {
 		IncludePolicies           bool           `json:"include_policies" doc:"Import bundled policies alongside the form."`
 		AcceptedPolicyAttribution bool           `json:"accepted_policy_attribution" doc:"Required true when IncludePolicies=true; records the license acknowledgement."`
 		RelinkExistingPolicyIDs   map[int]string `json:"relink_existing_policy_ids,omitempty" doc:"Map of bundled policy index → existing local policy UUID. Used when IncludePolicies=false."`
+		VersionID                 string         `json:"version_id,omitempty" doc:"Optional. UUID of a specific marketplace version to import. Use this to import a NEWER version into a fresh tenant form (the upgrade flow) — your existing imported form is left untouched. Must reference a published version of the acquired listing. When omitted, the acquisition's originally-pinned version is used (first-import flow)."`
 	}
 }
 
@@ -189,6 +190,15 @@ func (h *Handler) importAcquisition(ctx context.Context, input *importInput) (*a
 		relink[idx] = parsed
 	}
 
+	var versionID *uuid.UUID
+	if input.Body.VersionID != "" {
+		parsed, err := uuid.Parse(input.Body.VersionID)
+		if err != nil {
+			return nil, huma.Error400BadRequest("invalid version_id")
+		}
+		versionID = &parsed
+	}
+
 	resp, err := h.svc.Import(ctx, ImportInput{
 		AcquisitionID:             acquisitionID,
 		ClinicID:                  clinicID,
@@ -196,6 +206,7 @@ func (h *Handler) importAcquisition(ctx context.Context, input *importInput) (*a
 		IncludePolicies:           input.Body.IncludePolicies,
 		AcceptedPolicyAttribution: input.Body.AcceptedPolicyAttribution,
 		RelinkExistingPolicyIDs:   relink,
+		VersionID:                 versionID,
 	})
 	if err != nil {
 		return nil, mapError(err)
