@@ -244,6 +244,13 @@ type CreateStaffInput struct {
 	Role        domain.StaffRole
 	NoteTier    domain.NoteTier
 	Permissions domain.Permissions
+	// Optional invite-acceptance fields. The handoff-provisioned owner
+	// path leaves these nil; the auth.AcceptInvite path supplies them.
+	Title              *string
+	RegulatoryAuthority *string
+	RegulatoryRegNo    *string
+	MobileE164         *string // plaintext; service encrypts before persisting
+	TermsAcceptedAt    *time.Time
 }
 
 // Invite creates a pending invite token and (optionally) sends the invitation email.
@@ -325,15 +332,28 @@ func (s *Service) Create(ctx context.Context, in CreateStaffInput) (*StaffRespon
 	}
 
 	p := CreateParams{
-		ID:        domain.NewID(),
-		ClinicID:  in.ClinicID,
-		Email:     encEmail,
-		EmailHash: s.cipher.Hash(in.Email),
-		FullName:  encName,
-		Role:      in.Role,
-		NoteTier:  in.NoteTier,
-		Perms:     in.Permissions,
-		Status:    domain.StaffStatusActive,
+		ID:                  domain.NewID(),
+		ClinicID:            in.ClinicID,
+		Email:               encEmail,
+		EmailHash:           s.cipher.Hash(in.Email),
+		FullName:            encName,
+		Role:                in.Role,
+		NoteTier:            in.NoteTier,
+		Perms:               in.Permissions,
+		Status:              domain.StaffStatusActive,
+		Title:               in.Title,
+		RegulatoryAuthority: in.RegulatoryAuthority,
+		RegulatoryRegNo:     in.RegulatoryRegNo,
+		TermsAcceptedAt:     in.TermsAcceptedAt,
+	}
+	// Mobile, when supplied, is encrypted-at-rest like email. Empty
+	// pointer = leave NULL.
+	if in.MobileE164 != nil && *in.MobileE164 != "" {
+		encMobile, mErr := s.cipher.Encrypt(*in.MobileE164)
+		if mErr != nil {
+			return nil, fmt.Errorf("staff.service.Create: encrypt mobile: %w", mErr)
+		}
+		p.MobileE164 = &encMobile
 	}
 
 	row, err := s.repo.Create(ctx, p)
