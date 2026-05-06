@@ -103,7 +103,12 @@ type ClinicInfo struct {
 	// LogoURL is a fully-qualified URL the renderer can <img src> from.
 	// When empty the template falls back to Initials inside a
 	// rounded-square brand mark.
-	LogoURL string
+	//
+	// Typed as template.URL so html/template's auto-escape treats it as
+	// trusted: we set this to a `data:image/...;base64,…` URI in the
+	// preview path, which the default URL sanitizer would otherwise
+	// rewrite to "#ZgotmplZ" (only http/https/mailto pass the filter).
+	LogoURL template.URL
 	// Initials — 1-2 uppercase letters used as a logo fallback. Builder
 	// derives from Name when not supplied.
 	Initials string
