@@ -104,6 +104,12 @@ type FormImportInput struct {
 	Tags          []string
 	ChangeSummary string
 	Fields        []FormSnapshotField
+	// Marketplace lineage stamped onto the resulting tenant form. The forms
+	// service writes these into the forms row so the UI can later find
+	// sibling forms across imported versions and render the lineage banner.
+	SourceMarketplaceListingID     uuid.UUID
+	SourceMarketplaceVersionID     uuid.UUID
+	SourceMarketplaceAcquisitionID uuid.UUID
 }
 
 // PolicyImporter creates a tenant policy + published version + clauses from a
@@ -361,6 +367,12 @@ type ImportInput struct {
 	IncludePolicies           bool
 	AcceptedPolicyAttribution bool
 	RelinkExistingPolicyIDs   map[int]uuid.UUID // index → existing policy ID
+	// VersionID, when non-nil, targets a SPECIFIC marketplace version to
+	// import — used by the upgrade flow when a buyer wants to bring in a
+	// newer version published after their original acquisition. Must reference
+	// a published version of the acquired listing. When nil, the acquisition's
+	// originally-pinned version is used (first-import flow).
+	VersionID *uuid.UUID
 }
 
 // PurchaseInput kicks off a paid Payment Intent flow.
@@ -565,6 +577,10 @@ type repo interface {
 	CreateUpgradeNotificationsForVersion(ctx context.Context, listingID, newVersionID uuid.UUID, notificationType string) (int, error)
 	ListUnseenNotifications(ctx context.Context, clinicID uuid.UUID, limit int) ([]*UpdateNotificationRecord, error)
 	MarkNotificationSeen(ctx context.Context, notificationID, clinicID uuid.UUID, now time.Time) error
+	// MarkNotificationsSeenForAcquisitionVersion marks every unread notification
+	// for (acquisition, version) seen. Idempotent. Called by Import to dismiss
+	// the banner when the buyer accepts the new version.
+	MarkNotificationsSeenForAcquisitionVersion(ctx context.Context, acquisitionID, clinicID, versionID uuid.UUID, now time.Time) error
 	// Stripe dedupe
 	MarkStripeEventProcessed(ctx context.Context, eventID, eventType string) (bool, error)
 }
@@ -1003,11 +1019,18 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 	if acq.Status != "active" {
 		return nil, fmt.Errorf("marketplace.service.Import: acquisition not active: %w", domain.ErrConflict)
 	}
-	if acq.ImportedFormID != nil {
-		return nil, fmt.Errorf("marketplace.service.Import: already imported: %w", domain.ErrConflict)
+
+	// Pick the version to import. Default = the acquisition's originally-pinned
+	// version (first-import flow). When VersionID is supplied we're in the
+	// upgrade flow: import a *newer* (or different) version as a NEW tenant
+	// form, leaving any existing imported form untouched. The buyer can then
+	// compare side-by-side and decide whether to switch over.
+	versionID := acq.MarketplaceVersionID
+	if input.VersionID != nil {
+		versionID = *input.VersionID
 	}
 
-	version, err := s.repo.GetVersionByID(ctx, acq.MarketplaceVersionID)
+	version, err := s.repo.GetVersionByID(ctx, versionID)
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.Import: version: %w", err)
 	}
@@ -1015,6 +1038,17 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 	listing, err := s.repo.GetListingByID(ctx, acq.ListingID)
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.Import: listing: %w", err)
+	}
+
+	// The selected version must belong to the acquired listing — otherwise a
+	// caller could pass any version_id from any listing.
+	if version.ListingID != listing.ID {
+		return nil, fmt.Errorf("marketplace.service.Import: version does not belong to listing: %w", domain.ErrForbidden)
+	}
+	// Reject deprecated versions: publisher explicitly retired this version,
+	// buyers should pick a current one.
+	if version.Status == "deprecated" {
+		return nil, fmt.Errorf("marketplace.service.Import: version is deprecated: %w", domain.ErrConflict)
 	}
 
 	var pkg Package
@@ -1062,14 +1096,17 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 	changeSummary := fmt.Sprintf("Imported from marketplace listing %s v%d.%d", listing.Slug, version.VersionMajor, version.VersionMinor)
 
 	formID, err := s.importer.ImportForm(ctx, FormImportInput{
-		ClinicID:      input.ClinicID,
-		StaffID:       input.StaffID,
-		Name:          pkg.Listing.Name,
-		Description:   pkg.Listing.Description,
-		OverallPrompt: pkg.Listing.OverallPrompt,
-		Tags:          importTags,
-		ChangeSummary: changeSummary,
-		Fields:        snapshotFields,
+		ClinicID:                       input.ClinicID,
+		StaffID:                        input.StaffID,
+		Name:                           pkg.Listing.Name,
+		Description:                    pkg.Listing.Description,
+		OverallPrompt:                  pkg.Listing.OverallPrompt,
+		Tags:                           importTags,
+		ChangeSummary:                  changeSummary,
+		Fields:                         snapshotFields,
+		SourceMarketplaceListingID:     listing.ID,
+		SourceMarketplaceVersionID:     version.ID,
+		SourceMarketplaceAcquisitionID: acq.ID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.Import: importer: %w", err)
@@ -1127,11 +1164,20 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 		policyChoice = "relinked"
 	}
 
+	// Acquisition.imported_form_id always points at the LATEST imported form.
+	// Older imports stay discoverable through forms.source_marketplace_acquisition_id;
+	// the "latest" pointer is what the library page surfaces by default.
 	if err := s.repo.SetAcquisitionImportedForm(ctx, acq.ID, input.ClinicID, formID); err != nil {
 		return nil, fmt.Errorf("marketplace.service.Import: mark imported: %w", err)
 	}
 	if err := s.repo.SetAcquisitionPolicyChoice(ctx, acq.ID, input.ClinicID, policyChoice, acceptedAt); err != nil {
 		return nil, fmt.Errorf("marketplace.service.Import: set choice: %w", err)
+	}
+
+	// Dismiss any matching upgrade notification — the buyer just accepted this
+	// version, the banner should disappear.
+	if err := s.repo.MarkNotificationsSeenForAcquisitionVersion(ctx, acq.ID, input.ClinicID, version.ID, domain.TimeNow()); err != nil {
+		return nil, fmt.Errorf("marketplace.service.Import: dismiss notifications: %w", err)
 	}
 
 	acq.ImportedFormID = &formID
