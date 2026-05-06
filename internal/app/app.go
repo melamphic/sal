@@ -160,6 +160,11 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	clinicBootstrap.staff = staffSvc
 	staffCreator.staff = staffSvc
 
+	// Clinic-context lookup for the public invite-preview endpoint —
+	// surfaces clinic name + logo + vertical/country to the invitee
+	// before they sign in.
+	authSvc.SetClinicInviteLookup(&clinicInviteLookupAdapter{clinic: clinicSvc})
+
 	// /mel handoff wiring — only enabled when the shared JWT secret is set.
 	if cfg.MelHandoffJWTSecret != "" {
 		authSvc.SetMelHandoff(
@@ -2119,13 +2124,23 @@ type staffCreatorAdapter struct {
 }
 
 func (a *staffCreatorAdapter) CreateFromInvite(ctx context.Context, in auth.CreateStaffFromInviteInput) (uuid.UUID, error) {
+	var termsPtr *time.Time
+	if !in.TermsAcceptedAt.IsZero() {
+		t := in.TermsAcceptedAt
+		termsPtr = &t
+	}
 	resp, err := a.staff.Create(ctx, staff.CreateStaffInput{
-		ClinicID:    in.ClinicID,
-		Email:       in.Email,
-		FullName:    in.FullName,
-		Role:        in.Role,
-		NoteTier:    in.NoteTier,
-		Permissions: in.Permissions,
+		ClinicID:            in.ClinicID,
+		Email:               in.Email,
+		FullName:            in.FullName,
+		Role:                in.Role,
+		NoteTier:            in.NoteTier,
+		Permissions:         in.Permissions,
+		Title:               in.Title,
+		RegulatoryAuthority: in.RegulatorAuthority,
+		RegulatoryRegNo:     in.RegulatorRegNo,
+		MobileE164:          in.MobileE164,
+		TermsAcceptedAt:     termsPtr,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("app.staffCreatorAdapter: %w", err)
@@ -2136,6 +2151,29 @@ func (a *staffCreatorAdapter) CreateFromInvite(ctx context.Context, in auth.Crea
 		return uuid.Nil, fmt.Errorf("app.staffCreatorAdapter: parse id: %w", err)
 	}
 	return id, nil
+}
+
+// clinicInviteLookupAdapter implements auth.ClinicInviteLookup. The
+// auth invite-preview endpoint reads clinic name + vertical + country
+// + signed logo URL through this so it can render the public preview
+// page without importing clinic types directly.
+type clinicInviteLookupAdapter struct{ clinic *clinic.Service }
+
+func (a *clinicInviteLookupAdapter) GetClinicForInvite(ctx context.Context, clinicID uuid.UUID) (auth.ClinicInviteSnapshot, error) {
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return auth.ClinicInviteSnapshot{}, fmt.Errorf("app.clinicInviteLookupAdapter: %w", err)
+	}
+	logo := ""
+	if c.LogoURL != nil {
+		logo = *c.LogoURL
+	}
+	return auth.ClinicInviteSnapshot{
+		Name:     c.Name,
+		Vertical: c.Vertical,
+		Country:  c.Country,
+		LogoURL:  logo,
+	}, nil
 }
 
 // inviteCreatorAdapter implements staff.InviteCreator.
