@@ -309,6 +309,172 @@ func (s *Service) Logout(ctx context.Context, staffID uuid.UUID) error {
 	return nil
 }
 
+// ── Invite management (team page) ─────────────────────────────────────────────
+
+// InviteListEntry is the decrypted view of one invite_tokens row plus
+// derived status, returned to staff.Service for the team page.
+//
+// Status is computed from accepted_at / revoked_at / expires_at:
+//   - "accepted" — accepted_at IS NOT NULL (rare in list view; see filter)
+//   - "revoked"  — revoked_at  IS NOT NULL
+//   - "expired"  — expires_at  < now
+//   - "pending"  — otherwise
+type InviteListEntry struct {
+	ID            uuid.UUID
+	Email         string
+	Role          domain.StaffRole
+	NoteTier      domain.NoteTier
+	Permissions   domain.Permissions
+	InvitedByID   uuid.UUID
+	InvitedByName string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
+	AcceptedAt    *time.Time
+	RevokedAt     *time.Time
+	Status        string
+}
+
+// ListInvitesForClinic returns pending + expired invites for the team
+// page. Accepted invites are filtered out at the repo layer because they
+// already surface as active staff in /staff. Revoked invites are also
+// hidden — the row stays on disk for audit but the UI never sees it.
+//
+// Email and inviter name are decrypted here so the staff package never
+// touches another domain's cipher state.
+func (s *Service) ListInvitesForClinic(ctx context.Context, clinicID uuid.UUID) ([]InviteListEntry, error) {
+	rows, err := s.repo.ListInvitesByClinic(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.ListInvitesForClinic: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	// Resolve inviter names in one pass; same staff often invited
+	// many people, so memoize.
+	nameCache := map[uuid.UUID]string{}
+	out := make([]InviteListEntry, 0, len(rows))
+	for _, r := range rows {
+		email, err := s.cipher.Decrypt(r.Email)
+		if err != nil {
+			return nil, fmt.Errorf("auth.service.ListInvitesForClinic: decrypt email: %w", err)
+		}
+		inviterName, ok := nameCache[r.InvitedByID]
+		if !ok {
+			st, sErr := s.repo.GetStaffByID(ctx, r.InvitedByID)
+			if sErr == nil {
+				if n, dErr := s.cipher.Decrypt(st.FullName); dErr == nil {
+					inviterName = n
+				}
+			}
+			nameCache[r.InvitedByID] = inviterName
+		}
+		out = append(out, InviteListEntry{
+			ID:            r.ID,
+			Email:         email,
+			Role:          r.Role,
+			NoteTier:      r.NoteTier,
+			Permissions:   r.Permissions,
+			InvitedByID:   r.InvitedByID,
+			InvitedByName: inviterName,
+			CreatedAt:     r.CreatedAt,
+			ExpiresAt:     r.ExpiresAt,
+			AcceptedAt:    r.AcceptedAt,
+			RevokedAt:     r.RevokedAt,
+			Status:        deriveInviteStatus(r),
+		})
+	}
+	return out, nil
+}
+
+// GetInviteForClinic fetches one invite by id, decrypted. Used by the
+// resend handler to look up the invite shape (role/perms/email) before
+// minting a new token.
+func (s *Service) GetInviteForClinic(ctx context.Context, id, clinicID uuid.UUID) (*InviteListEntry, error) {
+	r, err := s.repo.GetInviteByID(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.GetInviteForClinic: %w", err)
+	}
+	email, err := s.cipher.Decrypt(r.Email)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.GetInviteForClinic: decrypt email: %w", err)
+	}
+	var inviterName string
+	if st, sErr := s.repo.GetStaffByID(ctx, r.InvitedByID); sErr == nil {
+		if n, dErr := s.cipher.Decrypt(st.FullName); dErr == nil {
+			inviterName = n
+		}
+	}
+	return &InviteListEntry{
+		ID:            r.ID,
+		Email:         email,
+		Role:          r.Role,
+		NoteTier:      r.NoteTier,
+		Permissions:   r.Permissions,
+		InvitedByID:   r.InvitedByID,
+		InvitedByName: inviterName,
+		CreatedAt:     r.CreatedAt,
+		ExpiresAt:     r.ExpiresAt,
+		AcceptedAt:    r.AcceptedAt,
+		RevokedAt:     r.RevokedAt,
+		Status:        deriveInviteStatus(r),
+	}, nil
+}
+
+// RevokeInviteForClinic stamps revoked_at on an invite. Returns
+// ErrNotFound if the row isn't pending (already accepted, already
+// revoked, or wrong clinic).
+func (s *Service) RevokeInviteForClinic(ctx context.Context, id, clinicID uuid.UUID) error {
+	if err := s.repo.RevokeInviteByID(ctx, id, clinicID); err != nil {
+		return fmt.Errorf("auth.service.RevokeInviteForClinic: %w", err)
+	}
+	return nil
+}
+
+// LoginEntry is the decrypted view of one consumed magic-link login,
+// returned to the staff-activity aggregator. Decryption of the IP
+// happens here so the staff package never touches our cipher.
+type LoginEntry struct {
+	ID     uuid.UUID
+	UsedAt time.Time
+	IP     string // best-effort; "" when unknown or undecryptable
+}
+
+// ListLoginsForStaff returns the consumed magic-link logins for a
+// staff member, newest-first. Backs the per-staff activity feed.
+func (s *Service) ListLoginsForStaff(ctx context.Context, staffID uuid.UUID, limit int) ([]LoginEntry, error) {
+	rows, err := s.repo.ListLoginsByStaff(ctx, staffID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.ListLoginsForStaff: %w", err)
+	}
+	out := make([]LoginEntry, 0, len(rows))
+	for _, r := range rows {
+		var ip string
+		if r.CreatedFromIP != nil && *r.CreatedFromIP != "" {
+			if dec, dErr := s.cipher.Decrypt(*r.CreatedFromIP); dErr == nil {
+				ip = dec
+			}
+		}
+		out = append(out, LoginEntry{ID: r.ID, UsedAt: r.UsedAt, IP: ip})
+	}
+	return out, nil
+}
+
+// deriveInviteStatus mirrors the comment on InviteListEntry.Status —
+// kept as a function so the same precedence applies in List + Get.
+func deriveInviteStatus(r *inviteRow) string {
+	switch {
+	case r.AcceptedAt != nil:
+		return "accepted"
+	case r.RevokedAt != nil:
+		return "revoked"
+	case domain.TimeNow().After(r.ExpiresAt):
+		return "expired"
+	default:
+		return "pending"
+	}
+}
+
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 // issueTokenPair creates and stores a refresh token, then issues an access+refresh pair.
