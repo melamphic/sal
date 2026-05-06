@@ -3675,13 +3675,19 @@ func (a *marketplaceImporterAdapter) LinkFormToPolicy(ctx context.Context, formI
 }
 
 func (a *marketplaceImporterAdapter) ImportForm(ctx context.Context, in marketplace.FormImportInput) (uuid.UUID, error) {
+	listingID := in.SourceMarketplaceListingID
+	versionID := in.SourceMarketplaceVersionID
+	acquisitionID := in.SourceMarketplaceAcquisitionID
 	created, err := a.formsSvc.CreateForm(ctx, forms.CreateFormInput{
-		ClinicID:      in.ClinicID,
-		StaffID:       in.StaffID,
-		Name:          in.Name,
-		Description:   in.Description,
-		OverallPrompt: in.OverallPrompt,
-		Tags:          in.Tags,
+		ClinicID:                       in.ClinicID,
+		StaffID:                        in.StaffID,
+		Name:                           in.Name,
+		Description:                    in.Description,
+		OverallPrompt:                  in.OverallPrompt,
+		Tags:                           in.Tags,
+		SourceMarketplaceListingID:     &listingID,
+		SourceMarketplaceVersionID:     &versionID,
+		SourceMarketplaceAcquisitionID: &acquisitionID,
 	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("app.marketplaceImporterAdapter: create: %w", err)
