@@ -40,6 +40,13 @@ type FormRecord struct {
 	ArchivedAt    *time.Time
 	RetireReason  *string
 	RetiredBy     *uuid.UUID
+	// SourceMarketplaceListingID/VersionID/AcquisitionID are non-nil only when
+	// the form was imported from a marketplace listing. They power the
+	// upgrade-flow UX: finding sibling forms imported from the same listing
+	// (older or newer versions) and rendering the "v3 from marketplace" banner.
+	SourceMarketplaceListingID     *uuid.UUID
+	SourceMarketplaceVersionID     *uuid.UUID
+	SourceMarketplaceAcquisitionID *uuid.UUID
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
@@ -151,6 +158,11 @@ type CreateFormParams struct {
 	OverallPrompt *string
 	Tags          []string
 	CreatedBy     uuid.UUID
+	// Marketplace lineage — populated only when the marketplace importer
+	// creates the form. Nil for clinic-authored forms.
+	SourceMarketplaceListingID     *uuid.UUID
+	SourceMarketplaceVersionID     *uuid.UUID
+	SourceMarketplaceAcquisitionID *uuid.UUID
 }
 
 // UpdateFormMetaParams holds values needed to update form metadata.
@@ -353,17 +365,25 @@ func (r *Repository) UpdateGroup(ctx context.Context, p UpdateGroupParams) (*Gro
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
 
+// formCols is the canonical SELECT/RETURNING column list for the forms table.
+// All form-row scans go through scanForm in this exact order; keeping it as a
+// single constant prevents drift across the dozen+ queries that touch this row.
+const formCols = `id, clinic_id, group_id, name, description, overall_prompt, tags,
+		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by,
+		          source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id`
+
 // CreateForm inserts a new form row.
 func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormRecord, error) {
 	const q = `
-		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING ` + formCols
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description,
 		p.OverallPrompt, p.Tags, p.CreatedBy,
+		p.SourceMarketplaceListingID, p.SourceMarketplaceVersionID, p.SourceMarketplaceAcquisitionID,
 	)
 	rec, err := scanForm(row)
 	if err != nil {
@@ -392,15 +412,16 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const formQ = `
-		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING ` + formCols
 
 	fp := p.Form
 	formRow := tx.QueryRow(ctx, formQ,
 		fp.ID, fp.ClinicID, fp.GroupID, fp.Name, fp.Description,
 		fp.OverallPrompt, fp.Tags, fp.CreatedBy,
+		fp.SourceMarketplaceListingID, fp.SourceMarketplaceVersionID, fp.SourceMarketplaceAcquisitionID,
 	)
 	formRec, err := scanForm(formRow)
 	if err != nil {
@@ -527,9 +548,7 @@ func (r *Repository) DeleteFormCascade(ctx context.Context, formID, clinicID uui
 
 // GetFormByID fetches a form by ID scoped to the clinic.
 func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
-	const q = `
-		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
+	q := `SELECT ` + formCols + `
 		FROM forms
 		WHERE id = $1 AND clinic_id = $2`
 
@@ -566,8 +585,7 @@ func (r *Repository) ListForms(ctx context.Context, clinicID uuid.UUID, p ListFo
 
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
-		SELECT id, clinic_id, group_id, name, description, overall_prompt, tags,
-		       created_by, created_at, updated_at, archived_at, retire_reason, retired_by
+		SELECT `+formCols+`
 		FROM forms
 		WHERE %s
 		ORDER BY created_at DESC
@@ -595,12 +613,10 @@ func (r *Repository) ListForms(ctx context.Context, clinicID uuid.UUID, p ListFo
 
 // UpdateFormMeta updates top-level form metadata on the forms row.
 func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams) (*FormRecord, error) {
-	const q = `
-		UPDATE forms
+	q := `UPDATE forms
 		SET group_id = $3, name = $4, description = $5, overall_prompt = $6, tags = $7
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+		RETURNING ` + formCols
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description, p.OverallPrompt, p.Tags,
@@ -614,12 +630,10 @@ func (r *Repository) UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams)
 
 // RetireForm sets archived_at, retire_reason, and retired_by on the form.
 func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormRecord, error) {
-	const q = `
-		UPDATE forms
+	q := `UPDATE forms
 		SET archived_at = $3, retire_reason = $4, retired_by = $5
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, group_id, name, description, overall_prompt, tags,
-		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by`
+		RETURNING ` + formCols
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason, p.RetiredBy)
 	rec, err := scanForm(row)
@@ -627,6 +641,39 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 		return nil, fmt.Errorf("forms.repo.RetireForm: %w", err)
 	}
 	return rec, nil
+}
+
+// ListByMarketplaceListing returns every form in this clinic that descended
+// from the given marketplace listing — across all imported versions. Powers
+// the upgrade UX: when a buyer imports a newer version, we surface their
+// existing sibling form(s) so they can compare side-by-side and switch over.
+//
+// Includes archived forms so the UI can show "your previous version (archived)"
+// after the buyer chooses to switch over.
+func (r *Repository) ListByMarketplaceListing(ctx context.Context, clinicID, listingID uuid.UUID) ([]*FormRecord, error) {
+	q := `SELECT ` + formCols + `
+		FROM forms
+		WHERE clinic_id = $1 AND source_marketplace_listing_id = $2
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, q, clinicID, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListByMarketplaceListing: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*FormRecord
+	for rows.Next() {
+		f, err := scanForm(rows)
+		if err != nil {
+			return nil, fmt.Errorf("forms.repo.ListByMarketplaceListing: %w", err)
+		}
+		list = append(list, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListByMarketplaceListing: rows: %w", err)
+	}
+	return list, nil
 }
 
 // ── Versions ──────────────────────────────────────────────────────────────────
@@ -1236,6 +1283,7 @@ func scanForm(row scannable) (*FormRecord, error) {
 		&f.ID, &f.ClinicID, &f.GroupID, &f.Name, &f.Description,
 		&f.OverallPrompt, &f.Tags, &f.CreatedBy,
 		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason, &f.RetiredBy,
+		&f.SourceMarketplaceListingID, &f.SourceMarketplaceVersionID, &f.SourceMarketplaceAcquisitionID,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
