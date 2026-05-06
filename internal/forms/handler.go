@@ -123,6 +123,42 @@ func (h *Handler) getForm(ctx context.Context, input *formIDInput) (*formHTTPRes
 	return &formHTTPResponse{Body: resp}, nil
 }
 
+// listFormsByMarketplaceListingInput is the path input for the sibling lookup.
+type listFormsByMarketplaceListingInput struct {
+	ListingID string `path:"listing_id" doc:"The marketplace listing UUID to find descendant forms for."`
+}
+
+// formMarketplaceSiblingsResponseBody is the response shape for the sibling
+// lookup. Items are forms in the caller's clinic descended from this listing,
+// across all imported versions.
+//
+//nolint:revive
+type FormMarketplaceSiblingsResponse struct {
+	Items []*FormResponse `json:"items"`
+}
+
+type formMarketplaceSiblingsHTTPResponse struct {
+	Body *FormMarketplaceSiblingsResponse
+}
+
+// listFormsByMarketplaceListing handles GET /api/v1/forms/marketplace-siblings/{listing_id}.
+// Returns every form in the clinic that descended from the given marketplace
+// listing — used by the form editor banner ("you have v1 active and v3
+// imported as a draft") and the marketplace upgrade UX.
+func (h *Handler) listFormsByMarketplaceListing(ctx context.Context, input *listFormsByMarketplaceListingInput) (*formMarketplaceSiblingsHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	listingID, err := uuid.Parse(input.ListingID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid listing_id")
+	}
+
+	items, err := h.svc.ListFormsByMarketplaceListing(ctx, clinicID, listingID)
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &formMarketplaceSiblingsHTTPResponse{Body: &FormMarketplaceSiblingsResponse{Items: items}}, nil
+}
+
 // listForms handles GET /api/v1/forms.
 func (h *Handler) listForms(ctx context.Context, input *listFormsInput) (*formListHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)
