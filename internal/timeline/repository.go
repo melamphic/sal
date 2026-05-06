@@ -91,6 +91,43 @@ func (r *Repository) ListClinicAuditLog(ctx context.Context, clinicID uuid.UUID,
 	return r.listEvents(ctx, "clinic_id = $1", []any{clinicID}, p)
 }
 
+// ListByActor returns paginated events authored by a specific staff
+// member, newest first. Used by the team page's per-staff activity
+// drawer ("what did this person do?"). Note: this scans note_events
+// and orders DESC; the other list helpers order ASC for chronological
+// timeline rendering. Activity feeds want newest-on-top.
+func (r *Repository) ListByActor(ctx context.Context, actorID, clinicID uuid.UUID, p ListParams) ([]*EventRecord, int, error) {
+	var total int
+	if err := r.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM note_events WHERE actor_id = $1 AND clinic_id = $2`,
+		actorID, clinicID,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("timeline.repo.ListByActor: count: %w", err)
+	}
+	q := fmt.Sprintf(`
+		SELECT %s FROM note_events
+		WHERE actor_id = $1 AND clinic_id = $2
+		ORDER BY occurred_at DESC
+		LIMIT $3 OFFSET $4`, eventCols)
+	rows, err := r.db.Query(ctx, q, actorID, clinicID, p.Limit, p.Offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("timeline.repo.ListByActor: %w", err)
+	}
+	defer rows.Close()
+	var list []*EventRecord
+	for rows.Next() {
+		e, sErr := scanEvent(rows)
+		if sErr != nil {
+			return nil, 0, fmt.Errorf("timeline.repo.ListByActor: %w", sErr)
+		}
+		list = append(list, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("timeline.repo.ListByActor: rows: %w", err)
+	}
+	return list, total, nil
+}
+
 const eventCols = `id, note_id, subject_id, clinic_id, event_type, field_id,
 	old_value::text, new_value::text, actor_id, actor_role, reason, occurred_at`
 
