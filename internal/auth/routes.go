@@ -53,11 +53,21 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.refreshTokens)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "preview-invite",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/auth/invite/preview",
+		Summary:     "Public preview of an invite token",
+		Description: "Unauthenticated. The token is the auth — returns the public-safe slice of clinic + invite context (clinic name + logo + vertical/country, inviter name, role, permissions, suggested regulator authority pre-fill, suggested professional title options, the invitee's email) so the FE can render the accept page before the user has signed in.",
+		Tags:        []string{"Auth"},
+		Middlewares: rl,
+	}, h.previewInvite)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "accept-invite",
 		Method:      http.MethodPost,
 		Path:        "/api/v1/auth/accept-invite",
 		Summary:     "Accept a staff invitation",
-		Description: "Verifies the invite token, creates the staff record, and returns an access and refresh token pair. The invited person provides their full name.",
+		Description: "Verifies the invite token, creates the staff record (full name + title + optional regulator authority + reg # + optional mobile + terms-accepted timestamp), and returns an access and refresh token pair. Clinical roles (Dispense / SubmitForms perms) must supply regulator authority + reg # at acceptance — the call rejects with 422 otherwise.",
 		Tags:        []string{"Auth"},
 		Middlewares: rl,
 	}, h.acceptInvite)
