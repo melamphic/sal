@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -712,6 +713,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// pipeline the worker uses for stored reports.
 	reportsSvc.SetV2Renderer(complianceV2)
 	reportsHandler := reports.NewHandler(reportsSvc, store)
+
+	// Per-staff activity feed: register one source per domain. Each
+	// adapter projects the domain's slim row shape into the unified
+	// staff.ActivityEvent. The aggregator runs them all in parallel.
+	staffSvc.RegisterActivitySource(&notesActivityAdapter{tl: timelineSvc})
+	staffSvc.RegisterActivitySource(&drugsActivityAdapter{svc: drugsSvc})
+	staffSvc.RegisterActivitySource(&incidentsActivityAdapter{svc: incidentsSvc})
+	staffSvc.RegisterActivitySource(&consentActivityAdapter{svc: consentSvc})
+	staffSvc.RegisterActivitySource(&painActivityAdapter{svc: painSvc})
+	staffSvc.RegisterActivitySource(&loginsActivityAdapter{auth: authSvc})
 
 	// ── Marketplace module ───────────────────────────────────────────────────
 	marketplaceRepo := marketplace.NewRepository(db)
@@ -1569,6 +1580,275 @@ func logoExtForContentType(ct string) string {
 	return ""
 }
 
+// ── Per-staff activity adapters ─────────────────────────────────────────────
+//
+// One adapter per domain that contributes events to the team-page
+// activity feed. Each implements staff.ActivitySource by calling the
+// domain's own service (never another domain's tables) and projecting
+// the slim row shape into the unified staff.ActivityEvent.
+//
+// Subject names aren't resolved here — surfacing the encrypted-name
+// decrypt for every event would be N+1 expensive and the FE can lazy-
+// fetch via the existing /subjects/{id} endpoint when a row is opened.
+
+type notesActivityAdapter struct{ tl *timeline.Service }
+
+func (a *notesActivityAdapter) Name() string { return "notes" }
+
+func (a *notesActivityAdapter) ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	resp, err := a.tl.GetStaffActivity(ctx, staffID, clinicID, limit, 0)
+	if err != nil {
+		return nil, fmt.Errorf("app.notesActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(resp.Items))
+	for _, e := range resp.Items {
+		t, _ := time.Parse(time.RFC3339, e.OccurredAt)
+		out = append(out, staff.ActivityEvent{
+			ID:         e.ID,
+			Source:     "notes",
+			Kind:       e.EventType,
+			OccurredAt: t,
+			Title:      prettyNoteEvent(e.EventType),
+			Subtitle:   strFromPtr(e.Reason),
+			NoteID:     &e.NoteID,
+			SubjectID:  e.SubjectID,
+		})
+	}
+	return out, nil
+}
+
+func prettyNoteEvent(t string) string {
+	switch t {
+	case "note.created":
+		return "Note created"
+	case "note.draft.saved":
+		return "Note draft saved"
+	case "note.submitted":
+		return "Note submitted"
+	case "note.signed":
+		return "Note signed"
+	case "note.recording.attached":
+		return "Recording attached"
+	case "note.field.edited":
+		return "Note field edited"
+	case "note.field.set":
+		return "Note field set"
+	case "note.policy.checked":
+		return "Policy check ran"
+	case "note.policy.failed":
+		return "Policy check failed"
+	case "note.archived":
+		return "Note archived"
+	}
+	return strings.ReplaceAll(t, ".", " · ")
+}
+
+type drugsActivityAdapter struct{ svc *drugs.Service }
+
+func (a *drugsActivityAdapter) Name() string { return "drugs" }
+
+func (a *drugsActivityAdapter) ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	rows, err := a.svc.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("app.drugsActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(rows))
+	for _, r := range rows {
+		idStr := r.ID.String()
+		var subID *string
+		if r.SubjectID != nil {
+			s := r.SubjectID.String()
+			subID = &s
+		}
+		var noteID *string
+		if r.NoteID != nil {
+			s := r.NoteID.String()
+			noteID = &s
+		}
+		title := fmt.Sprintf("%s %s", titleCase(r.Operation), r.DrugName)
+		if r.DrugName == "" {
+			title = titleCase(r.Operation) + " medication"
+		}
+		subtitle := strings.TrimSpace(fmt.Sprintf("%s %s", r.Quantity, r.Unit))
+		if r.Route != nil && *r.Route != "" {
+			subtitle = strings.TrimSpace(subtitle + " · " + *r.Route)
+		}
+		out = append(out, staff.ActivityEvent{
+			ID:         "drug-" + idStr,
+			Source:     "drugs",
+			Kind:       "drug." + r.Operation,
+			OccurredAt: r.OccurredAt,
+			Title:      title,
+			Subtitle:   subtitle,
+			NoteID:     noteID,
+			SubjectID:  subID,
+			EntityID:   &idStr,
+		})
+	}
+	return out, nil
+}
+
+type incidentsActivityAdapter struct{ svc *incidents.Service }
+
+func (a *incidentsActivityAdapter) Name() string { return "incidents" }
+
+func (a *incidentsActivityAdapter) ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	rows, err := a.svc.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("app.incidentsActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(rows))
+	for _, r := range rows {
+		idStr := r.ID.String()
+		var subID *string
+		if r.SubjectID != nil {
+			s := r.SubjectID.String()
+			subID = &s
+		}
+		var noteID *string
+		if r.NoteID != nil {
+			s := r.NoteID.String()
+			noteID = &s
+		}
+		out = append(out, staff.ActivityEvent{
+			ID:         "incident-" + idStr,
+			Source:     "incidents",
+			Kind:       "incident.logged",
+			OccurredAt: r.OccurredAt,
+			Title:      fmt.Sprintf("Incident logged · %s", titleCase(r.IncidentType)),
+			Subtitle:   "Severity " + titleCase(r.Severity),
+			NoteID:     noteID,
+			SubjectID:  subID,
+			EntityID:   &idStr,
+		})
+	}
+	return out, nil
+}
+
+type consentActivityAdapter struct{ svc *consent.Service }
+
+func (a *consentActivityAdapter) Name() string { return "consent" }
+
+func (a *consentActivityAdapter) ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	rows, err := a.svc.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("app.consentActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(rows))
+	for _, r := range rows {
+		idStr := r.ID.String()
+		subID := r.SubjectID.String()
+		var noteID *string
+		if r.NoteID != nil {
+			s := r.NoteID.String()
+			noteID = &s
+		}
+		out = append(out, staff.ActivityEvent{
+			ID:         "consent-" + idStr,
+			Source:     "consent",
+			Kind:       "consent.captured",
+			OccurredAt: r.OccurredAt,
+			Title:      fmt.Sprintf("Consent captured · %s", titleCase(r.ConsentType)),
+			Subtitle:   titleCase(r.CapturedVia),
+			NoteID:     noteID,
+			SubjectID:  &subID,
+			EntityID:   &idStr,
+		})
+	}
+	return out, nil
+}
+
+type painActivityAdapter struct{ svc *pain.Service }
+
+func (a *painActivityAdapter) Name() string { return "pain" }
+
+func (a *painActivityAdapter) ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	rows, err := a.svc.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("app.painActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(rows))
+	for _, r := range rows {
+		idStr := r.ID.String()
+		subID := r.SubjectID.String()
+		var noteID *string
+		if r.NoteID != nil {
+			s := r.NoteID.String()
+			noteID = &s
+		}
+		out = append(out, staff.ActivityEvent{
+			ID:         "pain-" + idStr,
+			Source:     "pain",
+			Kind:       "pain.recorded",
+			OccurredAt: r.OccurredAt,
+			Title:      fmt.Sprintf("Pain score · %d", r.Score),
+			Subtitle:   "Scale " + strings.ToUpper(r.Scale),
+			NoteID:     noteID,
+			SubjectID:  &subID,
+			EntityID:   &idStr,
+		})
+	}
+	return out, nil
+}
+
+type loginsActivityAdapter struct{ auth *auth.Service }
+
+func (a *loginsActivityAdapter) Name() string { return "auth" }
+
+func (a *loginsActivityAdapter) ListActivityFor(ctx context.Context, staffID, _ uuid.UUID, limit int) ([]staff.ActivityEvent, error) {
+	logins, err := a.auth.ListLoginsForStaff(ctx, staffID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("app.loginsActivityAdapter: %w", err)
+	}
+	out := make([]staff.ActivityEvent, 0, len(logins))
+	for _, l := range logins {
+		idStr := l.ID.String()
+		subtitle := ""
+		if l.IP != "" {
+			subtitle = "from " + l.IP
+		}
+		out = append(out, staff.ActivityEvent{
+			ID:         "login-" + idStr,
+			Source:     "auth",
+			Kind:       "auth.login",
+			OccurredAt: l.UsedAt,
+			Title:      "Signed in",
+			Subtitle:   subtitle,
+			EntityID:   &idStr,
+		})
+	}
+	return out, nil
+}
+
+func strFromPtr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func titleCase(s string) string {
+	if s == "" {
+		return ""
+	}
+	// Replace underscores/dashes with spaces; uppercase the first rune
+	// of every word. We avoid `strings.Title` (deprecated) and pull in
+	// no extra deps — the team-activity feed shows enum slugs like
+	// "verbal_clinic" or "audio_recording" so we want them readable.
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '_' || r == '-' || r == '.'
+	})
+	for i, p := range parts {
+		if p == "" {
+			continue
+		}
+		runes := []rune(p)
+		runes[0] = unicode.ToUpper(runes[0])
+		parts[i] = string(runes)
+	}
+	return strings.Join(parts, " ")
+}
+
 // aiDraftsRecordingAdapter satisfies aidrafts.RecordingProvider by
 // reading the transcript via the existing system-internal getter on
 // audio.Repository (same one notes ExtractNoteWorker uses via
@@ -1872,6 +2152,51 @@ func (a *inviteCreatorAdapter) CreateInvite(ctx context.Context, params staff.Cr
 		return "", fmt.Errorf("app.inviteCreatorAdapter: %w", err)
 	}
 	return token, nil
+}
+
+func (a *inviteCreatorAdapter) ListInvites(ctx context.Context, clinicID uuid.UUID) ([]staff.InviteListEntry, error) {
+	rows, err := a.auth.ListInvitesForClinic(ctx, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.inviteCreatorAdapter.ListInvites: %w", err)
+	}
+	out := make([]staff.InviteListEntry, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, inviteEntryToStaff(r))
+	}
+	return out, nil
+}
+
+func (a *inviteCreatorAdapter) GetInvite(ctx context.Context, id, clinicID uuid.UUID) (*staff.InviteListEntry, error) {
+	r, err := a.auth.GetInviteForClinic(ctx, id, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("app.inviteCreatorAdapter.GetInvite: %w", err)
+	}
+	out := inviteEntryToStaff(*r)
+	return &out, nil
+}
+
+func (a *inviteCreatorAdapter) RevokeInvite(ctx context.Context, id, clinicID uuid.UUID) error {
+	if err := a.auth.RevokeInviteForClinic(ctx, id, clinicID); err != nil {
+		return fmt.Errorf("app.inviteCreatorAdapter.RevokeInvite: %w", err)
+	}
+	return nil
+}
+
+func inviteEntryToStaff(r auth.InviteListEntry) staff.InviteListEntry {
+	return staff.InviteListEntry{
+		ID:            r.ID,
+		Email:         r.Email,
+		Role:          r.Role,
+		NoteTier:      r.NoteTier,
+		Permissions:   r.Permissions,
+		InvitedByID:   r.InvitedByID,
+		InvitedByName: r.InvitedByName,
+		CreatedAt:     r.CreatedAt,
+		ExpiresAt:     r.ExpiresAt,
+		AcceptedAt:    r.AcceptedAt,
+		RevokedAt:     r.RevokedAt,
+		Status:        r.Status,
+	}
 }
 
 // clinicNameProviderAdapter implements staff.ClinicNameProvider.
