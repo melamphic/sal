@@ -18,6 +18,18 @@ func (f *fakeInviteCreator) CreateInvite(_ context.Context, _ CreateInviteTokenP
 	return "fake-invite-token", nil
 }
 
+func (f *fakeInviteCreator) ListInvites(_ context.Context, _ uuid.UUID) ([]InviteListEntry, error) {
+	return nil, nil
+}
+
+func (f *fakeInviteCreator) GetInvite(_ context.Context, _, _ uuid.UUID) (*InviteListEntry, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeInviteCreator) RevokeInvite(_ context.Context, _, _ uuid.UUID) error {
+	return nil
+}
+
 // fakeClinicNameProvider satisfies ClinicNameProvider in tests.
 type fakeClinicNameProvider struct{}
 
