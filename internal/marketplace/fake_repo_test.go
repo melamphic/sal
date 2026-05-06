@@ -24,6 +24,10 @@ type fakeRepo struct {
 	publishersByClinic map[uuid.UUID]uuid.UUID // clinic_id → publisher_id
 	listingsBySlug     map[string]uuid.UUID    // slug → listing_id
 	processedEvents    map[string]bool         // stripe event dedupe
+	// dismissedNotifications tracks calls to MarkNotificationsSeenForAcquisitionVersion
+	// keyed by "acquisitionID:versionID" → call count, so tests can assert the
+	// import flow dismisses the banner exactly once.
+	dismissedNotifications map[string]int
 }
 
 func newFakeRepo() *fakeRepo {
@@ -648,6 +652,19 @@ func (r *fakeRepo) ListUnseenNotifications(_ context.Context, _ uuid.UUID, _ int
 
 // MarkNotificationSeen stub.
 func (r *fakeRepo) MarkNotificationSeen(_ context.Context, _, _ uuid.UUID, _ time.Time) error {
+	return nil
+}
+
+// MarkNotificationsSeenForAcquisitionVersion stub — counts calls so tests can
+// assert the import flow dismisses the banner.
+func (r *fakeRepo) MarkNotificationsSeenForAcquisitionVersion(_ context.Context, acquisitionID, _, versionID uuid.UUID, _ time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.dismissedNotifications == nil {
+		r.dismissedNotifications = make(map[string]int)
+	}
+	key := acquisitionID.String() + ":" + versionID.String()
+	r.dismissedNotifications[key]++
 	return nil
 }
 
