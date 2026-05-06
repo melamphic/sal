@@ -61,6 +61,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.confirmUpload)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "retry-transcription",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/recordings/{recording_id}/retry-transcription",
+		Summary:     "Retry a failed transcription",
+		Description: "Resets a failed recording to uploaded and re-enqueues the transcription worker. Downstream notes pick up the new transcript automatically via the OnRecordingTranscribed listener.",
+		Tags:        []string{"Recordings"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, recordAudio},
+	}, h.retryTranscription)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-recording-download-url",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/recordings/{recording_id}/download-url",

@@ -394,14 +394,20 @@ func (r *Repository) ArchiveNote(ctx context.Context, p ArchiveNoteParams) (*Not
 }
 
 // ListExtractingNoteIDsByRecording returns IDs of notes in `extracting`
-// status that are bound to the given recording. Used by the
+// or `failed` status that are bound to the given recording. Used by the
 // audio-transcribe listener to fan out extraction jobs the moment the
-// transcript lands. No clinic scope — the listener is system-internal,
-// triggered by a recording row that the audio module already gated on.
+// transcript lands. `failed` is included so retry-transcription auto-
+// recovers notes that were marked failed by a prior transcription error
+// — once the new transcript exists, the same notes should re-extract
+// without the user having to also click retry-extraction. No clinic scope:
+// the listener is system-internal, triggered by a recording row that the
+// audio module already gated on.
 func (r *Repository) ListExtractingNoteIDsByRecording(ctx context.Context, recordingID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id FROM notes
-		WHERE recording_id = $1 AND status = 'extracting' AND archived_at IS NULL`,
+		WHERE recording_id = $1
+		  AND status IN ('extracting', 'failed')
+		  AND archived_at IS NULL`,
 		recordingID,
 	)
 	if err != nil {

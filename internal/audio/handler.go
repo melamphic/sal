@@ -165,6 +165,25 @@ func (h *Handler) confirmUpload(ctx context.Context, input *recordingIDInput) (*
 	return &recordingResponse{Body: resp}, nil
 }
 
+// retryTranscription handles POST /api/v1/recordings/{recording_id}/retry-transcription.
+func (h *Handler) retryTranscription(ctx context.Context, input *recordingIDInput) (*recordingResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	recID, err := uuid.Parse(input.RecordingID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid recording_id")
+	}
+
+	if err := h.svc.RetryTranscription(ctx, recID, clinicID); err != nil {
+		return nil, mapAudioError(err)
+	}
+	resp, err := h.svc.GetRecordingByID(ctx, recID, clinicID)
+	if err != nil {
+		return nil, mapAudioError(err)
+	}
+	return &recordingResponse{Body: resp}, nil
+}
+
 // getDownloadURL handles GET /api/v1/recordings/{recording_id}/download-url.
 func (h *Handler) getDownloadURL(ctx context.Context, input *recordingIDInput) (*downloadURLHTTPResponse, error) {
 	clinicID := mw.ClinicIDFromContext(ctx)

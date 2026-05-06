@@ -255,11 +255,14 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// inner pointer is set after the matching NewService call.
 	notesTranscriptListener := &lazyTranscriptListener{}
 	aiDraftsTranscriptListener := &lazyTranscriptListener{}
-	river.AddWorker(workers, audio.NewTranscribeAudioWorker(
+	notesTranscribeFailedListener := &lazyTranscribeFailedListener{}
+	transcribeWorker := audio.NewTranscribeAudioWorker(
 		audioRepo, store, transcriber,
 		notesTranscriptListener,
 		aiDraftsTranscriptListener,
-	))
+	)
+	transcribeWorker.AddFailedListener(notesTranscribeFailedListener)
+	river.AddWorker(workers, transcribeWorker)
 
 	// AI drafts repo + worker (registered before river.NewClient).
 	// Worker uses lazy adapters because the underlying drafters /
@@ -476,6 +479,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// notesSvc.OnRecordingTranscribed re-enqueues ExtractNoteArgs (UniqueOpts
 	// dedupes against the immediate enqueue from CreateNote).
 	notesTranscriptListener.inner = notesSvc
+	notesTranscribeFailedListener.inner = notesSvc
 	// Wire per-clause policy checker if available (Gemini only for now).
 	detailedChecker, err := extraction.NewPolicyDetailedCheckerFromConfig(ctx, cfg)
 	if err != nil {
@@ -1145,6 +1149,14 @@ func (a *audioTranscriptAdapter) GetWordConfidences(ctx context.Context, recordi
 	return wc, nil
 }
 
+func (a *audioTranscriptAdapter) GetStatus(ctx context.Context, recordingID uuid.UUID) (domain.RecordingStatus, *string, error) {
+	status, errMsg, err := a.repo.GetStatus(ctx, recordingID)
+	if err != nil {
+		return "", nil, fmt.Errorf("app.audioTranscriptAdapter: %w", err)
+	}
+	return status, errMsg, nil
+}
+
 // adminBootstrapAdapter implements clinic.AdminBootstrapper.
 // After clinic registration, it creates the first super admin and sends a magic link.
 // auth and staff are set after their respective services are constructed.
@@ -1643,6 +1655,24 @@ func (l *lazyTranscriptListener) OnRecordingTranscribed(ctx context.Context, rec
 	}
 	if err := l.inner.OnRecordingTranscribed(ctx, recordingID); err != nil {
 		return fmt.Errorf("app.lazyTranscriptListener.OnRecordingTranscribed: %w", err)
+	}
+	return nil
+}
+
+// lazyTranscribeFailedListener mirrors lazyTranscriptListener for the
+// permanent-failure side of the transcription pipeline. The notes service
+// is constructed after the worker is registered, so the inner pointer is
+// resolved when notesSvc exists.
+type lazyTranscribeFailedListener struct {
+	inner audio.TranscribeFailedListener
+}
+
+func (l *lazyTranscribeFailedListener) OnRecordingTranscribeFailed(ctx context.Context, recordingID uuid.UUID, errorMessage string) error {
+	if l.inner == nil {
+		return fmt.Errorf("app.lazyTranscribeFailedListener: not yet wired")
+	}
+	if err := l.inner.OnRecordingTranscribeFailed(ctx, recordingID, errorMessage); err != nil {
+		return fmt.Errorf("app.lazyTranscribeFailedListener.OnRecordingTranscribeFailed: %w", err)
 	}
 	return nil
 }

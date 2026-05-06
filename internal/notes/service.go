@@ -112,10 +112,50 @@ func (s *Service) SetDrugConfirmChecker(c DrugConfirmChecker) {
 	s.drugConfirm = c
 }
 
+// OnRecordingTranscribeFailed satisfies audio.TranscribeFailedListener.
+// Called when the transcription worker permanently fails (last attempt or
+// non-retryable error). Marks every note bound to the recording as failed
+// with the humanized error so the FE banner appears immediately and the
+// user can act (retry once quota recovers / switch provider). Without this
+// hook the note stays in `extracting` forever from the FE's perspective —
+// transcribe failures don't otherwise emit a `note.*` event for the
+// realtime stream to surface.
+func (s *Service) OnRecordingTranscribeFailed(ctx context.Context, recordingID uuid.UUID, errorMessage string) error {
+	ids, err := s.repo.ListExtractingNoteIDsByRecording(ctx, recordingID)
+	if err != nil {
+		return fmt.Errorf("notes.service.OnRecordingTranscribeFailed: %w", err)
+	}
+	msg := "Transcription failed: " + humanizeExtractionError(fmt.Errorf("%s", errorMessage))
+	for _, id := range ids {
+		note, gerr := s.repo.GetNoteByID(ctx, id, uuid.Nil)
+		if gerr != nil {
+			continue
+		}
+		// Skip notes already marked failed — avoid clobbering a more
+		// specific extraction error with the transcription one.
+		if note.Status == domain.NoteStatusFailed {
+			continue
+		}
+		_, _ = s.repo.UpdateNoteStatus(ctx, id, note.ClinicID, domain.NoteStatusFailed, &msg)
+		s.events.Emit(ctx, NoteEvent{
+			NoteID:    id,
+			SubjectID: note.SubjectID,
+			ClinicID:  note.ClinicID,
+			EventType: NoteEventExtractionFailed,
+			ActorID:   note.CreatedBy,
+			ActorRole: "system",
+		})
+	}
+	return nil
+}
+
 // OnRecordingTranscribed satisfies audio.TranscriptListener. Called by
 // the audio TranscribeAudioWorker the instant a transcript lands on a
-// recording row. Looks up every note still in `extracting` status
+// recording row. Looks up every note in `extracting` or `failed` status
 // bound to the recording and re-enqueues ExtractNoteArgs for each.
+// `failed` notes get their status reset to `extracting` first so the UI
+// flips to a working state immediately instead of staying on the stale
+// failure banner while the new extraction runs.
 //
 // UniqueOpts ByArgs collapses with the immediate enqueue from
 // CreateNote so the worker only runs once per (kind, NoteID) — the
@@ -127,6 +167,13 @@ func (s *Service) OnRecordingTranscribed(ctx context.Context, recordingID uuid.U
 		return fmt.Errorf("notes.service.OnRecordingTranscribed: %w", err)
 	}
 	for _, id := range ids {
+		// Reset status (and clear stale error) so the UI doesn't flicker
+		// "failed" while the fresh extraction is running. GetNoteByID with
+		// uuid.Nil clinic skips the tenant guard — listener is internal.
+		if note, gerr := s.repo.GetNoteByID(ctx, id, uuid.Nil); gerr == nil &&
+			note.Status == domain.NoteStatusFailed {
+			_, _ = s.repo.UpdateNoteStatus(ctx, id, note.ClinicID, domain.NoteStatusExtracting, nil)
+		}
 		opts := &river.InsertOpts{
 			UniqueOpts: river.UniqueOpts{ByArgs: true},
 		}
@@ -858,7 +905,12 @@ func (s *Service) RetryExtraction(ctx context.Context, noteID, clinicID uuid.UUI
 	if _, err := s.repo.UpdateNoteStatus(ctx, noteID, clinicID, domain.NoteStatusExtracting, nil); err != nil {
 		return nil, fmt.Errorf("notes.service.RetryExtraction: reset status: %w", err)
 	}
-	if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, nil); err != nil {
+	// UniqueOpts ByArgs collapses with any in-flight retry from River's
+	// own backoff path so the user's manual click and the background retry
+	// can't race two extractions for the same note. The user-triggered run
+	// wakes the existing job rather than spawning a parallel one.
+	opts := &river.InsertOpts{UniqueOpts: river.UniqueOpts{ByArgs: true}}
+	if _, err := s.enqueue.Insert(ctx, ExtractNoteArgs{NoteID: noteID}, opts); err != nil {
 		return nil, fmt.Errorf("notes.service.RetryExtraction: enqueue: %w", err)
 	}
 	return s.GetNote(ctx, noteID, clinicID)
