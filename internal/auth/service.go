@@ -29,6 +29,31 @@ type CreateStaffFromInviteInput struct {
 	Role        domain.StaffRole
 	NoteTier    domain.NoteTier
 	Permissions domain.Permissions
+	// New invite-acceptance fields. Title/RegulatorAuthority/RegulatorRegNo/MobileE164
+	// are all optional from the data layer's POV — the service enforces "required for
+	// clinical roles" before calling the adapter.
+	Title              *string
+	RegulatorAuthority *string
+	RegulatorRegNo     *string
+	MobileE164         *string // plaintext; adapter encrypts before persisting
+	TermsAcceptedAt    time.Time
+}
+
+// ClinicInviteLookup resolves the clinic-side context the invitee
+// needs to see on the accept page (name, vertical, country, signed
+// logo URL). Implemented by an adapter in app.go that bridges to
+// clinic.Service so the auth package never imports clinic types.
+type ClinicInviteLookup interface {
+	GetClinicForInvite(ctx context.Context, clinicID uuid.UUID) (ClinicInviteSnapshot, error)
+}
+
+// ClinicInviteSnapshot is the public-safe slice of clinic data the
+// preview endpoint surfaces. Logo URL is already signed when set.
+type ClinicInviteSnapshot struct {
+	Name     string
+	Vertical domain.Vertical
+	Country  string
+	LogoURL  string
 }
 
 // HandoffProvisioner finds-or-creates the clinic + super admin staff for a
@@ -60,6 +85,7 @@ type Service struct {
 	jwtSecret          []byte
 	cfg                ServiceConfig
 	staffCreator       StaffCreator       // nil = invite acceptance disabled
+	clinicLookup       ClinicInviteLookup // nil = invite preview returns no clinic context
 	handoffSecret      []byte             // shared HS256 secret with /mel; nil = handoff disabled
 	handoffProvisioner HandoffProvisioner // nil = handoff disabled
 	signupCheckout     SignupCheckoutClient // nil = signup-checkout disabled (handoffSecret also required)
@@ -120,6 +146,14 @@ func (s *Service) StopBackgroundJobs() {
 func (s *Service) SetMelHandoff(secret []byte, p HandoffProvisioner) {
 	s.handoffSecret = secret
 	s.handoffProvisioner = p
+}
+
+// SetClinicInviteLookup wires the cross-domain port the invite-preview
+// endpoint reads from. Pass nil to disable clinic context on the
+// preview (the endpoint then returns the role/perms/email but no
+// clinic name or logo — the FE renders a generic "Join clinic" header).
+func (s *Service) SetClinicInviteLookup(l ClinicInviteLookup) {
+	s.clinicLookup = l
 }
 
 // SendMagicLink generates a one-time login link and emails it to the staff member.
@@ -258,47 +292,180 @@ func (s *Service) CreateInviteToken(ctx context.Context, clinicID uuid.UUID, ema
 	return rawToken, nil
 }
 
-// AcceptInvite verifies an invite token, creates the staff record, and issues a JWT pair.
-// The invited person provides their full name at acceptance time.
-func (s *Service) AcceptInvite(ctx context.Context, rawToken, fullName string) (*TokenPair, error) {
-	tokenHash := hashToken(rawToken)
+// AcceptInviteInput is the full payload submitted from the new
+// accept-invite page. Only FullName, Title and TermsAccepted are
+// required for every role; RegulatorAuthority + RegulatorRegNo are
+// required when the assigned role needs them (clinical hires —
+// see RoleNeedsRegulatorID).
+type AcceptInviteInput struct {
+	RawToken           string
+	FullName           string
+	Title              string  // honorific / credential prefix ("Dr.", "RN")
+	RegulatorAuthority string  // optional unless role is clinical
+	RegulatorRegNo     string  // optional unless role is clinical
+	MobileE164         string  // optional, plaintext (adapter encrypts)
+	TermsAccepted      bool    // must be true
+}
 
+// AcceptInvite verifies an invite token, validates the full
+// acceptance payload (including the per-role compliance gate on
+// regulator ID), creates the staff record with title + mobile +
+// terms-accepted timestamp, and issues a JWT pair.
+func (s *Service) AcceptInvite(ctx context.Context, in AcceptInviteInput) (*TokenPair, error) {
+	if !in.TermsAccepted {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: terms must be accepted: %w", domain.ErrValidation)
+	}
+	fullName := strings.TrimSpace(in.FullName)
+	if len(fullName) < 2 {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: full name required: %w", domain.ErrValidation)
+	}
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		return nil, fmt.Errorf("auth.service.AcceptInvite: title required: %w", domain.ErrValidation)
+	}
+
+	tokenHash := hashToken(in.RawToken)
 	invite, err := s.repo.GetInviteByTokenHash(ctx, tokenHash)
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.AcceptInvite: %w", err)
 	}
 
-	// Decrypt the email stored in the invite.
+	// Per-role compliance gate. Clinical roles cannot accept without
+	// supplying their regulator authority + reg #; the staff record
+	// would otherwise be unable to legally sign clinical documents.
+	authority := strings.TrimSpace(in.RegulatorAuthority)
+	regNo := strings.TrimSpace(in.RegulatorRegNo)
+	if RoleNeedsRegulatorID(invite.Role, invite.Permissions) {
+		if authority == "" || regNo == "" {
+			return nil, fmt.Errorf("auth.service.AcceptInvite: regulator authority + registration # required for this role: %w", domain.ErrValidation)
+		}
+	}
+
+	mobile := strings.TrimSpace(in.MobileE164)
+
 	plainEmail, err := s.cipher.Decrypt(invite.Email)
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.AcceptInvite: decrypt email: %w", err)
 	}
 
-	// Create the staff member via adapter.
+	// Pack optional fields into pointers so the staff adapter can
+	// distinguish "not supplied" from "empty string".
+	var titlePtr, authPtr, regPtr, mobilePtr *string
+	titlePtr = &title
+	if authority != "" {
+		authPtr = &authority
+	}
+	if regNo != "" {
+		regPtr = &regNo
+	}
+	if mobile != "" {
+		mobilePtr = &mobile
+	}
+
 	staffID, err := s.staffCreator.CreateFromInvite(ctx, CreateStaffFromInviteInput{
-		ClinicID:    invite.ClinicID,
-		Email:       plainEmail,
-		FullName:    fullName,
-		Role:        invite.Role,
-		NoteTier:    invite.NoteTier,
-		Permissions: invite.Permissions,
+		ClinicID:           invite.ClinicID,
+		Email:              plainEmail,
+		FullName:           fullName,
+		Role:               invite.Role,
+		NoteTier:           invite.NoteTier,
+		Permissions:        invite.Permissions,
+		Title:              titlePtr,
+		RegulatorAuthority: authPtr,
+		RegulatorRegNo:     regPtr,
+		MobileE164:         mobilePtr,
+		TermsAcceptedAt:    domain.TimeNow(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.AcceptInvite: create staff: %w", err)
 	}
 
-	// Mark invite as accepted.
 	if err := s.repo.MarkInviteAccepted(ctx, tokenHash); err != nil {
 		return nil, fmt.Errorf("auth.service.AcceptInvite: mark accepted: %w", err)
 	}
 
-	// Look up the new staff record so we can issue a JWT.
 	staff, err := s.repo.GetStaffByID(ctx, staffID)
 	if err != nil {
 		return nil, fmt.Errorf("auth.service.AcceptInvite: get staff: %w", err)
 	}
 
 	return s.issueTokenPair(ctx, staff)
+}
+
+// InvitePreview is the public-safe view returned by the unauthenticated
+// preview endpoint. Mirrors the data the FE needs to render the accept
+// page before the user has signed in: clinic context, who invited
+// them, what role they'll join as, what permissions they'll have, the
+// suggested regulator authority pre-fill for their (vertical, country),
+// title quick-pick options, and the email the invite was issued to.
+type InvitePreview struct {
+	Email             string
+	Role              domain.StaffRole
+	NoteTier          domain.NoteTier
+	Permissions       domain.Permissions
+	NeedsRegulatorID  bool
+	ExpiresAt         time.Time
+	InviterName       string
+	ClinicName        string
+	ClinicVertical    domain.Vertical
+	ClinicCountry     string
+	ClinicLogoURL     string
+	SuggestedAuthority      string // short code ("VCNZ")
+	SuggestedAuthorityLabel string // display ("Veterinary Council of New Zealand")
+	RegistrationNumberLabel string // input placeholder ("VCNZ registration #")
+	SuggestedTitles         []string
+}
+
+// PreviewInvite resolves the full public-safe context for an invite
+// token. Returns ErrNotFound when the token is invalid / expired /
+// revoked / accepted — the FE shows the same "this link is no longer
+// valid" message regardless, so we don't leak which case we hit.
+func (s *Service) PreviewInvite(ctx context.Context, rawToken string) (*InvitePreview, error) {
+	tokenHash := hashToken(rawToken)
+	invite, err := s.repo.GetInviteByTokenHash(ctx, tokenHash)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.PreviewInvite: %w", err)
+	}
+
+	plainEmail, err := s.cipher.Decrypt(invite.Email)
+	if err != nil {
+		return nil, fmt.Errorf("auth.service.PreviewInvite: decrypt email: %w", err)
+	}
+
+	preview := &InvitePreview{
+		Email:            plainEmail,
+		Role:             invite.Role,
+		NoteTier:         invite.NoteTier,
+		Permissions:      invite.Permissions,
+		NeedsRegulatorID: RoleNeedsRegulatorID(invite.Role, invite.Permissions),
+		ExpiresAt:        invite.ExpiresAt,
+	}
+
+	if inviter, iErr := s.repo.GetStaffByID(ctx, invite.InvitedByID); iErr == nil {
+		if name, dErr := s.cipher.Decrypt(inviter.FullName); dErr == nil {
+			preview.InviterName = name
+		}
+	}
+
+	if s.clinicLookup != nil {
+		snap, cErr := s.clinicLookup.GetClinicForInvite(ctx, invite.ClinicID)
+		if cErr == nil {
+			preview.ClinicName = snap.Name
+			preview.ClinicVertical = snap.Vertical
+			preview.ClinicCountry = snap.Country
+			preview.ClinicLogoURL = snap.LogoURL
+
+			reg := SuggestedRegulator(snap.Vertical, snap.Country)
+			preview.SuggestedAuthority = reg.Authority
+			preview.SuggestedAuthorityLabel = reg.AuthorityLabel
+			preview.RegistrationNumberLabel = reg.NumberLabel
+			preview.SuggestedTitles = SuggestedTitles(snap.Vertical)
+		}
+	}
+	if len(preview.SuggestedTitles) == 0 {
+		preview.SuggestedTitles = SuggestedTitles(domain.VerticalGeneralClinic)
+	}
+
+	return preview, nil
 }
 
 // Logout invalidates all refresh tokens for the authenticated staff member.
