@@ -547,3 +547,14 @@ func recordToResponse(r *ConsentRecord) *ConsentResponse {
 	}
 	return out
 }
+
+// ListActivityByStaff returns slim consent rows captured by a staff
+// member, newest-first. Backs the team-page activity feed via an
+// adapter in app.go.
+func (s *Service) ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error) {
+	rows, err := s.repo.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("consent.service.ListActivityByStaff: %w", err)
+	}
+	return rows, nil
+}
