@@ -467,11 +467,42 @@ type ReviewListResponse struct {
 
 // Package is the canonical portable form package stored on marketplace_versions.
 // Matches the envelope documented in docs/marketplace.md §2.
+//
+// Schema differs by bundle_type:
+//
+//   - bundled / form_only — `Fields` populated with the source form's fields,
+//     `Policies` populated when bundle_type='bundled'. `Forms` empty.
+//   - pack — `Forms` populated with one entry per source form (each with its
+//     own fields + optional bundled policies). `Fields` empty (use Forms[i].Fields
+//     when iterating). `Policies` empty at the top level.
+//   - policy_only — `Policy` populated with the snapshot of the source policy.
+//     `Fields`, `Forms`, `Policies` all empty.
+//
+// Old single-form payloads in production stay readable: their `Forms` field
+// is just absent in the JSON.
 type Package struct {
 	Meta     PackageMeta     `json:"meta"`
 	Listing  PackageListing  `json:"listing"`
 	Fields   []PackageField  `json:"fields"`
 	Policies []PackagePolicy `json:"policies,omitempty"`
+	// Forms is populated only for bundle_type='pack'.
+	Forms []PackageForm `json:"forms,omitempty"`
+	// Policy is populated only for bundle_type='policy_only' (a single
+	// snapshot becomes the listing's primary content).
+	Policy *PackagePolicy `json:"policy,omitempty"`
+}
+
+// PackageForm carries one form inside a pack listing's payload — the
+// equivalent of the `Listing` + `Fields` pair for non-pack listings.
+// Per-form linked policies ride alongside via Policies.
+type PackageForm struct {
+	Position      int             `json:"position"`
+	Name          string          `json:"name"`
+	Description   *string         `json:"description,omitempty"`
+	OverallPrompt *string         `json:"overall_prompt,omitempty"`
+	Tags          []string        `json:"tags"`
+	Fields        []PackageField  `json:"fields"`
+	Policies      []PackagePolicy `json:"policies,omitempty"`
 }
 
 // PackageMeta is the envelope metadata.
