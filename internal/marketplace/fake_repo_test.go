@@ -425,6 +425,12 @@ func (f *fakeSnapshotter) LinkedPolicyIDs(_ context.Context, formID, _ uuid.UUID
 type fakeImporter struct {
 	called         bool
 	lastInput      FormImportInput
+	// allInputs records every ImportForm call so pack-import tests can
+	// assert each form was materialised in the right order with the right
+	// lineage stamps.
+	allInputs []FormImportInput
+	// returnedID is honoured only when set explicitly. Otherwise each call
+	// gets a fresh UUID so pack imports don't collapse to a single form id.
 	returnedID     uuid.UUID
 	err            error
 	linkedPolicies []linkedPolicy
@@ -440,13 +446,14 @@ type linkedPolicy struct {
 func (f *fakeImporter) ImportForm(_ context.Context, in FormImportInput) (uuid.UUID, error) {
 	f.called = true
 	f.lastInput = in
+	f.allInputs = append(f.allInputs, in)
 	if f.err != nil {
 		return uuid.Nil, f.err
 	}
-	if f.returnedID == uuid.Nil {
-		f.returnedID = uuid.New()
+	if f.returnedID != uuid.Nil {
+		return f.returnedID, nil
 	}
-	return f.returnedID, nil
+	return uuid.New(), nil
 }
 
 // LinkFormToPolicy satisfies FormImporter.
