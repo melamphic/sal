@@ -570,6 +570,8 @@ type repo interface {
 	DeleteListingDraft(ctx context.Context, id uuid.UUID) error
 	ListPackForms(ctx context.Context, listingID uuid.UUID) ([]*PackForm, error)
 	SetPackForms(ctx context.Context, listingID uuid.UUID, formIDs []uuid.UUID) error
+	ListPublisherEarnings(ctx context.Context, publisherID uuid.UUID, limit, offset int) ([]*EarningsRow, int, error)
+	PublisherEarningsSummary(ctx context.Context, publisherID uuid.UUID, monthsBack int) ([]*EarningsMonthly, error)
 	IncrementDownloadCount(ctx context.Context, id uuid.UUID) error
 	// Versions
 	CreateVersion(ctx context.Context, p CreateVersionParams) (*VersionRecord, []*VersionFieldRecord, error)
