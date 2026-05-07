@@ -28,6 +28,8 @@ type fakeRepo struct {
 	// keyed by "acquisitionID:versionID" → call count, so tests can assert the
 	// import flow dismisses the banner exactly once.
 	dismissedNotifications map[string]int
+	// packForms holds the source-form composition of pack listings.
+	packForms map[uuid.UUID][]*PackForm
 }
 
 func newFakeRepo() *fakeRepo {
@@ -544,6 +546,120 @@ func (r *fakeRepo) UpdateListingStatus(_ context.Context, id uuid.UUID, status s
 	}
 	l.Status = status
 	return l, nil
+}
+
+// UpdateListingMetadata stub — applies partial pointer updates in place.
+func (r *fakeRepo) UpdateListingMetadata(_ context.Context, p UpdateListingMetadataParams) (*ListingRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l, ok := r.listings[p.ID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	if p.Name != nil {
+		l.Name = *p.Name
+	}
+	if p.ShortDescription != nil {
+		l.ShortDescription = *p.ShortDescription
+	}
+	if p.LongDescription != nil {
+		l.LongDescription = p.LongDescription
+	}
+	if p.Tags != nil {
+		l.Tags = *p.Tags
+	}
+	if p.BundleType != nil {
+		l.BundleType = *p.BundleType
+	}
+	if p.PricingType != nil {
+		l.PricingType = *p.PricingType
+	}
+	if p.PriceCents != nil {
+		l.PriceCents = p.PriceCents
+	}
+	if p.Currency != nil {
+		l.Currency = *p.Currency
+	}
+	if p.PreviewFieldCount != nil {
+		l.PreviewFieldCount = *p.PreviewFieldCount
+	}
+	return l, nil
+}
+
+// ArchiveListing stub.
+func (r *fakeRepo) ArchiveListing(_ context.Context, id uuid.UUID) (*ListingRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l, ok := r.listings[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	if l.Status == "suspended" {
+		return nil, domain.ErrConflict
+	}
+	l.Status = "archived"
+	now := domain.TimeNow()
+	l.ArchivedAt = &now
+	return l, nil
+}
+
+// ── Pack source forms ────────────────────────────────────────────────────────
+
+func (r *fakeRepo) ListPackForms(_ context.Context, listingID uuid.UUID) ([]*PackForm, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.packForms == nil {
+		return nil, nil
+	}
+	rows := r.packForms[listingID]
+	out := make([]*PackForm, len(rows))
+	copy(out, rows)
+	return out, nil
+}
+
+func (r *fakeRepo) SetPackForms(_ context.Context, listingID uuid.UUID, formIDs []uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.packForms == nil {
+		r.packForms = make(map[uuid.UUID][]*PackForm)
+	}
+	rows := make([]*PackForm, len(formIDs))
+	seen := map[uuid.UUID]bool{}
+	for i, fid := range formIDs {
+		if seen[fid] {
+			return domain.ErrConflict
+		}
+		seen[fid] = true
+		rows[i] = &PackForm{
+			ListingID:    listingID,
+			Position:     i + 1,
+			SourceFormID: fid,
+			CreatedAt:    domain.TimeNow(),
+		}
+	}
+	r.packForms[listingID] = rows
+	return nil
+}
+
+// DeleteListingDraft stub.
+func (r *fakeRepo) DeleteListingDraft(_ context.Context, id uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	l, ok := r.listings[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	if l.Status != "draft" {
+		return domain.ErrConflict
+	}
+	delete(r.listings, id)
+	for vid, v := range r.versions {
+		if v.ListingID == id {
+			delete(r.versions, vid)
+			delete(r.fieldsByVer, vid)
+		}
+	}
+	return nil
 }
 
 // SetAcquisitionPolicyChoice stub.
