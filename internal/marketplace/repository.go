@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,7 +48,7 @@ type ListingRecord struct {
 	ShortDescription   string
 	LongDescription    *string
 	Tags               []string
-	BundleType         string // 'bundled' | 'form_only'
+	BundleType         string // 'bundled' | 'form_only' | 'pack' | 'policy_only'
 	PricingType        string
 	PriceCents         *int
 	Currency           string
@@ -60,6 +61,10 @@ type ListingRecord struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 	ArchivedAt         *time.Time
+	// SourcePolicyID is set only for bundle_type='policy_only' listings —
+	// the tenant policy whose latest published version becomes the
+	// marketplace version snapshot.
+	SourcePolicyID *uuid.UUID
 	// Joined publisher columns for list/detail responses.
 	PublisherDisplayName   string
 	PublisherVerifiedBadge bool
@@ -149,6 +154,8 @@ type CreateListingParams struct {
 	Currency           string
 	PreviewFieldCount  int
 	Status             string
+	// SourcePolicyID is non-nil only for bundle_type='policy_only'.
+	SourcePolicyID *uuid.UUID
 }
 
 // CreateVersionParams holds values needed to insert a new marketplace version.
@@ -276,6 +283,7 @@ const listingCols = `
 	l.pricing_type, l.price_cents, l.currency, l.status,
 	l.preview_field_count, l.download_count, l.rating_count, l.rating_sum,
 	l.published_at, l.created_at, l.updated_at, l.archived_at,
+	l.source_policy_id,
 	p.display_name, p.verified_badge, p.authority_type, p.clinic_id`
 
 // CreateListing inserts a new marketplace listing in draft state.
@@ -286,8 +294,8 @@ func (r *Repository) CreateListing(ctx context.Context, p CreateListingParams) (
 				id, publisher_account_id, vertical, name, slug,
 				short_description, long_description, tags, bundle_type,
 				pricing_type, price_cents, currency,
-				preview_field_count, status
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+				preview_field_count, status, source_policy_id
+			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 			RETURNING *
 		)
 		SELECT %s FROM ins l
@@ -297,7 +305,7 @@ func (r *Repository) CreateListing(ctx context.Context, p CreateListingParams) (
 		p.ID, p.PublisherAccountID, p.Vertical, p.Name, p.Slug,
 		p.ShortDescription, p.LongDescription, p.Tags, p.BundleType,
 		p.PricingType, p.PriceCents, p.Currency,
-		p.PreviewFieldCount, p.Status,
+		p.PreviewFieldCount, p.Status, p.SourcePolicyID,
 	)
 	rec, err := scanListing(row)
 	if err != nil {
@@ -703,7 +711,7 @@ func (r *Repository) UpdateListingStatus(ctx context.Context, id uuid.UUID, stat
 	q := fmt.Sprintf(`
 		WITH upd AS (
 			UPDATE marketplace_listings
-			SET status = $2
+			SET status = $2, updated_at = NOW()
 			WHERE id = $1
 			RETURNING *
 		)
@@ -717,6 +725,212 @@ func (r *Repository) UpdateListingStatus(ctx context.Context, id uuid.UUID, stat
 		return nil, fmt.Errorf("marketplace.repo.UpdateListingStatus: %w", err)
 	}
 	return rec, nil
+}
+
+// UpdateListingMetadataParams holds the editable subset of a listing's
+// metadata. The service layer decides which subset is actually allowed for
+// a given listing's status (draft = everything, published = the description
+// + tags + preview only).
+type UpdateListingMetadataParams struct {
+	ID                uuid.UUID
+	Name              *string
+	ShortDescription  *string
+	LongDescription   *string // *string + sentinel: caller passes &"" to clear
+	Tags              *[]string
+	BundleType        *string
+	PricingType       *string
+	PriceCents        *int
+	Currency          *string
+	PreviewFieldCount *int
+}
+
+// UpdateListingMetadata applies a partial update. Each field is only written
+// when the corresponding pointer is non-nil; that way the service can honour
+// "only these fields editable when published" without separate SQL paths.
+func (r *Repository) UpdateListingMetadata(ctx context.Context, p UpdateListingMetadataParams) (*ListingRecord, error) {
+	sets := []string{"updated_at = NOW()"}
+	args := []any{p.ID}
+	idx := 2
+	add := func(col string, val any) {
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+		args = append(args, val)
+		idx++
+	}
+	if p.Name != nil {
+		add("name", *p.Name)
+	}
+	if p.ShortDescription != nil {
+		add("short_description", *p.ShortDescription)
+	}
+	if p.LongDescription != nil {
+		add("long_description", *p.LongDescription)
+	}
+	if p.Tags != nil {
+		add("tags", *p.Tags)
+	}
+	if p.BundleType != nil {
+		add("bundle_type", *p.BundleType)
+	}
+	if p.PricingType != nil {
+		add("pricing_type", *p.PricingType)
+	}
+	if p.PriceCents != nil {
+		add("price_cents", *p.PriceCents)
+	}
+	if p.Currency != nil {
+		add("currency", *p.Currency)
+	}
+	if p.PreviewFieldCount != nil {
+		add("preview_field_count", *p.PreviewFieldCount)
+	}
+
+	q := fmt.Sprintf(`
+		WITH upd AS (
+			UPDATE marketplace_listings
+			SET %s
+			WHERE id = $1
+			RETURNING *
+		)
+		SELECT %s
+		FROM upd l
+		JOIN publisher_accounts p ON p.id = l.publisher_account_id`,
+		strings.Join(sets, ", "), listingCols)
+
+	row := r.db.QueryRow(ctx, q, args...)
+	rec, err := scanListing(row)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.repo.UpdateListingMetadata: %w", err)
+	}
+	return rec, nil
+}
+
+// ArchiveListing flips status to 'archived' and stamps archived_at. Returns
+// the updated record. The service layer enforces ownership + that the
+// listing is in a state where archive is allowed (draft / published, not
+// suspended).
+func (r *Repository) ArchiveListing(ctx context.Context, id uuid.UUID) (*ListingRecord, error) {
+	q := fmt.Sprintf(`
+		WITH upd AS (
+			UPDATE marketplace_listings
+			SET status = 'archived', archived_at = NOW(), updated_at = NOW()
+			WHERE id = $1 AND status <> 'suspended'
+			RETURNING *
+		)
+		SELECT %s
+		FROM upd l
+		JOIN publisher_accounts p ON p.id = l.publisher_account_id`, listingCols)
+
+	row := r.db.QueryRow(ctx, q, id)
+	rec, err := scanListing(row)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.repo.ArchiveListing: %w", err)
+	}
+	return rec, nil
+}
+
+// ── Pack source forms ────────────────────────────────────────────────────────
+
+// PackForm is a row from marketplace_listing_forms — one component form of
+// a `pack` listing. Position is 1-based; the import flow materialises forms
+// in this order so the buyer's tenant gets a curated import.
+type PackForm struct {
+	ListingID    uuid.UUID
+	Position     int
+	SourceFormID uuid.UUID
+	CreatedAt    time.Time
+}
+
+// ListPackForms returns all source-form rows for a pack listing, ordered.
+func (r *Repository) ListPackForms(ctx context.Context, listingID uuid.UUID) ([]*PackForm, error) {
+	const q = `
+		SELECT listing_id, position, source_form_id, created_at
+		FROM marketplace_listing_forms
+		WHERE listing_id = $1
+		ORDER BY position ASC`
+	rows, err := r.db.Query(ctx, q, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.repo.ListPackForms: %w", err)
+	}
+	defer rows.Close()
+	var out []*PackForm
+	for rows.Next() {
+		var pf PackForm
+		if err := rows.Scan(&pf.ListingID, &pf.Position, &pf.SourceFormID, &pf.CreatedAt); err != nil {
+			return nil, fmt.Errorf("marketplace.repo.ListPackForms: scan: %w", err)
+		}
+		out = append(out, &pf)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("marketplace.repo.ListPackForms: rows: %w", err)
+	}
+	return out, nil
+}
+
+// SetPackForms replaces the entire pack-forms list for a listing in one
+// transaction. Used by the publisher when editing the pack composition —
+// drag/drop reorder + add/remove all flow through this single write so we
+// don't have to deal with per-row diffing.
+func (r *Repository) SetPackForms(ctx context.Context, listingID uuid.UUID, formIDs []uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("marketplace.repo.SetPackForms: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM marketplace_listing_forms WHERE listing_id = $1`, listingID); err != nil {
+		return fmt.Errorf("marketplace.repo.SetPackForms: clear: %w", err)
+	}
+	for i, fid := range formIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO marketplace_listing_forms (listing_id, position, source_form_id)
+			VALUES ($1, $2, $3)`, listingID, i+1, fid); err != nil {
+			if domain.IsUniqueViolation(err) {
+				return fmt.Errorf("marketplace.repo.SetPackForms: duplicate form: %w", domain.ErrConflict)
+			}
+			return fmt.Errorf("marketplace.repo.SetPackForms: insert %d: %w", i, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("marketplace.repo.SetPackForms: commit: %w", err)
+	}
+	return nil
+}
+
+// DeleteListingDraft removes a draft listing along with any unreleased
+// version rows. Only valid when status='draft' — once published, listings
+// must be archived instead so historical acquisitions still resolve. The
+// constraint is enforced at the service layer (status check) and inside
+// the SQL (`WHERE status = 'draft'`); both belt-and-braces.
+func (r *Repository) DeleteListingDraft(ctx context.Context, id uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Children of a draft listing: version rows + their fields, listing tags.
+	// FK constraints cascade via ON DELETE CASCADE on most child tables; we
+	// do the explicit deletes for any without cascade to keep this safe.
+	if _, err := tx.Exec(ctx, `DELETE FROM marketplace_listing_tags WHERE listing_id = $1`, id); err != nil {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: tags: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM marketplace_versions WHERE listing_id = $1`, id); err != nil {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: versions: %w", err)
+	}
+	ct, err := tx.Exec(ctx,
+		`DELETE FROM marketplace_listings WHERE id = $1 AND status = 'draft'`,
+		id)
+	if err != nil {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: listing: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: %w", domain.ErrNotFound)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("marketplace.repo.DeleteListingDraft: commit: %w", err)
+	}
+	return nil
 }
 
 // ── Acquisition webhook-driven updates ───────────────────────────────────────
@@ -1117,6 +1331,7 @@ func scanListing(row scannable) (*ListingRecord, error) {
 		&l.PricingType, &l.PriceCents, &l.Currency, &l.Status,
 		&l.PreviewFieldCount, &l.DownloadCount, &l.RatingCount, &l.RatingSum,
 		&l.PublishedAt, &l.CreatedAt, &l.UpdatedAt, &l.ArchivedAt,
+		&l.SourcePolicyID,
 		&l.PublisherDisplayName, &l.PublisherVerifiedBadge, &l.PublisherAuthorityType,
 		&l.PublisherClinicID,
 	)
