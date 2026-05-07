@@ -1005,6 +1005,295 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 	return toVersionResponse(version, nil, 0, false), nil
 }
 
+// publishPackVersion snapshots all source forms composing a pack listing
+// into a single marketplace version. Each form's fields land in the
+// version-field mirror tagged with the form's pack position; the package
+// payload carries the Forms array. Linked policies bundle per-form when
+// they exist (analogous to the single-form bundled flow).
+func (s *Service) publishPackVersion(ctx context.Context, listing *ListingRecord, input PublishVersionInput) (*VersionResponse, error) {
+	if s.snapshot == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: form snapshotter not configured: %w", domain.ErrConflict)
+	}
+
+	pack, err := s.repo.ListPackForms(ctx, listing.ID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: pack: %w", err)
+	}
+	if len(pack) < 2 {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: pack needs >=2 forms: %w", domain.ErrConflict)
+	}
+
+	// Snapshot each source form. We collect per-form linked policy IDs in
+	// the same pass so bundled-policy snapshots batch into a single repo
+	// call below — no N+1.
+	type packEntry struct {
+		PackForm  *PackForm
+		Snapshot  *FormSnapshot
+		PolicyIDs []uuid.UUID
+	}
+	entries := make([]packEntry, 0, len(pack))
+	allPolicyIDs := []uuid.UUID{}
+	for _, pf := range pack {
+		snap, err := s.snapshot.SnapshotForm(ctx, pf.SourceFormID, input.ClinicID)
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: snapshot pos=%d: %w", pf.Position, err)
+		}
+		var policyIDs []uuid.UUID
+		if listing.BundleType == "pack" {
+			// Per-form linked policies: still useful so each form lands in
+			// the buyer's clinic with its policy companions intact.
+			policyIDs, err = s.snapshot.LinkedPolicyIDs(ctx, pf.SourceFormID, input.ClinicID)
+			if err != nil {
+				return nil, fmt.Errorf("marketplace.service.publishPackVersion: linked policies pos=%d: %w", pf.Position, err)
+			}
+			allPolicyIDs = append(allPolicyIDs, policyIDs...)
+		}
+		entries = append(entries, packEntry{PackForm: pf, Snapshot: snap, PolicyIDs: policyIDs})
+	}
+
+	// One batched call across all per-form policy IDs (deduped) — keeps the
+	// snapshotter's batched query path active.
+	policyByID := map[uuid.UUID]PackagePolicy{}
+	if len(allPolicyIDs) > 0 {
+		if s.policySnap == nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: policy snapshotter not configured: %w", domain.ErrConflict)
+		}
+		dedup := dedupUUIDs(allPolicyIDs)
+		snaps, err := s.policySnap.SnapshotPolicies(ctx, dedup, input.ClinicID)
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: policy snapshots: %w", err)
+		}
+		for _, ps := range snaps {
+			clauses := make([]PackagePolicyClause, len(ps.Clauses))
+			for i, c := range ps.Clauses {
+				clauses[i] = PackagePolicyClause(c)
+			}
+			policyByID[ps.PolicyID] = PackagePolicy{
+				Name:        ps.Name,
+				Description: ps.Description,
+				Content:     ps.Content,
+				Clauses:     clauses,
+			}
+		}
+	}
+
+	major, minor := nextMarketplaceVersion(ctx, s.repo, input.ListingID, input.ChangeType)
+	publishedAt := domain.TimeNow()
+
+	pkgForms := make([]PackageForm, len(entries))
+	totalFields := 0
+	mirrorFields := []CreateVersionFieldParams{}
+	for i, e := range entries {
+		pos := e.PackForm.Position
+		var perFormPolicies []PackagePolicy
+		for _, pid := range e.PolicyIDs {
+			if pp, ok := policyByID[pid]; ok {
+				perFormPolicies = append(perFormPolicies, pp)
+			}
+		}
+		pkgForms[i] = PackageForm{
+			Position:      pos,
+			Name:          e.Snapshot.Name,
+			Description:   e.Snapshot.Description,
+			OverallPrompt: e.Snapshot.OverallPrompt,
+			Tags:          e.Snapshot.Tags,
+			Fields:        toPackageFields(e.Snapshot.Fields),
+			Policies:      perFormPolicies,
+		}
+		totalFields += len(e.Snapshot.Fields)
+		// Mirror per-form fields with source_form_position so the listing
+		// detail / preview can reconstruct each pack-form's field list
+		// without parsing JSONB.
+		for _, f := range e.Snapshot.Fields {
+			cfg := f.Config
+			if cfg == nil {
+				cfg = json.RawMessage(`{}`)
+			}
+			packPos := pos
+			mirrorFields = append(mirrorFields, CreateVersionFieldParams{
+				ID:                 domain.NewID(),
+				Position:           f.Position,
+				Title:              f.Title,
+				Type:               f.Type,
+				Config:             cfg,
+				AIPrompt:           f.AIPrompt,
+				Required:           f.Required,
+				Skippable:          f.Skippable,
+				AllowInference:     f.AllowInference,
+				MinConfidence:      f.MinConfidence,
+				SourceFormPosition: &packPos,
+			})
+		}
+	}
+
+	pkg := Package{
+		Meta: PackageMeta{
+			SchemaVersion:        "2",
+			FormVersion:          fmt.Sprintf("%d.%d", major, minor),
+			SalviaCompatibleFrom: "1.0",
+			Vertical:             listing.Vertical,
+			BundleType:           listing.BundleType,
+			PolicyAttribution:    s.policyAttribution,
+			PublishedAt:          publishedAt,
+		},
+		Listing: PackageListing{
+			Name:                  listing.Name,
+			Description:           listing.LongDescription,
+			Tags:                  listing.Tags,
+			PolicyDependencyCount: len(allPolicyIDs),
+		},
+		Forms: pkgForms,
+	}
+
+	checksum, err := checksumPackage(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: checksum: %w", err)
+	}
+	pkg.Meta.Checksum = checksum
+
+	payload, err := json.Marshal(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: marshal: %w", err)
+	}
+
+	version, _, err := s.repo.CreateVersion(ctx, CreateVersionParams{
+		ID:              domain.NewID(),
+		ListingID:       input.ListingID,
+		VersionMajor:    major,
+		VersionMinor:    minor,
+		ChangeType:      input.ChangeType,
+		ChangeSummary:   input.ChangeSummary,
+		PackagePayload:  payload,
+		PayloadChecksum: checksum,
+		FieldCount:      totalFields,
+		// SourceFormVersionID is single-form. For packs we leave it nil; the
+		// payload's Forms array carries the per-form lineage.
+		SourceFormVersionID: nil,
+		PublishedBy:         input.StaffID,
+		PublishedAt:         publishedAt,
+		Fields:              mirrorFields,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: %w", err)
+	}
+
+	notificationType := "minor_update"
+	if input.ChangeType == "major" {
+		notificationType = "major_upgrade"
+	}
+	if _, err := s.repo.CreateUpgradeNotificationsForVersion(ctx, input.ListingID, version.ID, notificationType); err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: notify: %w", err)
+	}
+
+	return toVersionResponse(version, nil, 0, false), nil
+}
+
+// publishPolicyVersion snapshots the listing's source policy into a
+// marketplace version. Zero field-mirror rows; the package's Policy field
+// carries the entire content. The buyer's import flow materialises this
+// straight into a tenant policy without creating a form.
+func (s *Service) publishPolicyVersion(ctx context.Context, listing *ListingRecord, input PublishVersionInput) (*VersionResponse, error) {
+	if listing.SourcePolicyID == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: listing has no source_policy_id: %w", domain.ErrConflict)
+	}
+	if s.policySnap == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: policy snapshotter not configured: %w", domain.ErrConflict)
+	}
+
+	snap, err := s.policySnap.SnapshotPolicy(ctx, *listing.SourcePolicyID, input.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: snapshot: %w", err)
+	}
+
+	clauses := make([]PackagePolicyClause, len(snap.Clauses))
+	for i, c := range snap.Clauses {
+		clauses[i] = PackagePolicyClause(c)
+	}
+	policy := &PackagePolicy{
+		Name:        snap.Name,
+		Description: snap.Description,
+		Content:     snap.Content,
+		Clauses:     clauses,
+	}
+
+	major, minor := nextMarketplaceVersion(ctx, s.repo, input.ListingID, input.ChangeType)
+	publishedAt := domain.TimeNow()
+
+	pkg := Package{
+		Meta: PackageMeta{
+			SchemaVersion:        "2",
+			FormVersion:          fmt.Sprintf("%d.%d", major, minor),
+			SalviaCompatibleFrom: "1.0",
+			Vertical:             listing.Vertical,
+			BundleType:           listing.BundleType,
+			PolicyAttribution:    s.policyAttribution,
+			PublishedAt:          publishedAt,
+		},
+		Listing: PackageListing{
+			Name:                  listing.Name,
+			Description:           listing.LongDescription,
+			Tags:                  listing.Tags,
+			PolicyDependencyCount: 1,
+		},
+		Policy: policy,
+	}
+
+	checksum, err := checksumPackage(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: checksum: %w", err)
+	}
+	pkg.Meta.Checksum = checksum
+
+	payload, err := json.Marshal(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: marshal: %w", err)
+	}
+
+	version, _, err := s.repo.CreateVersion(ctx, CreateVersionParams{
+		ID:                  domain.NewID(),
+		ListingID:           input.ListingID,
+		VersionMajor:        major,
+		VersionMinor:        minor,
+		ChangeType:          input.ChangeType,
+		ChangeSummary:       input.ChangeSummary,
+		PackagePayload:      payload,
+		PayloadChecksum:     checksum,
+		FieldCount:          0,
+		SourceFormVersionID: nil,
+		PublishedBy:         input.StaffID,
+		PublishedAt:         publishedAt,
+		Fields:              nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: %w", err)
+	}
+
+	notificationType := "minor_update"
+	if input.ChangeType == "major" {
+		notificationType = "major_upgrade"
+	}
+	if _, err := s.repo.CreateUpgradeNotificationsForVersion(ctx, input.ListingID, version.ID, notificationType); err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: notify: %w", err)
+	}
+
+	return toVersionResponse(version, nil, 0, false), nil
+}
+
+// dedupUUIDs returns the input slice with duplicates removed, preserving
+// first-seen order.
+func dedupUUIDs(in []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(in))
+	out := make([]uuid.UUID, 0, len(in))
+	for _, id := range in {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
 // ── Public read ───────────────────────────────────────────────────────────────
 
 // ListListings runs the public browse query.
