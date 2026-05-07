@@ -117,6 +117,7 @@ func (r *fakeRepo) CreateListing(_ context.Context, p CreateListingParams) (*Lis
 		Currency:               p.Currency,
 		Status:                 p.Status,
 		PreviewFieldCount:      p.PreviewFieldCount,
+		SourcePolicyID:         p.SourcePolicyID,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 		PublisherDisplayName:   publisher.DisplayName,
