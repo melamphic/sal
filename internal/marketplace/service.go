@@ -1476,6 +1476,16 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 		return nil, fmt.Errorf("marketplace.service.Import: decode payload: %w", err)
 	}
 
+	// Pack and policy_only listings have entirely different import shapes —
+	// dispatch to dedicated helpers and short-circuit. The single-form path
+	// below stays unchanged to preserve the existing flow.
+	switch listing.BundleType {
+	case "pack":
+		return s.importPack(ctx, listing, version, acq, pkg, input)
+	case "policy_only":
+		return s.importPolicyOnly(ctx, listing, version, acq, pkg, input)
+	}
+
 	// Policy attribution gate when bundled and consumer opts in.
 	if input.IncludePolicies {
 		if len(pkg.Policies) == 0 {
@@ -1604,6 +1614,246 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 	acq.PolicyImportChoice = &policyChoice
 	acq.PolicyAttributionAcceptedAt = acceptedAt
 	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// importPack materialises a pack-listing acquisition: each PackageForm
+// becomes a separate tenant form, all stamped with the SAME
+// source_marketplace_acquisition_id so the upgrade UX (sibling-finding,
+// re-import on new version) can scope to the pack as a unit.
+//
+// IncludePolicies imports each per-form policy bundle when true; the
+// RelinkExistingPolicyIDs map is single-form-only and ignored here.
+//
+// Acquisition.imported_form_id points at the FIRST tenant form created
+// (lowest pack position) — gives a single navigation target for the UI's
+// "open imported form" affordance. The full set is queryable via
+// forms.source_marketplace_acquisition_id.
+func (s *Service) importPack(
+	ctx context.Context,
+	listing *ListingRecord,
+	version *VersionRecord,
+	acq *AcquisitionRecord,
+	pkg Package,
+	input ImportInput,
+) (*AcquisitionResponse, error) {
+	if len(pkg.Forms) == 0 {
+		return nil, fmt.Errorf("marketplace.service.importPack: payload has no forms: %w", domain.ErrConflict)
+	}
+
+	// Aggregate policy attribution gate: any per-form bundled policies
+	// require attribution acknowledgement before import.
+	hasAnyPolicy := false
+	for _, f := range pkg.Forms {
+		if len(f.Policies) > 0 {
+			hasAnyPolicy = true
+			break
+		}
+	}
+	if input.IncludePolicies {
+		if !hasAnyPolicy {
+			return nil, fmt.Errorf("marketplace.service.importPack: pack has no bundled policies: %w", domain.ErrConflict)
+		}
+		if !input.AcceptedPolicyAttribution {
+			return nil, fmt.Errorf("marketplace.service.importPack: must accept policy attribution: %w", domain.ErrForbidden)
+		}
+		if s.policyImporter == nil {
+			return nil, fmt.Errorf("marketplace.service.importPack: policy importer not configured: %w", domain.ErrConflict)
+		}
+	}
+
+	// Iterate forms in stable position order so the buyer sees the same
+	// arrangement the publisher curated.
+	formsByPos := append([]PackageForm(nil), pkg.Forms...)
+	sortByPosition(formsByPos)
+
+	var firstFormID *uuid.UUID
+	policyChoice := "skipped"
+	var acceptedAt *time.Time
+
+	for _, pf := range formsByPos {
+		snapshotFields := make([]FormSnapshotField, len(pf.Fields))
+		for i, f := range pf.Fields {
+			cfg := f.Config
+			if cfg == nil {
+				cfg = json.RawMessage(`{}`)
+			}
+			snapshotFields[i] = FormSnapshotField{
+				Position:       f.Position,
+				Title:          f.Title,
+				Type:           f.Type,
+				Config:         cfg,
+				AIPrompt:       f.AIPrompt,
+				Required:       f.Required,
+				Skippable:      f.Skippable,
+				AllowInference: f.AllowInference,
+				MinConfidence:  f.MinConfidence,
+			}
+		}
+
+		importTags := append([]string{}, pf.Tags...)
+		if !containsString(importTags, "marketplace") {
+			importTags = append(importTags, "marketplace")
+		}
+		if !containsString(importTags, "pack") {
+			importTags = append(importTags, "pack")
+		}
+		changeSummary := fmt.Sprintf(
+			"Imported from marketplace pack %s v%d.%d (form %d/%d: %s)",
+			listing.Slug, version.VersionMajor, version.VersionMinor,
+			pf.Position, len(formsByPos), pf.Name,
+		)
+
+		formID, err := s.importer.ImportForm(ctx, FormImportInput{
+			ClinicID:                       input.ClinicID,
+			StaffID:                        input.StaffID,
+			Name:                           pf.Name,
+			Description:                    pf.Description,
+			OverallPrompt:                  pf.OverallPrompt,
+			Tags:                           importTags,
+			ChangeSummary:                  changeSummary,
+			Fields:                         snapshotFields,
+			SourceMarketplaceListingID:     listing.ID,
+			SourceMarketplaceVersionID:     version.ID,
+			SourceMarketplaceAcquisitionID: acq.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.importPack: importer pos=%d: %w", pf.Position, err)
+		}
+		if firstFormID == nil {
+			id := formID
+			firstFormID = &id
+		}
+
+		// Per-form bundled policies — import each, then link to the form.
+		if input.IncludePolicies && len(pf.Policies) > 0 {
+			for j, pp := range pf.Policies {
+				clauses := make([]PolicySnapshotClause, len(pp.Clauses))
+				for k, c := range pp.Clauses {
+					clauses[k] = PolicySnapshotClause(c)
+				}
+				content := pp.Content
+				if content == nil {
+					content = json.RawMessage(`[]`)
+				}
+				newPolicyID, err := s.policyImporter.ImportPolicy(ctx, PolicyImportInput{
+					ClinicID:                   input.ClinicID,
+					StaffID:                    input.StaffID,
+					SourceMarketplaceVersionID: version.ID,
+					Name:                       pp.Name,
+					Description:                pp.Description,
+					Content:                    content,
+					Clauses:                    clauses,
+					ChangeSummary:              changeSummary,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("marketplace.service.importPack: policy import pos=%d/%d: %w", pf.Position, j, err)
+				}
+				if err := s.importer.LinkFormToPolicy(ctx, formID, input.ClinicID, newPolicyID, input.StaffID); err != nil {
+					return nil, fmt.Errorf("marketplace.service.importPack: link pos=%d/%d: %w", pf.Position, j, err)
+				}
+			}
+			policyChoice = "imported"
+			t := domain.TimeNow()
+			acceptedAt = &t
+		}
+	}
+
+	if firstFormID == nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: no forms materialised: %w", domain.ErrConflict)
+	}
+
+	if err := s.repo.SetAcquisitionImportedForm(ctx, acq.ID, input.ClinicID, *firstFormID); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: mark imported: %w", err)
+	}
+	if err := s.repo.SetAcquisitionPolicyChoice(ctx, acq.ID, input.ClinicID, policyChoice, acceptedAt); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: set choice: %w", err)
+	}
+	if err := s.repo.MarkNotificationsSeenForAcquisitionVersion(ctx, acq.ID, input.ClinicID, version.ID, domain.TimeNow()); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: dismiss notifications: %w", err)
+	}
+
+	acq.ImportedFormID = firstFormID
+	acq.PolicyImportChoice = &policyChoice
+	acq.PolicyAttributionAcceptedAt = acceptedAt
+	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// importPolicyOnly materialises a policy-only listing acquisition: a single
+// tenant policy is created, no tenant form is created. The acquisition's
+// imported_form_id stays nil — there is no form. Buyers see the new policy
+// in their Policies list with the marketplace lineage stamped via
+// `policies.source_marketplace_version_id`.
+//
+// IncludePolicies / RelinkExistingPolicyIDs are irrelevant here — the
+// policy IS the listing's content. Attribution is implicitly required and
+// must be acknowledged by passing AcceptedPolicyAttribution=true.
+func (s *Service) importPolicyOnly(
+	ctx context.Context,
+	listing *ListingRecord,
+	version *VersionRecord,
+	acq *AcquisitionRecord,
+	pkg Package,
+	input ImportInput,
+) (*AcquisitionResponse, error) {
+	if pkg.Policy == nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: payload has no policy: %w", domain.ErrConflict)
+	}
+	if !input.AcceptedPolicyAttribution {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: must accept policy attribution: %w", domain.ErrForbidden)
+	}
+	if s.policyImporter == nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: policy importer not configured: %w", domain.ErrConflict)
+	}
+
+	clauses := make([]PolicySnapshotClause, len(pkg.Policy.Clauses))
+	for i, c := range pkg.Policy.Clauses {
+		clauses[i] = PolicySnapshotClause(c)
+	}
+	content := pkg.Policy.Content
+	if content == nil {
+		content = json.RawMessage(`[]`)
+	}
+	changeSummary := fmt.Sprintf(
+		"Imported from marketplace policy %s v%d.%d",
+		listing.Slug, version.VersionMajor, version.VersionMinor,
+	)
+
+	if _, err := s.policyImporter.ImportPolicy(ctx, PolicyImportInput{
+		ClinicID:                   input.ClinicID,
+		StaffID:                    input.StaffID,
+		SourceMarketplaceVersionID: version.ID,
+		Name:                       pkg.Policy.Name,
+		Description:                pkg.Policy.Description,
+		Content:                    content,
+		Clauses:                    clauses,
+		ChangeSummary:              changeSummary,
+	}); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: policy import: %w", err)
+	}
+
+	t := domain.TimeNow()
+	if err := s.repo.SetAcquisitionPolicyChoice(ctx, acq.ID, input.ClinicID, "imported", &t); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: set choice: %w", err)
+	}
+	if err := s.repo.MarkNotificationsSeenForAcquisitionVersion(ctx, acq.ID, input.ClinicID, version.ID, domain.TimeNow()); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: dismiss notifications: %w", err)
+	}
+
+	choice := "imported"
+	acq.PolicyImportChoice = &choice
+	acq.PolicyAttributionAcceptedAt = &t
+	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// sortByPosition orders pack-form package entries by their declared
+// position so the import flow materialises the buyer's tenant forms in the
+// publisher-curated order.
+func sortByPosition(forms []PackageForm) {
+	for i := 1; i < len(forms); i++ {
+		for j := i; j > 0 && forms[j-1].Position > forms[j].Position; j-- {
+			forms[j-1], forms[j] = forms[j], forms[j-1]
+		}
+	}
 }
 
 // ListMyAcquisitions returns acquisitions for the caller's clinic.
