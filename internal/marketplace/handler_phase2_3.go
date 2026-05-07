@@ -185,6 +185,96 @@ func (h *Handler) suspendListing(ctx context.Context, input *suspendListingInput
 	return &listingHTTPResponse{Body: resp}, nil
 }
 
+// ── Update listing (PATCH) ───────────────────────────────────────────────────
+
+// updateListingInput mirrors the partial-update contract: every field is
+// optional. The server applies the per-status policy and rejects edits to
+// identity / pricing fields once the listing is published.
+type updateListingInput struct {
+	ListingID string `path:"listing_id"`
+	Body      struct {
+		Name              *string   `json:"name,omitempty"             minLength:"1"`
+		ShortDescription  *string   `json:"short_description,omitempty" minLength:"1"`
+		LongDescription   *string   `json:"long_description,omitempty"`
+		Tags              *[]string `json:"tags,omitempty"`
+		BundleType        *string   `json:"bundle_type,omitempty"      enum:"bundled,form_only"`
+		PricingType       *string   `json:"pricing_type,omitempty"     enum:"free,paid"`
+		PriceCents        *int      `json:"price_cents,omitempty"`
+		Currency          *string   `json:"currency,omitempty"`
+		PreviewFieldCount *int      `json:"preview_field_count,omitempty" minimum:"0"`
+	}
+}
+
+func (h *Handler) updateListing(ctx context.Context, input *updateListingInput) (*listingHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	listingID, err := uuid.Parse(input.ListingID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid listing_id")
+	}
+	resp, err := h.svc.UpdateListingByOwner(ctx, UpdateListingInput{
+		CallerClinicID:    clinicID,
+		ListingID:         listingID,
+		Name:              input.Body.Name,
+		ShortDescription:  input.Body.ShortDescription,
+		LongDescription:   input.Body.LongDescription,
+		Tags:              input.Body.Tags,
+		BundleType:        input.Body.BundleType,
+		PricingType:       input.Body.PricingType,
+		PriceCents:        input.Body.PriceCents,
+		Currency:          input.Body.Currency,
+		PreviewFieldCount: input.Body.PreviewFieldCount,
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &listingHTTPResponse{Body: resp}, nil
+}
+
+// ── Archive listing (publisher self-serve) ───────────────────────────────────
+
+type archiveListingInput struct {
+	ListingID string `path:"listing_id"`
+}
+
+func (h *Handler) archiveListing(ctx context.Context, input *archiveListingInput) (*listingHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	listingID, err := uuid.Parse(input.ListingID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid listing_id")
+	}
+	resp, err := h.svc.ArchiveListingByOwner(ctx, clinicID, listingID)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &listingHTTPResponse{Body: resp}, nil
+}
+
+// ── Delete listing (drafts only) ─────────────────────────────────────────────
+
+type deleteListingInput struct {
+	ListingID string `path:"listing_id"`
+}
+
+type deleteListingHTTPResponse struct {
+	Body struct {
+		Deleted bool `json:"deleted"`
+	}
+}
+
+func (h *Handler) deleteListing(ctx context.Context, input *deleteListingInput) (*deleteListingHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	listingID, err := uuid.Parse(input.ListingID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid listing_id")
+	}
+	if err := h.svc.DeleteListingDraftByOwner(ctx, clinicID, listingID); err != nil {
+		return nil, mapError(err)
+	}
+	resp := &deleteListingHTTPResponse{}
+	resp.Body.Deleted = true
+	return resp, nil
+}
+
 // ── Stripe Connect onboarding ────────────────────────────────────────────────
 
 type startOnboardingInput struct {
