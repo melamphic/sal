@@ -603,6 +603,16 @@ func (r *fakeRepo) ArchiveListing(_ context.Context, id uuid.UUID) (*ListingReco
 	return l, nil
 }
 
+// ── Publisher earnings (stubs) ───────────────────────────────────────────────
+
+func (r *fakeRepo) ListPublisherEarnings(_ context.Context, _ uuid.UUID, _, _ int) ([]*EarningsRow, int, error) {
+	return nil, 0, nil
+}
+
+func (r *fakeRepo) PublisherEarningsSummary(_ context.Context, _ uuid.UUID, _ int) ([]*EarningsMonthly, error) {
+	return nil, nil
+}
+
 // ── Pack source forms ────────────────────────────────────────────────────────
 
 func (r *fakeRepo) ListPackForms(_ context.Context, listingID uuid.UUID) ([]*PackForm, error) {
