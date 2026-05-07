@@ -42,7 +42,7 @@ func TestService_PublishVersion_Pack_BuildsFormsArray(t *testing.T) {
 	form1 := uuid.New()
 	form2 := uuid.New()
 	snap.snapshots[form1] = &FormSnapshot{
-		FormID:        form1,
+		
 		FormVersionID: uuid.New(),
 		Name:          "Vaccination consent",
 		Tags:          []string{"vet"},
@@ -52,7 +52,7 @@ func TestService_PublishVersion_Pack_BuildsFormsArray(t *testing.T) {
 		},
 	}
 	snap.snapshots[form2] = &FormSnapshot{
-		FormID:        form2,
+		
 		FormVersionID: uuid.New(),
 		Name:          "Recall reminder",
 		Tags:          []string{"vet"},
@@ -136,13 +136,13 @@ func TestService_Import_Pack_MaterialisesAllForms(t *testing.T) {
 	form1 := uuid.New()
 	form2 := uuid.New()
 	snap.snapshots[form1] = &FormSnapshot{
-		FormID:        form1,
+		
 		FormVersionID: uuid.New(),
 		Name:          "Form A",
 		Fields:        []FormSnapshotField{{Position: 1, Title: "a", Type: "text", Config: json.RawMessage(`{}`)}},
 	}
 	snap.snapshots[form2] = &FormSnapshot{
-		FormID:        form2,
+		
 		FormVersionID: uuid.New(),
 		Name:          "Form B",
 		Fields:        []FormSnapshotField{{Position: 1, Title: "b", Type: "text", Config: json.RawMessage(`{}`)}},
@@ -407,7 +407,7 @@ func TestService_Import_PolicyOnly_RequiresAttribution(t *testing.T) {
 			Content:  json.RawMessage(`[]`),
 		}
 	}
-	resp, _ := svc.CreateListing(context.Background(), CreateListingInput{
+	resp, err := svc.CreateListing(context.Background(), CreateListingInput{
 		CallerClinicID:     pub.ClinicID,
 		PublisherAccountID: pub.ID,
 		Vertical:           "veterinary",
@@ -418,26 +418,34 @@ func TestService_Import_PolicyOnly_RequiresAttribution(t *testing.T) {
 		BundleType:         "policy_only",
 		SourcePolicyID:     &policyID,
 	})
+	if err != nil {
+		t.Fatalf("CreateListing: %v", err)
+	}
 	listingID := uuid.MustParse(resp.ID)
-	_, _ = svc.PublishVersion(context.Background(), PublishVersionInput{
+	if _, err := svc.PublishVersion(context.Background(), PublishVersionInput{
 		ListingID: listingID, ClinicID: pub.ClinicID, StaffID: uuid.New(), ChangeType: "major",
-	})
-	_, _ = svc.PublishListingByOwner(context.Background(), pub.ClinicID, listingID)
+	}); err != nil {
+		t.Fatalf("PublishVersion: %v", err)
+	}
+	if _, err := svc.PublishListingByOwner(context.Background(), pub.ClinicID, listingID); err != nil {
+		t.Fatalf("PublishListingByOwner: %v", err)
+	}
 
-	acq, _ := svc.Acquire(context.Background(), AcquireInput{
-		ListingID: listingID, ClinicID: uuid.New(), StaffID: uuid.New(),
+	buyerClinic := uuid.New()
+	acq, err := svc.Acquire(context.Background(), AcquireInput{
+		ListingID: listingID, ClinicID: buyerClinic, StaffID: uuid.New(),
 	})
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
 
-	_, err := svc.Import(context.Background(), ImportInput{
+	_, err = svc.Import(context.Background(), ImportInput{
 		AcquisitionID:             uuid.MustParse(acq.ID),
-		ClinicID:                  uuid.MustParse(acq.ListingID), // doesn't matter — acq lookup is by acq id
+		ClinicID:                  buyerClinic,
 		StaffID:                   uuid.New(),
 		AcceptedPolicyAttribution: false,
 	})
-	// Even if the cross-tenant check fails first, the test passes if we get an
-	// error. The interesting case is when ClinicID matches and we DO get to
-	// the attribution check — assert with a separate run.
-	if err == nil {
-		t.Error("expected an error (cross-tenant or attribution)")
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Errorf("expected ErrForbidden when attribution not accepted, got %v", err)
 	}
 }
