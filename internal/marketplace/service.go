@@ -235,6 +235,8 @@ type ListingResponse struct {
 	Publisher         PublisherResponse `json:"publisher"`
 	PublishedAt       *string           `json:"published_at,omitempty"`
 	CreatedAt         string            `json:"created_at"`
+	// SourcePolicyID is set only for bundle_type='policy_only' listings.
+	SourcePolicyID *string `json:"source_policy_id,omitempty"`
 }
 
 // ListingListResponse is a paginated list of listings.
@@ -318,11 +320,19 @@ type CreateListingInput struct {
 	ShortDescription   string
 	LongDescription    *string
 	Tags               []string
-	BundleType         string // 'bundled' | 'form_only'
+	BundleType         string // 'bundled' | 'form_only' | 'pack' | 'policy_only'
 	PricingType        string
 	PriceCents         *int
 	Currency           string
 	PreviewFieldCount  int
+	// SourceFormIDs is the set of tenant forms composing a `pack` listing.
+	// Required when BundleType='pack', ignored otherwise. The forms must
+	// belong to the caller's clinic.
+	SourceFormIDs []uuid.UUID
+	// SourcePolicyID is the tenant policy whose latest published version
+	// becomes the package content for `policy_only` listings. Required when
+	// BundleType='policy_only', ignored otherwise.
+	SourcePolicyID *uuid.UUID
 }
 
 // PublishVersionInput is the input for publishing a new listing version by
@@ -555,6 +565,11 @@ type repo interface {
 	ListPublisherListings(ctx context.Context, publisherID uuid.UUID, limit, offset int) ([]*ListingRecord, int, error)
 	PublishListing(ctx context.Context, id uuid.UUID, now time.Time) (*ListingRecord, error)
 	UpdateListingStatus(ctx context.Context, id uuid.UUID, status string) (*ListingRecord, error)
+	UpdateListingMetadata(ctx context.Context, p UpdateListingMetadataParams) (*ListingRecord, error)
+	ArchiveListing(ctx context.Context, id uuid.UUID) (*ListingRecord, error)
+	DeleteListingDraft(ctx context.Context, id uuid.UUID) error
+	ListPackForms(ctx context.Context, listingID uuid.UUID) ([]*PackForm, error)
+	SetPackForms(ctx context.Context, listingID uuid.UUID, formIDs []uuid.UUID) error
 	IncrementDownloadCount(ctx context.Context, id uuid.UUID) error
 	// Versions
 	CreateVersion(ctx context.Context, p CreateVersionParams) (*VersionRecord, []*VersionFieldRecord, error)
@@ -683,6 +698,18 @@ func (s *Service) CreateListing(ctx context.Context, input CreateListingInput) (
 		bundleType = "bundled"
 	}
 
+	// Per-bundle-type input rules.
+	switch bundleType {
+	case "pack":
+		if len(input.SourceFormIDs) < 2 {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: pack listings need at least 2 source forms: %w", domain.ErrValidation)
+		}
+	case "policy_only":
+		if input.SourcePolicyID == nil {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: policy_only listings need source_policy_id: %w", domain.ErrValidation)
+		}
+	}
+
 	rec, err := s.repo.CreateListing(ctx, CreateListingParams{
 		ID:                 domain.NewID(),
 		PublisherAccountID: input.PublisherAccountID,
@@ -698,11 +725,72 @@ func (s *Service) CreateListing(ctx context.Context, input CreateListingInput) (
 		Currency:           firstNonEmpty(input.Currency, "NZD"),
 		PreviewFieldCount:  defaultIntIfZero(input.PreviewFieldCount, 3),
 		Status:             "draft",
+		SourcePolicyID:     input.SourcePolicyID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.CreateListing: %w", err)
 	}
+
+	// Pack listings: persist the source-form composition.
+	if bundleType == "pack" && len(input.SourceFormIDs) > 0 {
+		if err := s.repo.SetPackForms(ctx, rec.ID, input.SourceFormIDs); err != nil {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: pack forms: %w", err)
+		}
+	}
+
 	return toListingResponse(rec), nil
+}
+
+// SetPackFormsByOwner replaces the source-form composition for a pack
+// listing. Idempotent. Caller's clinic must own the publisher; the listing
+// must be a draft (composition changes after publish would invalidate the
+// already-shipped package payloads).
+func (s *Service) SetPackFormsByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID, formIDs []uuid.UUID) error {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	if listing.BundleType != "pack" {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: not a pack listing: %w", domain.ErrConflict)
+	}
+	if listing.Status != "draft" {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: composition locked once published: %w", domain.ErrConflict)
+	}
+	if len(formIDs) < 2 {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: pack needs at least 2 forms: %w", domain.ErrValidation)
+	}
+	if err := s.repo.SetPackForms(ctx, listingID, formIDs); err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: %w", err)
+	}
+	return nil
+}
+
+// ListPackFormsByOwner returns the current pack composition. Ownership
+// enforced — only the publisher (or Salvia) can read.
+func (s *Service) ListPackFormsByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) ([]*PackForm, error) {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	rows, err := s.repo.ListPackForms(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: %w", err)
+	}
+	return rows, nil
 }
 
 // PublishListing transitions a listing from draft → published.
@@ -750,6 +838,15 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 	// Trial/suspended gate.
 	if err := s.checkCanPublish(ctx, input.ClinicID); err != nil {
 		return nil, fmt.Errorf("marketplace.service.PublishVersion: %w", err)
+	}
+
+	// The single-form publish path handles bundle_type ∈ {bundled, form_only}.
+	// Pack and policy_only versions need their own snapshot/payload flow,
+	// landing in a follow-up — gate them with a clear error so publishers
+	// can still create the listing draft and edit metadata before the
+	// publish path is wired.
+	if listing.BundleType == "pack" || listing.BundleType == "policy_only" {
+		return nil, fmt.Errorf("marketplace.service.PublishVersion: %s versions ship in a follow-up: %w", listing.BundleType, domain.ErrConflict)
 	}
 
 	snapshot, err := s.snapshot.SnapshotForm(ctx, input.SourceFormID, input.ClinicID)
@@ -1334,6 +1431,13 @@ func validateListingInput(input CreateListingInput) error {
 	default:
 		return fmt.Errorf("invalid vertical: %w", domain.ErrValidation)
 	}
+	if input.BundleType != "" {
+		switch input.BundleType {
+		case "bundled", "form_only", "pack", "policy_only":
+		default:
+			return fmt.Errorf("invalid bundle_type: %w", domain.ErrValidation)
+		}
+	}
 	switch input.PricingType {
 	case "free":
 		if input.PriceCents != nil {
@@ -1478,6 +1582,10 @@ func toListingResponse(l *ListingRecord) *ListingResponse {
 	if l.PublishedAt != nil {
 		s := l.PublishedAt.Format(time.RFC3339)
 		r.PublishedAt = &s
+	}
+	if l.SourcePolicyID != nil {
+		s := l.SourcePolicyID.String()
+		r.SourcePolicyID = &s
 	}
 	return r
 }
