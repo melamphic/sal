@@ -828,6 +828,151 @@ func (r *Repository) ArchiveListing(ctx context.Context, id uuid.UUID) (*Listing
 	return rec, nil
 }
 
+// ── Publisher earnings ───────────────────────────────────────────────────────
+
+// EarningsRow is a single fulfilled paid acquisition row used by the
+// publisher earnings list. Refunded acquisitions are included with status
+// 'refunded' so the publisher sees the full transaction trail.
+type EarningsRow struct {
+	AcquisitionID    uuid.UUID
+	ListingID        uuid.UUID
+	ListingName      string
+	BuyerClinicID    uuid.UUID
+	AmountPaidCents  int
+	PlatformFeeCents int
+	NetCents         int // amount_paid - platform_fee, what the publisher actually netted
+	Currency         string
+	Status           string // 'active' or 'refunded'
+	FulfilledAt      time.Time
+}
+
+// ListPublisherEarnings returns paid acquisitions for the given publisher,
+// most-recent first, with platform fees and the net publisher cut computed
+// per row. Free acquisitions are excluded — they never carry money.
+func (r *Repository) ListPublisherEarnings(ctx context.Context, publisherID uuid.UUID, limit, offset int) ([]*EarningsRow, int, error) {
+	const countQ = `
+		SELECT COUNT(*)
+		FROM marketplace_acquisitions a
+		JOIN marketplace_listings l ON l.id = a.listing_id
+		WHERE l.publisher_account_id = $1
+		  AND a.acquisition_type = 'purchase'
+		  AND a.status IN ('active', 'refunded')`
+	var total int
+	if err := r.db.QueryRow(ctx, countQ, publisherID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("marketplace.repo.ListPublisherEarnings: count: %w", err)
+	}
+
+	const q = `
+		SELECT
+			a.id, a.listing_id, l.name, a.clinic_id,
+			COALESCE(a.amount_paid_cents, 0),
+			COALESCE(a.platform_fee_cents, 0),
+			COALESCE(a.currency, 'NZD'),
+			a.status,
+			a.fulfilled_at
+		FROM marketplace_acquisitions a
+		JOIN marketplace_listings l ON l.id = a.listing_id
+		WHERE l.publisher_account_id = $1
+		  AND a.acquisition_type = 'purchase'
+		  AND a.status IN ('active', 'refunded')
+		ORDER BY a.fulfilled_at DESC NULLS LAST
+		LIMIT $2 OFFSET $3`
+	rows, err := r.db.Query(ctx, q, publisherID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("marketplace.repo.ListPublisherEarnings: %w", err)
+	}
+	defer rows.Close()
+	var out []*EarningsRow
+	for rows.Next() {
+		var e EarningsRow
+		var fulfilledAt *time.Time
+		if err := rows.Scan(
+			&e.AcquisitionID, &e.ListingID, &e.ListingName, &e.BuyerClinicID,
+			&e.AmountPaidCents, &e.PlatformFeeCents, &e.Currency, &e.Status,
+			&fulfilledAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("marketplace.repo.ListPublisherEarnings: scan: %w", err)
+		}
+		if fulfilledAt != nil {
+			e.FulfilledAt = *fulfilledAt
+		}
+		e.NetCents = e.AmountPaidCents - e.PlatformFeeCents
+		out = append(out, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("marketplace.repo.ListPublisherEarnings: rows: %w", err)
+	}
+	return out, total, nil
+}
+
+// EarningsMonthly is a single bucketed row for the earnings summary chart.
+// Months are reported as YYYY-MM strings; gross/fee/net cents are summed
+// across all paid+active acquisitions in the bucket. Refunded acquisitions
+// flip the sign in the same bucket so refunds reduce the gross figure.
+type EarningsMonthly struct {
+	Month        string // 'YYYY-MM'
+	GrossCents   int
+	FeeCents     int
+	NetCents     int
+	OrderCount   int
+	RefundCount  int
+	Currency     string
+}
+
+// PublisherEarningsSummary returns up to 24 months of earnings data for a
+// publisher, oldest → newest. Currencies are not collapsed (a publisher
+// could in theory have NZD + AUD acquisitions); each row carries its own
+// currency. Most publishers stick to one currency.
+func (r *Repository) PublisherEarningsSummary(ctx context.Context, publisherID uuid.UUID, monthsBack int) ([]*EarningsMonthly, error) {
+	if monthsBack <= 0 || monthsBack > 36 {
+		monthsBack = 12
+	}
+	const q = `
+		WITH base AS (
+			SELECT
+				to_char(a.fulfilled_at, 'YYYY-MM') AS month,
+				COALESCE(a.currency, 'NZD') AS currency,
+				CASE WHEN a.status = 'refunded' THEN -1 ELSE 1 END AS sign,
+				COALESCE(a.amount_paid_cents, 0) AS gross,
+				COALESCE(a.platform_fee_cents, 0) AS fee,
+				CASE WHEN a.status = 'refunded' THEN 1 ELSE 0 END AS is_refund
+			FROM marketplace_acquisitions a
+			JOIN marketplace_listings l ON l.id = a.listing_id
+			WHERE l.publisher_account_id = $1
+			  AND a.acquisition_type = 'purchase'
+			  AND a.fulfilled_at >= (NOW() - ($2::int || ' months')::interval)
+			  AND a.status IN ('active', 'refunded')
+		)
+		SELECT
+			month,
+			currency,
+			SUM(sign * gross)::int AS gross,
+			SUM(sign * fee)::int AS fee,
+			COUNT(*) AS order_count,
+			SUM(is_refund)::int AS refund_count
+		FROM base
+		GROUP BY month, currency
+		ORDER BY month ASC`
+	rows, err := r.db.Query(ctx, q, publisherID, monthsBack)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.repo.PublisherEarningsSummary: %w", err)
+	}
+	defer rows.Close()
+	var out []*EarningsMonthly
+	for rows.Next() {
+		var m EarningsMonthly
+		if err := rows.Scan(&m.Month, &m.Currency, &m.GrossCents, &m.FeeCents, &m.OrderCount, &m.RefundCount); err != nil {
+			return nil, fmt.Errorf("marketplace.repo.PublisherEarningsSummary: scan: %w", err)
+		}
+		m.NetCents = m.GrossCents - m.FeeCents
+		out = append(out, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("marketplace.repo.PublisherEarningsSummary: rows: %w", err)
+	}
+	return out, nil
+}
+
 // ── Pack source forms ────────────────────────────────────────────────────────
 
 // PackForm is a row from marketplace_listing_forms — one component form of
