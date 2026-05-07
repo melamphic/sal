@@ -194,6 +194,113 @@ func (s *Service) DeleteListingDraftByOwner(ctx context.Context, callerClinicID,
 	return nil
 }
 
+// ── Publisher earnings ───────────────────────────────────────────────────────
+
+// EarningsResponse is the API-safe row representation. Cents are kept as
+// integers; clients format the currency. Buyer clinic is exposed by ID
+// only — buyer identity beyond that lives behind a separate moderation
+// surface.
+//
+//nolint:revive
+type EarningsResponse struct {
+	AcquisitionID    string `json:"acquisition_id"`
+	ListingID        string `json:"listing_id"`
+	ListingName      string `json:"listing_name"`
+	BuyerClinicID    string `json:"buyer_clinic_id"`
+	AmountPaidCents  int    `json:"amount_paid_cents"`
+	PlatformFeeCents int    `json:"platform_fee_cents"`
+	NetCents         int    `json:"net_cents"`
+	Currency         string `json:"currency"`
+	Status           string `json:"status"`
+	FulfilledAt      string `json:"fulfilled_at"`
+}
+
+// EarningsListResponse is paginated.
+//
+//nolint:revive
+type EarningsListResponse struct {
+	Items  []*EarningsResponse `json:"items"`
+	Total  int                 `json:"total"`
+	Limit  int                 `json:"limit"`
+	Offset int                 `json:"offset"`
+}
+
+// EarningsMonthlyResponse is one bucket of the summary chart.
+//
+//nolint:revive
+type EarningsMonthlyResponse struct {
+	Month       string `json:"month"`
+	Currency    string `json:"currency"`
+	GrossCents  int    `json:"gross_cents"`
+	FeeCents    int    `json:"fee_cents"`
+	NetCents    int    `json:"net_cents"`
+	OrderCount  int    `json:"order_count"`
+	RefundCount int    `json:"refund_count"`
+}
+
+// EarningsSummaryResponse wraps the monthly buckets.
+//
+//nolint:revive
+type EarningsSummaryResponse struct {
+	Items []*EarningsMonthlyResponse `json:"items"`
+}
+
+// ListMyEarnings returns paid acquisitions for the caller's publisher with
+// platform-fee splits applied. Free acquisitions are excluded.
+func (s *Service) ListMyEarnings(ctx context.Context, callerClinicID uuid.UUID, limit, offset int) (*EarningsListResponse, error) {
+	publisher, err := s.repo.GetPublisherByClinicID(ctx, callerClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListMyEarnings: %w", err)
+	}
+	limit = clampLimit(limit)
+	rows, total, err := s.repo.ListPublisherEarnings(ctx, publisher.ID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListMyEarnings: %w", err)
+	}
+	items := make([]*EarningsResponse, len(rows))
+	for i, r := range rows {
+		items[i] = &EarningsResponse{
+			AcquisitionID:    r.AcquisitionID.String(),
+			ListingID:        r.ListingID.String(),
+			ListingName:      r.ListingName,
+			BuyerClinicID:    r.BuyerClinicID.String(),
+			AmountPaidCents:  r.AmountPaidCents,
+			PlatformFeeCents: r.PlatformFeeCents,
+			NetCents:         r.NetCents,
+			Currency:         r.Currency,
+			Status:           r.Status,
+			FulfilledAt:      r.FulfilledAt.Format(time.RFC3339),
+		}
+	}
+	return &EarningsListResponse{Items: items, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// MyEarningsSummary returns up to 24 months of bucketed gross/net earnings
+// for the caller's publisher.
+func (s *Service) MyEarningsSummary(ctx context.Context, callerClinicID uuid.UUID, monthsBack int) (*EarningsSummaryResponse, error) {
+	publisher, err := s.repo.GetPublisherByClinicID(ctx, callerClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.MyEarningsSummary: %w", err)
+	}
+	rows, err := s.repo.PublisherEarningsSummary(ctx, publisher.ID, monthsBack)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.MyEarningsSummary: %w", err)
+	}
+	items := make([]*EarningsMonthlyResponse, len(rows))
+	for i, r := range rows {
+		items[i] = &EarningsMonthlyResponse{
+			Month:       r.Month,
+			Currency:    r.Currency,
+			GrossCents:  r.GrossCents,
+			FeeCents:    r.FeeCents,
+			NetCents:    r.NetCents,
+			OrderCount:  r.OrderCount,
+			RefundCount: r.RefundCount,
+		}
+	}
+	return &EarningsSummaryResponse{Items: items}, nil
+}
+
 // PublishListingByOwner transitions a listing from draft → published with
 // ownership enforced (caller's clinic must own the publisher).
 func (s *Service) PublishListingByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) (*ListingResponse, error) {
