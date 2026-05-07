@@ -90,9 +90,8 @@ func TestService_PublishVersion_Pack_BuildsFormsArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PublishVersion pack: %v", err)
 	}
-	if versionResp == nil {
-		t.Fatal("expected version response")
-	}
+	// PublishVersion returns either a non-nil response or an error — the
+	// t.Fatalf above means we have a non-nil response here.
 
 	// Inspect the persisted version's payload to confirm pack shape.
 	versionID := uuid.MustParse(versionResp.ID)
