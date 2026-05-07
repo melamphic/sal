@@ -44,12 +44,19 @@ func (s *Service) RegisterPublisher(ctx context.Context, input RegisterPublisher
 }
 
 // ListMyPublisherListings returns listings owned by the caller's publisher.
+// When the clinic has no publisher_accounts row yet (brand-new state), the
+// response is an empty page rather than 404 — from the caller's perspective
+// "no publisher" and "publisher with zero listings" should look identical
+// to the UI's empty-state handling.
 func (s *Service) ListMyPublisherListings(ctx context.Context, clinicID uuid.UUID, limit, offset int) (*ListingListResponse, error) {
+	limit = clampLimit(limit)
 	publisher, err := s.repo.GetPublisherByClinicID(ctx, clinicID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return &ListingListResponse{Items: []*ListingResponse{}, Total: 0, Limit: limit, Offset: offset}, nil
+		}
 		return nil, fmt.Errorf("marketplace.service.ListMyPublisherListings: %w", err)
 	}
-	limit = clampLimit(limit)
 	rows, total, err := s.repo.ListPublisherListings(ctx, publisher.ID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.ListMyPublisherListings: %w", err)
@@ -247,13 +254,18 @@ type EarningsSummaryResponse struct {
 }
 
 // ListMyEarnings returns paid acquisitions for the caller's publisher with
-// platform-fee splits applied. Free acquisitions are excluded.
+// platform-fee splits applied. Free acquisitions are excluded. Returns an
+// empty page when the clinic has no publisher_accounts row yet — same
+// shape the UI expects for "no earnings yet" rather than a 404.
 func (s *Service) ListMyEarnings(ctx context.Context, callerClinicID uuid.UUID, limit, offset int) (*EarningsListResponse, error) {
+	limit = clampLimit(limit)
 	publisher, err := s.repo.GetPublisherByClinicID(ctx, callerClinicID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return &EarningsListResponse{Items: []*EarningsResponse{}, Total: 0, Limit: limit, Offset: offset}, nil
+		}
 		return nil, fmt.Errorf("marketplace.service.ListMyEarnings: %w", err)
 	}
-	limit = clampLimit(limit)
 	rows, total, err := s.repo.ListPublisherEarnings(ctx, publisher.ID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.ListMyEarnings: %w", err)
@@ -277,10 +289,14 @@ func (s *Service) ListMyEarnings(ctx context.Context, callerClinicID uuid.UUID, 
 }
 
 // MyEarningsSummary returns up to 24 months of bucketed gross/net earnings
-// for the caller's publisher.
+// for the caller's publisher. Empty list when the clinic has no
+// publisher_accounts row yet.
 func (s *Service) MyEarningsSummary(ctx context.Context, callerClinicID uuid.UUID, monthsBack int) (*EarningsSummaryResponse, error) {
 	publisher, err := s.repo.GetPublisherByClinicID(ctx, callerClinicID)
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return &EarningsSummaryResponse{Items: []*EarningsMonthlyResponse{}}, nil
+		}
 		return nil, fmt.Errorf("marketplace.service.MyEarningsSummary: %w", err)
 	}
 	rows, err := s.repo.PublisherEarningsSummary(ctx, publisher.ID, monthsBack)
