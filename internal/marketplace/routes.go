@@ -297,6 +297,28 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, canManage},
 	}, h.setPackForms)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "list-my-marketplace-earnings",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/marketplace/my/earnings",
+		Summary:     "List paid acquisitions for my publisher",
+		Description: "Returns paid acquisitions (active + refunded) with platform fees and net publisher cut, most-recent first. Free acquisitions excluded — they never carry money.",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.listMyEarnings)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "my-marketplace-earnings-summary",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/marketplace/my/earnings/summary",
+		Summary:     "Monthly earnings summary",
+		Description: "Up to 36 months of bucketed gross/fee/net + order/refund counts for the caller's publisher. Default window is 12 months.",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.myEarningsSummary)
+
 	// ── Stripe webhook (raw Chi, no auth — signature-verified) ───────────────
 
 	r.Post("/api/v1/marketplace/webhooks/stripe", h.StripeWebhookHandler())
