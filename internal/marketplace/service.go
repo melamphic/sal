@@ -873,13 +873,14 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 		return nil, fmt.Errorf("marketplace.service.PublishVersion: %w", err)
 	}
 
-	// The single-form publish path handles bundle_type ∈ {bundled, form_only}.
-	// Pack and policy_only versions need their own snapshot/payload flow,
-	// landing in a follow-up — gate them with a clear error so publishers
-	// can still create the listing draft and edit metadata before the
-	// publish path is wired.
-	if listing.BundleType == "pack" || listing.BundleType == "policy_only" {
-		return nil, fmt.Errorf("marketplace.service.PublishVersion: %s versions ship in a follow-up: %w", listing.BundleType, domain.ErrConflict)
+	// Dispatch by bundle type. Pack and policy_only have their own snapshot
+	// shapes and don't accept input.SourceFormID — pack pulls forms from the
+	// listing_forms join table; policy_only pulls from listing.source_policy_id.
+	switch listing.BundleType {
+	case "pack":
+		return s.publishPackVersion(ctx, listing, input)
+	case "policy_only":
+		return s.publishPolicyVersion(ctx, listing, input)
 	}
 
 	snapshot, err := s.snapshot.SnapshotForm(ctx, input.SourceFormID, input.ClinicID)
