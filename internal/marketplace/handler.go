@@ -734,6 +734,42 @@ func (h *Handler) setPackForms(ctx context.Context, input *setPackFormsInput) (*
 	return &emptyHTTPResponse{}, nil
 }
 
+// ── Publisher earnings ───────────────────────────────────────────────────────
+
+type listMyEarningsInput struct {
+	paginationInput
+}
+
+type earningsListHTTPResponse struct {
+	Body *EarningsListResponse
+}
+
+func (h *Handler) listMyEarnings(ctx context.Context, input *listMyEarningsInput) (*earningsListHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	resp, err := h.svc.ListMyEarnings(ctx, clinicID, input.Limit, input.Offset)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &earningsListHTTPResponse{Body: resp}, nil
+}
+
+type myEarningsSummaryInput struct {
+	MonthsBack int `query:"months_back" minimum:"1" maximum:"36" default:"12"`
+}
+
+type earningsSummaryHTTPResponse struct {
+	Body *EarningsSummaryResponse
+}
+
+func (h *Handler) myEarningsSummary(ctx context.Context, input *myEarningsSummaryInput) (*earningsSummaryHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	resp, err := h.svc.MyEarningsSummary(ctx, clinicID, input.MonthsBack)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &earningsSummaryHTTPResponse{Body: resp}, nil
+}
+
 // ── Stripe Connect onboarding ────────────────────────────────────────────────
 
 type startOnboardingInput struct {
