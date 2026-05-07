@@ -61,6 +61,50 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.seatUsage)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-staff-invites",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/staff/invites",
+		Summary:     "List pending + expired staff invitations",
+		Description: "Returns invites for the clinic that haven't been accepted, with derived status (pending|expired). Revoked rows are filtered out at the repo layer; accepted invites already appear in /staff. Requires manage_staff.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.listInvites)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "resend-staff-invite",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/staff/invites/{invite_id}/resend",
+		Summary:     "Resend (re-mint) a staff invitation",
+		Description: "Mints a fresh invite token with the same role/perms/email and revokes the previous row, so any link still in the invitee's inbox stops working. Returns the new invite_url. Optionally re-emails the invitee.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.resendInvite)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-staff-activity",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/staff/{staff_id}/activity",
+		Summary:     "Per-staff activity feed",
+		Description: "Merged cross-domain activity (notes, drugs, incidents, consent, pain, logins) for one staff member, newest-first. Sources fan out in parallel server-side. Requires manage_staff.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.getActivity)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "revoke-staff-invite",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/staff/invites/{invite_id}",
+		Summary:     "Revoke a pending staff invitation",
+		Description: "Stamps revoked_at on the invite row so the link in the invitee's inbox stops working. Idempotent: returns 404 if the invite is already accepted, already revoked, or in a different clinic.",
+		Tags:        []string{"Staff"},
+		Security:    []map[string][]string{{"bearerAuth": {}}},
+		Middlewares: huma.Middlewares{auth, manageStaff},
+	}, h.revokeInvite)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-staff-member",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/staff/{staff_id}",

@@ -1418,6 +1418,56 @@ func (r *Repository) VerifyChain(ctx context.Context, clinicID uuid.UUID, chainK
 	return status, nil
 }
 
+// StaffActivityRow is a slim drug-op projection for the per-staff
+// activity feed. We don't need the full OperationRecord (witness,
+// chain hash, balance, etc.) — the activity widget only renders
+// "Administered Meloxicam · 7 ml SC" with a click-through.
+type StaffActivityRow struct {
+	ID         uuid.UUID
+	SubjectID  *uuid.UUID
+	NoteID     *uuid.UUID
+	Operation  string
+	DrugName   string
+	Quantity   string
+	Unit       string
+	Route      *string
+	OccurredAt time.Time
+}
+
+// ListActivityByStaff returns drug operations administered by the
+// given staff member, newest-first. Backed by the
+// drug_operations_log_administered_by_idx index added in 00086 — a
+// straight index range scan, no joins.
+func (r *Repository) ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error) {
+	const q = `
+		SELECT id, subject_id, note_id, operation,
+		       COALESCE(drug_name, '') AS drug_name,
+		       quantity::text AS quantity_str,
+		       unit, route, created_at
+		FROM drug_operations_log
+		WHERE administered_by = $1 AND clinic_id = $2
+		ORDER BY created_at DESC
+		LIMIT $3`
+	rows, err := r.db.Query(ctx, q, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListActivityByStaff: %w", err)
+	}
+	defer rows.Close()
+	var out []*StaffActivityRow
+	for rows.Next() {
+		var x StaffActivityRow
+		if err := rows.Scan(&x.ID, &x.SubjectID, &x.NoteID, &x.Operation,
+			&x.DrugName, &x.Quantity, &x.Unit, &x.Route, &x.OccurredAt); err != nil {
+			return nil, fmt.Errorf("drugs.repo.ListActivityByStaff: scan: %w", err)
+		}
+		out = append(out, &x)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("drugs.repo.ListActivityByStaff: rows: %w", err)
+	}
+	return out, nil
+}
+
 // HasOpenReconciliation reports whether there's already an unreported
 // reconciliation row for the (shelf, period_end) pair. Used by the service
 // layer to prevent duplicate concurrent reconciliations.

@@ -118,7 +118,7 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Method:      http.MethodPost,
 		Path:        "/api/v1/marketplace/acquisitions/{acquisition_id}/import",
 		Summary:     "Import an acquired listing into clinic forms",
-		Description: "Opt-in policy bundling; accepted_policy_attribution must be true when include_policies=true.",
+		Description: "Materialises a marketplace package into a fresh tenant form. Opt-in policy bundling; accepted_policy_attribution must be true when include_policies=true. Pass version_id to import a SPECIFIC published version — used by the upgrade flow when a newer version becomes available; the new version lands as a separate tenant form so the buyer can compare side-by-side without disturbing the existing one. Importing automatically dismisses any matching upgrade notification.",
 		Tags:        []string{"Marketplace"},
 		Security:    security,
 		Middlewares: huma.Middlewares{auth, canDownload},

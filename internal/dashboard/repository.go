@@ -299,6 +299,155 @@ ORDER BY days.day
 	return out, nil
 }
 
+// ── Attention-panel + compliance-health queries ─────────────────────────────
+//
+// All scoped by clinic_id; each is a single index range scan or a
+// bounded join. The dashboard service runs them in parallel via a
+// small fan-out (see service.go) so total wall time stays under the
+// existing TTL budget even on busy clinics.
+
+// CountPendingApprovals returns the size of the witness/approval queue
+// across every entity kind (drug ops, incidents, consent, pain).
+// Backed by compliance_approvals_queue_idx.
+func (r *Repository) CountPendingApprovals(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM compliance_approvals
+WHERE clinic_id = $1 AND status = 'pending'
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountPendingApprovals: %w", err)
+	}
+	return n, nil
+}
+
+// OldestPendingApprovalAge returns how long the oldest pending
+// compliance approval has been waiting. Returns 0 when the queue is
+// empty. Drives the "witness queue median age" health bar — we use
+// oldest as a proxy because it surfaces the worst case directly.
+func (r *Repository) OldestPendingApprovalAge(ctx context.Context, clinicID uuid.UUID) (time.Duration, error) {
+	const q = `
+SELECT COALESCE(MIN(created_at), NOW()) FROM compliance_approvals
+WHERE clinic_id = $1 AND status = 'pending'
+`
+	var oldest time.Time
+	if err := r.db.QueryRow(ctx, q, clinicID).Scan(&oldest); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.OldestPendingApprovalAge: %w", err)
+	}
+	return time.Since(oldest), nil
+}
+
+// CountDraftsOlderThan returns the number of clinic-wide draft notes
+// older than the supplied cutoff. Pre-encounter drafts naturally
+// linger; this catches the post-encounter ones that have stalled.
+func (r *Repository) CountDraftsOlderThan(ctx context.Context, clinicID uuid.UUID, cutoff time.Time) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM notes
+WHERE clinic_id = $1 AND status = 'draft' AND created_at < $2
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID, cutoff).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountDraftsOlderThan: %w", err)
+	}
+	return n, nil
+}
+
+// CountIncidentsOverdueNotification returns incidents whose regulator
+// notification window has lapsed without a notified_at stamp. Uses
+// the `incident_events_pending_notification_idx` partial index.
+func (r *Repository) CountIncidentsOverdueNotification(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM incident_events
+WHERE clinic_id = $1
+  AND regulator_notified_at IS NULL
+  AND notification_deadline IS NOT NULL
+  AND notification_deadline < NOW()
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountIncidentsOverdueNotification: %w", err)
+	}
+	return n, nil
+}
+
+// CountSubmittedNotesMissingRegulatorID counts submitted notes signed
+// by staff whose regulatory_authority + regulatory_reg_no aren't set.
+// Such notes ship to a regulator with a blank line where the
+// clinician's registration number should be — a defensibility gap
+// auditors flag immediately.
+func (r *Repository) CountSubmittedNotesMissingRegulatorID(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	const q = `
+SELECT COUNT(*)
+FROM notes n
+JOIN staff s ON s.id = n.submitted_by
+WHERE n.clinic_id = $1
+  AND n.status = 'submitted'
+  AND n.submitted_at >= $2
+  AND (
+    s.regulatory_authority IS NULL
+    OR s.regulatory_authority = ''
+    OR s.regulatory_reg_no   IS NULL
+    OR s.regulatory_reg_no   = ''
+  )
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountSubmittedNotesMissingRegulatorID: %w", err)
+	}
+	return n, nil
+}
+
+// CountReconciliationsWithDiscrepancySince returns the number of
+// drug-reconciliation rows in the period whose status isn't 'clean'
+// (i.e. discrepancy_logged or reported_to_regulator). This is the
+// "do you have any unresolved CD discrepancies?" question.
+func (r *Repository) CountReconciliationsWithDiscrepancySince(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM drug_reconciliation
+WHERE clinic_id = $1 AND period_end >= $2 AND status <> 'clean'
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountReconciliationsWithDiscrepancySince: %w", err)
+	}
+	return n, nil
+}
+
+// CountReconciliationsSince returns total reconciliations completed in
+// the period. Used as the denominator for the "% clean" health metric.
+func (r *Repository) CountReconciliationsSince(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM drug_reconciliation
+WHERE clinic_id = $1 AND period_end >= $2
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID, since).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountReconciliationsSince: %w", err)
+	}
+	return n, nil
+}
+
+// CountActiveStaffMissingRegulatorID returns active staff with no
+// regulator authority/reg-no set. Drives the "staff missing reg ID"
+// chip on the attention panel.
+func (r *Repository) CountActiveStaffMissingRegulatorID(ctx context.Context, clinicID uuid.UUID) (int, error) {
+	const q = `
+SELECT COUNT(*) FROM staff
+WHERE clinic_id = $1
+  AND archived_at IS NULL
+  AND status = 'active'
+  AND (
+    regulatory_authority IS NULL OR regulatory_authority = ''
+    OR regulatory_reg_no IS NULL OR regulatory_reg_no = ''
+  )
+`
+	var n int
+	if err := r.db.QueryRow(ctx, q, clinicID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("dashboard.repo.CountActiveStaffMissingRegulatorID: %w", err)
+	}
+	return n, nil
+}
+
 // CountHighPainSince returns pain assessments with score >= 7 since
 // `since` — aged-care + vet KPI tile.
 func (r *Repository) CountHighPainSince(ctx context.Context, clinicID uuid.UUID, since time.Time) (int, error) {

@@ -55,6 +55,10 @@ type repo interface {
 	// ListPendingConfirmForNote returns ops linked to a note that are
 	// still in pending_confirm. Used by the note-submit gate.
 	ListPendingConfirmForNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*OperationRecord, error)
+	// ListActivityByStaff returns slim drug-op rows authored by a
+	// specific staff member, newest first. Backs the team-page
+	// activity feed via an adapter in app.go.
+	ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error)
 	// SumLedgerForShelfPeriod returns the net balance change over a period
 	// (receive adds, administer/dispense/discard subtracts, transfer is 0).
 	// Used by the reconciliation flow to compute expected ledger_count.

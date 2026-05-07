@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -95,8 +96,12 @@ func (h *Handler) preview(ctx context.Context, in *previewBodyInput) (*previewHT
 	logoURL, err := resolveThemeLogoURL(ctx, theme, h.logoSigner)
 	if err != nil {
 		// Logo resolution failures should not break the preview — the
-		// renderer falls back to initials. Log via the error message
-		// in the PDF would leak storage internals, so swallow here.
+		// renderer falls back to initials. Surface the failure to the
+		// server log so a misconfigured signer / unreachable storage
+		// doesn't silently swallow itself; the PDF still renders.
+		slog.WarnContext(ctx, "v2.preview: logo resolution failed",
+			slog.String("doc_type", docType),
+			slog.String("error", err.Error()))
 		logoURL = ""
 	}
 

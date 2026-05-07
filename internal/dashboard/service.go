@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -187,7 +188,289 @@ func (s *Service) build(ctx context.Context, clinicID uuid.UUID) (*Snapshot, err
 		})
 	}
 
+	// Attention panel + compliance health share underlying counters; we
+	// fan out the eight queries in parallel so wall time stays close to
+	// the slowest single query rather than their sum.
+	snap.Attention, snap.ComplianceHealth = s.buildAttentionAndHealth(ctx, clinicID, startOfDay, startOfWeek)
+
+	// Billing strip — leans on already-computed seat usage + the clinic
+	// state lookup (cheap, single row).
+	snap.Billing = s.buildBillingStrip(ctx, clinicID, snap.SeatUsage)
+
 	return snap, nil
+}
+
+// buildAttentionAndHealth runs the attention-panel + compliance-health
+// queries in parallel. Errors are absorbed — a missing counter falls
+// back to zero so a partial outage degrades gracefully (the dashboard
+// hero / KPI strip / activity feed are still useful even if one
+// counter went sideways).
+func (s *Service) buildAttentionAndHealth(ctx context.Context, clinicID uuid.UUID, startOfDay, startOfWeek time.Time) (*AttentionPanel, *ComplianceHealth) {
+	type result struct {
+		pendingApprovals  int
+		oldestApprovalAge time.Duration
+		draftsStale       int
+		incidentsOverdue  int
+		staffNoRegID      int
+		notesNoRegID      int
+		recsTotal         int
+		recsDirty         int
+		notesThisWeek     int
+	}
+	var r result
+	var wg sync.WaitGroup
+	staleCutoff := startOfDay.Add(-24 * time.Hour) // older than ~yesterday morning
+
+	wg.Add(9)
+	go func() { defer wg.Done(); n, _ := s.repo.CountPendingApprovals(ctx, clinicID); r.pendingApprovals = n }()
+	go func() { defer wg.Done(); d, _ := s.repo.OldestPendingApprovalAge(ctx, clinicID); r.oldestApprovalAge = d }()
+	go func() {
+		defer wg.Done()
+		n, _ := s.repo.CountDraftsOlderThan(ctx, clinicID, staleCutoff)
+		r.draftsStale = n
+	}()
+	go func() { defer wg.Done(); n, _ := s.repo.CountIncidentsOverdueNotification(ctx, clinicID); r.incidentsOverdue = n }()
+	go func() { defer wg.Done(); n, _ := s.repo.CountActiveStaffMissingRegulatorID(ctx, clinicID); r.staffNoRegID = n }()
+	go func() {
+		defer wg.Done()
+		n, _ := s.repo.CountSubmittedNotesMissingRegulatorID(ctx, clinicID, startOfWeek)
+		r.notesNoRegID = n
+	}()
+	go func() {
+		defer wg.Done()
+		n, _ := s.repo.CountReconciliationsSince(ctx, clinicID, startOfDay.AddDate(0, 0, -90))
+		r.recsTotal = n
+	}()
+	go func() {
+		defer wg.Done()
+		n, _ := s.repo.CountReconciliationsWithDiscrepancySince(ctx, clinicID, startOfDay.AddDate(0, 0, -90))
+		r.recsDirty = n
+	}()
+	go func() {
+		defer wg.Done()
+		n, _ := s.repo.CountSubmittedSince(ctx, clinicID, startOfWeek)
+		r.notesThisWeek = n
+	}()
+	wg.Wait()
+
+	// ── Attention panel ────────────────────────────────────────────────
+	attention := &AttentionPanel{Items: []AttentionItem{
+		attentionApprovalsItem(r.pendingApprovals, r.oldestApprovalAge),
+		attentionDraftsItem(r.draftsStale),
+		attentionIncidentsItem(r.incidentsOverdue),
+		attentionMissingRegItem(r.staffNoRegID),
+	}}
+
+	// ── Compliance health row ──────────────────────────────────────────
+	pctNotesWithRegID := 100.0
+	if r.notesThisWeek > 0 {
+		pctNotesWithRegID = 100.0 * float64(r.notesThisWeek-r.notesNoRegID) / float64(r.notesThisWeek)
+	}
+	pctReconsClean := 100.0
+	if r.recsTotal > 0 {
+		pctReconsClean = 100.0 * float64(r.recsTotal-r.recsDirty) / float64(r.recsTotal)
+	}
+
+	health := &ComplianceHealth{Metrics: []HealthMetric{
+		{
+			ID:        "notes.regulator_id",
+			Label:     "Signed notes with regulator ID",
+			Value:     fmt.Sprintf("%.0f%%", pctNotesWithRegID),
+			Detail:    fmt.Sprintf("%d signed this week", r.notesThisWeek),
+			ValueKind: "percent",
+			Pct:       ptrFloat(pctNotesWithRegID),
+			Tone:      tonePercent(pctNotesWithRegID, 95, 80),
+		},
+		{
+			ID:        "approvals.oldest_age",
+			Label:     "Oldest pending witness",
+			Value:     prettyDuration(r.oldestApprovalAge),
+			Detail:    fmt.Sprintf("%d in queue", r.pendingApprovals),
+			ValueKind: "duration",
+			Tone:      toneApprovalAge(r.oldestApprovalAge, r.pendingApprovals),
+		},
+		{
+			ID:        "drugs.recon_clean_rate",
+			Label:     "Reconciliations clean (90d)",
+			Value:     fmt.Sprintf("%.0f%%", pctReconsClean),
+			Detail:    fmt.Sprintf("%d total · %d with findings", r.recsTotal, r.recsDirty),
+			ValueKind: "percent",
+			Pct:       ptrFloat(pctReconsClean),
+			Tone:      tonePercent(pctReconsClean, 95, 80),
+		},
+	}}
+
+	return attention, health
+}
+
+// buildBillingStrip composes the trial / plan / seat strip. Plan label
+// is derived from TrialEndsAt for v1 — Stripe-driven labels can come
+// later when the billing service exposes them through ClinicSnapshotState.
+func (s *Service) buildBillingStrip(ctx context.Context, clinicID uuid.UUID, seats SeatUsage) *BillingStrip {
+	state, err := s.clinics.LoadDashboardState(ctx, clinicID)
+	if err != nil {
+		return nil
+	}
+	now := domain.TimeNow()
+	var trialDays *int
+	planLabel := "Active plan"
+	tone := "ok"
+	if !state.TrialEndsAt.IsZero() && state.TrialEndsAt.After(now) {
+		d := int(state.TrialEndsAt.Sub(now).Hours() / 24)
+		trialDays = &d
+		planLabel = "Trial"
+		switch {
+		case d <= 3:
+			tone = "danger"
+		case d <= 7:
+			tone = "warn"
+		default:
+			tone = "info"
+		}
+	}
+	pct := 0.0
+	if seats.Cap > 0 {
+		pct = 100.0 * float64(seats.Used) / float64(seats.Cap)
+		if pct > 100 {
+			pct = 100
+		}
+	}
+	if pct >= 100 {
+		tone = "danger"
+	} else if pct >= 80 && tone == "ok" {
+		tone = "warn"
+	}
+	return &BillingStrip{
+		PlanLabel:     planLabel,
+		TrialDaysLeft: trialDays,
+		SeatsUsed:     seats.Used,
+		SeatsCap:      seats.Cap,
+		SeatPct:       pct,
+		Tone:          tone,
+		CTAHref:       "/settings/billing",
+	}
+}
+
+// ── Attention-panel item builders ────────────────────────────────────────
+
+func attentionApprovalsItem(count int, oldest time.Duration) AttentionItem {
+	if count == 0 {
+		return AttentionItem{
+			ID: "approvals.pending", Title: "Witness queue",
+			Detail: "All clear", Count: 0, Tone: "ok",
+			Icon: "users-three", CTAHref: "/witness-queue",
+		}
+	}
+	tone := "info"
+	switch {
+	case oldest > 24*time.Hour:
+		tone = "danger"
+	case oldest > 4*time.Hour:
+		tone = "warn"
+	}
+	return AttentionItem{
+		ID: "approvals.pending", Title: "Witness queue",
+		Detail: fmt.Sprintf("Oldest waiting %s", prettyDuration(oldest)),
+		Count:  count, Tone: tone,
+		Icon: "users-three", CTAHref: "/witness-queue",
+	}
+}
+
+func attentionDraftsItem(count int) AttentionItem {
+	if count == 0 {
+		return AttentionItem{
+			ID: "drafts.stale", Title: "Stale drafts",
+			Detail: "All recent drafts moved on", Count: 0, Tone: "ok",
+			Icon: "notepad",
+		}
+	}
+	tone := "warn"
+	if count >= 10 {
+		tone = "danger"
+	}
+	return AttentionItem{
+		ID: "drafts.stale", Title: "Drafts > 24h",
+		Detail: "Older than yesterday — risk of forgotten encounters",
+		Count:  count, Tone: tone, Icon: "notepad",
+	}
+}
+
+func attentionIncidentsItem(count int) AttentionItem {
+	if count == 0 {
+		return AttentionItem{
+			ID: "incidents.overdue", Title: "Regulator notifications",
+			Detail: "All deadlines met", Count: 0, Tone: "ok", Icon: "warning",
+		}
+	}
+	return AttentionItem{
+		ID: "incidents.overdue", Title: "Incidents past notify deadline",
+		Detail: "Regulator window has lapsed", Count: count,
+		Tone: "danger", Icon: "warning",
+	}
+}
+
+func attentionMissingRegItem(count int) AttentionItem {
+	if count == 0 {
+		return AttentionItem{
+			ID: "staff.missing_reg_id", Title: "Regulator IDs",
+			Detail: "Every clinician on file", Count: 0, Tone: "ok",
+			Icon: "identification-card", CTAHref: "/settings/team",
+		}
+	}
+	return AttentionItem{
+		ID: "staff.missing_reg_id", Title: "Staff missing regulator ID",
+		Detail: "Their signed PDFs ship without a registration #",
+		Count:  count, Tone: "warn", Icon: "identification-card",
+		CTAHref: "/settings/team",
+	}
+}
+
+// ── Tone + format helpers ────────────────────────────────────────────────
+
+func ptrFloat(v float64) *float64 { return &v }
+
+// tonePercent maps a 0..100 percentage to a tone slug given two
+// thresholds: at-or-above okBelow → ok, otherwise warnBelow → warn,
+// below → danger.
+func tonePercent(v float64, okBelow, warnBelow float64) string {
+	switch {
+	case v >= okBelow:
+		return "ok"
+	case v >= warnBelow:
+		return "warn"
+	default:
+		return "danger"
+	}
+}
+
+// toneApprovalAge promotes the oldest-pending duration into a tone
+// for the compliance-health row. Empty queue is "ok" regardless of
+// age (the duration itself is meaningless then).
+func toneApprovalAge(d time.Duration, queueDepth int) string {
+	if queueDepth == 0 {
+		return "ok"
+	}
+	switch {
+	case d > 24*time.Hour:
+		return "danger"
+	case d > 4*time.Hour:
+		return "warn"
+	default:
+		return "info"
+	}
+}
+
+func prettyDuration(d time.Duration) string {
+	if d < time.Minute {
+		return "just now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 // buildWatchcards composes the universal warning cards. One clinic

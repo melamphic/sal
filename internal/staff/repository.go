@@ -48,6 +48,14 @@ type CreateParams struct {
 	NoteTier  domain.NoteTier
 	Perms     domain.Permissions
 	Status    domain.StaffStatus
+	// Optional invite-acceptance fields. nil values insert NULL — the
+	// columns are all nullable and the existing onboarding paths
+	// (handoff, EnsureOwner) leave them empty.
+	Title              *string
+	RegulatoryAuthority *string
+	RegulatoryRegNo    *string
+	MobileE164         *string // pre-encrypted by caller
+	TermsAcceptedAt    *time.Time
 }
 
 // UpdatePermsParams holds new permission values for a staff member.
@@ -80,12 +88,16 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRecord, 
 			perm_manage_billing, perm_rollback_policies, perm_record_audio,
 			perm_submit_forms, perm_view_all_patients, perm_view_own_patients,
 			perm_dispense, perm_generate_audit_export, perm_manage_patients,
-			perm_marketplace_manage, perm_marketplace_download, status
+			perm_marketplace_manage, perm_marketplace_download, status,
+			title, regulatory_authority, regulatory_reg_no,
+			mobile_e164, terms_accepted_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9, $10, $11, $12, $13,
 			$14, $15, $16, $17, $18, $19,
-			$20, $21, $22
+			$20, $21, $22,
+			$23, $24, $25,
+			$26, $27
 		) RETURNING
 			id, clinic_id, email, email_hash, full_name, role, note_tier,
 			perm_manage_staff, perm_manage_forms, perm_manage_policies,
@@ -101,6 +113,8 @@ func (r *Repository) Create(ctx context.Context, p CreateParams) (*StaffRecord, 
 		p.Perms.SubmitForms, p.Perms.ViewAllPatients, p.Perms.ViewOwnPatients,
 		p.Perms.Dispense, p.Perms.GenerateAuditExport, p.Perms.ManagePatients,
 		p.Perms.MarketplaceManage, p.Perms.MarketplaceDownload, p.Status,
+		p.Title, p.RegulatoryAuthority, p.RegulatoryRegNo,
+		p.MobileE164, p.TermsAcceptedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("staff.repo.Create: %w", err)

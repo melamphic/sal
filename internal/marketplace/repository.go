@@ -1054,6 +1054,23 @@ func (r *Repository) MarkNotificationSeen(ctx context.Context, notificationID, c
 	return nil
 }
 
+// MarkNotificationsSeenForAcquisitionVersion flags every unread notification
+// for (acquisition_id, new_version_id) as seen. Called by the import flow when
+// the buyer accepts a new version: dismissing the banner is implicit in the
+// act of importing. Idempotent — no error when zero rows match (the buyer may
+// be importing without any pending notification, e.g., a manual re-import).
+func (r *Repository) MarkNotificationsSeenForAcquisitionVersion(ctx context.Context, acquisitionID, clinicID, versionID uuid.UUID, now time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE marketplace_update_notifications
+		SET seen_at = $4
+		WHERE acquisition_id = $1 AND clinic_id = $2 AND new_version_id = $3 AND seen_at IS NULL`,
+		acquisitionID, clinicID, versionID, now)
+	if err != nil {
+		return fmt.Errorf("marketplace.repo.MarkNotificationsSeenForAcquisitionVersion: %w", err)
+	}
+	return nil
+}
+
 // ── Stripe event dedupe ──────────────────────────────────────────────────────
 
 // MarkStripeEventProcessed inserts the event_id if it wasn't already there.

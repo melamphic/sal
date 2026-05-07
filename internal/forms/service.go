@@ -203,6 +203,12 @@ type FormResponse struct {
 	Draft *FormVersionResponse `json:"draft,omitempty"`
 	// LatestPublished is the most recent frozen version; nil on a brand-new form.
 	LatestPublished *FormVersionResponse `json:"latest_published,omitempty"`
+	// Marketplace lineage — non-empty only when the form was imported from a
+	// marketplace listing. Powers the form-editor banner and the sibling-form
+	// link in the buyer-side upgrade flow.
+	SourceMarketplaceListingID     *string `json:"source_marketplace_listing_id,omitempty"`
+	SourceMarketplaceVersionID     *string `json:"source_marketplace_version_id,omitempty"`
+	SourceMarketplaceAcquisitionID *string `json:"source_marketplace_acquisition_id,omitempty"`
 }
 
 // FormListResponse is a paginated list of forms.
@@ -333,6 +339,11 @@ type CreateFormInput struct {
 	Description   *string
 	OverallPrompt *string
 	Tags          []string
+	// Marketplace lineage — supplied only by the marketplace importer adapter.
+	// Nil for clinic-authored forms.
+	SourceMarketplaceListingID     *uuid.UUID
+	SourceMarketplaceVersionID     *uuid.UUID
+	SourceMarketplaceAcquisitionID *uuid.UUID
 }
 
 // UpdateDraftInput holds input for updating the draft version of a form.
@@ -450,14 +461,17 @@ func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormR
 
 	form, draft, err := s.repo.CreateFormWithDraft(ctx, CreateFormWithDraftParams{
 		Form: CreateFormParams{
-			ID:            formID,
-			ClinicID:      input.ClinicID,
-			GroupID:       input.GroupID,
-			Name:          input.Name,
-			Description:   input.Description,
-			OverallPrompt: input.OverallPrompt,
-			Tags:          tags,
-			CreatedBy:     input.StaffID,
+			ID:                             formID,
+			ClinicID:                       input.ClinicID,
+			GroupID:                        input.GroupID,
+			Name:                           input.Name,
+			Description:                    input.Description,
+			OverallPrompt:                  input.OverallPrompt,
+			Tags:                           tags,
+			CreatedBy:                      input.StaffID,
+			SourceMarketplaceListingID:     input.SourceMarketplaceListingID,
+			SourceMarketplaceVersionID:     input.SourceMarketplaceVersionID,
+			SourceMarketplaceAcquisitionID: input.SourceMarketplaceAcquisitionID,
 		},
 		DraftID: domain.NewID(),
 	})
@@ -510,6 +524,25 @@ func (s *Service) GetForm(ctx context.Context, formID, clinicID uuid.UUID) (*For
 }
 
 // ListForms returns a paginated list of forms for a clinic.
+// ListFormsByMarketplaceListing returns every form in a clinic that descended
+// from a given marketplace listing (sibling forms across imported versions).
+// Used by the form-editor banner and the marketplace upgrade UX so the buyer
+// can see their pre-existing forms when a new version arrives.
+//
+// Light response — does NOT attach draft/version data, just the form metadata
+// the UI needs to render a "your other forms from this listing" link list.
+func (s *Service) ListFormsByMarketplaceListing(ctx context.Context, clinicID, listingID uuid.UUID) ([]*FormResponse, error) {
+	forms, err := s.repo.ListByMarketplaceListing(ctx, clinicID, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.ListFormsByMarketplaceListing: %w", err)
+	}
+	out := make([]*FormResponse, len(forms))
+	for i, f := range forms {
+		out[i] = toFormResponse(f)
+	}
+	return out, nil
+}
+
 func (s *Service) ListForms(ctx context.Context, clinicID uuid.UUID, input ListFormsInput) (*FormListResponse, error) {
 	input.Limit = clampLimit(input.Limit)
 
@@ -1537,6 +1570,18 @@ func toFormResponse(f *FormRecord) *FormResponse {
 	if f.RetiredBy != nil {
 		s := f.RetiredBy.String()
 		r.RetiredBy = &s
+	}
+	if f.SourceMarketplaceListingID != nil {
+		s := f.SourceMarketplaceListingID.String()
+		r.SourceMarketplaceListingID = &s
+	}
+	if f.SourceMarketplaceVersionID != nil {
+		s := f.SourceMarketplaceVersionID.String()
+		r.SourceMarketplaceVersionID = &s
+	}
+	if f.SourceMarketplaceAcquisitionID != nil {
+		s := f.SourceMarketplaceAcquisitionID.String()
+		r.SourceMarketplaceAcquisitionID = &s
 	}
 	return r
 }

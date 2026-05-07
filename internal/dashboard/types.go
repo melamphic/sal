@@ -14,16 +14,74 @@ import (
 // without polling — the auto-refresh tick is `TTLSeconds` after
 // `FetchedAt`, plus immediate invalidation on local actions.
 type Snapshot struct {
-	FetchedAt    time.Time       `json:"fetched_at"`
-	TTLSeconds   int             `json:"ttl_seconds"`
-	Vertical     domain.Vertical `json:"vertical"`
-	Hero         *HeroMetric     `json:"hero,omitempty"`
-	KPIStrip     []KPI           `json:"kpi_strip"`
-	VerticalCard *VerticalCard   `json:"vertical_card,omitempty"`
-	Watchcards   []Watchcard     `json:"watchcards"`
-	DraftsCount  int             `json:"drafts_count"`
-	SeatUsage    SeatUsage       `json:"seat_usage"`
-	Activity     []ActivityEvent `json:"activity"`
+	FetchedAt        time.Time         `json:"fetched_at"`
+	TTLSeconds       int               `json:"ttl_seconds"`
+	Vertical         domain.Vertical   `json:"vertical"`
+	Hero             *HeroMetric       `json:"hero,omitempty"`
+	KPIStrip         []KPI             `json:"kpi_strip"`
+	VerticalCard     *VerticalCard     `json:"vertical_card,omitempty"`
+	Watchcards       []Watchcard       `json:"watchcards"`
+	DraftsCount      int               `json:"drafts_count"`
+	SeatUsage        SeatUsage         `json:"seat_usage"`
+	Activity         []ActivityEvent   `json:"activity"`
+	Attention        *AttentionPanel   `json:"attention,omitempty"`
+	ComplianceHealth *ComplianceHealth `json:"compliance_health,omitempty"`
+	Billing          *BillingStrip     `json:"billing,omitempty"`
+}
+
+// AttentionPanel is the "what needs me right now?" section at the top
+// of the dashboard. Each item has a count, a label, a tone, and an
+// optional CTA href the FE chip uses for click-through. Items with
+// count=0 are still emitted so the FE can render an "all clear" tile;
+// the FE decides what to hide.
+type AttentionPanel struct {
+	Items []AttentionItem `json:"items"`
+}
+
+// AttentionItem is one chip in the attention panel.
+type AttentionItem struct {
+	ID      string `json:"id"`           // dotted slug ("approvals.pending")
+	Title   string `json:"title"`        // "Witness queue"
+	Detail  string `json:"detail"`       // "Oldest waiting 3h" or "All clear"
+	Count   int    `json:"count"`
+	Tone    string `json:"tone"`         // "danger" | "warn" | "info" | "ok"
+	CTAHref string `json:"cta_href,omitempty"`
+	Icon    string `json:"icon,omitempty"` // FE-side icon-name slug
+}
+
+// ComplianceHealth is the regulator-readiness row. Each metric has a
+// label, a numeric value (0..100 percent unless `value_kind=count`),
+// a tone, and optional supporting text.
+type ComplianceHealth struct {
+	Metrics []HealthMetric `json:"metrics"`
+}
+
+// HealthMetric is one tile in the compliance-health row.
+type HealthMetric struct {
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Value     string `json:"value"`             // pre-formatted ("98%", "12 / 14", "3h")
+	Detail    string `json:"detail,omitempty"`  // small hint under the value
+	ValueKind string `json:"value_kind"`        // "percent" | "count" | "duration" | "ratio"
+	Tone      string `json:"tone"`              // "ok" | "warn" | "danger" | "info"
+	// Pct is the 0..100 percentage when ValueKind=percent — the FE
+	// uses it to fill a horizontal progress bar without re-parsing
+	// the formatted string.
+	Pct *float64 `json:"pct,omitempty"`
+}
+
+// BillingStrip is the small plan-and-billing summary at the dashboard
+// top. Drives a horizontal strip showing trial countdown / plan
+// tier / seat utilization.
+type BillingStrip struct {
+	PlanLabel       string  `json:"plan_label"`               // "Practice trial" | "Pro"
+	TrialDaysLeft   *int    `json:"trial_days_left,omitempty"` // nil when not on trial
+	SeatsUsed       int     `json:"seats_used"`
+	SeatsCap        int     `json:"seats_cap"`
+	SeatPct         float64 `json:"seat_pct"`                  // 0..100
+	NextInvoiceHint string  `json:"next_invoice_hint,omitempty"` // "$49 on 12 May"; "" when unknown
+	Tone            string  `json:"tone"`                       // "ok" | "warn" | "danger"
+	CTAHref         string  `json:"cta_href,omitempty"`         // "/settings/billing"
 }
 
 // HeroMetric powers the headline card at the top of the dashboard —

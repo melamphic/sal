@@ -89,6 +89,31 @@ func seedPublishedListing(t *testing.T, svc *Service, repo *fakeRepo, pub *Publi
 	return published
 }
 
+// seedAdditionalPublishedVersion inserts a second/third/etc. published version
+// for an existing listing, returning the new version record. Bypasses the
+// snapshotter since unit tests don't need a real source form — just a row that
+// satisfies the import flow's foreign-key + status checks.
+func seedAdditionalPublishedVersion(t *testing.T, repo *fakeRepo, listingID uuid.UUID, major, minor int) *VersionRecord {
+	t.Helper()
+	payload, _ := json.Marshal(Package{Meta: PackageMeta{SchemaVersion: "1"}})
+	v, _, err := repo.CreateVersion(context.Background(), CreateVersionParams{
+		ID:              uuid.New(),
+		ListingID:       listingID,
+		VersionMajor:    major,
+		VersionMinor:    minor,
+		ChangeType:      "major",
+		PackagePayload:  payload,
+		PayloadChecksum: "stub",
+		FieldCount:      0,
+		PublishedBy:     uuid.New(),
+		PublishedAt:     domain.TimeNow(),
+	})
+	if err != nil {
+		t.Fatalf("seedAdditionalPublishedVersion: CreateVersion: %v", err)
+	}
+	return v
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 func TestService_EnsurePublisher_IdempotentOnRepeatedCalls(t *testing.T) {
@@ -340,15 +365,122 @@ func TestService_Import_CallsImporter_AndMarksAcquisition(t *testing.T) {
 	if importResp.ImportedFormID == nil || *importResp.ImportedFormID != newFormID.String() {
 		t.Errorf("expected imported_form_id=%s, got %v", newFormID, importResp.ImportedFormID)
 	}
+	// Importer must receive lineage stamps so the resulting tenant form can
+	// be linked back to its marketplace origin in the upgrade UX.
+	if imp.lastInput.SourceMarketplaceListingID == uuid.Nil {
+		t.Errorf("importer missing SourceMarketplaceListingID")
+	}
+	if imp.lastInput.SourceMarketplaceVersionID == uuid.Nil {
+		t.Errorf("importer missing SourceMarketplaceVersionID")
+	}
+	if imp.lastInput.SourceMarketplaceAcquisitionID != uuid.MustParse(acq.ID) {
+		t.Errorf("importer got wrong SourceMarketplaceAcquisitionID")
+	}
+}
 
-	// Second import must fail — acquisition is already imported.
+func TestService_Import_ReImport_TargetsSpecificVersion_DismissesNotification(t *testing.T) {
+	t.Parallel()
+	// Upgrade flow: buyer acquires v1, publisher ships v2, buyer re-imports
+	// targeting v2. A NEW tenant form is created (separate from v1) and the
+	// matching upgrade notification is dismissed.
+	svc, repo, _, imp := newTestService(t)
+	pub := seedPublisher(t, repo)
+	listing := seedPublishedListing(t, svc, repo, pub, "upgrade-flow", "free")
+	clinicID := uuid.New()
+	staffID := uuid.New()
+
+	acq, err := svc.Acquire(context.Background(), AcquireInput{
+		ListingID: uuid.MustParse(listing.ID),
+		ClinicID:  clinicID,
+		StaffID:   staffID,
+	})
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	acquisitionID := uuid.MustParse(acq.ID)
+
+	// First import — uses pinned version.
+	v1FormID := uuid.New()
+	imp.returnedID = v1FormID
+	if _, err := svc.Import(context.Background(), ImportInput{
+		AcquisitionID: acquisitionID,
+		ClinicID:      clinicID,
+		StaffID:       staffID,
+	}); err != nil {
+		t.Fatalf("first Import: %v", err)
+	}
+
+	// Publisher ships a new version — manually seed v2 for the same listing
+	// since the test harness uses helpers that publish only one version each.
+	listingID := uuid.MustParse(listing.ID)
+	v2 := seedAdditionalPublishedVersion(t, repo, listingID, 2, 0)
+
+	// Re-import targeting v2.
+	v2FormID := uuid.New()
+	imp.returnedID = v2FormID
+	importResp, err := svc.Import(context.Background(), ImportInput{
+		AcquisitionID: acquisitionID,
+		ClinicID:      clinicID,
+		StaffID:       staffID,
+		VersionID:     &v2.ID,
+	})
+	if err != nil {
+		t.Fatalf("re-Import: %v", err)
+	}
+
+	// Acquisition's imported_form_id moves to the latest (v2), v1 stays
+	// discoverable through forms.source_marketplace_acquisition_id (verified
+	// by the form-lineage integration tests).
+	if importResp.ImportedFormID == nil || *importResp.ImportedFormID != v2FormID.String() {
+		t.Errorf("expected imported_form_id=%s after re-import, got %v", v2FormID, importResp.ImportedFormID)
+	}
+	if imp.lastInput.SourceMarketplaceVersionID != v2.ID {
+		t.Errorf("importer should be stamping v2 ID, got %v", imp.lastInput.SourceMarketplaceVersionID)
+	}
+
+	// Notification dismissal was requested for the (acquisition, v2) pair.
+	key := acquisitionID.String() + ":" + v2.ID.String()
+	if repo.dismissedNotifications[key] != 1 {
+		t.Errorf("expected exactly one notification dismissal call for (%s, v2), got %d",
+			acquisitionID, repo.dismissedNotifications[key])
+	}
+}
+
+func TestService_Import_ReImport_VersionFromOtherListing_Forbidden(t *testing.T) {
+	t.Parallel()
+	// Caller cannot pass a version_id from a listing they did not acquire.
+	svc, repo, _, imp := newTestService(t)
+	pub := seedPublisher(t, repo)
+	listingA := seedPublishedListing(t, svc, repo, pub, "listing-a", "free")
+	listingB := seedPublishedListing(t, svc, repo, pub, "listing-b", "free")
+	clinicID := uuid.New()
+	staffID := uuid.New()
+
+	acq, err := svc.Acquire(context.Background(), AcquireInput{
+		ListingID: uuid.MustParse(listingA.ID),
+		ClinicID:  clinicID,
+		StaffID:   staffID,
+	})
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+
+	// Steal a version from listingB by querying the repo directly.
+	bLatest, err := repo.GetLatestVersion(context.Background(), uuid.MustParse(listingB.ID))
+	if err != nil {
+		t.Fatalf("GetLatestVersion(listingB): %v", err)
+	}
+	bVersion := bLatest.ID
+
+	imp.returnedID = uuid.New()
 	_, err = svc.Import(context.Background(), ImportInput{
 		AcquisitionID: uuid.MustParse(acq.ID),
 		ClinicID:      clinicID,
 		StaffID:       staffID,
+		VersionID:     &bVersion,
 	})
-	if !errors.Is(err, domain.ErrConflict) {
-		t.Errorf("expected ErrConflict on second import, got %v", err)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Errorf("expected ErrForbidden when version belongs to a different listing, got %v", err)
 	}
 }
 

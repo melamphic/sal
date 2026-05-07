@@ -88,6 +88,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.getForm)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-forms-by-marketplace-listing",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/forms/marketplace-siblings/{listing_id}",
+		Summary:     "List sibling forms imported from a marketplace listing",
+		Description: "Returns every form in the caller's clinic that descended from the given marketplace listing — across all imported versions, including archived. Used by the form editor banner and the marketplace upgrade UX so the buyer can compare their existing version against a newly imported one.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.listFormsByMarketplaceListing)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "update-form-draft",
 		Method:      http.MethodPut,
 		Path:        "/api/v1/forms/{form_id}/draft",

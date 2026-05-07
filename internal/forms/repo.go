@@ -24,6 +24,10 @@ type repo interface {
 	UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams) (*FormRecord, error)
 	// RetireForm sets archived_at and retire_reason. It does not delete any rows.
 	RetireForm(ctx context.Context, p RetireFormParams) (*FormRecord, error)
+	// ListByMarketplaceListing returns every form in a clinic descended from a
+	// marketplace listing, across all imported versions (incl. archived). Used
+	// by the form-editor banner and the buyer-side upgrade UX.
+	ListByMarketplaceListing(ctx context.Context, clinicID, listingID uuid.UUID) ([]*FormRecord, error)
 
 	// ── Versions ──────────────────────────────────────────────────────────────
 

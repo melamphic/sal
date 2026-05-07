@@ -20,9 +20,13 @@ type repo interface {
 	GetStaffByID(ctx context.Context, staffID uuid.UUID) (*staffRow, error)
 	CreateInviteToken(ctx context.Context, p CreateInviteParams) error
 	GetInviteByTokenHash(ctx context.Context, tokenHash string) (*inviteRow, error)
+	GetInviteByID(ctx context.Context, id, clinicID uuid.UUID) (*inviteRow, error)
+	ListInvitesByClinic(ctx context.Context, clinicID uuid.UUID) ([]*inviteRow, error)
+	RevokeInviteByID(ctx context.Context, id, clinicID uuid.UUID) error
 	MarkInviteAccepted(ctx context.Context, tokenHash string) error
 	DeleteRefreshTokensForStaff(ctx context.Context, staffID uuid.UUID) error
 	UpdateLastActive(ctx context.Context, staffID uuid.UUID) error
+	ListLoginsByStaff(ctx context.Context, staffID uuid.UUID, limit int) ([]*LoginActivityRow, error)
 
 	// ConsumeMelHandoffToken records the jti of a /mel handoff JWT so it
 	// cannot be replayed. Returns domain.ErrTokenUsed if jti is already

@@ -1637,6 +1637,18 @@ func (s *Service) VerifyChain(ctx context.Context, in VerifyChainInput) (*Verify
 	}, nil
 }
 
+// ListActivityByStaff is a passthrough used by the staff-activity
+// aggregator to fetch drug-op rows authored by a specific staff
+// member. The repo returns slim StaffActivityRow values; the adapter
+// in app.go projects them into staff.ActivityEvent shape.
+func (s *Service) ListActivityByStaff(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]*StaffActivityRow, error) {
+	rows, err := s.repo.ListActivityByStaff(ctx, staffID, clinicID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("drugs.service.ListActivityByStaff: %w", err)
+	}
+	return rows, nil
+}
+
 // Sentinel: ensure errors.Is(err, domain.ErrXxx) works through our wrapping
 // path for any caller that expects sentinel semantics.
 var _ = errors.Is

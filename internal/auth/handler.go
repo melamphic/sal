@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/melamphic/sal/internal/domain"
@@ -48,7 +49,44 @@ type acceptInviteInput struct {
 	Body struct {
 		Token    string `json:"token" minLength:"1" doc:"The raw invite token from the invitation email."`
 		FullName string `json:"full_name" minLength:"2" maxLength:"200" doc:"Full name of the new staff member."`
+		Title    string `json:"title" minLength:"1" maxLength:"40" doc:"Honorific or credential prefix printed on signed PDFs (\"Dr.\", \"RN\", \"RVN\")."`
+		// Authority + reg # are required only for clinical roles —
+		// the service enforces this so the FE can keep the same
+		// payload shape regardless of role.
+		RegulatorAuthority string `json:"regulator_authority,omitempty" maxLength:"40" doc:"Short authority code (e.g. VCNZ, RCVS, NMC). Required for clinical roles."`
+		RegulatorRegNo     string `json:"regulator_reg_no,omitempty" maxLength:"60" doc:"Registration / membership identifier issued by the authority. Required for clinical roles."`
+		MobileE164         string `json:"mobile_e164,omitempty" maxLength:"24" doc:"E.164 mobile number used for 2FA + incident SMS. Optional."`
+		TermsAccepted      bool   `json:"terms_accepted" doc:"Must be true — confirms the invitee has read the Salvia + clinic compliance terms."`
 	}
+}
+
+type previewInviteInput struct {
+	Token string `query:"token" minLength:"1" doc:"The raw invite token from the invitation email."`
+}
+
+// InvitePreviewResponse is the wire shape of the invite-preview
+// endpoint. Mirrors auth.InvitePreview verbatim so the FE can decode
+// once.
+type InvitePreviewResponse struct {
+	Email                   string             `json:"email"`
+	Role                    domain.StaffRole   `json:"role"`
+	NoteTier                domain.NoteTier    `json:"note_tier"`
+	Permissions             domain.Permissions `json:"permissions"`
+	NeedsRegulatorID        bool               `json:"needs_regulator_id"`
+	ExpiresAt               time.Time          `json:"expires_at"`
+	InviterName             string             `json:"inviter_name,omitempty"`
+	ClinicName              string             `json:"clinic_name,omitempty"`
+	ClinicVertical          string             `json:"clinic_vertical,omitempty"`
+	ClinicCountry           string             `json:"clinic_country,omitempty"`
+	ClinicLogoURL           string             `json:"clinic_logo_url,omitempty"`
+	SuggestedAuthority      string             `json:"suggested_authority,omitempty"`
+	SuggestedAuthorityLabel string             `json:"suggested_authority_label,omitempty"`
+	RegistrationNumberLabel string             `json:"registration_number_label,omitempty"`
+	SuggestedTitles         []string           `json:"suggested_titles"`
+}
+
+type previewInviteHTTPResponse struct {
+	Body *InvitePreviewResponse
 }
 
 type melHandoffInput struct {
@@ -129,11 +167,47 @@ func (h *Handler) refreshTokens(ctx context.Context, input *refreshInput) (*toke
 // acceptInvite handles POST /api/v1/auth/accept-invite.
 // Creates the staff record and returns a JWT pair so the invited person is logged in immediately.
 func (h *Handler) acceptInvite(ctx context.Context, input *acceptInviteInput) (*tokenResponse, error) {
-	pair, err := h.svc.AcceptInvite(ctx, input.Body.Token, input.Body.FullName)
+	pair, err := h.svc.AcceptInvite(ctx, AcceptInviteInput{
+		RawToken:           input.Body.Token,
+		FullName:           input.Body.FullName,
+		Title:              input.Body.Title,
+		RegulatorAuthority: input.Body.RegulatorAuthority,
+		RegulatorRegNo:     input.Body.RegulatorRegNo,
+		MobileE164:         input.Body.MobileE164,
+		TermsAccepted:      input.Body.TermsAccepted,
+	})
 	if err != nil {
 		return nil, mapAuthError(err)
 	}
 	return &tokenResponse{Body: *pair}, nil
+}
+
+// previewInvite handles GET /api/v1/auth/invite/preview?token=…
+// Public endpoint (no JWT) — the token IS the auth. Returns the
+// public-safe slice of clinic + invite context the FE needs to render
+// the accept page before the invitee has signed in.
+func (h *Handler) previewInvite(ctx context.Context, input *previewInviteInput) (*previewInviteHTTPResponse, error) {
+	preview, err := h.svc.PreviewInvite(ctx, input.Token)
+	if err != nil {
+		return nil, mapAuthError(err)
+	}
+	return &previewInviteHTTPResponse{Body: &InvitePreviewResponse{
+		Email:                   preview.Email,
+		Role:                    preview.Role,
+		NoteTier:                preview.NoteTier,
+		Permissions:             preview.Permissions,
+		NeedsRegulatorID:        preview.NeedsRegulatorID,
+		ExpiresAt:               preview.ExpiresAt,
+		InviterName:             preview.InviterName,
+		ClinicName:              preview.ClinicName,
+		ClinicVertical:          string(preview.ClinicVertical),
+		ClinicCountry:           preview.ClinicCountry,
+		ClinicLogoURL:           preview.ClinicLogoURL,
+		SuggestedAuthority:      preview.SuggestedAuthority,
+		SuggestedAuthorityLabel: preview.SuggestedAuthorityLabel,
+		RegistrationNumberLabel: preview.RegistrationNumberLabel,
+		SuggestedTitles:         preview.SuggestedTitles,
+	}}, nil
 }
 
 // melHandoff handles POST /api/v1/auth/handoff.

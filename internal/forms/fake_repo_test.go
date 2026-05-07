@@ -137,19 +137,38 @@ func (f *fakeRepo) CreateForm(_ context.Context, p CreateFormParams) (*FormRecor
 		tags = []string{}
 	}
 	form := &FormRecord{
-		ID:            p.ID,
-		ClinicID:      p.ClinicID,
-		GroupID:       p.GroupID,
-		Name:          p.Name,
-		Description:   p.Description,
-		OverallPrompt: p.OverallPrompt,
-		Tags:          tags,
-		CreatedBy:     p.CreatedBy,
-		CreatedAt:     domain.TimeNow(),
-		UpdatedAt:     domain.TimeNow(),
+		ID:                             p.ID,
+		ClinicID:                       p.ClinicID,
+		GroupID:                        p.GroupID,
+		Name:                           p.Name,
+		Description:                    p.Description,
+		OverallPrompt:                  p.OverallPrompt,
+		Tags:                           tags,
+		CreatedBy:                      p.CreatedBy,
+		CreatedAt:                      domain.TimeNow(),
+		UpdatedAt:                      domain.TimeNow(),
+		SourceMarketplaceListingID:     p.SourceMarketplaceListingID,
+		SourceMarketplaceVersionID:     p.SourceMarketplaceVersionID,
+		SourceMarketplaceAcquisitionID: p.SourceMarketplaceAcquisitionID,
 	}
 	f.forms[form.ID] = form
 	return cloneForm(form), nil
+}
+
+func (f *fakeRepo) ListByMarketplaceListing(_ context.Context, clinicID, listingID uuid.UUID) ([]*FormRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []*FormRecord
+	for _, form := range f.forms {
+		if form.ClinicID != clinicID {
+			continue
+		}
+		if form.SourceMarketplaceListingID == nil || *form.SourceMarketplaceListingID != listingID {
+			continue
+		}
+		out = append(out, cloneForm(form))
+	}
+	return out, nil
 }
 
 func (f *fakeRepo) GetFormByID(_ context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {

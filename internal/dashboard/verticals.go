@@ -31,14 +31,10 @@ func (s *Service) buildKPIStrip(
 	vert domain.Vertical,
 	startOfDay, startOfWeek time.Time,
 ) []KPI {
-	signed := s.tile(
-		"signed_today", "Signed today",
-		s.repo.CountSubmittedSince, ctx, clinicID, startOfDay, "ok",
-	)
-	witness := s.tile(
-		"witness_pending", "Witness pending",
-		s.repo.CountDrugOpsAwaitingWitness, ctx, clinicID, startOfDay, "warn",
-	)
+	// `signed_today` and `witness_pending` are deliberately omitted —
+	// the hero card already carries "notes signed this week" and the
+	// attention panel always elevates the pending witness queue. Keep
+	// the KPI strip focused on counts the user can't see elsewhere.
 	patientsWeek := s.tile(
 		"patients_week", "Patients seen (7d)",
 		s.repo.CountSubjectsSeenSince, ctx, clinicID, startOfWeek, "info",
@@ -58,13 +54,13 @@ func (s *Service) buildKPIStrip(
 
 	switch vert {
 	case domain.VerticalVeterinary:
-		return []KPI{signed, witness, patientsWeek, highPain}
+		return []KPI{patientsWeek, patientsActive, highPain}
 	case domain.VerticalAgedCare:
-		return []KPI{signed, openIncidents, highPain, witness}
+		return []KPI{highPain, openIncidents, patientsActive}
 	case domain.VerticalDental:
-		return []KPI{signed, witness, patientsActive, patientsWeek}
+		return []KPI{patientsActive, patientsWeek, highPain}
 	default: // VerticalGeneralClinic
-		return []KPI{signed, patientsActive, patientsWeek, witness}
+		return []KPI{patientsActive, patientsWeek, highPain}
 	}
 }
 

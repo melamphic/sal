@@ -105,8 +105,24 @@ func (f *fakeRepo) GetInviteByTokenHash(_ context.Context, _ string) (*inviteRow
 	return nil, domain.ErrNotFound
 }
 
+func (f *fakeRepo) GetInviteByID(_ context.Context, _, _ uuid.UUID) (*inviteRow, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRepo) ListInvitesByClinic(_ context.Context, _ uuid.UUID) ([]*inviteRow, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) RevokeInviteByID(_ context.Context, _, _ uuid.UUID) error {
+	return nil
+}
+
 func (f *fakeRepo) MarkInviteAccepted(_ context.Context, _ string) error {
 	return nil
+}
+
+func (f *fakeRepo) ListLoginsByStaff(_ context.Context, _ uuid.UUID, _ int) ([]*LoginActivityRow, error) {
+	return nil, nil
 }
 
 func (f *fakeRepo) DeleteRefreshTokensForStaff(_ context.Context, staffID uuid.UUID) error {

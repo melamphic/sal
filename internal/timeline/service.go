@@ -70,6 +70,19 @@ func (s *Service) GetSubjectTimeline(ctx context.Context, subjectID, clinicID uu
 	return toTimelineResponse(events, total, limit, offset), nil
 }
 
+// GetStaffActivity returns paginated events authored by a specific
+// staff member. Backs the team page's per-staff activity drawer.
+// Newest-first ordering — activity feeds want recent-on-top, unlike
+// the chronological note/subject timelines.
+func (s *Service) GetStaffActivity(ctx context.Context, staffID, clinicID uuid.UUID, limit, offset int) (*TimelineResponse, error) {
+	limit = clampLimit(limit)
+	events, total, err := s.repo.ListByActor(ctx, staffID, clinicID, ListParams{Limit: limit, Offset: offset})
+	if err != nil {
+		return nil, fmt.Errorf("timeline.service.GetStaffActivity: %w", err)
+	}
+	return toTimelineResponse(events, total, limit, offset), nil
+}
+
 // GetClinicAuditLog returns paginated clinic-wide audit events.
 // Requires generate_audit_export permission — enforced at the handler layer.
 func (s *Service) GetClinicAuditLog(ctx context.Context, clinicID uuid.UUID, limit, offset int) (*TimelineResponse, error) {

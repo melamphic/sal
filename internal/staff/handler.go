@@ -3,6 +3,7 @@ package staff
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -78,6 +79,90 @@ type staffListResponse struct {
 // JSON shape via a typed Go client if needed.
 type staffSeatUsageResponse struct {
 	Body *AISeatUsage
+}
+
+// ── Invite management types ───────────────────────────────────────────────────
+
+// StaffInviteResponse is the JSON shape one invite renders into for
+// GET /api/v1/staff/invites and the resend response. Unique name +
+// staff prefix per project rule (huma OpenAPI registry).
+type StaffInviteResponse struct {
+	ID            string             `json:"id"`
+	Email         string             `json:"email"`
+	Role          domain.StaffRole   `json:"role"`
+	NoteTier      domain.NoteTier    `json:"note_tier"`
+	Permissions   domain.Permissions `json:"permissions"`
+	InvitedByID   string             `json:"invited_by_id"`
+	InvitedByName string             `json:"invited_by_name,omitempty"`
+	CreatedAt     time.Time          `json:"created_at"`
+	ExpiresAt     time.Time          `json:"expires_at"`
+	AcceptedAt    *time.Time         `json:"accepted_at,omitempty"`
+	RevokedAt     *time.Time         `json:"revoked_at,omitempty"`
+	Status        string             `json:"status" enum:"pending,expired,accepted,revoked"`
+}
+
+// StaffInviteListResponse is the list-endpoint envelope.
+type StaffInviteListResponse struct {
+	Items []StaffInviteResponse `json:"items"`
+}
+
+type listInvitesInput struct{}
+
+type listInvitesHTTPResponse struct {
+	Body *StaffInviteListResponse
+}
+
+type inviteIDInput struct {
+	InviteID string `path:"invite_id" doc:"The invite token's UUID."`
+}
+
+type resendInviteInput struct {
+	InviteID string `path:"invite_id" doc:"The invite token's UUID."`
+	Body     struct {
+		SendEmail *bool `json:"send_email,omitempty" doc:"When false the invite email is not sent — caller is expected to share the returned invite_url out-of-band. Defaults to true."`
+	}
+}
+
+type resendInviteHTTPResponse struct {
+	Body struct {
+		InviteURL string `json:"invite_url" doc:"Fresh URL the invited person opens to accept and set up their account."`
+	}
+}
+
+type revokeInviteHTTPResponse struct {
+	Body struct {
+		Revoked bool `json:"revoked"`
+	}
+}
+
+// StaffActivityEventResponse is the wire shape for one row in the
+// merged per-staff activity feed. Source identifies which domain it
+// came from; Kind is a dotted slug the FE pattern-matches on.
+type StaffActivityEventResponse struct {
+	ID         string    `json:"id"`
+	Source     string    `json:"source" enum:"notes,drugs,incidents,consent,pain,auth"`
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurred_at"`
+	Title      string    `json:"title"`
+	Subtitle   string    `json:"subtitle,omitempty"`
+	NoteID     *string   `json:"note_id,omitempty"`
+	SubjectID  *string   `json:"subject_id,omitempty"`
+	EntityID   *string   `json:"entity_id,omitempty"`
+}
+
+// StaffActivityListResponse is the paginated envelope.
+type StaffActivityListResponse struct {
+	Items []StaffActivityEventResponse `json:"items"`
+}
+
+type staffActivityInput struct {
+	StaffID string `path:"staff_id" doc:"Staff member's UUID."`
+	Limit   int    `query:"limit"  minimum:"1" maximum:"100" default:"50" doc:"Events per page."`
+	Offset  int    `query:"offset" minimum:"0" default:"0" doc:"Events to skip."`
+}
+
+type staffActivityHTTPResponse struct {
+	Body *StaffActivityListResponse
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -207,6 +292,96 @@ func (h *Handler) seatUsage(ctx context.Context, _ *struct{}) (*staffSeatUsageRe
 		return nil, huma.Error500InternalServerError("internal server error")
 	}
 	return &staffSeatUsageResponse{Body: &usage}, nil
+}
+
+// listInvites handles GET /api/v1/staff/invites.
+func (h *Handler) listInvites(ctx context.Context, _ *listInvitesInput) (*listInvitesHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	rows, err := h.svc.ListInvites(ctx, clinicID)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
+	items := make([]StaffInviteResponse, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, inviteToDTO(r))
+	}
+	return &listInvitesHTTPResponse{Body: &StaffInviteListResponse{Items: items}}, nil
+}
+
+// resendInvite handles POST /api/v1/staff/invites/{invite_id}/resend.
+// Mints a new token, revokes the old row, returns the new URL.
+func (h *Handler) resendInvite(ctx context.Context, input *resendInviteInput) (*resendInviteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	callerID := mw.StaffIDFromContext(ctx)
+	inviteID, err := uuid.Parse(input.InviteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid invite_id")
+	}
+	sendEmail := true
+	if input.Body.SendEmail != nil {
+		sendEmail = *input.Body.SendEmail
+	}
+	url, err := h.svc.ResendInvite(ctx, inviteID, clinicID, callerID, sendEmail)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
+	resp := &resendInviteHTTPResponse{}
+	resp.Body.InviteURL = url
+	return resp, nil
+}
+
+// revokeInvite handles DELETE /api/v1/staff/invites/{invite_id}.
+func (h *Handler) revokeInvite(ctx context.Context, input *inviteIDInput) (*revokeInviteHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	inviteID, err := uuid.Parse(input.InviteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid invite_id")
+	}
+	if err := h.svc.RevokeInvite(ctx, inviteID, clinicID); err != nil {
+		return nil, mapStaffError(err)
+	}
+	resp := &revokeInviteHTTPResponse{}
+	resp.Body.Revoked = true
+	return resp, nil
+}
+
+// getActivity handles GET /api/v1/staff/{staff_id}/activity.
+// Returns the merged cross-domain activity feed (notes, drugs,
+// incidents, consent, pain, logins) for one staff member, newest-
+// first. Requires manage_staff.
+func (h *Handler) getActivity(ctx context.Context, input *staffActivityInput) (*staffActivityHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID, err := uuid.Parse(input.StaffID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid staff_id")
+	}
+	events, err := h.svc.GetActivity(ctx, staffID, clinicID, input.Limit, input.Offset)
+	if err != nil {
+		return nil, mapStaffError(err)
+	}
+	items := make([]StaffActivityEventResponse, 0, len(events))
+	for _, e := range events {
+		items = append(items, StaffActivityEventResponse(e))
+	}
+	return &staffActivityHTTPResponse{Body: &StaffActivityListResponse{Items: items}}, nil
+}
+
+// inviteToDTO projects the service-level entry into the wire shape.
+func inviteToDTO(r InviteListEntry) StaffInviteResponse {
+	return StaffInviteResponse{
+		ID:            r.ID.String(),
+		Email:         r.Email,
+		Role:          r.Role,
+		NoteTier:      r.NoteTier,
+		Permissions:   r.Permissions,
+		InvitedByID:   r.InvitedByID.String(),
+		InvitedByName: r.InvitedByName,
+		CreatedAt:     r.CreatedAt,
+		ExpiresAt:     r.ExpiresAt,
+		AcceptedAt:    r.AcceptedAt,
+		RevokedAt:     r.RevokedAt,
+		Status:        r.Status,
+	}
 }
 
 // deactivate handles DELETE /api/v1/staff/{staff_id}.
