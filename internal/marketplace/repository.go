@@ -103,6 +103,9 @@ type VersionFieldRecord struct {
 	Skippable            bool
 	AllowInference       bool
 	MinConfidence        *float64
+	// SourceFormPosition is the 1-based position of the pack-form this field
+	// belonged to. NULL for non-pack versions (single-form / policy_only).
+	SourceFormPosition *int
 }
 
 // AcquisitionRecord mirrors marketplace_acquisitions.
@@ -188,6 +191,9 @@ type CreateVersionFieldParams struct {
 	Skippable      bool
 	AllowInference bool
 	MinConfidence  *float64
+	// SourceFormPosition is the 1-based pack-form index. Nil for non-pack
+	// versions; the column is stored NULL.
+	SourceFormPosition *int
 }
 
 // CreateAcquisitionParams holds values for a new entitlement row.
@@ -503,15 +509,18 @@ func (r *Repository) CreateVersion(ctx context.Context, p CreateVersionParams) (
 	const fieldQ = `
 		INSERT INTO marketplace_version_fields (
 			id, marketplace_version_id, position, title, type, config,
-			ai_prompt, required, skippable, allow_inference, min_confidence
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			ai_prompt, required, skippable, allow_inference, min_confidence,
+			source_form_position
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING id, marketplace_version_id, position, title, type, config,
-		          ai_prompt, required, skippable, allow_inference, min_confidence`
+		          ai_prompt, required, skippable, allow_inference, min_confidence,
+		          source_form_position`
 
 	for _, f := range p.Fields {
 		row := tx.QueryRow(ctx, fieldQ,
 			f.ID, version.ID, f.Position, f.Title, f.Type, f.Config,
 			f.AIPrompt, f.Required, f.Skippable, f.AllowInference, f.MinConfidence,
+			f.SourceFormPosition,
 		)
 		rec, err := scanVersionField(row)
 		if err != nil {
@@ -580,13 +589,16 @@ func (r *Repository) ListVersionsByListing(ctx context.Context, listingID uuid.U
 }
 
 // GetFieldsByVersionID returns all fields for a version ordered by position.
+// For pack versions the order is (source_form_position, position) so each
+// pack-form's fields stay grouped together when iterated.
 func (r *Repository) GetFieldsByVersionID(ctx context.Context, versionID uuid.UUID) ([]*VersionFieldRecord, error) {
 	const q = `
 		SELECT id, marketplace_version_id, position, title, type, config,
-		       ai_prompt, required, skippable, allow_inference, min_confidence
+		       ai_prompt, required, skippable, allow_inference, min_confidence,
+		       source_form_position
 		FROM marketplace_version_fields
 		WHERE marketplace_version_id = $1
-		ORDER BY position`
+		ORDER BY COALESCE(source_form_position, 0), position`
 
 	rows, err := r.db.Query(ctx, q, versionID)
 	if err != nil {
@@ -1511,6 +1523,7 @@ func scanVersionField(row scannable) (*VersionFieldRecord, error) {
 	err := row.Scan(
 		&f.ID, &f.MarketplaceVersionID, &f.Position, &f.Title, &f.Type, &f.Config,
 		&f.AIPrompt, &f.Required, &f.Skippable, &f.AllowInference, &f.MinConfidence,
+		&f.SourceFormPosition,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
