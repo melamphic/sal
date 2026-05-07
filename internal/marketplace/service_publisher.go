@@ -60,6 +60,140 @@ func (s *Service) ListMyPublisherListings(ctx context.Context, clinicID uuid.UUI
 	return &ListingListResponse{Items: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
+// UpdateListingInput holds the editable subset for PATCH. Each pointer is
+// optional — only non-nil fields are written. Service layer enforces the
+// per-status edit policy:
+//   - draft     → all fields editable
+//   - published → only short_description, long_description, tags,
+//                 preview_field_count are editable; price/name/slug/vertical
+//                 changes require archival + re-listing (or moderation).
+//   - archived  → no edits allowed
+//   - suspended → no edits allowed
+type UpdateListingInput struct {
+	CallerClinicID    uuid.UUID
+	ListingID         uuid.UUID
+	Name              *string
+	ShortDescription  *string
+	LongDescription   *string
+	Tags              *[]string
+	BundleType        *string
+	PricingType       *string
+	PriceCents        *int
+	Currency          *string
+	PreviewFieldCount *int
+}
+
+// UpdateListingByOwner applies a partial metadata update with ownership +
+// status-policy enforcement. Returns the updated listing.
+func (s *Service) UpdateListingByOwner(ctx context.Context, input UpdateListingInput) (*ListingResponse, error) {
+	listing, err := s.repo.GetListingByID(ctx, input.ListingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, input.CallerClinicID, publisher) {
+		return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: not owner: %w", domain.ErrForbidden)
+	}
+
+	switch listing.Status {
+	case "archived", "suspended":
+		return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: not editable in %s: %w", listing.Status, domain.ErrConflict)
+	case "draft":
+		// Anything goes.
+	default:
+		// Published / under_review: restrict to safe fields. Reject any
+		// caller-supplied edits to identity / pricing fields.
+		if input.Name != nil || input.BundleType != nil ||
+			input.PricingType != nil || input.PriceCents != nil ||
+			input.Currency != nil {
+			return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: name/pricing change not allowed post-publish: %w", domain.ErrForbidden)
+		}
+	}
+
+	// Validate paid → free / free → paid invariant when both flip together.
+	// Same rule as CreateListing: free disallows price_cents.
+	if input.PricingType != nil && input.PriceCents != nil {
+		if *input.PricingType == "free" && *input.PriceCents != 0 {
+			return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: free listings cannot have price_cents: %w", domain.ErrValidation)
+		}
+		if *input.PricingType == "paid" && *input.PriceCents <= 0 {
+			return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: paid listings need price_cents > 0: %w", domain.ErrValidation)
+		}
+	}
+
+	rec, err := s.repo.UpdateListingMetadata(ctx, UpdateListingMetadataParams{
+		ID:                input.ListingID,
+		Name:              input.Name,
+		ShortDescription:  input.ShortDescription,
+		LongDescription:   input.LongDescription,
+		Tags:              input.Tags,
+		BundleType:        input.BundleType,
+		PricingType:       input.PricingType,
+		PriceCents:        input.PriceCents,
+		Currency:          input.Currency,
+		PreviewFieldCount: input.PreviewFieldCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.UpdateListingByOwner: %w", err)
+	}
+	return toListingResponse(rec), nil
+}
+
+// ArchiveListingByOwner moves a listing to status='archived'. Existing
+// acquisitions stay valid; new browse / acquire / purchase calls reject.
+// Suspended listings cannot be archived (Salvia's hammer wins).
+func (s *Service) ArchiveListingByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) (*ListingResponse, error) {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ArchiveListingByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ArchiveListingByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return nil, fmt.Errorf("marketplace.service.ArchiveListingByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	if listing.Status == "suspended" {
+		return nil, fmt.Errorf("marketplace.service.ArchiveListingByOwner: cannot archive suspended listing: %w", domain.ErrConflict)
+	}
+	if listing.Status == "archived" {
+		return toListingResponse(listing), nil // idempotent
+	}
+	rec, err := s.repo.ArchiveListing(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ArchiveListingByOwner: %w", err)
+	}
+	return toListingResponse(rec), nil
+}
+
+// DeleteListingDraftByOwner permanently removes a draft listing along with
+// any unreleased version rows. Once a listing has been published it cannot
+// be deleted — archive instead so historical acquisitions still resolve.
+func (s *Service) DeleteListingDraftByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) error {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.DeleteListingDraftByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.DeleteListingDraftByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return fmt.Errorf("marketplace.service.DeleteListingDraftByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	if listing.Status != "draft" {
+		return fmt.Errorf("marketplace.service.DeleteListingDraftByOwner: only drafts can be deleted: %w", domain.ErrConflict)
+	}
+	if err := s.repo.DeleteListingDraft(ctx, listingID); err != nil {
+		return fmt.Errorf("marketplace.service.DeleteListingDraftByOwner: %w", err)
+	}
+	return nil
+}
+
 // PublishListingByOwner transitions a listing from draft → published with
 // ownership enforced (caller's clinic must own the publisher).
 func (s *Service) PublishListingByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) (*ListingResponse, error) {
