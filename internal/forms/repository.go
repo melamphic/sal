@@ -385,7 +385,8 @@ func (r *Repository) UpdateGroup(ctx context.Context, p UpdateGroupParams) (*Gro
 // single constant prevents drift across the dozen+ queries that touch this row.
 const formCols = `id, clinic_id, group_id, name, description, overall_prompt, tags,
 		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by,
-		          source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id`
+		          source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 // CreateForm inserts a new form row.
 func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormRecord, error) {
