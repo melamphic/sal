@@ -47,6 +47,14 @@ type FormRecord struct {
 	SourceMarketplaceListingID     *uuid.UUID
 	SourceMarketplaceVersionID     *uuid.UUID
 	SourceMarketplaceAcquisitionID *uuid.UUID
+	// Salvia-provided-content lineage — populated only when the materialiser
+	// installs a template into a fresh clinic. Mutually exclusive with the
+	// marketplace lineage above. When non-nil, the form participates in the
+	// "Made by Salvia v1" UX (badge, upgrade banner, library panel).
+	SalviaTemplateID       *string
+	SalviaTemplateVersion  *int
+	SalviaTemplateState    *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate  *time.Time
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
@@ -163,6 +171,13 @@ type CreateFormParams struct {
 	SourceMarketplaceListingID     *uuid.UUID
 	SourceMarketplaceVersionID     *uuid.UUID
 	SourceMarketplaceAcquisitionID *uuid.UUID
+	// Salvia-provided-content lineage — populated only when the materialiser
+	// installs a Salvia v1 template into a clinic at signup. Mutually
+	// exclusive with marketplace lineage.
+	SalviaTemplateID       *string
+	SalviaTemplateVersion  *int
+	SalviaTemplateState    *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate  *time.Time
 }
 
 // UpdateFormMetaParams holds values needed to update form metadata.
