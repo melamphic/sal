@@ -344,6 +344,13 @@ type CreateFormInput struct {
 	SourceMarketplaceListingID     *uuid.UUID
 	SourceMarketplaceVersionID     *uuid.UUID
 	SourceMarketplaceAcquisitionID *uuid.UUID
+	// Salvia-provided-content lineage — supplied only by the salvia_content
+	// materialiser at clinic-create. Mutually exclusive with marketplace
+	// lineage.
+	SalviaTemplateID      *string
+	SalviaTemplateVersion *int
+	SalviaTemplateState   *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate *time.Time
 }
 
 // UpdateDraftInput holds input for updating the draft version of a form.
@@ -472,6 +479,10 @@ func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormR
 			SourceMarketplaceListingID:     input.SourceMarketplaceListingID,
 			SourceMarketplaceVersionID:     input.SourceMarketplaceVersionID,
 			SourceMarketplaceAcquisitionID: input.SourceMarketplaceAcquisitionID,
+			SalviaTemplateID:               input.SalviaTemplateID,
+			SalviaTemplateVersion:          input.SalviaTemplateVersion,
+			SalviaTemplateState:            input.SalviaTemplateState,
+			FrameworkCurrencyDate:          input.FrameworkCurrencyDate,
 		},
 		DraftID: domain.NewID(),
 	})
