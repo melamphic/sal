@@ -329,7 +329,8 @@ func (r *Repository) GetPoliciesByIDs(ctx context.Context, ids []uuid.UUID, clin
 	}
 	const q = `
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE id = ANY($1) AND clinic_id = $2`
 
@@ -357,7 +358,8 @@ func (r *Repository) GetPoliciesByIDs(ctx context.Context, ids []uuid.UUID, clin
 func (r *Repository) GetPolicyByID(ctx context.Context, id, clinicID uuid.UUID) (*PolicyRecord, error) {
 	const q = `
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE id = $1 AND clinic_id = $2`
 
@@ -391,7 +393,8 @@ func (r *Repository) ListPolicies(ctx context.Context, clinicID uuid.UUID, p Lis
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE %s
 		ORDER BY created_at DESC
@@ -424,7 +427,8 @@ func (r *Repository) UpdatePolicyMeta(ctx context.Context, p UpdatePolicyMetaPar
 		SET folder_id = $3, name = $4, description = $5
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, folder_id, name, description,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.FolderID, p.Name, p.Description)
 	rec, err := scanPolicy(row)
@@ -441,7 +445,8 @@ func (r *Repository) RetirePolicy(ctx context.Context, p RetirePolicyParams) (*P
 		SET archived_at = $3, retire_reason = $4
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, folder_id, name, description,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason)
 	rec, err := scanPolicy(row)
