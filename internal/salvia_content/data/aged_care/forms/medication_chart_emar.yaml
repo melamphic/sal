@@ -1,0 +1,163 @@
+id: salvia.aged_care.medication_chart_emar
+name: "Medication Chart / eMAR"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Medication administration record. The medication LIST itself is held against
+  the resident record (drug, dose, route, frequency, indication, prescriber,
+  start/stop dates, allergy/interaction warnings). This form captures the
+  per-dose administration event — the right resident, right drug, right dose,
+  right route, right time, right reason — with sign-off, witness for controlled
+  drugs, refusal documentation and PRN effectiveness check. Country chart
+  anchors: NZ HQSC ARC Medication Chart; AU NRMC (National Residential
+  Medication Chart); UK NICE SC1; US 42 CFR 483.45.
+
+purpose_per_regulator:
+  NZ: "Medicines Act 1981, Misuse of Drugs Act 1975 + Regulations 1977; HQSC Aged Residential Care National Medication Chart specification (current); Ngā Paerewa NZS 8134:2021 Section 5; Pharmacy Council NZ Standards for Medicines Management."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — medication management); National Residential Medication Chart (NRMC) — PBS-compliant chart; Aged Care Quality Indicators (NQI) Polypharmacy and Antipsychotic; Guiding Principles for Medication Management in Residential Aged Care Facilities (Australian Government 2022 / 2025 update); state Drugs and Poisons Acts (S4/S8 control)."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 12 (safe care); NICE SC1 Managing medicines in care homes; NICE NG5 Medicines optimisation; CQC Mythbuster on medicines management; Misuse of Drugs Regs 2001 for CDs (Schedule 2/3 storage and recording)."
+  US: "42 CFR 483.45 Pharmacy services — labelling, storage, regimen review; F755 Pharmacy services availability; F756 Pharmacy services consultant; F758 Unnecessary drugs / GDR; F759 Medication errors (free of significant medication errors); F760 Residents are free of any significant medication errors; DEA 21 CFR 1304 controlled substances recordkeeping."
+
+linked_policy_defaults:
+  - salvia.aged_care.medication_management
+  - salvia.aged_care.controlled_drugs
+  - salvia.aged_care.antipsychotic_stewardship
+  - salvia.aged_care.infection_prevention_control
+
+tags: [medication, administration, ledger]
+
+overall_prompt: |
+  This form records ONE administration event per submission (or, where
+  configured, a batched round). Resident identity, drug list, dose schedule
+  and indication come from the medication record; the form does not
+  duplicate them. Voice extraction is permitted only for non-clinical context
+  (e.g. resident response, observed effect for PRN). The administration
+  itself is an explicit clinician action with electronic sign-off; AI must
+  NOT mark a dose as given.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_allergies
+    label: Allergies on record
+    type: system_field
+    source: patient_record.allergies
+
+  - key: subject_medication_record
+    label: Active medications (record)
+    type: system_field
+    source: patient_record.medications
+    help_text: "The chart against which doses are signed. Salvia loads the active medication list at form-render time. Discontinued or out-of-range doses are not selectable."
+
+  - key: administration_datetime
+    label: Date and time of administration
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: administering_clinician
+    label: Administering clinician
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: clinician_registration
+    label: Clinician registration / licence
+    type: system_field
+    source: practitioner_record.registration_number
+    label_per_country:
+      NZ: "NCNZ APC / Pharmacist registration / authorised carer (per facility delegation)"
+      AU: "AHPRA RN/EN / authorised assistant under state instrument"
+      UK: "NMC PIN / care worker per CQC competency"
+      US: "State RN/LPN licence / certified med-aide where state permits"
+
+  - key: drug_administered
+    label: Drug being administered (selected from active medication list)
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: dose_strength_route
+    label: Dose, strength, route as administered
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: scheduled_or_prn
+    label: Scheduled or PRN
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Scheduled (regular round)", value: "scheduled"}
+        - {label: "PRN — record indication and effect at reassessment", value: "prn"}
+        - {label: "Stat — single dose, prescribed today", value: "stat"}
+
+  - key: prn_indication
+    label: PRN indication (where PRN)
+    type: text
+    ai_extract: true
+    help_text: "Pain (link to Pain form), agitation, breathlessness, nausea, etc. Specific is better — a clinician reviewing later relies on this."
+
+  - key: pre_administration_checks
+    label: Pre-administration checks completed
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "5 rights — confirmed: right resident, right drug, right dose, right route, right time", value: "five_rights"}
+        - {label: "5 + indication + documentation + response — confirmed", value: "eight_rights"}
+
+  - key: administration_outcome
+    label: Administration outcome
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Administered — given as charted", value: "given"}
+        - {label: "Refused by resident", value: "refused"}
+        - {label: "Withheld — clinical reason (record)", value: "withheld"}
+        - {label: "Omitted — not available / not delivered (record reason)", value: "omitted"}
+        - {label: "Vomited within 30 min — discuss with prescriber for re-dose", value: "vomited"}
+        - {label: "Spilled / contaminated (record)", value: "spilled"}
+        - {label: "Given late — variance recorded", value: "late"}
+
+  - key: refusal_reason
+    label: Reason if refused / withheld / omitted
+    type: long_text
+    ai_extract: true
+
+  - key: prn_effect_reassessment
+    label: PRN effect at reassessment
+    type: long_text
+    ai_extract: true
+    help_text: "30–60 min post-PO, 15–30 min post-injectable. Pain score change, behaviour change, breathing change, etc."
+
+  - key: controlled_drug_witness
+    label: Controlled drug — second checker / witness
+    type: text
+    ai_extract: false
+    help_text: "Required for any CD per country: NZ Class B/C, AU S8, UK Schedule 2 (and many practices Schedule 3), US Schedule II–V. Use the CD Register form for the ledger entry; this field captures the witness on the chart."
+
+  - key: drug_op_link
+    label: Controlled drug operation (linked CD register entry)
+    type: system.drug_op
+    ai_extract: false
+    config:
+      operation: administer
+      controlled_only: true
+      confirm_required: true
+    help_text: "When the dose is a controlled drug, this widget creates the CD register entry. confirm_required=true enforces the witness step. For non-CD doses, this field is not used."
