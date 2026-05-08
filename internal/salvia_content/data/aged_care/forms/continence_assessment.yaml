@@ -1,0 +1,156 @@
+id: salvia.aged_care.continence_assessment
+name: "Continence Assessment"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Comprehensive continence assessment for bladder and bowel function. Captures
+  current pattern, contributing factors (cognition, mobility, medications,
+  fluid intake, skin status), the 3-day bladder/bowel chart attachment, the
+  individualised continence plan (toileting schedule, products, pelvic floor
+  / behavioural intervention, referral), and the dignity considerations.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — clinical care, including continence as a component of dignity); Continence NZ guidance; HQSC."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — continence) and Standard 1 (dignity); Continence Foundation of Australia clinical guidelines; Aged Care NQI on incontinence-associated factors integrated with skin integrity."
+  UK: "NICE NG21 Home care for older people (continence dignity); NICE CG171 Urinary incontinence in women + CG97 LUTS in men; CQC Reg 9 (person-centred), Reg 10 (dignity), Reg 12 (safe care)."
+  US: "42 CFR 483.25(e) F690 — incontinence; resident assessed for incontinence and provided with appropriate treatment to prevent UTIs and restore as much normal bladder function as possible; MDS 3.0 v1.20.1 Section H (Bladder and Bowel)."
+
+linked_policy_defaults:
+  - salvia.aged_care.continence_care
+  - salvia.aged_care.pressure_injury_prevention
+  - salvia.aged_care.nutrition_hydration
+  - salvia.aged_care.care_planning
+
+tags: [continence, dignity, ledger]
+
+overall_prompt: |
+  Capture the continence assessment as recorded by the registered nurse or
+  continence-trained staff member. Voice extraction can populate pattern
+  description, contributing factors mentioned, products in use, and the plan.
+  Do not infer continence status from absence of mention.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_medications
+    label: Current medications (review for diuretics, anticholinergics, opioids)
+    type: system_field
+    source: patient_record.medications
+
+  - key: assessment_date
+    label: Assessment date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: bladder_pattern
+    label: Bladder pattern
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Continent — fully", value: "continent"}
+        - {label: "Stress incontinence — leakage on cough/laugh/exertion", value: "stress"}
+        - {label: "Urge incontinence — sudden urgency, leakage before reaching toilet", value: "urge"}
+        - {label: "Mixed stress + urge", value: "mixed"}
+        - {label: "Functional — physical / cognitive barrier to reaching toilet", value: "functional"}
+        - {label: "Overflow / retention with overflow", value: "overflow"}
+        - {label: "Total / continuous incontinence", value: "total"}
+        - {label: "Catheter — indwelling (record reason and date)", value: "catheter_idc"}
+        - {label: "Catheter — intermittent self / supported", value: "catheter_isc"}
+
+  - key: bowel_pattern
+    label: Bowel pattern
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Regular — formed stool, manageable interval", value: "regular"}
+        - {label: "Constipation tendency — managed with diet/laxatives", value: "constipation"}
+        - {label: "Faecal impaction — overflow diarrhoea", value: "impaction"}
+        - {label: "Diarrhoea — investigate (infection / medication / overflow)", value: "diarrhoea"}
+        - {label: "Faecal incontinence — passive", value: "passive"}
+        - {label: "Stoma — colostomy / ileostomy", value: "stoma"}
+
+  - key: nocturia_pattern
+    label: Nocturia (number of voids overnight)
+    type: text
+    ai_extract: true
+    help_text: "Strong contributor to falls — record honestly even if resident downplays."
+
+  - key: contributing_factors
+    label: Contributing factors
+    type: long_text
+    ai_extract: true
+    help_text: |
+      Cognition (understands/recognises urge), mobility (reaches toilet in
+      time), dexterity (clothing, products), environment (proximity, lighting,
+      privacy), medications (diuretics, anticholinergics, opioids), fluid
+      intake (volume, type, timing), constipation, infection (UTI symptoms),
+      neurological (Parkinson's, MS, stroke), pelvic floor.
+
+  - key: skin_status
+    label: Skin status — peri-genital / sacral
+    type: long_text
+    ai_extract: true
+    help_text: "IAD (incontinence-associated dermatitis), candidiasis, breakdown. Link to skin / pressure injury plan."
+
+  - key: products_in_use
+    label: Continence products currently in use
+    type: long_text
+    ai_extract: true
+    help_text: "Type (pad / pull-up / brief), absorbency, brand, frequency of change, day vs night."
+
+  - key: bladder_bowel_chart_attached
+    label: Bladder / bowel chart (3-day or 7-day) attached
+    type: select
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — 3-day chart completed", value: "3_day"}
+        - {label: "Yes — 7-day chart completed", value: "7_day"}
+        - {label: "Pending — chart commenced", value: "pending"}
+        - {label: "Not appropriate — palliative / end-of-life", value: "na"}
+
+  - key: uti_screen
+    label: UTI screen / urinalysis
+    type: long_text
+    ai_extract: true
+    help_text: "Symptoms (dysuria, frequency, urgency, suprapubic pain, confusion in dementia), urinalysis result. Avoid asymptomatic-bacteriuria treatment per IDSA / NICE NG109."
+
+  - key: investigations_referrals
+    label: Investigations / referrals
+    type: long_text
+    ai_extract: true
+    help_text: "Continence nurse, urologist, gynaecologist, pelvic floor physiotherapy, GP medication review."
+
+  - key: toileting_plan
+    label: Individualised toileting plan
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Prompted toileting (every 2 hours) / scheduled / habit retraining. Day vs night plan. Assistance level. Privacy and dignity considerations."
+
+  - key: dignity_considerations
+    label: Dignity considerations
+    type: long_text
+    ai_extract: true
+    help_text: "Resident's preferred terms, gender of carer preference, privacy at toileting/changes, modesty during showers, family presence preferences."
+
+  - key: review_date
+    label: Plan review date
+    type: date
+    required: true
+    ai_extract: true
