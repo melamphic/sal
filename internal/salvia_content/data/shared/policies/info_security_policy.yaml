@@ -1,0 +1,149 @@
+id: salvia.shared.info_security_policy
+name: "Information Security & Cyber"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  Technical, administrative, and physical safeguards the clinic uses to
+  protect personal and health information against loss, unauthorised
+  access, alteration, or destruction.
+
+purpose_per_regulator:
+  NZ: "HIPC 2020 Rule 5 (storage and security); HISO 10029 (Health Information Security Framework)"
+  AU: "APP 11 (security); My Health Record participation requirements where applicable"
+  UK: "UK GDPR Art 32 (security of processing); NHS Data Security and Protection Toolkit (DSPT); Cyber Essentials Plus expectation"
+  US: "HIPAA Security Rule 45 CFR Part 164 Subpart C — Administrative §164.308, Physical §164.310, Technical §164.312; HITECH Act"
+
+clauses:
+  - id: scope_principles
+    title: "Scope and principles"
+    body: |
+      This policy applies to every system, device, and person handling clinic
+      data. The clinic adopts the principles of least privilege, defence in
+      depth, encryption at rest and in transit, audit logging, and regular
+      verification.
+
+  - id: access_control
+    title: "Access control"
+    body: |
+      Access is role-based and granted on the principle of least privilege.
+      Each user has a unique account; account sharing is prohibited. New
+      access provisioned only after privacy-and-security training is
+      complete. Access reviewed at least annually and on every role change
+      or termination. Automatic session timeout after 15 minutes of
+      inactivity on clinical workstations.
+
+  - id: authentication
+    title: "Authentication"
+    body: |
+      Multi-factor authentication required for all clinical-system logins
+      from outside the clinic network and for any administrator-tier
+      account. Passwords meet the current NIST SP 800-63B / NCSC guidance
+      (≥12 characters, no forced rotation, blocklist for breached
+      passwords). Biometric and hardware-key options encouraged where
+      supported.
+
+  - id: encryption
+    title: "Encryption"
+    body: |
+      Data at rest encrypted with AES-256 or equivalent. Data in transit
+      protected by TLS 1.2+ (TLS 1.3 preferred). Database backups encrypted.
+      Mobile devices used to access clinic systems are full-disk encrypted.
+
+  - id: device_security
+    title: "Device security"
+    body: |
+      Workstations, laptops, tablets, and phones used to access clinic
+      systems are managed (MDM/EMM where reasonable), patched within 30
+      days of vendor release for non-critical updates and within 7 days
+      for critical/security updates, run endpoint protection, and lock on
+      idle. Lost or stolen devices are reported immediately to the
+      Security Officer / IT Lead and remotely wiped.
+
+  - id: network
+    title: "Network"
+    body: |
+      Clinic Wi-Fi separates staff from guest networks. Remote access via
+      VPN or zero-trust gateway. Public/guest Wi-Fi never used to access
+      PHI without VPN.
+
+  - id: backups
+    title: "Backups and recovery"
+    body: |
+      Daily incremental and weekly full backups of clinical systems, with
+      at least one off-site copy. Recovery tested at least quarterly. RPO
+      ≤ 24 hours, RTO ≤ 24 hours for clinical systems. Backup integrity
+      verified.
+
+  - id: audit_logging
+    title: "Audit logging"
+    body: |
+      All access to PHI is logged: user, timestamp, record, action.
+      Logs reviewed weekly for unusual patterns; investigated promptly.
+      Logs retained per the records-retention policy.
+
+  - id: third_party
+    title: "Third-party / vendor security"
+    body: |
+      Vendors handling PHI sign data-processing agreements (UK GDPR Art 28),
+      Business Associate Agreements (HIPAA §164.504(e)), or equivalents
+      under state law. Vendor security posture verified at onboarding and
+      annually thereafter (e.g. SOC 2, ISO 27001, HITRUST evidence).
+
+  - id: incident_response
+    title: "Incident response"
+    body: |
+      Suspected security incidents reported immediately to the Security
+      Officer / IT Lead via the clinic's incident channel. Triage within
+      24 hours: scope, containment, evidence preservation, severity
+      assessment. Notification to the regulator and affected individuals
+      under the breach notification rules of the jurisdiction (see
+      privacy_policy clause "breach_response"). Post-incident review
+      conducted; corrective actions tracked to closure.
+
+  - id: physical_security
+    title: "Physical security"
+    body: |
+      Servers and on-premises storage in locked rooms with controlled
+      access; visitor log; CCTV where used. Paper records in locked
+      cabinets when not in use. Disposed paper destroyed by cross-cut
+      shredder or confidential-waste service.
+
+  - id: training
+    title: "Training and awareness"
+    body: |
+      All staff complete information-security training at induction and
+      annually. Phishing-simulation campaigns run at least biannually.
+      Acceptable-use policy signed at induction.
+
+  - id: byod
+    title: "Personal device use (BYOD)"
+    body: |
+      Personal devices used to access clinic systems must comply with the
+      device-security clause. Personal email, personal cloud storage, and
+      messaging apps must not be used to store or transmit PHI.
+
+  - id: ai_audio_data
+    title: "AI scribe and audio data"
+    body: |
+      Audio captured for the AI scribe loop is encrypted in transit and
+      at rest, processed by the named processors disclosed in the AI
+      scribe consent form, and deleted per the records-retention policy.
+      AI-processed transcripts are protected as PHI / health information
+      from the moment of capture.
+
+  - id: country_specifics
+    title: "Country-specific obligations"
+    body_per_country:
+      NZ: "HIPC Rule 5 + HISO 10029 (HISF). The clinic submits security incidents to OPC where the Notifiable Privacy Breach threshold is met."
+      AU: "APP 11. Notifiable Data Breach to OAIC."
+      UK: "UK GDPR Art 32. NHS DSPT submitted annually for NHS-contracting practices. ICO notified within 72 hours of awareness for personal data breaches."
+      US: "HIPAA Security Rule §164.308–§164.312. Security Risk Analysis documented annually (§164.308(a)(1)(ii)(A)). Privacy Officer (§164.530(a)) and Security Officer (§164.308(a)(2)) named."
+
+  - id: review
+    title: "Review"
+    body: "Reviewed annually and after every significant security incident."

@@ -1,0 +1,173 @@
+id: salvia.general_clinic.imaging_pathology_request
+name: "Imaging / pathology request"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Request for radiology, ultrasound, or laboratory investigation. Captures the
+  test list, clinical question, urgency, fasting / preparation requirements,
+  pregnancy status, and relevant patient context (LMP for imaging in
+  reproductive-age females, eGFR / weight for contrast, anticoagulation for
+  intervention).
+
+purpose_per_regulator:
+  NZ: "ACC Schedule of Pathology / Imaging; HISO 10025:2017 referrals data set; ORS C-4 (radiation); HDC Code."
+  AU: "MBS Diagnostic Imaging + Pathology Requests; RACGP Standards 5th ed C5.2; ACSQHC Recognising Acute Deterioration; RPS C-7 radiation."
+  UK: "NHS e-Referral Service for imaging / pathology; iRefer (Royal College of Radiologists); IRMER Regulations 2017; NICE clinical guidelines."
+  US: "ACR Appropriateness Criteria; CLIA 42 CFR 493 lab orders; CMS hospital outpatient clinical labs; state radiation rules; payer prior authorisation."
+
+linked_policy_defaults:
+  - salvia.general_clinic.results_safety_netting
+  - salvia.shared.privacy_policy
+
+tags: [imaging, pathology, request]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_sex_at_birth
+    label: "Sex recorded at birth"
+    type: system_field
+    source: patient_record.sex_at_birth
+
+  - key: subject_id_number
+    label: "Health identifier (NHI / Medicare / NHS no / MBI)"
+    type: system_field
+    source: patient_record.health_identifier
+    pii: true
+
+  - key: subject_weight
+    label: "Weight (kg) — required for contrast / weight-based tests"
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: request_type
+    label: "Request category"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Pathology / lab", value: "pathology"}
+        - {label: "Plain X-ray", value: "xray"}
+        - {label: "Ultrasound", value: "us"}
+        - {label: "CT", value: "ct"}
+        - {label: "MRI", value: "mri"}
+        - {label: "Nuclear medicine / PET", value: "nm"}
+        - {label: "Mammography", value: "mammo"}
+        - {label: "DEXA / bone densitometry", value: "dexa"}
+        - {label: "ECG / Holter / spirometry / sleep study", value: "physiologic"}
+
+  - key: tests_ordered
+    label: "Tests ordered"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "List each investigation explicitly. For imaging include modality + region + side + contrast yes/no. For pathology include each analyte / panel."
+
+  - key: clinical_question
+    label: "Clinical question / indication"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Reason for the test. UK IRMER 2017 Reg 11 (referrer justification); ACR Appropriateness Criteria; iRefer."
+
+  - key: relevant_history
+    label: "Relevant clinical history"
+    type: long_text
+    ai_extract: true
+
+  - key: urgency
+    label: "Urgency"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Routine", value: "routine"}
+        - {label: "Urgent (within 2 weeks)", value: "urgent"}
+        - {label: "Acute — same day", value: "acute"}
+        - {label: "Two-week-wait (UK NICE NG12)", value: "uk_2ww"}
+
+  - key: fasting_required
+    label: "Fasting / preparation"
+    type: text
+    help_text: "e.g. fasting glucose 8h, fasting lipids 12h, prostate USS — full bladder, MRCP — fasting 4h."
+
+  - key: pregnancy_status
+    label: "Pregnancy status (if reproductive-age female and imaging with ionising radiation or MRI contrast)"
+    type: select
+    config:
+      options:
+        - {label: "Not applicable", value: "na"}
+        - {label: "Not pregnant — confirmed (β-hCG or recent menses)", value: "not_pregnant"}
+        - {label: "Possibly pregnant — clinically justified to proceed", value: "possible"}
+        - {label: "Pregnant — gestation noted in details", value: "pregnant"}
+    help_text: "IRMER Reg 11(2)(c) requires pregnancy status before ionising radiation in females of reproductive age. ACR similar. Document the 28-day-rule / 10-day-rule reasoning."
+
+  - key: last_menstrual_period
+    label: "Last menstrual period"
+    type: date
+    help_text: "Required for pelvic imaging, breast imaging, and any radiology in reproductive-age females."
+
+  - key: egfr_for_contrast
+    label: "eGFR (if iodinated / gadolinium contrast)"
+    type: decimal
+    help_text: "RANZCR contrast guideline / ACR Manual on Contrast Media: check eGFR within 30 days for at-risk patients before iodinated. Gadolinium NSF risk if eGFR <30."
+
+  - key: anticoagulation_status
+    label: "Anticoagulation / antiplatelet status (if procedure)"
+    type: long_text
+    ai_extract: true
+
+  - key: relevant_allergies
+    label: "Allergies (esp. iodine / gadolinium / latex / lignocaine)"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: funding_route
+    label: "Funding / payer"
+    type: select
+    config:
+      options:
+        - {label: "Public-funded (NZ Te Whatu Ora / NHS UK)", value: "public"}
+        - {label: "ACC (NZ)", value: "acc"}
+        - {label: "MBS (AU)", value: "mbs"}
+        - {label: "Private", value: "private"}
+        - {label: "Insurance — prior auth obtained (US)", value: "insurance_pa"}
+        - {label: "Insurance — prior auth pending (US)", value: "insurance_pending"}
+
+  - key: priority_imaging_repeat_check
+    label: "Has this study been done recently? (avoid duplicate imaging)"
+    type: long_text
+    ai_extract: true
+
+  - key: results_routing
+    label: "Results routing / receiving clinician"
+    type: text
+    required: true
+    help_text: "Named receiver for the result, plus designated cover. Drives results safety-netting."
+
+  - key: signature_clinician
+    label: "Requesting clinician (name and registration)"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Request date"
+    type: date
+    required: true

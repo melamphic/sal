@@ -1,0 +1,112 @@
+id: salvia.shared.general_consent
+name: "General consent to treatment"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  Baseline informed-consent capture for any treatment, procedure, examination,
+  or care plan. Records that the patient (or authorised representative) was
+  informed of the nature, alternatives, risks, and costs and agreed before
+  the intervention proceeded. For specific high-risk procedures (anaesthesia,
+  sedation, euthanasia, invasive surgery), use the procedure-specific consent
+  form instead — this form is the catch-all baseline.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 7 (informed consent — verbal or written; written is best evidence); MCNZ Statement on informed consent"
+  AU: "Common law informed consent doctrine; RACGP C1.3; AHPRA / Medical Board Code of Conduct §3.5; Rogers v Whitaker"
+  UK: "GMC Decision-making and consent 2020; Montgomery v Lanarkshire 2015; CQC Reg 11 (consent)"
+  US: "State informed-consent statutes; AMA Code of Medical Ethics §2.1.1; doctrine of informed consent (Canterbury v Spence; state-level Canterbury / Natanson tests)"
+
+linked_policy_defaults:
+  - salvia.shared.consent_policy
+  - salvia.shared.privacy_policy
+
+tags: [consent, intake, core]
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: consent_widget
+    label: "Consent capture"
+    type: system.consent
+    required: true
+    config:
+      consent_type: treatment_plan
+    help_text: "Captures the consent record (consenter identity, capacity, witness if applicable) into the consent ledger on submit."
+
+  - key: nature_of_intervention
+    label: "Nature of intervention"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "What is proposed, in plain language. Include the specific procedure / treatment / examination."
+
+  - key: alternatives_discussed
+    label: "Alternatives discussed"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Including the option of declining (no-treatment alternative). Required by Montgomery (UK) and HDC Right 7 (NZ)."
+
+  - key: material_risks_discussed
+    label: "Material risks discussed"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Risks a reasonable patient in this patient's position would attach significance to (Montgomery / Rogers v Whitaker)."
+
+  - key: questions_addressed
+    label: "Questions raised by patient and answers given"
+    type: long_text
+    ai_extract: true
+
+  - key: capacity_assessed
+    label: "Capacity to consent"
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Patient has capacity", value: capacity}
+        - {label: "Substitute decision-maker (capacity lacking)", value: sdm}
+        - {label: "Emergency / capacity unable to be assessed", value: emergency}
+    help_text: "If SDM: capture authority below. If emergency: best-interests rationale required."
+
+  - key: sdm_name_authority
+    label: "Substitute decision-maker name + authority"
+    type: text
+    ai_extract: true
+    help_text: "EPOA / welfare guardian (NZ); state-appointed guardian / supporter (AU); LPA Health & Welfare / Court of Protection deputy / IMCA (UK); healthcare proxy / surrogate (US)."
+
+  - key: best_interests_rationale
+    label: "Best-interests rationale (if applicable)"
+    type: long_text
+    ai_extract: true
+    help_text: "Required when the patient lacks capacity (UK MCA s.4; NZ PPPR; AU state guardianship law; US state law). Document why this intervention serves the patient's best interests."
+
+  - key: estimate_provided
+    label: "Cost estimate provided"
+    type: button_group
+    config:
+      options:
+        - {label: "Yes — written", value: written}
+        - {label: "Yes — verbal", value: verbal}
+        - {label: "Not applicable", value: na}
+    help_text: "Required where treatment incurs cost (HDC Right 6 NZ; ADA Policy 5.16 AU; GDC Principle 2.3 UK; state-by-state US)."
+
+  - key: signature_method
+    label: "Consent recorded as"
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Written / signed", value: signed}
+        - {label: "Verbal — recorded in note", value: verbal_noted}
+        - {label: "Implied (low-risk routine care)", value: implied}

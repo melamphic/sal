@@ -1,0 +1,171 @@
+id: salvia.dental.medical_emergencies_resuscitation
+name: "Medical Emergencies & Resuscitation Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Defines the practice's preparedness for foreseeable medical emergencies:
+  the emergency drug kit, oxygen, AED, BLS competency standard per role,
+  drill schedule, and the response algorithm. Aligned to country
+  resuscitation councils.
+
+purpose_per_regulator:
+  NZ: "DCNZ Medical Emergencies in Dental Practice Standard §1–8 (with March 2026 sedation overlay — AED mandatory if sedating); NZRC ALS Guidelines."
+  AU: "ADA Australia Schedule of Services + Code of Conduct §3; ANZCOR Basic and Advanced Life Support Guidelines (current revision); state WHS."
+  UK: "Resuscitation Council UK Quality Standards for CPR Practice and Training: Primary Dental Care 2022; CQC Reg 12; GDC Standards 7.2."
+  US: "ADA Office Emergency Manual; AHA BLS / ACLS Guidelines (2025 update); state dental board sedation rules; OSHA 29 CFR 1910.151."
+
+clauses:
+  - id: scope
+    title: "Scope and Emergency Lead"
+    body: |
+      This policy applies to all clinical and non-clinical staff. The
+      Practice Principal is the named Emergency Lead unless a written
+      delegation is made. The Emergency Lead owns the drug-kit register,
+      the AED check log, the drill schedule, and post-event review.
+
+  - id: drug_kit
+    title: "Emergency drug kit"
+    body: |
+      Minimum stock list:
+      - Adrenaline (epinephrine) 1:1000, 1 mg/ml (≥2 ampoules; auto-
+        injectors optional alongside).
+      - Glucagon 1 mg IM kit.
+      - Glucose: oral (gel/sugary drink) and IV 10% (where IV staff present).
+      - Glyceryl trinitrate (GTN) 400 mcg sublingual spray.
+      - Salbutamol 100 mcg MDI + spacer.
+      - Midazolam 10 mg buccal liquid (status epilepticus).
+      - Hydrocortisone sodium succinate 100–200 mg IV/IM.
+      - Aspirin 300 mg dispersible.
+      - Chlorphenamine 10 mg IV (or oral antihistamine).
+      - Oxygen — full size cylinder + reserve, ≥15 L/min flow capability,
+        non-rebreather mask + bag-valve-mask + paediatric mask.
+      Stored in a clearly labelled, unlocked but secured location known
+      to all staff. Monthly check; replenish before expiry.
+
+  - id: aed
+    title: "AED requirement"
+    body_per_country:
+      NZ: |
+        DCNZ Sedation Practice Standard March 2026: AED mandatory on
+        premises whenever sedation is provided. DCNZ Medical Emergencies
+        Standard strongly recommends AED for all dental practices.
+        Pad and battery checks per manufacturer schedule, logged.
+      AU: |
+        ANZCOR ALS Guidelines and ADA AU recommend AED for all dental
+        practices; required where sedation is performed under most
+        state Drugs/Poisons authorities.
+      UK: |
+        RCUK Quality Standards for CPR Practice and Training: Primary
+        Dental Care 2022 §3.2: AED on every dental premises and
+        accessible within 1 minute. Daily/weekly self-test log.
+      US: |
+        ADA recommends AED on all dental premises; state law commonly
+        mandates where sedation is performed (e.g. CA Title 16
+        §1043.4). AHA AED maintenance per manufacturer.
+
+  - id: bls_competency
+    title: "BLS / ALS competence by role"
+    body_per_country:
+      NZ: |
+        DCNZ Sedation Standard March 2026: NZRC CORE Immediate certificate
+        ≤2 years for all sedation team members (operator, sedationist
+        where applicable, dental assistant). Non-sedation roles: NZRC
+        CORE Basic ≤2 years for clinical; CORE Knowledge for non-clinical
+        front-of-house.
+      AU: |
+        ANZCOR / HLTAID011 Provide First Aid (or equivalent) ≤3 years
+        for clinical; HLTAID009 CPR annually. Sedation roles per state
+        Drugs/Poisons authority and ADA AU.
+      UK: |
+        RCUK Quality Standards 2022: all staff with patient contact
+        BLS-trained annually (no more than 12 months between updates);
+        ILS for any clinician supervising sedation; AED training included.
+      US: |
+        AHA Basic Life Support (BLS) Provider for all clinical staff,
+        renewed every 2 years. ACLS / PALS for clinicians providing
+        moderate or deeper sedation per ADA Sedation Guidelines 2016
+        and state law.
+
+  - id: drill_schedule
+    title: "Emergency drill schedule"
+    body: |
+      Whole-team simulation drill at least annually. Each drill covers:
+      - Rapid recognition.
+      - Activation of emergency services (000 / 111 / 999 / 911).
+      - Drug administration (with expired stock or training kit, never
+        live).
+      - AED deployment.
+      - Communication (caller designated, location identified, lift /
+        access ready).
+      Drill record retained ≥3 years (longer per local schedule). Any
+      drill gap triggers a corrective-action plan within 30 days.
+
+  - id: response_algorithm
+    title: "General response algorithm"
+    body: |
+      1. Recognise — patient appears unwell or unresponsive.
+      2. Call for help — designated team member dials emergency number;
+         another team member fetches drug kit + O₂ + AED.
+      3. Position — supine for syncope/anaphylaxis; left-lateral if
+         pregnant >20 weeks; sitting up for asthma / pulmonary oedema.
+      4. ABCDE assessment — Airway, Breathing (give O₂ 15 L/min via
+         non-rebreather), Circulation, Disability (AVPU/GCS, glucose),
+         Exposure.
+      5. Treat per condition (see below).
+      6. Reassess every 2 minutes; record vitals.
+      7. Handover SBAR to ambulance.
+
+  - id: anaphylaxis_pathway
+    title: "Anaphylaxis"
+    body: |
+      Adrenaline IM 1:1000:
+      - Adult / child >12: 0.5 mg (0.5 ml).
+      - Child 6–12: 0.3 mg (0.3 ml).
+      - Child <6: 0.15 mg (0.15 ml).
+      Repeat at 5 minutes if no response. High-flow O₂; supine with legs
+      raised; IV access where competent; chlorphenamine + hydrocortisone
+      as adjuncts after adrenaline. Activate emergency services
+      immediately on any suspected anaphylaxis.
+
+  - id: cardiac_arrest_pathway
+    title: "Cardiac arrest"
+    body: |
+      Confirm unresponsive + not breathing normally. Call emergency
+      services. Begin chest compressions (30:2 with rescue breaths if
+      trained, or compression-only if not) at 100–120/min, ≥5 cm depth
+      in adults. Apply AED as soon as available; follow voice prompts.
+      Continue until ROSC, ambulance handover, or futility decision by
+      arriving team.
+
+  - id: post_event_review
+    title: "Post-event review"
+    body: |
+      Every emergency event is recorded in the Medical Emergency Form
+      (`salvia.dental.medical_emergency_form`) and reviewed within 7 days
+      by the Emergency Lead with the involved team. Review covers:
+      - Time-line accuracy.
+      - Drug / equipment availability and expiry.
+      - Communication and roles.
+      - Statutory notification (RIDDOR / WorkSafe / state WHS / FDA
+        MedWatch / TGA / Medsafe / MHRA Yellow Card as applicable).
+      - Action items with named owners and review dates.
+
+  - id: kit_check
+    title: "Drug kit and AED check"
+    body: |
+      Monthly drug-kit check by Emergency Lead or named delegate:
+      contents present, none expired, oxygen ≥1/4 full, BVM clean and
+      single-use mask sealed. AED daily / weekly self-test (per device);
+      pads and battery within expiry. Records retained ≥3 years (longer
+      per local schedule).
+
+  - id: paediatric_special
+    title: "Paediatric considerations"
+    body: |
+      Weight-based drug dosing using Broselow tape or country-equivalent
+      (UK: WETFLAG; AU/NZ: APLS); paediatric BVM and oxygen mask
+      available; consider parental presence; lower threshold for
+      ambulance activation.

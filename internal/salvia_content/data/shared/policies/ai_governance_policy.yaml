@@ -1,0 +1,163 @@
+id: salvia.shared.ai_governance_policy
+name: "AI / Clinical Decision Support Governance"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How the clinic uses AI-assisted tools (ambient scribe, transcription,
+  extraction, decision support), what governance applies, what disclosures
+  are required, and how clinician oversight is maintained. Salvia's
+  product itself uses AI extensively — this policy is the clinic's
+  written framework for that use.
+
+purpose_per_regulator:
+  NZ: "HIPC 2020 Rules 3, 5, 10, 11; MCNZ general professional standards; emerging MCNZ guidance on AI tools"
+  AU: "APP 1 (transparent management); RACGP factsheet on AI in general practice; AHPRA shared statement on health practitioners and AI; TGA SaMD guidance where applicable"
+  UK: "UK GDPR Art 13/14 (information to be provided); Art 22 (automated decision-making); CQC GP Mythbuster 109 (Ambient Voice Technology in general practice); NHS England Ambient Scribe / Voice Tech Buyer's Guide; ICO AI guidance; MHRA SaMD guidance"
+  US: "HIPAA + state two-party recording laws; HHS AI healthcare guidance 2026; FDA SaMD where applicable; ONC HTI-1 transparency rule"
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This policy covers any AI tool used by the clinic for clinical or
+      operational purposes — including but not limited to: ambient
+      scribes; speech-to-text transcription; clinical-information
+      extraction; clinical decision support (e.g. radiology AI, dental
+      caries detection, sepsis prediction); patient-facing chatbots;
+      automated triage. It applies to tools provided as part of the
+      Salvia platform and to any third-party tool the clinic adopts.
+
+  - id: tool_inventory
+    title: "Inventory and approval"
+    body: |
+      The clinic maintains a register of AI tools in use: name, vendor,
+      purpose, model class (where disclosed), training-data class
+      (general medical / domain-specific), decision-support category,
+      regulatory status (e.g. FDA-cleared SaMD class, UKCA mark, TGA
+      ARTG), data-flow diagram, BAA / DPA in place. New tools approved
+      by the named clinical AI lead before deployment. Annual review.
+
+  - id: validation
+    title: "Validation before deployment"
+    body: |
+      Before deployment the clinic verifies, proportional to the tool's
+      risk: published validation evidence relevant to the clinic's
+      population; performance under the clinic's case-mix; failure modes
+      and graceful degradation; integration with the clinical workflow;
+      override mechanism. High-risk decision-support tools require
+      shadow-mode evaluation before live use.
+
+  - id: clinician_in_loop
+    title: "Clinician in the loop"
+    body: |
+      AI-generated output is a draft. The attending clinician reviews,
+      edits, and signs every clinical record before it enters the
+      authoritative chart. The clinician retains responsibility for
+      every clinical decision regardless of AI suggestion. The clinician's
+      authority to disregard AI output is unconditional — there is no
+      automated workflow that prevents a clinician from acting against
+      AI suggestion.
+
+  - id: disclosure_to_patient
+    title: "Disclosure to patient"
+    body: |
+      Patients are informed when AI is used in their care. For ambient
+      scribe / audio recording, separate consent is captured on the AI
+      scribe consent form. For decision-support tools used in routine
+      care, disclosure is part of the clinic's overall AI-use notice
+      (visible in the privacy notice and on the clinic's website).
+    body_per_country:
+      NZ: "HIPC Rule 3 collection notice + Rule 10 use limits."
+      AU: "APP 5 collection notice + APP 1 transparent management."
+      UK: "UK GDPR Art 13/14 information + Art 22 automated-decision rules where applicable. CQC GP Mythbuster 109 expectation of patient awareness for ambient voice tech."
+      US: "HIPAA + state two-party recording laws (CA, FL, IL, MA, MD, MT, NH, PA, WA require all-party consent). HHS guidance on AI in healthcare."
+
+  - id: data_processor_agreements
+    title: "Data processor and BAA agreements"
+    body: |
+      AI vendors handling clinic data sign appropriate agreements before
+      deployment.
+    body_per_country:
+      NZ: "Information-sharing arrangements / IPP 11 outsourcing covered in the contract."
+      AU: "APP 8 cross-border disclosure addressed; written contract on data handling."
+      UK: "UK GDPR Art 28 data-processing agreement."
+      US: "HIPAA Business Associate Agreement (§164.504(e)) — every AI vendor handling PHI."
+
+  - id: bias_safety_monitoring
+    title: "Bias, safety, and performance monitoring"
+    body: |
+      The clinic monitors AI outputs for systematic errors and
+      patient-population bias. Where an AI tool's performance degrades
+      (model drift, incident pattern, vendor disclosure), use is
+      suspended pending review. Clinical incidents involving AI are
+      logged in the clinic's incident system with a flag for AI
+      involvement.
+
+  - id: explainability
+    title: "Explainability"
+    body: |
+      Where an AI tool's output materially influences a clinical
+      decision, the clinician records the reason for accepting or
+      rejecting the suggestion in the clinical note. This supports
+      audit, learning, and patient communication.
+
+  - id: incidents_and_failures
+    title: "AI incidents"
+    body: |
+      Incidents involving AI — wrong extraction, missed finding,
+      suggestion that would have caused harm if followed — are logged.
+      Vendors are notified per their contract. Where the incident
+      triggers regulator-notification thresholds (e.g. CQC Reg 18,
+      AU SIRS for aged-care, MHRA / TGA / FDA Yellow-Card / 1932 /
+      MedWatch), notification is made.
+
+  - id: training
+    title: "Training"
+    body: |
+      Staff are trained on every AI tool before use: what it does,
+      what it does not do, how to override, how to report problems.
+      Training is refreshed when the tool is materially updated.
+
+  - id: documentation_authorship
+    title: "Documentation authorship"
+    body: |
+      The clinical record states the clinician as the author. AI's
+      contribution to the draft is acknowledged at the system level
+      (audit trail) but the clinician is named as the responsible author
+      of the signed note. The clinic's audit log records the AI tool
+      used in producing each draft.
+
+  - id: data_retention_audio
+    title: "Audio data retention"
+    body: |
+      Audio captured for the AI scribe loop is retained only as long as
+      necessary for the clinical record (typically deleted on note
+      submission). Retention exceptions are listed in the
+      records-retention policy.
+
+  - id: vendor_change
+    title: "Change of AI vendor or model"
+    body: |
+      A change of vendor or material model upgrade by an existing
+      vendor is treated as a new deployment and re-validated per this
+      policy. Patient consent is reviewed; re-consent obtained where
+      processing terms change materially.
+
+  - id: opt_out
+    title: "Opt-out"
+    body: |
+      Patients may decline AI use without affecting their care. The
+      clinic falls back to manual documentation. This is reflected in
+      the AI scribe consent form (`salvia.shared.ai_scribe_consent`).
+
+  - id: review
+    title: "Review"
+    body: |
+      Reviewed at least annually, and immediately on any new AI
+      deployment, vendor change, regulator publication, or AI-related
+      patient-safety incident.

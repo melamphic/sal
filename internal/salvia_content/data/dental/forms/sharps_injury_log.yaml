@@ -1,0 +1,290 @@
+id: salvia.dental.sharps_injury_log
+name: "Sharps / Needlestick Injury Log"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Mandatory log entry for any sharps or needlestick injury to staff or
+  bystander. Captures mechanism, source patient details (PII flagged),
+  immediate first aid, post-exposure prophylaxis decision, source serology
+  consent, and occupational health follow-up.
+
+purpose_per_regulator:
+  NZ: "Health and Safety at Work Act 2015 (HSWA); WorkSafe NZ Notifiable Events; HQSC Standard 5; DCNZ IPC Practice Standard Dec 2024 §4."
+  AU: "State WHS Acts (e.g. NSW WHS Act 2011, Vic OHS Act 2004); ADA AU Guidelines for IPC 5th Ed 2024; Safe Work Australia Code."
+  UK: "Health and Safety (Sharp Instruments in Healthcare) Regulations 2013; HSE RIDDOR 2013; HTM 01-05; CQC Reg 12."
+  US: "OSHA 29 CFR 1910.1030(c)(1) Bloodborne Pathogens Standard; OSHA 29 CFR 1904.8 sharps log mandatory; Needlestick Safety and Prevention Act 2000; CDC USPHS PEP guidelines 2018."
+
+linked_policy_defaults:
+  - salvia.dental.sharps_bbv_exposure
+  - salvia.dental.infection_prevention_control
+
+tags: [incident, ipc, occupational]
+
+overall_prompt: |
+  Extract injury date/time, mechanism, source patient (mark PII), depth
+  classification, and any first-aid / PEP decisions. Source patient
+  identity is PII — mask in lists, route reveals through unmask. Severity
+  floor at high — even minor sharps with BBV-positive source escalate.
+
+fields:
+  - key: injured_person_role
+    label: Injured person — role
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Dentist", value: "dentist"}
+        - {label: "Hygienist / therapist", value: "hygienist"}
+        - {label: "Dental assistant", value: "assistant"}
+        - {label: "Nurse", value: "nurse"}
+        - {label: "Reception / admin", value: "reception"}
+        - {label: "Cleaner", value: "cleaner"}
+        - {label: "Student / observer", value: "student"}
+        - {label: "Bystander", value: "bystander"}
+        - {label: "Other", value: "other"}
+
+  - key: injured_person_name
+    label: Injured person name
+    type: text
+    required: true
+    ai_extract: true
+    pii: true
+
+  - key: injured_person_employee_id
+    label: Employee ID / payroll reference
+    type: text
+    pii: true
+
+  - key: injury_datetime
+    label: Date and time of injury
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: location
+    label: Location in clinic
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: mechanism
+    label: Mechanism of injury
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Hollow-bore needlestick during procedure", value: "needle_during"}
+        - {label: "Hollow-bore needlestick during recapping", value: "needle_recap"}
+        - {label: "Hollow-bore needlestick during disposal", value: "needle_disposal"}
+        - {label: "Suture / surgical needle", value: "suture"}
+        - {label: "Bur / handpiece injury", value: "bur"}
+        - {label: "Scaler / probe injury", value: "scaler"}
+        - {label: "Glass / instrument fragment", value: "glass"}
+        - {label: "Splash to mucous membrane / non-intact skin", value: "splash"}
+        - {label: "Other", value: "other"}
+
+  - key: object_involved
+    label: Object involved (description)
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Type, gauge if applicable, manufacturer if relevant for safety-engineering analysis."
+
+  - key: depth
+    label: Injury depth
+    type: select
+    required: true
+    ai_extract: true
+    help_text: "Depth informs PEP decision (CDC USPHS 2018)."
+    config:
+      options:
+        - {label: "Superficial (no/minimal blood)", value: "superficial"}
+        - {label: "Moderate (visible blood, no haemorrhage)", value: "moderate"}
+        - {label: "Deep (heavy bleeding, deep puncture)", value: "deep"}
+        - {label: "Mucous membrane / non-intact skin", value: "mucous"}
+
+  - key: contaminated_with_blood
+    label: Object contaminated with blood / saliva
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — visible blood / saliva", value: "yes"}
+        - {label: "Possibly contaminated", value: "possibly"}
+        - {label: "No — clean object before contact", value: "no"}
+
+  - key: source_patient_known
+    label: Source patient identifiable
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes", value: "yes"}
+        - {label: "No — anonymous source", value: "no"}
+
+  - key: source_patient_name
+    label: Source patient name
+    type: text
+    ai_extract: true
+    pii: true
+    phi: true
+
+  - key: source_patient_dob
+    label: Source patient DOB
+    type: date
+    ai_extract: true
+    pii: true
+
+  - key: source_bbv_status_known
+    label: Source patient known BBV status
+    type: long_text
+    ai_extract: true
+    pii: true
+    phi: true
+    help_text: "Hep B / Hep C / HIV status if known. Recorded only with consent."
+
+  - key: first_aid_actions
+    label: Immediate first aid taken
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Encourage bleeding (do NOT suck), wash with soap and running water, irrigate mucosa with copious water/saline. Per CDC / NHS Sharps SOP."
+
+  - key: source_consent_for_testing
+    label: Source patient consent to BBV testing
+    type: button_group
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — consented", value: "yes"}
+        - {label: "Declined", value: "declined"}
+        - {label: "Pending discussion", value: "pending"}
+        - {label: "Source not approached", value: "not_approached"}
+        - {label: "Source anonymous", value: "anonymous"}
+
+  - key: pep_decision
+    label: Post-exposure prophylaxis (PEP) decision
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not indicated (low-risk)", value: "not_indicated"}
+        - {label: "HIV PEP started ≤72h (28-day course)", value: "hiv_pep_started"}
+        - {label: "HBV PEP started (HBIG ± vaccine)", value: "hbv_pep_started"}
+        - {label: "Both HIV + HBV PEP started", value: "both_pep_started"}
+        - {label: "Declined by injured person", value: "declined"}
+        - {label: "Pending occupational health review", value: "pending"}
+
+  - key: hbv_vaccine_status
+    label: Injured person HBV vaccine status
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Fully vaccinated, anti-HBs ≥10 mIU/ml", value: "vaccinated_responder"}
+        - {label: "Vaccinated — non-responder", value: "non_responder"}
+        - {label: "Partially vaccinated", value: "partial"}
+        - {label: "Not vaccinated", value: "not_vaccinated"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: occ_health_referral
+    label: Occupational health referral
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Same day", value: "same_day"}
+        - {label: "Within 24 hours", value: "within_24h"}
+        - {label: "Within 72 hours", value: "within_72h"}
+        - {label: "Not made", value: "none"}
+
+  - key: baseline_serology_taken
+    label: Baseline serology (injured person)
+    type: button_group
+    ai_extract: true
+    help_text: "Hep B (anti-HBs / HBsAg), Hep C (anti-HCV), HIV (Ag/Ab) baseline."
+    config:
+      options:
+        - {label: "Yes — taken", value: "yes"}
+        - {label: "Declined", value: "declined"}
+        - {label: "Pending", value: "pending"}
+
+  - key: follow_up_serology_schedule
+    label: Follow-up serology schedule
+    type: text
+    ai_extract: true
+    help_text: "Typically 6, 12 weeks (HIV/HCV) and 6 months. PHE / CDC schedules vary."
+
+  - key: time_off_work
+    label: Time off work / restrictions
+    type: text
+    ai_extract: true
+
+  - key: device_safety_review
+    label: Device / engineering control review
+    type: long_text
+    ai_extract: true
+    help_text: "Was a safety-engineered device available? If not, why not? UK Sharps Regs 2013 / OSHA 1910.1030(d)(2)(i) require evaluation."
+
+  - key: corrective_actions
+    label: Corrective / preventive actions
+    type: long_text
+    ai_extract: true
+
+  - key: nz_notes
+    label: NZ — WorkSafe / HSWA
+    type: text
+    countries: [NZ]
+    help_text: "WorkSafe NZ notifiable injury threshold (HSWA s23): >7 days off work; immediate notification if serious."
+
+  - key: au_notes
+    label: AU — state WHS
+    type: text
+    countries: [AU]
+    help_text: "State WHS regulator notifiable incident; e.g. NSW WHS Act 2011 s37 serious injury (admission to hospital) immediate notification."
+
+  - key: uk_riddor
+    label: UK — RIDDOR notification
+    type: button_group
+    countries: [UK]
+    help_text: "RIDDOR 2013 reg 9: needlestick from contaminated source = dangerous occurrence; report to HSE without delay; ≤10 days written."
+    config:
+      options:
+        - {label: "Reported to HSE", value: "reported"}
+        - {label: "Not reportable (clean source)", value: "not_reportable"}
+        - {label: "Pending decision", value: "pending"}
+
+  - key: us_osha_log
+    label: US — OSHA Sharps Injury Log entry
+    type: button_group
+    countries: [US]
+    required_per_country:
+      US: true
+    help_text: "OSHA 29 CFR 1910.1030(h)(5) sharps injury log: device, type/brand, work area, description. Confidentiality maintained per (h)(5)(ii). Log retained ≥5 years."
+    config:
+      options:
+        - {label: "Logged in OSHA Sharps Injury Log", value: "logged"}
+        - {label: "OSHA 300 also logged (lost-time / restricted)", value: "logged_300"}
+        - {label: "Pending", value: "pending"}
+
+  - key: sharps_incident
+    label: Sharps incident record
+    type: system.incident
+    required: true
+    config:
+      incident_type: other
+      min_severity: high
+
+  - key: clinician_notes
+    label: Clinician notes
+    type: long_text
+    ai_extract: true

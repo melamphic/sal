@@ -1,0 +1,152 @@
+id: salvia.aged_care.medication_management
+name: "Medication Management Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service manages medication end-to-end: prescribing review and
+  authorisation, ordering and receipt, storage, administration including
+  the eMAR, dose-omission/refusal handling, periodic regimen review (at
+  least 6-monthly), self-administration assessment, and PRN governance.
+  Controlled drugs are governed by a separate policy.
+
+purpose_per_regulator:
+  NZ: "Medicines Act 1981; Misuse of Drugs Act 1975 + Regulations 1977; Pharmacy Council NZ Standards for Medicines Management; HQSC Aged Residential Care Medication Chart specification; Ngā Paerewa NZS 8134:2021 Section 5; Ministry of Health Medicines Care Guides for Residential Aged Care."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (clinical safety — medication management); Guiding Principles for Medication Management in Residential Aged Care Facilities (Australian Government, 2022 / 2025 update); National Residential Medication Chart (NRMC); Aged Care Quality Indicators (NQI) Polypharmacy and Antipsychotic; state Drugs and Poisons Acts."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 12 (safe care); NICE SC1 Managing medicines in care homes; NICE NG5 Medicines optimisation; Royal Pharmaceutical Society Professional standards for hospital and care home pharmacy services; Misuse of Drugs Regulations 2001 for CDs; CQC Medicines Mythbusters."
+  US: "42 CFR 483.45 Pharmacy services — labelling, storage, regimen review; F755 (pharmacy service availability), F756 (consultant pharmacist), F757 (drug regimen review), F758 (unnecessary drugs and GDR), F759 (medication error rate <5%), F760 (residents free of significant medication errors); 42 CFR 483.10(c)(7) (right to self-administer where assessed safe); DEA / state CD rules."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to every medication held or administered by the
+      service. Controlled drugs are also governed by the separate
+      Controlled Drugs Policy. Antipsychotics in dementia are also
+      governed by the Antipsychotic Stewardship Policy.
+
+  - id: prescribing_authorisation
+    title: Prescribing and authorisation
+    body: |
+      Medications are administered only on a current, signed prescription
+      from an authorised prescriber. Verbal orders are accepted only in
+      defined circumstances (urgent, prescriber unable to chart in
+      person), are read back, are signed within 24–48 hours per country
+      rule, and are documented as verbal orders.
+
+  - id: ordering_receipt
+    title: Ordering and receipt
+    body: |
+      Medications are ordered against the resident's current chart.
+      Received medications are checked against the order at delivery —
+      drug, strength, quantity, expiry, condition. Discrepancies are
+      reported and reconciled the same day. Controlled drugs follow the
+      separate CD policy.
+
+  - id: storage
+    title: Storage
+    body: |
+      Medications are stored in locked cupboards, in original packaging,
+      at the manufacturer's recommended temperature. Refrigerated drugs
+      kept at 2–8 °C with daily temperature monitoring. CDs in a locked
+      safe meeting country specifications (NZ Misuse of Drugs Regs 1977 /
+      AU state safes / UK Misuse of Drugs (Safe Custody) Regs 1973 /
+      US per state). Out-of-stock or expired medication is segregated
+      and disposed of per policy.
+
+  - id: administration_chart
+    title: Administration via the medication chart
+    body_per_country:
+      NZ: |
+        Administration recorded on the HQSC Aged Residential Care
+        Medication Chart (paper or electronic). Five rights checked.
+        Sign-off at the time of administration.
+      AU: |
+        Administration recorded on the National Residential Medication
+        Chart (NRMC, PBS-compliant) — paper or electronic. Five rights
+        checked. Sign-off at the time of administration.
+      UK: |
+        Administration recorded on the eMAR / paper MAR aligned with
+        NICE SC1. Five rights checked. Sign-off at the time of
+        administration. Homely remedy protocol where applicable.
+      US: |
+        Administration recorded on the eMAR. Five rights checked. Eight
+        rights (right indication, right documentation, right response)
+        encouraged. Sign-off at the time of administration.
+
+  - id: omissions_refusal
+    title: Dose omissions and refusals
+    body: |
+      Refused doses are documented with the reason and the resident's
+      voice recorded. Withheld doses for clinical reason (e.g. low BP for
+      antihypertensive) are documented with the rationale and the
+      prescriber notified. Omissions due to drug not available are
+      documented as medication errors.
+
+  - id: regimen_review
+    title: Periodic regimen review
+    body_per_country:
+      NZ: |
+        Pharmacist-led Medication Use Review at admission and at least
+        6-monthly, with re-review at significant change of condition.
+        Antipsychotic / opioid / benzodiazepine reviewed with
+        deprescribing intent.
+      AU: |
+        Residential Medication Management Review (RMMR) at least
+        annually, more often where indicated. Deprescribing reviewed.
+        Polypharmacy NQI is the indicator lens.
+      UK: |
+        Structured Medication Review (SMR) at least annually per NICE
+        NG5. Pharmacist-led where commissioned. Deprescribing
+        considered.
+      US: |
+        Drug regimen review at least monthly by a licensed pharmacist
+        (F756, F757). Annual face-to-face review where state requires.
+        F758 GDR (gradual dose reduction) for psychotropics at least
+        annually unless clinically contraindicated.
+
+  - id: prn_governance
+    title: PRN governance
+    body: |
+      Each PRN medication has a documented indication, maximum frequency,
+      maximum 24-hour dose, and duration before review. Effectiveness is
+      reassessed at 30–60 minutes (PO) or 15–30 minutes (injectable).
+      PRN psychotropics for behaviour are governed by the Restraint and
+      Antipsychotic Stewardship policies.
+
+  - id: self_administration
+    title: Self-administration
+    body: |
+      Residents may self-administer where assessed as safe. Assessment
+      includes: cognition, dexterity, ability to read labels, ability to
+      identify drugs, willingness, and the storage / lockable cupboard in
+      the resident's room. Reassessed at any change of condition.
+      US right under 42 CFR 483.10(c)(7).
+
+  - id: errors
+    title: Medication errors
+    body: |
+      Errors are reported on the Medication Error form. The Open
+      Disclosure / Duty of Candour pathway engages at moderate harm.
+      Patterns are reviewed at clinical governance (F759 <5% error rate
+      US lens).
+
+  - id: training_competency
+    title: Staff training and competency
+    body: |
+      Medication-administering staff complete induction training and an
+      observed competency assessment before independent administration.
+      Refresher annually. Competency includes the eMAR system, the five
+      rights, refusal/omission management, anaphylaxis recognition,
+      and country-specific CD rules.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: Director of Nursing.

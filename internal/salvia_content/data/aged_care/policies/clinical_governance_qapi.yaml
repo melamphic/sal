@@ -1,0 +1,144 @@
+id: salvia.aged_care.clinical_governance_qapi
+name: "Clinical Governance and Quality Improvement (QAPI) Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service governs clinical quality and safety: leadership
+  accountability, the quality framework, KPIs, the meeting cadence,
+  incident review, complaint review, audit, and improvement loops.
+  Aligned with NZ Ngā Paerewa Section 2 (Manaaki — adverse events,
+  governance), AU Strengthened Standard 2 (Governance), UK CQC Reg 17
+  (Good governance), and US 42 CFR 483.75 F865 QAPI + F868 QAA
+  Committee.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 2 (Te Manaakitanga / leadership and governance — including adverse events, organisational learning, and quality improvement); HQSC frameworks; Pae Ora (Healthy Futures) Act 2022."
+  AU: "Strengthened Aged Care Quality Standards Standard 2 (The organisation — governance, leadership, accountability, workforce capability, continuous improvement); Aged Care Act 2024 — provider responsibilities for clinical governance; Aged Care Quality Indicators (NQI) suite (Pressure Injuries, Physical Restraint, Unplanned Weight Loss, Falls and Major Injury, Medication Management — Polypharmacy, Medication Management — Antipsychotic, Activities of Daily Living, Incontinence-Associated Dermatitis, Hospitalisation, Workforce, Consumer Experience, Quality of Life)."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 17 (Good governance) — systems and processes that assess, monitor and improve the quality and safety of services; CQC well-led key question; CQC fundamental standards; National Quality Board guidance on clinical governance."
+  US: "42 CFR 483.75 — Quality assurance and performance improvement (QAPI) — F865 (QAPI program); F868 (QAA Committee — required to meet at least quarterly with at least the Director of Nursing, the medical director or designee, the Infection Preventionist, and at least three other staff including the administrator)."
+
+clauses:
+  - id: leadership_accountability
+    title: Leadership and accountability
+    body: |
+      The Registered Manager / Director of Nursing / Administrator is
+      accountable for clinical quality and safety. The Board / governing
+      body sets strategic direction and reviews quality outcomes. Roles
+      and accountabilities are documented (CQC Reg 19 fit and proper
+      persons).
+
+  - id: framework
+    title: Quality framework
+    body: |
+      The framework follows the country structure:
+      - NZ: Ngā Paerewa Section 2 — leadership, workforce, adverse
+        events, organisational learning.
+      - AU: Strengthened Standard 2 — governance, accountability,
+        workforce capability, continuous improvement, risk management,
+        clinical governance, financial governance, antimicrobial
+        stewardship, IPC.
+      - UK: CQC well-led — vision and strategy, leadership, governance
+        and management, culture, engagement.
+      - US: QAPI's 5 elements — design and scope; governance and
+        leadership; feedback, data systems and monitoring; performance
+        improvement projects; systematic analysis and systemic action.
+
+  - id: meeting_cadence
+    title: Meeting cadence
+    body: |
+      A clinical governance meeting is held at least monthly. A QAA /
+      QAPI committee meeting (or local equivalent) at least quarterly
+      with at minimum: Director of Nursing, medical director or
+      designee, Infection Preventionist, administrator, plus at least
+      three other staff (US F868 minimum). Minutes recorded; actions
+      tracked; outstanding actions reviewed at next meeting.
+
+  - id: kpis_indicators
+    title: KPIs and indicators
+    body: |
+      Indicators tracked at every clinical governance meeting:
+      - Falls and major-injury falls.
+      - Pressure injury incidence (POA vs facility-acquired,
+        Stage 2+).
+      - Unplanned weight loss.
+      - Medication errors (per 1000 doses).
+      - Antipsychotic / psychotropic prescribing.
+      - Restrictive practice authorisations.
+      - Infection rate (UTI, respiratory, GI; antibiotic starts).
+      - Hospital admissions.
+      - Complaints received.
+      - Incidents by category and severity.
+      - Open Disclosure events.
+      - Workforce indicators (vacancies, turnover, training compliance).
+      Country-specific reporting: AU NQI quarterly; US MDS-derived
+      Quality Measures; UK CQC well-led data; NZ HQSC reporting.
+
+  - id: incident_review
+    title: Incident review
+    body: |
+      All Incidents-ledger rows are triaged for severity and
+      preventability. Severe / sentinel incidents undergo
+      root-cause analysis (RCA / SAC1 / Serious Incident review)
+      within 60 days. Findings feed system change. Pattern review
+      runs alongside individual case review.
+
+  - id: complaint_review
+    title: Complaint review
+    body: |
+      Complaints are reviewed at the clinical governance meeting:
+      themes, root causes, response time, satisfaction with response.
+      Trends inform improvement work.
+
+  - id: audit_programme
+    title: Audit programme
+    body: |
+      Annual audit programme covering: medication management;
+      controlled drugs reconciliation; care planning; consent
+      documentation; restraint authorisation; pressure injury
+      prevention bundle; falls prevention; infection control
+      surveillance; documentation quality; cultural safety; resident
+      experience.
+
+  - id: continuous_improvement
+    title: Continuous improvement projects
+    body: |
+      At least one major performance-improvement project running at
+      any time, sponsored by senior leadership. Projects use a
+      structured method (Plan-Do-Study-Act, Model for Improvement, or
+      similar). Outcomes presented at clinical governance.
+
+  - id: learning_culture
+    title: Learning culture
+    body: |
+      The service operates a just culture: blame-free incident
+      reporting, system-thinking on contributing factors, recognition
+      for reporting, and protection for whistleblowers. Sentinel events
+      and near-misses are shared as learning.
+
+  - id: workforce_clinical_governance
+    title: Workforce clinical governance
+    body: |
+      Clinical staff supervision, competency assessment, professional
+      development, and registration verification are reviewed at
+      clinical governance. Staffing levels reviewed against acuity and
+      against NQI Workforce indicator (AU) / care-hour standards (e.g.
+      AU Care Minutes; US PBJ staffing data).
+
+  - id: external_engagement
+    title: External engagement
+    body: |
+      The service engages with regulator inspections constructively,
+      shares learning across the sector where appropriate, and
+      participates in benchmarking schemes (where available).
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: Director of Nursing / Quality Lead.

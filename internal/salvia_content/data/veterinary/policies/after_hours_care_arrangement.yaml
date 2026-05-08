@@ -1,0 +1,176 @@
+id: salvia.veterinary.after_hours_care_arrangement
+name: "After-Hours Care Arrangement"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  The practice's arrangement for the provision of veterinary care outside
+  normal working hours: how owners contact the practice or its delegate,
+  who provides emergency cover, the geographic and species scope, the
+  hand-off communication standard, and the regulator-mandated minimum
+  obligation per country.
+purpose_per_regulator:
+  NZ: "VCNZ Code of Professional Conduct §3 (Provision of veterinary services) and §17 (After-hours / 24-hour care) — a registered veterinarian who has a current professional relationship with an animal must ensure that arrangements are in place for the provision of after-hours care, either directly or by delegation to a named provider, with that arrangement clearly communicated to the client."
+  AU: "State Veterinary Practice Acts and Codes of Conduct (e.g. Vic Code of Professional Conduct cl.5.5; NSW Veterinary Practitioners Code of Professional Conduct cl.4; Qld Veterinary Surgeons Board Code cl.3.4; WA Veterinary Practice Code cl.5). Most states impose a 'must provide or arrange' obligation; the AVA Guidelines on Hours of Service support written delegation to a named after-hours provider."
+  UK: "RCVS Code of Professional Conduct §3.1 — 'Veterinary surgeons must take steps to provide 24-hour emergency first aid and pain relief to animals according to their skills and the specific situation'. Updated RCVS guidance January 2024 on under-care and remote prescribing tightened the requirement for in-person clinical link before remote-only after-hours triage. RCVS Practice Standards Scheme audits the arrangement."
+  US: "AVMA Principles of Veterinary Medical Ethics (PVME) §III.D — continuity of care; state Veterinary Practice Acts on continuity / after-hours arrangements; AAHA Standards on after-hours care; client-state notification requirements vary."
+clauses:
+  - id: scope
+    title: "Scope and obligation"
+    body_per_country:
+      NZ: |
+        Every veterinarian holding a current Annual Practising Certificate
+        with a professional relationship with an animal is obliged under
+        VCNZ Code §17 to ensure after-hours arrangements are in place. The
+        practice meets that obligation either by providing direct out-of-
+        hours cover or by a written delegation to a named provider, with
+        the arrangement communicated to clients.
+      AU: |
+        State Veterinary Practice Codes oblige the practice to provide or
+        arrange for after-hours care for cases under its care. The practice
+        meets that obligation either by direct cover or by a documented
+        referral arrangement with a named provider. The arrangement is
+        communicated to clients on the practice website and in client
+        correspondence.
+      UK: |
+        Under RCVS Code of Professional Conduct §3.1, every veterinary
+        surgeon must take steps to provide 24-hour emergency first aid
+        and pain relief, according to skills and the specific situation,
+        for animals under their care. The practice meets that obligation
+        either by direct cover or by a written arrangement with a dedicated
+        out-of-hours provider, communicated to clients. RCVS January 2024
+        guidance on under-care requires that any remote prescribing during
+        out-of-hours is for an animal under the prescriber's care
+        established by recent in-person clinical link.
+      US: |
+        AVMA PVME §III.D requires continuity of care. The practice meets
+        that obligation either by direct cover or by a written referral
+        arrangement to a named emergency clinic. State boards may impose
+        additional requirements on signage / client notification (e.g.
+        California Veterinary Medical Board CCR §2030 — after-hours phone
+        message).
+
+  - id: provider_arrangement
+    title: "Named after-hours provider arrangement"
+    body: |
+      Where after-hours care is delegated, the practice has a written
+      arrangement with the named provider that addresses:
+        - geographic catchment and species covered;
+        - hours of cover (start/end of weekday, weekend, public holiday);
+        - what records are shared at hand-off (electronic record extract,
+          summary letter, current medications, alerts);
+        - the protocol for clinically significant cases to be returned to
+          the home practice (e.g. ongoing hospitalisation, complex case);
+        - financial arrangements (whether owner pays the provider directly,
+          whether home practice rebills);
+        - the review and termination notice period;
+        - the provider's regulator status (registered practice, licensed
+          veterinarians, premises inspection).
+      The arrangement is reviewed at least annually and on any change of
+      provider or scope.
+
+  - id: client_communication
+    title: "Client communication"
+    body: |
+      Every client is told at registration, and reminded annually, of the
+      practice's after-hours arrangement: which phone number to call,
+      which premises to attend, what to do for life-threatening
+      emergencies (where clients should go directly to the named
+      emergency clinic), and what to do if their pet is currently
+      hospitalised at the home practice. The arrangement is published on
+      the practice website, on the after-hours phone message, on any
+      practice signage, and in the after-hours information leaflet. Phone
+      messages do not direct the client to a service that does not exist
+      or does not currently cover the practice's catchment.
+
+  - id: handoff_communication
+    title: "Hand-off and case continuity"
+    body: |
+      For any patient seen out of hours by the delegated provider, the
+      provider sends to the home practice within 24 hours:
+        - presenting complaint and triage;
+        - clinical examination findings;
+        - investigations performed and results;
+        - treatments given (drug, dose, route, time);
+        - controlled-drug administration and dispensing entries;
+        - imaging acquired and provisional report;
+        - disposition (home, retained, transferred);
+        - take-home discharge instructions to the owner;
+        - any safety-net advice given to the owner.
+      The home practice reviews the hand-off summary on the next working
+      day, contacts the owner if needed, and integrates the record into
+      the patient file.
+
+  - id: emergency_drug_kit
+    title: "Emergency drug kit and equipment readiness"
+    body: |
+      Where the practice provides any out-of-hours service (including
+      duty-vet phone triage from the practice premises), the emergency
+      drug kit and resuscitation equipment are stocked, in-date, and
+      checked weekly (controlled drugs reconciled per the CD SOP cadence).
+      Drug list, equipment list and check log are kept in the kit.
+
+  - id: telemedicine_remote_care
+    title: "Telemedicine and remote prescribing during out-of-hours"
+    body_per_country:
+      NZ: |
+        VCNZ Statement on Telemedicine: tele-triage permitted; remote
+        prescribing requires an existing VCPR established by recent
+        in-person examination of the animal or recent visit to the
+        premises where the animal is kept.
+      AU: |
+        AVA Telemedicine Position Statement supports tele-triage; remote
+        prescribing requires an established VCPR. State variations apply.
+      UK: |
+        RCVS January 2024 guidance: remote prescribing is permitted only
+        where the prescribing vet has the animal under their care
+        established by recent in-person clinical link. POM-V cannot be
+        prescribed on a telemedicine-only basis. Out-of-hours providers
+        must therefore have either direct prior knowledge of the animal
+        or arrange in-person assessment as necessary.
+      US: |
+        Federal AMDUCA / FDA + state veterinary practice acts: VCPR
+        traditionally required in-person establishment, with most states
+        adopting some form of telemedicine flexibility from 2020 onwards.
+        Each state's specific rule applies; California, New Jersey, and
+        Idaho among others permit telemedicine VCPR establishment under
+        defined conditions; Texas, Florida among others require in-person
+        VCPR establishment. The practice complies with the home state's
+        rule for any tele-triage / tele-prescribing it provides.
+
+  - id: cd_continuity
+    title: "Controlled-drug continuity across hand-off"
+    body: |
+      Where a patient receives a controlled drug at the home practice and is
+      transferred to the after-hours provider for continued treatment, the
+      hand-off summary records the CD given (drug, time, dose) so that the
+      receiving provider can update their CD register correctly and avoid
+      duplicate dosing. Where the after-hours provider gives a controlled
+      drug, that entry is recorded in the provider's CD register; the home
+      practice notes the administration in the patient record but does not
+      duplicate the CD entry.
+
+  - id: complaints_and_governance
+    title: "Complaints and clinical governance"
+    body: |
+      Complaints arising from after-hours care are managed under the
+      practice's complaints policy, with the after-hours provider involved
+      where appropriate. Significant events (clinical incidents, near-
+      misses, unexpected outcomes) at the after-hours provider are shared
+      with the home practice for joint clinical-governance review.
+
+  - id: review
+    title: "Review"
+    body: |
+      This arrangement is reviewed at least annually, and on any change to
+      the named provider, the species covered, the geographic catchment,
+      or the practice scope.
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      Linked to: salvia.veterinary.controlled_drugs_sop;
+      salvia.veterinary.veterinary_medicines_cascade_sop;
+      salvia.shared.complaints_policy;
+      salvia.shared.records_retention_policy.

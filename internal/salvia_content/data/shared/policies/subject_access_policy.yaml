@@ -1,0 +1,122 @@
+id: salvia.shared.subject_access_policy
+name: "Records Access (Subject Access Request)"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How the clinic responds when a patient (or authorised representative or
+  third party with consent) asks for a copy of, or access to, their health
+  information.
+
+purpose_per_regulator:
+  NZ: "HIPC 2020 Rule 6 (access) and Rule 7 (correction); Privacy Act 2020"
+  AU: "APP 12 (access) and APP 13 (correction); state Health Records Acts"
+  UK: "UK GDPR Art 15 (access); Art 16 (rectification); Access to Health Records Act 1990 (deceased patients)"
+  US: "HIPAA §164.524 (access); §164.526 (amendment); 21st Century Cures Act / ONC HTI-1 (Information Blocking — patient API access)"
+
+clauses:
+  - id: who_may_request
+    title: "Who may request"
+    body: |
+      The patient themselves (where adult and capacitous);
+      a substitute decision-maker (welfare guardian, EPOA, court-appointed
+      deputy, healthcare proxy) for an incapable adult;
+      a parent / legal guardian for a minor (subject to age-of-capacity
+      rules — see below);
+      a third party with the patient's written consent;
+      the executor or personal representative of a deceased patient
+      (different statute applies — see clause "deceased patients").
+
+  - id: how_to_request
+    title: "How to request"
+    body: |
+      Requests may be made in writing, by email, in person, or via the
+      patient portal. The clinic does not require a specific form but does
+      verify the requester's identity and (where applicable) authority
+      before disclosure.
+
+  - id: identity_verification
+    title: "Identity verification"
+    body: |
+      The clinic verifies the requester is who they claim to be using
+      government photo ID where not already established, and where a third
+      party requests on behalf of the patient, sights the patient's signed
+      authorisation. Verification is recorded in the response file.
+
+  - id: response_timeframe
+    title: "Response timeframe"
+    body_per_country:
+      NZ: "20 working days from receipt (Privacy Act 2020 s 40)."
+      AU: "30 days from receipt (APP 12.4)."
+      UK: "One month from receipt; extendable by two further months for complex requests with notification (UK GDPR Art 12(3))."
+      US: "30 days from receipt; one 30-day extension permitted with written notice (HIPAA §164.524(b)(2))."
+
+  - id: format
+    title: "Format of response"
+    body: |
+      Records provided in the format requested where reasonable (electronic
+      copy, print copy, summary, in-person inspection). Electronic copies
+      provided in a commonly-used machine-readable format where the records
+      are held electronically. Where format requested is not feasible, the
+      clinic discusses alternatives with the requester.
+
+  - id: charges
+    title: "Charges"
+    body_per_country:
+      NZ: "First copy within 12 months: free. Subsequent copies: reasonable charge for staff time + materials (HIPC Rule 6(2))."
+      AU: "Reasonable cost-recovery permitted (APP 12.8) — e.g. photocopying, postage. Cannot charge for the access itself."
+      UK: "Free unless the request is manifestly unfounded, excessive, or repetitive (UK GDPR Art 12(5))."
+      US: "Reasonable cost-based fee for copies, postage, and preparation of summary if requested. Cannot charge for retrieval or labour beyond copying (HIPAA §164.524(c)(4))."
+
+  - id: refusal_grounds
+    title: "Permitted grounds for partial or full refusal"
+    body: |
+      Access may be refused or limited where:
+      release would endanger the safety of the patient or another;
+      release would identify a third party who provided information in
+      confidence and who has not consented to identification;
+      release would prejudice an investigation;
+      record contains information about another patient that cannot be
+      separated;
+      release is otherwise prohibited by law.
+      Where refused or limited, the clinic explains the reason in writing
+      and the requester's right to seek review (Ombudsman / Privacy
+      Commissioner / OAIC / ICO / HHS OCR).
+
+  - id: minors
+    title: "Minors and capacity"
+    body_per_country:
+      NZ: "Patients under 16 — parental access generally permitted unless contrary to the child's interests; competent minors (Gillick / Care of Children Act 2004) may consent or refuse access by parent."
+      AU: "State-specific. Mature minor doctrine applies; children's records may be released to parent unless inconsistent with the child's best interests."
+      UK: "Children with capacity (Gillick competence) make their own access decisions. Parental requests evaluated against the child's best interests."
+      US: "State-specific. Generally parents access minor's records with exceptions for emancipated minors, sensitive services (mental health, contraception, STI)."
+
+  - id: corrections
+    title: "Corrections and disagreements"
+    body: |
+      Patients may request correction of inaccurate or incomplete
+      information. Where the clinician disagrees, the patient's statement
+      of the disagreement is attached to the record and travels with it.
+
+  - id: deceased_patients
+    title: "Deceased patients"
+    body_per_country:
+      NZ: "Privacy Act 2020 covers living people; access for deceased's records is via the executor or persons with proper interest, balancing confidentiality (HIPC Rule 11(1)(d))."
+      AU: "State-by-state. Vic Health Records Act allows access by next of kin under prescribed grounds."
+      UK: "Access to Health Records Act 1990: personal representative of the deceased; person with claim arising from death."
+      US: "Personal representative recognised under state law treated as the deceased's representative for HIPAA purposes (§164.502(g))."
+
+  - id: log
+    title: "Log of requests"
+    body: |
+      Every access request is logged: date received, requester, scope,
+      response date, format, charge, outcome (granted / partial / refused),
+      reviewer if disputed. Log retained per the records-retention policy.
+
+  - id: review
+    title: "Review"
+    body: "Reviewed every two years."

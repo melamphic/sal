@@ -1,0 +1,320 @@
+id: salvia.general_clinic.notifiable_disease_report
+name: "Notifiable disease report"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Statutory public-health notification of a suspected or confirmed notifiable
+  disease. Submission targets, timeliness, and disease lists differ by country
+  (NZ Health Act 1956 Sch 1+2 to local Medical Officer of Health; AU NNDSS via
+  state Public Health Unit; UK Health Protection (Notification) Regulations
+  2010 to UKHSA; US state health department + CDC NNDSS).
+
+purpose_per_regulator:
+  NZ: "Health Act 1956 Sch 1+2 (notifiable diseases); Health (Infectious and Notifiable Diseases) Regulations 2016; Te Whatu Ora communication."
+  AU: "National Notifiable Diseases Surveillance System (NNDSS); state Public Health Acts and Regulations (NSW PHA 2010; Vic PHWA 2008; Qld PHA 2005); Communicable Disease Network Australia case definitions."
+  UK: "Health Protection (Notification) Regulations 2010; UKHSA notification form NOIDS; case definitions in Public Health Control of Disease Act 1984."
+  US: "State communicable-disease reporting law (varies); CDC National Notifiable Diseases Surveillance System (NNDSS); CSTE position statements; HIPAA 164.512(b) public-health disclosure permitted."
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.general_clinic.safeguarding
+  - salvia.shared.info_security_policy
+
+tags: [public_health, notifiable, incident]
+
+overall_prompt: |
+  This is a statutory disclosure. Patient identifiers are required by law for
+  contact tracing — the privacy minimisation rules do not apply. Capture the
+  disease, exposure, samples, and contact-tracing facts cleanly.
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_sex_at_birth
+    label: "Sex recorded at birth"
+    type: system_field
+    source: patient_record.sex_at_birth
+
+  - key: subject_address
+    label: "Address"
+    type: system_field
+    source: patient_record.address
+    pii: true
+    required: true
+
+  - key: subject_phone
+    label: "Patient phone"
+    type: system_field
+    source: patient_record.phone
+    pii: true
+
+  - key: subject_id_number
+    label: "Health identifier"
+    type: system_field
+    source: patient_record.health_identifier
+    pii: true
+
+  - key: subject_ethnicity
+    label: "Ethnicity"
+    type: system_field
+    source: patient_record.ethnicity
+    help_text: "Required for NZ EpiSurv equity analysis; AU Indigenous status; US race/ethnicity per CDC NNDSS."
+
+  - key: subject_occupation
+    label: "Occupation / school / care setting"
+    type: text
+    ai_extract: true
+    help_text: "Critical for outbreak attribution: food handler, childcare worker, healthcare worker, school year, residential care."
+
+  - key: disease_nz
+    label: "Disease — NZ Schedule 1 / 2"
+    type: select
+    countries: [NZ]
+    required_per_country:
+      NZ: true
+    config:
+      options:
+        - {label: "Acute gastroenteritis (Sch 2 only — public health risk)", value: "age"}
+        - {label: "Campylobacteriosis", value: "campy"}
+        - {label: "Cholera (Sch 1)", value: "cholera"}
+        - {label: "COVID-19 (Sch 1)", value: "covid"}
+        - {label: "Cryptosporidiosis", value: "crypto"}
+        - {label: "Dengue fever", value: "dengue"}
+        - {label: "Hepatitis A / B / C / E", value: "hep"}
+        - {label: "Invasive meningococcal disease (Sch 1)", value: "img"}
+        - {label: "Legionellosis", value: "legion"}
+        - {label: "Leptospirosis", value: "lepto"}
+        - {label: "Listeriosis", value: "listeria"}
+        - {label: "Measles (Sch 1)", value: "measles"}
+        - {label: "Mumps", value: "mumps"}
+        - {label: "Mpox", value: "mpox"}
+        - {label: "Pertussis", value: "pertussis"}
+        - {label: "Rheumatic fever (initial attack)", value: "rf"}
+        - {label: "Rubella", value: "rubella"}
+        - {label: "Salmonellosis", value: "salm"}
+        - {label: "Shigellosis", value: "shig"}
+        - {label: "Tuberculosis (TB)", value: "tb"}
+        - {label: "Typhoid / paratyphoid", value: "typhoid"}
+        - {label: "VTEC / STEC", value: "vtec"}
+        - {label: "Yersiniosis", value: "yersinia"}
+        - {label: "Other Schedule 1 / 2 (specify)", value: "other"}
+
+  - key: disease_au
+    label: "Disease — AU NNDSS"
+    type: select
+    countries: [AU]
+    required_per_country:
+      AU: true
+    config:
+      options:
+        - {label: "Anthrax", value: "anthrax"}
+        - {label: "Botulism", value: "botulism"}
+        - {label: "Brucellosis", value: "brucella"}
+        - {label: "Campylobacteriosis", value: "campy"}
+        - {label: "Cholera", value: "cholera"}
+        - {label: "COVID-19", value: "covid"}
+        - {label: "Cryptosporidiosis", value: "crypto"}
+        - {label: "Dengue", value: "dengue"}
+        - {label: "Diphtheria", value: "diphtheria"}
+        - {label: "Haemophilus influenzae type B (invasive)", value: "hib"}
+        - {label: "Hepatitis A / B / C / D / E", value: "hep"}
+        - {label: "HIV / AIDS", value: "hiv"}
+        - {label: "Influenza (lab confirmed)", value: "flu"}
+        - {label: "Legionellosis", value: "legion"}
+        - {label: "Leprosy", value: "leprosy"}
+        - {label: "Listeriosis", value: "listeria"}
+        - {label: "Measles", value: "measles"}
+        - {label: "Meningococcal disease (invasive)", value: "img"}
+        - {label: "Mpox", value: "mpox"}
+        - {label: "Pertussis", value: "pertussis"}
+        - {label: "Q fever", value: "qfever"}
+        - {label: "Salmonellosis", value: "salm"}
+        - {label: "Shiga toxin–producing E. coli (STEC)", value: "stec"}
+        - {label: "Syphilis (infectious / congenital)", value: "syphilis"}
+        - {label: "Tetanus", value: "tetanus"}
+        - {label: "Tuberculosis", value: "tb"}
+        - {label: "Other state-listed (specify)", value: "other"}
+
+  - key: disease_uk
+    label: "Disease — UK NOIDs (Sch 1 + Sch 2)"
+    type: select
+    countries: [UK]
+    required_per_country:
+      UK: true
+    config:
+      options:
+        - {label: "Acute encephalitis", value: "encephalitis"}
+        - {label: "Acute infectious hepatitis", value: "hep_acute"}
+        - {label: "Acute meningitis", value: "meningitis"}
+        - {label: "Acute poliomyelitis", value: "polio"}
+        - {label: "Anthrax", value: "anthrax"}
+        - {label: "Botulism", value: "botulism"}
+        - {label: "Brucellosis", value: "brucella"}
+        - {label: "Cholera", value: "cholera"}
+        - {label: "COVID-19", value: "covid"}
+        - {label: "Diphtheria", value: "diphtheria"}
+        - {label: "Enteric fever (typhoid / paratyphoid)", value: "enteric"}
+        - {label: "Food poisoning", value: "food_poisoning"}
+        - {label: "Haemolytic uraemic syndrome (HUS)", value: "hus"}
+        - {label: "Infectious bloody diarrhoea", value: "bloody_diarrhoea"}
+        - {label: "Invasive group A streptococcal disease", value: "igas"}
+        - {label: "Legionnaires' disease", value: "legion"}
+        - {label: "Leprosy", value: "leprosy"}
+        - {label: "Malaria", value: "malaria"}
+        - {label: "Measles", value: "measles"}
+        - {label: "Meningococcal septicaemia", value: "img"}
+        - {label: "Mpox", value: "mpox"}
+        - {label: "Mumps", value: "mumps"}
+        - {label: "Plague", value: "plague"}
+        - {label: "Rabies", value: "rabies"}
+        - {label: "Rubella", value: "rubella"}
+        - {label: "Severe acute respiratory syndrome (SARS)", value: "sars"}
+        - {label: "Smallpox", value: "smallpox"}
+        - {label: "Tetanus", value: "tetanus"}
+        - {label: "Tuberculosis", value: "tb"}
+        - {label: "Typhus", value: "typhus"}
+        - {label: "Viral haemorrhagic fever (VHF)", value: "vhf"}
+        - {label: "Whooping cough (pertussis)", value: "pertussis"}
+        - {label: "Yellow fever", value: "yellow_fever"}
+        - {label: "Other (specify)", value: "other"}
+
+  - key: disease_us
+    label: "Disease — US NNDSS / state"
+    type: select
+    countries: [US]
+    required_per_country:
+      US: true
+    config:
+      options:
+        - {label: "Anthrax", value: "anthrax"}
+        - {label: "Botulism", value: "botulism"}
+        - {label: "Brucellosis", value: "brucella"}
+        - {label: "Campylobacteriosis", value: "campy"}
+        - {label: "Cholera", value: "cholera"}
+        - {label: "COVID-19", value: "covid"}
+        - {label: "Diphtheria", value: "diphtheria"}
+        - {label: "Foodborne disease outbreak", value: "fbdo"}
+        - {label: "Giardiasis", value: "giardia"}
+        - {label: "Gonorrhoea", value: "gc"}
+        - {label: "Haemophilus influenzae (invasive)", value: "hib"}
+        - {label: "Hepatitis A / B / C", value: "hep"}
+        - {label: "HIV", value: "hiv"}
+        - {label: "Legionellosis", value: "legion"}
+        - {label: "Listeriosis", value: "listeria"}
+        - {label: "Lyme disease", value: "lyme"}
+        - {label: "Malaria", value: "malaria"}
+        - {label: "Measles", value: "measles"}
+        - {label: "Meningococcal disease (invasive)", value: "img"}
+        - {label: "Mpox", value: "mpox"}
+        - {label: "Mumps", value: "mumps"}
+        - {label: "Pertussis", value: "pertussis"}
+        - {label: "Plague", value: "plague"}
+        - {label: "Rabies", value: "rabies"}
+        - {label: "Rubella", value: "rubella"}
+        - {label: "Salmonellosis", value: "salm"}
+        - {label: "Shiga toxin–producing E. coli (STEC)", value: "stec"}
+        - {label: "Shigellosis", value: "shig"}
+        - {label: "Smallpox", value: "smallpox"}
+        - {label: "Syphilis", value: "syphilis"}
+        - {label: "Tetanus", value: "tetanus"}
+        - {label: "Tuberculosis", value: "tb"}
+        - {label: "Tularemia", value: "tularemia"}
+        - {label: "Viral haemorrhagic fever", value: "vhf"}
+        - {label: "Yellow fever", value: "yellow_fever"}
+        - {label: "Other state-mandated (specify)", value: "other"}
+
+  - key: case_status
+    label: "Case status"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Suspected — clinical", value: "suspected"}
+        - {label: "Probable — clinical + epi link", value: "probable"}
+        - {label: "Confirmed — laboratory", value: "confirmed"}
+
+  - key: onset_date
+    label: "Date of symptom onset"
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: clinical_features
+    label: "Clinical features"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: exposure_history
+    label: "Exposure history (food, water, animals, travel, contacts, healthcare)"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: laboratory_specimens
+    label: "Specimens taken / planned"
+    type: long_text
+    ai_extract: true
+    help_text: "List specimen type, date taken, lab, requested test, and reference number."
+
+  - key: vaccination_history
+    label: "Relevant vaccination history"
+    type: long_text
+    ai_extract: true
+
+  - key: contact_tracing_information
+    label: "Household / close contacts known"
+    type: long_text
+    ai_extract: true
+    help_text: "Names and contact details where consent allows. Public-health unit will lead tracing — provide what is known."
+
+  - key: notification_target
+    label: "Notification target (per country)"
+    type: text
+    required: true
+    help_text: "NZ: local Medical Officer of Health (Public Health Service). AU: state PHU phone + EpiNet/PHESS. UK: UKHSA Health Protection Team via NOIDS form. US: state communicable-disease desk."
+
+  - key: notification_method
+    label: "Notification method"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Phone (immediate / Sch 1)", value: "phone"}
+        - {label: "Online / portal upload", value: "online"}
+        - {label: "Fax / secure email", value: "fax_email"}
+        - {label: "Paper form posted", value: "paper"}
+
+  - key: notification_datetime
+    label: "Date and time notified"
+    type: date
+    required: true
+
+  - key: incident_record
+    label: "Incident ledger entry"
+    type: system.incident
+    required: true
+    config:
+      incident_type: notifiable_disease
+      min_severity: medium
+
+  - key: signature_clinician
+    label: "Notifying clinician (name and registration)"
+    type: text
+    required: true

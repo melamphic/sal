@@ -1,0 +1,189 @@
+id: salvia.shared.privacy_policy
+name: "Privacy & Health Information Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How this clinic collects, stores, uses, and discloses personal and health
+  information about its patients (or residents / animal owners). Adopted to
+  meet the privacy obligations of the clinic's jurisdiction.
+
+purpose_per_regulator:
+  NZ: "Privacy Act 2020; Health Information Privacy Code 2020 (HIPC) Rules 1–13"
+  AU: "Privacy Act 1988; Australian Privacy Principles (APPs) 1–13; state Health Records Acts (Vic Health Records Act 2001; NSW HRIP Act 2002; ACT Health Records (Privacy and Access) Act 1997)"
+  UK: "UK GDPR; Data Protection Act 2018; Caldicott Principles; Common Law Duty of Confidentiality"
+  US: "HIPAA Privacy Rule 45 CFR Part 164 Subpart E; HIPAA Security Rule 45 CFR Part 164 Subpart C; HITECH Act; state breach-notification laws"
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This policy applies to all personal and health information held by the
+      clinic in any form (paper, electronic, audio, image), about any
+      identifiable individual whose care or services the clinic has been or
+      is involved in. It binds every staff member, contractor, and
+      service-provider who handles clinic data.
+
+  - id: lawful_basis
+    title: "Lawful basis for collection"
+    body_per_country:
+      NZ: |
+        Information is collected under HIPC 2020 Rule 1: directly relevant
+        to the clinic's lawful purpose (delivery of clinical care, billing,
+        statutory reporting, accreditation, quality improvement). Information
+        is collected directly from the patient where practicable (Rule 2).
+        At collection the clinic notifies the patient of the purpose,
+        intended recipients, and the patient's right to access/correct
+        (Rule 3 — see the privacy notice acknowledgement form).
+      AU: |
+        Information is collected under APP 3: necessary for the clinic's
+        functions and lawful and fair means used. Notice given at collection
+        per APP 5 (purpose, identity, third parties, access/correction,
+        complaints route). Sensitive information collected only with consent
+        (APP 3.3) or per APP 3.4 (e.g. legally required, lessening serious
+        threat).
+      UK: |
+        Information processed under UK GDPR Art 6(1)(e) public task / Art
+        6(1)(b) contract / Art 6(1)(c) legal obligation as applicable, and
+        for special-category health data under Art 9(2)(h) (provision of
+        health/social care). Information given to data subject under Art 13
+        at collection.
+      US: |
+        Protected Health Information (PHI) used and disclosed for treatment,
+        payment, and healthcare operations (TPO) without authorisation (45
+        CFR §164.502(a)(1)(ii); §164.506). Other uses require written
+        authorisation (§164.508). Notice of Privacy Practices (NPP) given at
+        first encounter (§164.520) and acknowledged.
+
+  - id: information_held
+    title: "Information held"
+    body: |
+      The clinic holds: clinical records (history, examination, diagnosis,
+      treatment, prescriptions, notes, imaging, lab results); demographic and
+      contact information; payment / insurance / coverage details; consent
+      records; complaints; quality-improvement and incident data; staff
+      employment records; AI-processed audio and AI-extracted draft notes
+      (where the patient has consented).
+
+  - id: storage_security
+    title: "Storage and security"
+    body_per_country:
+      NZ: |
+        Information held under HIPC Rule 5: reasonable security safeguards
+        against loss, unauthorised access, use, modification, disclosure,
+        and other misuse. Electronic records held in encrypted systems with
+        role-based access and audit logs.
+      AU: |
+        Information held under APP 11: reasonable steps to protect from
+        misuse, interference, loss, unauthorised access, modification, or
+        disclosure. Compliance with HISO 10029 not required (NZ standard);
+        AU-equivalent: My Health Record participation rules where applicable.
+      UK: |
+        UK GDPR Art 32: technical and organisational measures appropriate to
+        the risk — encryption at rest and in transit, role-based access,
+        audit, regular testing. NHS Data Security and Protection Toolkit
+        (DSPT) submitted annually where the clinic is an NHS contractor.
+      US: |
+        HIPAA Security Rule administrative (§164.308), physical (§164.310),
+        and technical (§164.312) safeguards. Risk Analysis documented at
+        least annually (§164.308(a)(1)(ii)(A)). Privacy Officer named
+        (§164.530(a)) and Security Officer named (§164.308(a)(2)).
+
+  - id: use_disclosure
+    title: "Use and disclosure"
+    body: |
+      Information is used and disclosed only for the purposes for which it
+      was collected, except where: the patient consents; use is directly
+      related and the patient would reasonably expect it; disclosure is
+      required or authorised by law; disclosure is necessary to lessen a
+      serious and imminent threat to life or health.
+    body_per_country:
+      NZ: |
+        HIPC Rule 11 governs disclosure. Disclosure to those "directly
+        involved in care" is permitted; disclosure outside the care team
+        requires consent or a Rule 11(2) exception.
+      AU: |
+        APP 6 governs use and disclosure for secondary purposes; consent
+        required unless an exception applies (lessen serious threat;
+        required by law; enforcement-related).
+      UK: |
+        Disclosures comply with GMC Confidentiality (2017) and Caldicott
+        principles. Disclosures to third parties recorded.
+      US: |
+        Uses and disclosures beyond TPO (§164.506) require written
+        authorisation (§164.508). Minimum-necessary standard applies
+        (§164.502(b)).
+
+  - id: patient_rights
+    title: "Patient rights"
+    body: |
+      Patients have the right to access their information, request correction
+      of inaccuracies, and (subject to legal exceptions) request deletion or
+      restriction. The clinic responds within the timeframe required by law.
+      See the records-access policy for the request process.
+    body_per_country:
+      NZ: "HIPC Rules 6 (access) and 7 (correction). Response within 20 working days."
+      AU: "APP 12 (access) and APP 13 (correction). Response within 30 days."
+      UK: "UK GDPR Art 15 (access); Art 16 (rectification); Art 17 (erasure — with health-record exceptions). Response within one month."
+      US: "HIPAA §164.524 (access — within 30 days, one extension); §164.526 (amendment — within 60 days)."
+
+  - id: retention
+    title: "Retention"
+    body: |
+      The clinic retains records for the period required by law or
+      professional standards, then destroys them securely. Specific periods
+      and methods are defined in the records-retention policy
+      (`salvia.shared.records_retention_policy`).
+
+  - id: breach_response
+    title: "Breach response and notification"
+    body: |
+      Suspected privacy breaches are reported immediately to the Privacy
+      Officer / Caldicott Guardian / equivalent role-holder and triaged
+      against the regulator's notification threshold.
+    body_per_country:
+      NZ: |
+        Notifiable Privacy Breach Scheme (Privacy Act 2020 Part 6): notify
+        the Privacy Commissioner and affected individuals where the breach
+        has caused, or is likely to cause, serious harm.
+      AU: |
+        Notifiable Data Breach Scheme (s 26WK Privacy Act 1988): notify the
+        OAIC and affected individuals where likely to result in serious harm.
+      UK: |
+        UK GDPR Art 33: notify ICO within 72 hours of awareness. Art 34:
+        notify data subjects without undue delay where high-risk to rights
+        and freedoms.
+      US: |
+        HIPAA Breach Notification Rule (§164.400–414): notify affected
+        individuals within 60 days; HHS within 60 days for breaches ≥500
+        individuals (annual log otherwise); media for breaches ≥500
+        individuals in a single state.
+
+  - id: third_parties
+    title: "Third-party processors and contracts"
+    body: |
+      Vendors that handle clinic data (AI scribe, IT, billing, transcription,
+      lab integrations, EMR) are bound by written contracts that mirror the
+      clinic's privacy obligations. See the vendor / business-associate
+      management arrangements in the AI governance policy.
+    body_per_country:
+      US: "Business Associate Agreements (BAAs) required per §164.504(e) for every vendor handling PHI."
+      UK: "UK GDPR Art 28 data-processing agreements required."
+      AU: "APP 8 cross-border disclosure rules apply where data leaves Australia."
+
+  - id: training
+    title: "Training and accountability"
+    body: |
+      All staff complete privacy training at induction and annually. The
+      Privacy Officer / Caldicott Guardian / Privacy Lead is named and
+      accountable for compliance, breach response, and training currency.
+
+  - id: review
+    title: "Review"
+    body: |
+      This policy is reviewed at least every two years, and immediately on
+      any material legislative change in the clinic's jurisdiction.

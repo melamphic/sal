@@ -1,0 +1,133 @@
+id: salvia.aged_care.continence_care
+name: "Continence Care Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Continence is a dignity issue. This policy sets the assessment process,
+  individualised toileting plan, product selection, link to skin and
+  pressure injury management, link to falls, and the dignity considerations
+  expected of every staff member.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (clinical care) and Section 1 (Pae ora rights — dignity); Continence NZ guidance."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — continence) and Standard 1 (dignity); Continence Foundation of Australia clinical guidelines."
+  UK: "NICE NG21 Home care for older people; NICE CG171 Urinary incontinence in women; NICE CG97 LUTS in men; CQC Reg 9, Reg 10, Reg 12."
+  US: "42 CFR 483.25(e) F690 — incontinence assessed and treated; MDS 3.0 v1.20.1 Section H Bladder and Bowel."
+
+clauses:
+  - id: scope_principles
+    title: Scope and principles
+    body: |
+      Continence is a fundamental aspect of dignity. Every resident is
+      assumed continent unless assessed otherwise. Pads and briefs are not
+      a substitute for a continence plan. Assessment is individualised; the
+      plan respects the resident's preferences, gender of carer where
+      requested, modesty, and cultural practice.
+
+  - id: assessment
+    title: Assessment
+    body: |
+      A baseline continence assessment is performed within 7 days of
+      admission, including: bladder pattern, bowel pattern, nocturia,
+      contributing factors (cognition, mobility, dexterity, environment,
+      medication, fluid intake, constipation, infection, neurological,
+      pelvic floor), peri-genital and sacral skin status, and current
+      products in use. A 3-day or 7-day bladder/bowel chart is used where
+      the pattern is unclear.
+
+  - id: medication_review
+    title: Medication review
+    body: |
+      The pharmacist or treating GP reviews medications that worsen
+      continence — diuretics (timing), anticholinergics, opioids,
+      antipsychotics — at admission and at any plan review. Deprescribing
+      is an explicit option.
+
+  - id: uti_screening
+    title: Asymptomatic bacteriuria and UTI
+    body: |
+      Asymptomatic bacteriuria is not treated routinely (per IDSA / NICE
+      NG109). UTI is investigated when symptomatic — dysuria, frequency,
+      urgency, suprapubic pain, fever, or new-onset confusion in a resident
+      with dementia. Catheter use is reviewed regularly with a
+      removal-pathway as the goal.
+
+  - id: individualised_plan
+    title: Individualised toileting plan
+    body: |
+      The plan documents the toileting strategy (prompted, scheduled,
+      habit retraining, bladder retraining, pelvic floor where indicated),
+      product selection (day vs night), peri-care regimen, and the
+      assistance level. Pelvic floor physiotherapy / continence nurse
+      referral is offered where indicated.
+
+  - id: skin_link
+    title: Link to skin and pressure injury
+    body: |
+      Incontinence-associated dermatitis (IAD) is differentiated from
+      pressure injury and managed as a moisture-associated skin condition.
+      Skin assessment at every change. Barrier products (zinc, dimeticone,
+      polymer films) used per assessment.
+
+  - id: dignity
+    title: Dignity, privacy, and culture
+    body: |
+      Toileting is private — door closed, curtain drawn, no
+      conversations across the room about a resident's continence. The
+      resident's preferred terms are used. Gender of carer preferences
+      respected where staffing allows. Cultural / religious practices on
+      modesty (e.g. Muslim resident — same-gender carer, careful peri-care
+      practice) are honoured. Soiling is responded to immediately —
+      delay is a dignity breach.
+
+  - id: products
+    title: Continence products
+    body: |
+      Products are matched to the individual's pattern, not 'one size'.
+      Frequent changes are preferred over high-absorbency overnight pads
+      where skin integrity is compromised. Stock levels reviewed monthly;
+      no rationing.
+
+  - id: communication
+    title: Communication and review
+    body: |
+      The resident and family are involved in the plan. Plan reviewed at
+      every comprehensive care plan review, after any UTI, after any new
+      pressure injury, and on resident or family request.
+
+  - id: training
+    title: Staff training
+    body: |
+      All care staff complete induction training on continence assessment,
+      dignity in toileting, peri-care, IAD prevention, and product
+      selection. Refresher annually.
+
+  - id: indicators
+    title: Indicators
+    body_per_country:
+      AU: |
+        Continence-related parameters (UTI rate, IAD rate) are tracked
+        as quality indicators where adopted by the service alongside
+        the NQI suite.
+      US: |
+        F690 surveyor expectation: residents who entered without
+        incontinence are not catheterised unless clinically indicated;
+        residents with incontinence are assessed and treated to restore
+        as much normal bladder function as possible.
+      NZ: |
+        Indicators reviewed at clinical governance meeting per Ngā
+        Paerewa Section 2.
+      UK: |
+        Reviewed at Reg 17 governance review. CQC inspection lens.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing / Continence Lead.

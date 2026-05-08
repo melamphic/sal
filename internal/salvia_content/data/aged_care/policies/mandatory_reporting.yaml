@@ -1,0 +1,136 @@
+id: salvia.aged_care.mandatory_reporting
+name: "Mandatory Reporting Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Statutory and regulator-mandatory reporting obligations affecting the
+  service: elder abuse, sexual assault, neglect, deaths, restraint use,
+  notifiable diseases, and CD discrepancies. Identifies who must report,
+  to whom, and within what timeframe.
+
+purpose_per_regulator:
+  NZ: "Vulnerable Children Act 2014 amendments; Family Violence Act 2018; Crimes Act 1961 elder-abuse; HDC Code Right 4 + 6; HealthCERT s.31 HDS Safety Act 2001; Coroners Act 2006."
+  AU: "Aged Care Act 2024 ss.149–155 SIRS; Aged Care Rules 2025 Part 7 — 8 reportable incident categories: unreasonable use of force; unlawful sexual contact / inappropriate sexual conduct; psychological or emotional abuse; unexpected death; stealing or financial coercion; neglect; inappropriate use of restrictive practices; unexplained absence from care."
+  UK: "Care Act 2014 s.42 (Local Authority adult-safeguarding duty); CQC Registration Regs 2009 reg 16, 17, 18 (notifications); LADO referral for allegations against staff; UKHSA notifiable disease law; Health Act 2006 CD reporting; Modern Slavery Act 2015 referrals where suspected."
+  US: "42 CFR 483.12(c) reporting suspected abuse / neglect / exploitation: ≤2 hours where serious bodily injury suspected; ≤24 hours otherwise; to State Survey Agency + APS + (where applicable) law enforcement; F600 / F602 / F606; state mandatory reporting laws (varies; healthcare providers near-universally mandated reporters); DEA Form 106 within one business day for CD theft/loss; state notifiable-disease law."
+
+clauses:
+  - id: who_must_report
+    title: Who must report
+    body: |
+      Every staff member, contractor, volunteer and visitor of the
+      service is expected to report concerns of abuse, neglect, or
+      exploitation. Specific statutory roles (e.g. registered nurse,
+      Aged Care Quality and Safety Commission representative, Long-Term
+      Care Ombudsman, doctors as state-mandated reporters US) carry
+      named obligations.
+
+  - id: trigger_categories
+    title: Trigger categories
+    body_per_country:
+      NZ: |
+        Family violence (Family Violence Act 2018); elder abuse;
+        suspected criminal offence; unexpected death (Coroner per
+        Coroners Act 2006); HealthCERT s.31 serious risk to life or
+        health; HDC breach of Code; CD discrepancy / loss; notifiable
+        disease (Health Act 1956).
+      AU: |
+        SIRS — 8 categories per Aged Care Rules 2025 Part 7. Priority 1
+        within 24 hours via GPMS / provider portal where significant
+        harm or distress, reasonable likelihood of police involvement,
+        or otherwise prudent. Priority 2 within 30 days. Notifiable
+        disease per state law. CD discrepancy per state Drugs and
+        Poisons Act.
+      UK: |
+        Reg 16 — death of a service user (CQC, without delay).
+        Reg 17 — death notification for NHS-affiliated providers.
+        Reg 18 — death / injury / abuse / police-attended / inability
+        to carry on regulated activity. DoLS — start / vary / end. CD
+        loss/theft. Notifiable disease (UKHSA). Local Authority
+        safeguarding referral under Care Act 2014 s.42. LADO referral
+        where allegation against staff. Modern Slavery referral where
+        suspected. NRLS where commissioned.
+      US: |
+        Abuse / neglect / exploitation: State Survey Agency + APS
+        ≤2h SBI / ≤24h otherwise. Police where crime suspected.
+        DEA Form 106 ≤1 business day for CD loss/theft. CMS QSO for
+        federal certification matters. State mandatory reporter law.
+        Notifiable disease per state.
+
+  - id: timeframes_summary
+    title: Timeframes (summary)
+    body: |
+      Time-critical thresholds:
+      - US: serious bodily injury from suspected abuse: ≤2 hours.
+      - US: abuse / neglect / exploitation otherwise: ≤24 hours.
+      - AU SIRS Priority 1: ≤24 hours.
+      - AU SIRS Priority 2: ≤30 days.
+      - UK Reg 16 death: without delay (interpreted as ≤24 hours where
+        reasonably practicable).
+      - UK Reg 18 incidents: without delay.
+      - DEA Form 106 (US CD loss): ≤1 business day.
+      - NZ HealthCERT s.31: as soon as reasonably practicable.
+      The Salvia Reportable Incident form embeds these thresholds.
+
+  - id: report_method
+    title: Report method
+    body: |
+      Reports are made by the senior staff member on duty (or the
+      Registered Manager / DON / Care Manager for serious / regulator-
+      level reports) using the route designated by the regulator. The
+      Salvia Reportable Incident form captures the report essentials
+      and the submission reference.
+
+  - id: documentation
+    title: Documentation
+    body: |
+      Every report is documented on the Reportable Incident form,
+      linked to the originating clinical incident, with the
+      submission reference, submission datetime, submitting staff
+      member, and closure status.
+
+  - id: confidentiality_protection
+    title: Confidentiality and reporter protection
+    body: |
+      Reporters acting in good faith are protected by law: NZ Family
+      Violence Act 2018 protections; AU Aged Care Act 2024
+      whistleblower protections (and Public Interest Disclosure Act
+      2013); UK Public Interest Disclosure Act 1998 (PIDA) for
+      whistleblowing; US various federal and state whistleblower
+      statutes. Retaliation against a reporter is misconduct.
+
+  - id: cooperation
+    title: Cooperation with investigations
+    body: |
+      The service cooperates fully with regulator and police
+      investigations: scene preservation, witness availability,
+      records access (per legal advice and resident consent / lawful
+      authority).
+
+  - id: learning
+    title: Learning and improvement
+    body: |
+      Reportable events are reviewed at clinical governance / QAPI /
+      Std 2 / Reg 17 / Section 2 with follow-through on system change.
+      Themed reviews (e.g. quarterly review of all SIRS reports)
+      drive improvement.
+
+  - id: training
+    title: Staff training
+    body: |
+      All staff complete mandatory-reporting training at induction and
+      annually. Senior staff complete advanced training on regulator
+      reporting routes, timeframes, and documentation standards.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually and on any change to
+      regulator reporting rules. Operational responsibility:
+      Service Manager / DON.

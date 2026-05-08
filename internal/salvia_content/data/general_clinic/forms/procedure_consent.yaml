@@ -1,0 +1,172 @@
+id: salvia.general_clinic.procedure_consent
+name: "Procedure consent (minor surgery)"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Informed-consent record for a minor procedure performed in primary care:
+  IUD / IUS insertion or removal, joint or soft-tissue injection, skin biopsy,
+  cryotherapy, lesion excision, toenail surgery, ear-syringing, or similar.
+  Captures the seven elements of valid consent (capacity, voluntariness,
+  information, understanding, decision, signature, witness) and binds to the
+  Salvia consent ledger.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 7 (informed consent); MCNZ Informed Consent statement; RNZCGP Foundation Standard."
+  AU: "RACGP Standards 5th ed Criterion C1.3 (Informed consent); AHPRA Good Medical Practice s.3.5; state Health Records legislation."
+  UK: "GMC Decision-making and consent (Nov 2020, current 2024); CQC Reg 11 (Consent); Montgomery v Lanarkshire [2015]."
+  US: "AMA Code 2.1.1; CMS Conditions of Participation 482.13(b); state-specific consent statutes; HIPAA 164.506."
+
+linked_policy_defaults:
+  - salvia.shared.consent_policy
+  - salvia.shared.privacy_policy
+  - salvia.general_clinic.results_safety_netting
+  - salvia.general_clinic.significant_event_analysis
+
+tags: [consent, procedure, minor_surgery]
+
+overall_prompt: |
+  Capture risks discussed and patient questions verbatim where possible. The
+  consent ledger row is written on Submit, not on dictation. Patient identity
+  is from the record; never re-extract.
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: procedure_type
+    label: "Procedure"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "IUD / IUS insertion", value: "iud_insertion"}
+        - {label: "IUD / IUS removal", value: "iud_removal"}
+        - {label: "Implanon / Nexplanon insertion", value: "implant_insertion"}
+        - {label: "Implanon / Nexplanon removal", value: "implant_removal"}
+        - {label: "Joint or soft-tissue injection", value: "joint_injection"}
+        - {label: "Skin biopsy (punch / shave / incisional)", value: "skin_biopsy"}
+        - {label: "Lesion excision", value: "lesion_excision"}
+        - {label: "Cryotherapy", value: "cryotherapy"}
+        - {label: "Curettage / electrocautery", value: "curettage"}
+        - {label: "Toenail surgery (wedge / total)", value: "toenail_surgery"}
+        - {label: "Suturing of laceration", value: "suturing"}
+        - {label: "Ear syringing / micro-suction", value: "ear_syringing"}
+        - {label: "Foreign-body removal", value: "fb_removal"}
+        - {label: "Cervical screening / colposcopy", value: "cervical_screening"}
+        - {label: "Other (specify in details)", value: "other"}
+
+  - key: procedure_details
+    label: "Procedure description (site, side, technique, planned anaesthesia)"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Site and side stated explicitly (e.g., 'left lateral malleolus 6mm punch'). Required for stop-before-block / WHO Surgical Safety Checklist where applicable."
+
+  - key: indication
+    label: "Clinical indication"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: alternatives_discussed
+    label: "Alternatives discussed (including no treatment)"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Montgomery: must include reasonable alternatives the particular patient would attach significance to, plus the option of no treatment."
+
+  - key: material_risks_discussed
+    label: "Material risks discussed"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Bleeding, infection, scarring, recurrence, vasovagal, allergy. Procedure-specific: IUD perforation rate ~1/1000, expulsion ~1/20 first year. Joint injection: post-injection flare, atrophy, infection ~1/15000. Excision: positive margins, repeat surgery."
+
+  - key: serious_risks_discussed
+    label: "Serious / rare risks discussed"
+    type: long_text
+    ai_extract: true
+    help_text: "Per Montgomery the threshold is what THIS patient would consider material, not statistical incidence alone. Document any patient-specific risk weighting (e.g. occupation, hobbies, prior reactions)."
+
+  - key: patient_questions
+    label: "Patient questions and clinician responses"
+    type: long_text
+    ai_extract: true
+
+  - key: information_provided
+    label: "Written information / leaflet provided"
+    type: text
+    help_text: "e.g. RACGP/Royal College patient handout, Faculty of Sexual & Reproductive Healthcare LARC leaflet, FPA leaflet, NHS / Patient.info handout."
+
+  - key: cooling_off_offered
+    label: "Was a cooling-off period offered?"
+    type: select
+    config:
+      options:
+        - {label: "Yes — patient took time to consider", value: "yes_taken"}
+        - {label: "Yes — patient declined and wishes to proceed today", value: "yes_declined"}
+        - {label: "Not applicable (urgent / minor)", value: "na"}
+
+  - key: capacity_assessed
+    label: "Patient has capacity to consent"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Yes — adult with capacity", value: "yes"}
+        - {label: "Yes — Gillick-competent minor (UK) / mature minor (NZ AU US)", value: "mature_minor"}
+        - {label: "No — best-interests / substitute decision-maker", value: "substitute"}
+    help_text: "UK: MCA 2005 / Gillick; NZ: PPPR Act 1988 + HDC R7(4); AU: state guardianship + Gillick; US: state minor consent statutes."
+
+  - key: substitute_decision_maker
+    label: "Substitute decision-maker (if capacity absent)"
+    type: text
+    help_text: "Name, relationship, authority basis: EPOA-personal-care (NZ), Enduring Guardian / state tribunal order (AU), LPA-health-and-welfare (UK), Healthcare Power of Attorney / surrogate (US)."
+
+  - key: chaperone_offered
+    label: "Chaperone offered?"
+    type: select
+    config:
+      options:
+        - {label: "Yes — accepted (chaperone name recorded below)", value: "accepted"}
+        - {label: "Yes — declined", value: "declined"}
+        - {label: "Not applicable", value: "na"}
+    help_text: "Required to offer for intimate examinations: GMC Intimate Examinations and Chaperones; MCNZ Sexual Boundaries; AHPRA chaperone guidance; AMA H-185.939."
+
+  - key: chaperone_name
+    label: "Chaperone name (if accepted)"
+    type: text
+    pii: true
+
+  - key: consent_record
+    label: "Consent"
+    type: system.consent
+    required: true
+    config:
+      consent_type: invasive_procedure
+      require_witness: false
+    help_text: "Writes to consent ledger on Submit. Includes scope of procedure, risks acknowledged, alternatives considered, decision (proceed / decline / defer), patient signature, clinician signature."
+
+  - key: signature_clinician
+    label: "Clinician name and signature"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Date and time of consent"
+    type: date
+    required: true

@@ -1,0 +1,162 @@
+id: salvia.veterinary.cpd_recordkeeping
+name: "CPD & Training Recordkeeping"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  The practice's policy for recording continuing professional development
+  (CPD) and training of registered staff: per-jurisdiction CPD obligation,
+  the records the practice keeps to support each registrant's annual
+  declaration to the regulator, mandatory training topics, and the audit
+  cadence.
+purpose_per_regulator:
+  NZ: "Veterinarians Act 2005 + VCNZ Annual Practising Certificate (APC) requirements; VCNZ Continuing Professional Development Standard — minimum 20 hours per year for veterinarians, with at least half being structured / verifiable; VCNZ recertification cycle. Veterinary nurses are not currently regulated under the Act; voluntary CPD via NZVNA / Allied Veterinary Professional Regulatory Council (AVPRC). VCNZ guidance on cultural-competency CPD (Te Tiriti o Waitangi)."
+  AU: "Australasian Veterinary Boards Council (AVBC) registration framework; state Veterinary Practice Boards CPD requirements, typically 60 points / 60 hours over 3 years (e.g. NSW VPB requires 60 hours over 3 years; Vic VPRB 60 points over 3 years; Qld 60 hours over 3 years); WA, SA, TAS aligned. Vet nurses regulated as Veterinary Nurses in some jurisdictions; AVNAT registration in others. Recency of practice requirements apply."
+  UK: "RCVS Code of Professional Conduct §16 — minimum 35 hours of CPD per year for veterinary surgeons (averaged over a rolling 3-year period, but each year's record is maintained); minimum 15 hours per year for veterinary nurses. CPD recorded on the RCVS 1CPD platform with outcomes-focused planning. RCVS Annual Renewal declaration."
+  US: "State Veterinary Practice Acts: continuing-education hour requirement varies 15–40 hours per renewal cycle (typically 2 years), with state-specific topic mandates (e.g. CA controlled-substance prescribing, FL HIV/AIDS, TX human trafficking awareness). Veterinary technicians: state-specific CE per state RVT / LVT / CVT credentialling body. AAVSB RACE-accredited courses widely accepted; states may require state-board pre-approval."
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This policy applies to every member of registered clinical staff
+      (veterinarians, veterinary nurses where regulated, veterinary
+      technicians where regulated) and to the practice support staff who
+      undertake mandated training. CPD obligations are personal to the
+      registrant; this policy describes the practice's role in supporting,
+      recording, and auditing CPD.
+
+  - id: cpd_obligation
+    title: "CPD obligation per registrant"
+    body_per_country:
+      NZ: |
+        Veterinarians registered with VCNZ must complete a minimum of 20
+        hours of CPD per APC year, of which at least 10 hours are
+        structured / verifiable activity. CPD is declared at APC renewal.
+        Te Tiriti / cultural-safety CPD is encouraged. Records retained for
+        the duration of registration plus a period sufficient to satisfy
+        an audit (recommended 5 years).
+      AU: |
+        Veterinarians registered with their state Veterinary Practice Board
+        complete the state-mandated CPD across the 3-year cycle (commonly
+        60 hours / 60 points). State boards conduct random audits.
+        Records retained for the duration of registration plus 5 years.
+      UK: |
+        Veterinary surgeons complete a minimum of 35 hours of CPD per
+        calendar year (or rolling 3-year average of 105 hours per RCVS
+        guidance). Veterinary nurses complete 15 hours per year. CPD is
+        recorded on the RCVS 1CPD platform with planning, activity,
+        reflection, and impact. RCVS Annual Renewal includes a CPD
+        declaration.
+      US: |
+        Each state board sets the CE requirement (typically 15–40 hours
+        per 1 or 2-year renewal cycle), with state-specific mandatory
+        topics. Veterinarians complete the requirement for the state of
+        licensure; multi-state licensees meet each state's requirement
+        separately. Records retained per state rule (commonly 4–6 years
+        beyond renewal).
+
+  - id: practice_records
+    title: "Practice CPD register"
+    body: |
+      The practice maintains a register of CPD attended by each registrant
+      while supported by the practice (paid CPD, study leave, in-house
+      training). The register records: registrant name and registration
+      number; CPD activity title; provider; date(s); duration in hours
+      (and CPD points where applicable); structured vs unstructured; topic
+      area; cost / contribution by practice; reflective note. Registrants
+      retain primary responsibility for their personal CPD record (RCVS
+      1CPD; VCNZ; state board portal); the practice register is a
+      supplementary record to support audits.
+
+  - id: mandatory_training
+    title: "Practice-mandatory training topics"
+    body: |
+      In addition to professional CPD, every staff member completes the
+      practice's mandatory training programme at induction and on the
+      cadence stated:
+        - Health & Safety induction (every staff change / annual refresh);
+        - Infection Prevention & Control (annual);
+        - Controlled Drugs SOP and witness procedure (annual);
+        - Radiation safety (annual — staff who operate or are present
+          during radiography);
+        - Manual handling (every 2 years);
+        - Fire safety + evacuation (annual);
+        - Privacy and data-handling (annual);
+        - Safeguarding / vulnerable-person referral pathways
+          (every 2 years);
+        - Equality & cultural safety (annual; in NZ, includes Te Tiriti
+          components per VCNZ guidance);
+        - Anaphylaxis / human first aid + CPR (every 2 years).
+      Completion of mandatory training is recorded on the staff training
+      register; non-completion within the cadence triggers a review with
+      the staff member's manager.
+
+  - id: emergency_competence
+    title: "Emergency and species-competence sign-off"
+    body: |
+      Staff are signed off by the clinical lead before performing
+      species- or modality-specific procedures unsupervised, including:
+      anaesthesia of brachycephalic / paediatric / geriatric / exotic
+      patients; controlled-drug administration; dental procedures with
+      extraction; in-house imaging modalities. Sign-off is recorded on
+      the staff competence register with date, signed-off-by, and any
+      conditions / restrictions.
+
+  - id: induction
+    title: "Induction"
+    body: |
+      Every new staff member completes the practice induction within their
+      first two weeks: tour of premises and emergency exits; practice
+      policies overview; introductions; SOP read-and-acknowledge for the
+      Controlled Drugs SOP, the Veterinary Medicines & Cascade SOP, the
+      IPC policy, the Radiation Management Plan (where relevant), the
+      After-hours Care Arrangement, and the Health & Safety policy.
+      Acknowledgement is captured electronically and stored on the
+      personnel file.
+
+  - id: appraisal
+    title: "Appraisal and CPD planning"
+    body: |
+      Every registered staff member has an annual appraisal that reviews
+      the year's CPD, identifies development goals against the next year's
+      CPD obligation and the practice's clinical priorities, and agrees a
+      written CPD plan. The plan is held with the personnel file. RCVS
+      1CPD platform reflection is encouraged for UK staff as part of the
+      appraisal cycle.
+
+  - id: audit
+    title: "Audit"
+    body: |
+      The practice clinical lead audits CPD records annually. Where a
+      registrant has not met the per-jurisdiction minimum, the lead works
+      with the registrant on a remediation plan. Where the regulator
+      conducts an external CPD audit on a registrant, the practice
+      provides the supplementary records to support the registrant's
+      submission.
+
+  - id: confidentiality
+    title: "Confidentiality of CPD records"
+    body: |
+      CPD records are personal data of the registrant. They are stored in
+      the practice's HR system; access is restricted to the registrant,
+      their line manager, the clinical lead, and the practice manager.
+      Records are not shared externally without the registrant's consent
+      except to the regulator on lawful request.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      This policy is reviewed annually and on any change to the
+      regulator's CPD requirements (e.g. RCVS 1CPD guidance update;
+      VCNZ CPD Standard revision; AVBC/state board cycle change; US state
+      board CE topic mandate update).
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      Linked to: salvia.veterinary.controlled_drugs_sop;
+      salvia.veterinary.radiation_management_plan;
+      salvia.veterinary.infection_prevention_control;
+      salvia.shared.records_retention_policy;
+      salvia.shared.health_safety_policy.

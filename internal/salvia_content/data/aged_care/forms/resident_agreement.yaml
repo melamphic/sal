@@ -1,0 +1,273 @@
+id: salvia.aged_care.resident_agreement
+name: "Resident Agreement"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Occupancy / admission agreement signed at entry to a residential aged care
+  service. Captures the parties, the room and services included, fees and
+  charges, accommodation payment options, the resident's rights, the
+  termination grounds, and complaints/advocacy contacts. The form is the
+  contract record itself; supporting documents (rights statement, fee schedule,
+  refundable deposit prudential information) are attached at signing.
+
+purpose_per_regulator:
+  NZ: "Age Related Residential Care (ARRC) Services Agreement (Te Whatu Ora) clauses A–G; Health and Disability Commissioner Code of Health and Disability Services Consumers' Rights 1996 Right 7 (informed choice); Retirement Villages Act 2003 where applicable; Ngā Paerewa NZS 8134:2021 Section 1.1 (Pae ora rights)."
+  AU: "Aged Care Act 2024 Chapter 4 (services agreement) and Chapter 7 (fees); Aged Care Rules 2025 Part 6 (charging) and Part 8 (agreements); Strengthened Aged Care Quality Standards (effective 1 Nov 2025) Standard 1 (The person) and Standard 6 (Services and supports — daily living)."
+  UK: "Care Quality Commission (Registration) Regulations 2009 reg 19 (fees); Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 9 (person-centred care), reg 10 (dignity), reg 12 (safe care), reg 19 (fit and proper persons); Care Act 2014 ss.9–13 (assessments) and s.42 (safeguarding); Consumer Rights Act 2015 (CMA guidance for care home contracts October 2018, current)."
+  US: "42 CFR 483.10 (Resident rights) and 42 CFR 483.15 (Admission, transfer, discharge); 42 CFR 483.10(g) (information and communication); state long-term care facility licensure; Older Americans Act ombudsman access; ADA accessibility; HIPAA Notice of Privacy Practices (16 Feb 2026 update)."
+
+linked_policy_defaults:
+  - salvia.aged_care.resident_rights
+  - salvia.aged_care.cultural_safety
+  - salvia.shared.privacy_policy
+  - salvia.shared.complaints_policy
+  - salvia.shared.records_retention_policy
+
+tags: [admission, agreement, contract]
+
+overall_prompt: |
+  This is a contract record. Demographic and identifier fields come from the
+  resident record and are NOT extracted from voice. Capture only the
+  conversational decisions from the admission meeting: room number, service
+  level, fee option chosen, any extra services agreed, special wishes, and
+  the named substitute decision-maker / next of kin. Do not infer financial
+  amounts the clinician did not state.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_full_name
+    label: Full legal name
+    type: system_field
+    source: patient_record.full_name
+    pii: true
+    required: true
+
+  - key: subject_preferred_name
+    label: Preferred name
+    type: system_field
+    source: patient_record.preferred_name
+    pii: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+    pii: true
+    required: true
+
+  - key: subject_health_id
+    label: Health identifier
+    type: system_field
+    source: patient_record.health_identifier
+    label_per_country:
+      NZ: "NHI number"
+      AU: "Medicare + DVA + Aged Care recipient ID"
+      UK: "NHS number"
+      US: "Medicare / Medicaid number"
+
+  - key: provider_name
+    label: Approved provider / service name
+    type: system_field
+    source: clinic_record.legal_name
+    required: true
+
+  - key: provider_registration
+    label: Provider registration / certification
+    type: system_field
+    source: clinic_record.registration_number
+    label_per_country:
+      NZ: "HealthCERT certification number"
+      AU: "Provider ID (Aged Care Act 2024 registration)"
+      UK: "CQC location ID"
+      US: "CMS CCN (CMS Certification Number)"
+
+  - key: agreement_date
+    label: Agreement date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: admission_date
+    label: Date of admission
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: room_number
+    label: Room / bed
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: care_type
+    label: Type of care
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Permanent residential aged care", value: "permanent"}
+        - {label: "Respite (short-term) residential", value: "respite"}
+        - {label: "Specialist dementia care", value: "dementia"}
+        - {label: "Palliative / end-of-life care", value: "palliative"}
+        - {label: "Transitional / rehabilitation", value: "transitional"}
+
+  - key: signer_role
+    label: Role of person signing
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resident, signing for themself (has capacity)", value: "self"}
+        - {label: "Resident with supporter (capacity retained — supported decision-making)", value: "supported"}
+        - {label: "Substitute decision-maker / welfare guardian / EPOA", value: "substitute"}
+        - {label: "Next of kin / responsible party (US)", value: "next_of_kin"}
+
+  - key: signer_authority_basis
+    label: Basis of signer authority
+    type: long_text
+    ai_extract: true
+    label_per_country:
+      NZ: "Authority basis — self / Welfare Guardian (Protection of Personal and Property Rights Act 1988) / Enduring Power of Attorney (Personal Care and Welfare) activated / Next of Kin (no formal status)."
+      AU: "Authority basis — self / supporter under Aged Care Act 2024 s.16 / RPSDM hierarchy / state guardianship order."
+      UK: "Authority basis — self (with capacity per Mental Capacity Act 2005 s.2/3) / Lasting Power of Attorney (Health & Welfare) / Court-appointed Deputy / best-interests decision under MCA s.4 documented separately."
+      US: "Authority basis — self / Health Care Proxy / Durable Power of Attorney / state-recognised surrogate / responsible party (state law)."
+
+  - key: substitute_decision_maker
+    label: Substitute decision-maker / health proxy on file
+    type: long_text
+    pii: true
+    ai_extract: true
+    help_text: "Name, relationship, contact, document type and reference (EPOA / LPA / Health Care Proxy / state guardianship order)."
+
+  - key: emergency_contact
+    label: Emergency contact / next of kin
+    type: long_text
+    pii: true
+    ai_extract: true
+
+  - key: room_inclusions
+    label: Room and service inclusions
+    type: long_text
+    ai_extract: true
+    help_text: "Bed type, ensuite/shared bathroom, lounge access, meals, laundry, personal-care, nursing care, social programme. Country-specific: NZ ARRC included services; AU 'everyday living' inclusions vs additional services; UK 'core service' description; US room-and-board vs ancillary."
+
+  - key: extra_services_agreed
+    label: Extra / additional services agreed
+    type: long_text
+    ai_extract: true
+    help_text: "Hairdressing, podiatry, transport, additional therapies. Each must be itemised with frequency and price."
+
+  - key: fee_schedule
+    label: Fees and charges
+    type: long_text
+    required: true
+    ai_extract: false
+    help_text: "Itemised: basic daily fee, means-tested care fee (AU) / co-payment (NZ), accommodation payment, additional services. Attach the fee schedule as a separate document; record the headline numbers here."
+
+  - key: accommodation_payment_option
+    label: Accommodation payment option
+    type: select
+    ai_extract: true
+    countries: [AU]
+    config:
+      options:
+        - {label: "Refundable Accommodation Deposit (RAD) — lump sum", value: "rad"}
+        - {label: "Daily Accommodation Payment (DAP)", value: "dap"}
+        - {label: "Combination RAD + DAP", value: "combination"}
+        - {label: "Fully supported (no accommodation payment)", value: "supported"}
+        - {label: "Decision deferred — 28 days from entry to choose", value: "deferred"}
+    help_text: "Aged Care Act 2024 + Aged Care Rules 2025 Part 6: resident has 28 days from entry to choose payment option. RAD/DAP combinations must be costed both ways."
+
+  - key: nz_premium_room_charge
+    label: Premium room charge (NZ ARRC)
+    type: long_text
+    ai_extract: true
+    countries: [NZ]
+    help_text: "Where the room is above the standard ARRC contract price, the additional premium charge must be agreed in writing and not be a condition of receiving subsidised care."
+
+  - key: uk_self_funded_or_local_authority
+    label: Funding status (UK)
+    type: select
+    ai_extract: true
+    countries: [UK]
+    config:
+      options:
+        - {label: "Self-funded", value: "self_funded"}
+        - {label: "Local authority funded (Care Act 2014 assessment in place)", value: "local_authority"}
+        - {label: "NHS Continuing Healthcare", value: "chc"}
+        - {label: "Mixed funded (third-party top-up agreed in writing)", value: "mixed"}
+
+  - key: us_payor
+    label: Payor / source of payment (US)
+    type: select
+    ai_extract: true
+    countries: [US]
+    config:
+      options:
+        - {label: "Medicare (Skilled Nursing Facility benefit — short-term)", value: "medicare"}
+        - {label: "Medicaid", value: "medicaid"}
+        - {label: "Private pay / private insurance", value: "private"}
+        - {label: "Managed care plan", value: "managed_care"}
+        - {label: "Veterans Affairs", value: "va"}
+
+  - key: rights_statement_provided
+    label: Statement of Rights provided and discussed
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — provided in writing and discussed", value: "yes"}
+        - {label: "Yes — large print / accessible format provided", value: "yes_accessible"}
+        - {label: "Yes — interpreter present (record language below)", value: "yes_interpreter"}
+    label_per_country:
+      NZ: "HDC Code of Rights provided (in te reo Māori, NZSL or other languages on request)."
+      AU: "Statement of Rights (Aged Care Act 2024 — replaced Charter of Rights from 1 Nov 2025) provided and explained."
+      UK: "Resident's rights as set out in CQC Reg 9, 10 and the provider's published rights statement."
+      US: "42 CFR 483.10 Resident Rights notice provided in language and format the resident can understand."
+
+  - key: complaints_advocacy_contacts_given
+    label: Complaints and advocacy contacts provided
+    type: long_text
+    required: true
+    ai_extract: false
+    label_per_country:
+      NZ: "HDC, Nationwide Health and Disability Advocacy Service (Advocacy NZ), Aged Care Commissioner."
+      AU: "Aged Care Quality and Safety Commission complaints line; Older Persons Advocacy Network (OPAN)."
+      UK: "CQC; Local Authority adult safeguarding; Local Government and Social Care Ombudsman; advocacy under Care Act 2014 s.67."
+      US: "State Long-Term Care Ombudsman; State Survey Agency; Adult Protective Services; CMS."
+
+  - key: cooling_off_period_explained
+    label: Cooling-off / cancellation rights explained
+    type: long_text
+    ai_extract: false
+    help_text: "Country deltas: AU has no statutory cooling-off but the Aged Care Rules 2025 require RAD/DAP option to remain open 28 days; UK Consumer Rights Act 2015 + CMA care-home guidance; US 42 CFR 483.15 transfer/discharge protections; NZ ARRC contract terms."
+
+  - key: special_wishes
+    label: Special wishes recorded at entry
+    type: long_text
+    ai_extract: true
+    help_text: "Cultural/spiritual preferences, dietary preferences, mobility/independence preferences, family contact preferences, photography consent, key relationships."
+
+  - key: signature
+    label: Signature of resident or authorised signer
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: other
+      require_witness: true
+    help_text: "Captures the signer's identity, the witness (staff member of clinical or admissions service), and a timestamped acknowledgement of the rights statement, fees and termination terms. A printed copy of the agreement is provided to the resident and any substitute decision-maker."

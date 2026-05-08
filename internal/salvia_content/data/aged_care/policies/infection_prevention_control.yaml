@@ -1,0 +1,131 @@
+id: salvia.aged_care.infection_prevention_control
+name: "Infection Prevention and Control (IPC) Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Infection prevention and control programme: governance, the IPC Lead
+  role (AU explicit on-site), the 5 moments of hand hygiene, PPE, isolation
+  precautions, surveillance, vaccinations, and the link to outbreak
+  management.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 4 (Te Hapori — environment, including IPC); Health Information Privacy Code 2020 for surveillance data; Ministry of Health IPC guidance; Public Health Act 2016 (Pae Ora)."
+  AU: "Strengthened Aged Care Quality Standards Standard 4 (Environment) and Standard 5 (Clinical Care) — explicit IPC Lead role on-site (Aged Care Act 2024); Aged Care Rules 2025 Part 7; Australian Guidelines for the Prevention and Control of Infection in Healthcare (NHMRC 2019, current) adapted for aged care; CDNA national guidelines."
+  UK: "Health and Social Care Act 2008 Code of Practice on the prevention and control of infections (Hygiene Code 2022 update, current); Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 12; NICE NG139 Healthcare-associated infections."
+  US: "42 CFR 483.80 F880 (Infection control program); requires designated Infection Preventionist with specialised training (F882); 42 CFR 483.80(d) (influenza and pneumococcal immunizations); CDC Long-term Care guidance; CMS QSO guidance for COVID-19 / respiratory viruses."
+
+clauses:
+  - id: governance
+    title: Governance and IPC Lead
+    body_per_country:
+      NZ: |
+        A named IPC lead (registered nurse with IPC training) is
+        responsible for the programme. Reports to clinical governance.
+      AU: |
+        An on-site Infection Prevention and Control Lead (qualified
+        nurse) is required under the Aged Care Act 2024 and is in place
+        during operating hours. Reports to the Care Manager and clinical
+        governance.
+      UK: |
+        A named Infection Prevention Lead under the Hygiene Code 2022.
+        Reports to the Registered Manager and to the provider's clinical
+        governance.
+      US: |
+        A designated Infection Preventionist (IP) with specialised
+        training is required under F882. The IP is part-time minimum
+        and serves on the Quality Assessment and Assurance committee.
+
+  - id: hand_hygiene
+    title: Hand hygiene
+    body: |
+      The 5 moments of hand hygiene (WHO) are observed: before touching
+      a resident; before clean / aseptic procedure; after body-fluid
+      exposure risk; after touching a resident; after touching resident
+      surroundings. Alcohol-based hand rub at point of care; hand wash
+      with soap and water for visibly soiled hands or known
+      C. difficile / norovirus. Audited monthly.
+
+  - id: ppe
+    title: Personal protective equipment
+    body: |
+      PPE matched to assessed risk: gloves, apron / gown, surgical mask
+      or N95 / FFP3 respirator (for aerosol-generating procedures or
+      airborne pathogens), eye protection. Donning and doffing technique
+      trained and audited. PPE stocks maintained.
+
+  - id: isolation_precautions
+    title: Standard and transmission-based precautions
+    body: |
+      Standard precautions for every resident at every interaction.
+      Transmission-based precautions added per organism: contact
+      (MRSA, C. difficile, scabies), droplet (influenza, RSV, COVID),
+      airborne (TB, measles, varicella). Cohorting where single rooms
+      not available; transfers minimised during isolation.
+
+  - id: surveillance
+    title: Surveillance
+    body: |
+      Daily monitoring for signs of infection (UTI, respiratory,
+      gastrointestinal, skin/wound, conjunctivitis). McGeer / Loeb / SHEA
+      criteria used to differentiate colonisation from infection.
+      Antibiotic resistance trends reviewed at clinical governance.
+
+  - id: vaccinations
+    title: Vaccinations
+    body: |
+      Residents are offered annual influenza, age-appropriate pneumococcal,
+      COVID-19 boosters per national schedule, shingles, RSV (where
+      available). Staff offered same per national programme; some roles
+      mandated by employment policy. Vaccination status recorded in the
+      resident profile.
+
+  - id: environment_cleaning
+    title: Environment and cleaning
+    body: |
+      Cleaning schedule with documented frequency for high-touch surfaces,
+      shared equipment, communal bathrooms and dining. Outbreak-grade
+      cleaning agents available. Equipment dedicated where possible
+      during isolation. Linen handled per service policy. Waste
+      segregation per country regulation.
+
+  - id: aseptic_technique
+    title: Aseptic technique
+    body: |
+      Wound care, catheter care, IV line care, and other invasive
+      procedures performed using aseptic non-touch technique (ANTT) or
+      country-equivalent standard. Competency signed off before
+      independent practice.
+
+  - id: antimicrobial_stewardship
+    title: Antimicrobial stewardship
+    body: |
+      Antibiotic prescribing follows national guidelines (NZ HQSC AMS;
+      AU Therapeutic Guidelines: Antibiotic; UK NICE NG15 + UKHSA AMS;
+      US CDC Core Elements of Antibiotic Stewardship for Long-term Care
+      / F881). Asymptomatic bacteriuria not treated. Audit of antibiotic
+      starts quarterly.
+
+  - id: training
+    title: Training
+    body: |
+      All staff complete IPC induction and annual refresher. Hand
+      hygiene technique and PPE technique observed and signed off.
+
+  - id: outbreak_link
+    title: Link to outbreak management
+    body: |
+      Suspected outbreak triggers the Outbreak Management Policy
+      including line-listing, control measures, and regulator
+      notification (per country thresholds).
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually and after any outbreak.
+      Operational responsibility: IPC Lead.

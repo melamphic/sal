@@ -1,0 +1,214 @@
+id: salvia.dental.controlled_drugs_opioid_prescribing
+name: "Controlled Drugs & Opioid Prescribing Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Storage, register-keeping, and prescribing of controlled drugs in the
+  dental practice. Includes the opioid stewardship principle, country-
+  specific prescribing limits, PDMP / RTPM check requirements, and
+  destruction/witness rules.
+
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975 + Misuse of Drugs Regulations 1977 reg 28, 29, 41–46; Medsafe CD record requirements; DCNZ Practice Standard – Prescribing of Medicines."
+  AU: "State / territory Drugs and Poisons / Medicines and Poisons legislation; SUSMP Schedule 8 controls; SafeScript (Vic), RTPM-equivalent NSW/Qld/SA/WA/Tas/ACT/NT."
+  UK: "Misuse of Drugs Act 1971; Misuse of Drugs Regulations 2001 + Misuse of Drugs (Safe Custody) Regulations 1973; CD Regs 2006 (England) for register / accountable officer."
+  US: "Controlled Substances Act 21 USC §801; 21 CFR §§1301–1308 (registration, security, recordkeeping); MATE Act 2023 (8-hr training); state PDMP query mandates (40+ states); CA EPCS; NY I-STOP."
+
+clauses:
+  - id: scope
+    title: "Scope and Accountable Person"
+    body: |
+      Applies to every controlled drug held, administered, dispensed,
+      transferred, or destroyed at the practice. The Practice Principal is
+      the named Accountable Person unless a written delegation is made.
+      The Accountable Person owns the CD register, the storage key
+      register, the destruction log, and the prescribing audit.
+
+  - id: storage
+    title: "Storage and security"
+    body_per_country:
+      NZ: |
+        CDs stored in a secure cabinet meeting Misuse of Drugs Regs 1977
+        reg 28 (compliant CD safe). Keys held by the Accountable Person
+        or named delegate; duplicates limited and logged. Surgery
+        access-controlled outside hours.
+      AU: |
+        S8 (and where applicable S4D) drugs stored in a fixed safe
+        meeting state requirements (e.g. NSW Therapeutic Goods Manual
+        S8 cabinet specification). Two-key access where mandated by
+        state. Stock checked on every hand-over.
+      UK: |
+        CD Schedule 2 and 3 (where Sch 3 storage exemption does not
+        apply, e.g. midazolam, temazepam) stored in a Misuse of Drugs
+        (Safe Custody) Regs 1973 compliant cabinet. Key register
+        maintained.
+      US: |
+        Controlled substances stored in a securely locked, substantially
+        constructed cabinet per 21 CFR §1301.75. State law may require
+        a safe meeting specific UL/RSC standards. Practice maintains
+        DEA Form 224 registration current; biennial inventory date
+        recorded.
+
+  - id: register
+    title: "Register"
+    body_per_country:
+      NZ: |
+        CD register kept per MoDR 1977 reg 41 — bound book or compliant
+        electronic system. Entries made at the time of operation in
+        chronological order; corrections by line-out and initial, never
+        erased. Retained ≥2 years (3 years HDIP best practice) from
+        last entry.
+      AU: |
+        State-prescribed CD register (paper or compliant electronic).
+        Entries chronological; running balance shown. Retention per
+        state — typically 2 years from last entry. Some states require
+        biannual physical inventory.
+      UK: |
+        CD register per CD Regs 2006 — bound book or approved electronic
+        system. Entry within 24 hours of receipt or supply (reg 19).
+        Retention ≥2 years from date of last entry. Self-prescribing
+        prohibited.
+      US: |
+        Records per 21 CFR §1304: separate Schedule II records from
+        Schedule III–V records. Retain ≥2 years (longer where state
+        dictates). Initial inventory at registration; biennial
+        inventory thereafter (21 CFR §1304.11). Loss/theft reported on
+        DEA Form 106 within one business day.
+
+  - id: every_entry
+    title: "Required register entry fields"
+    body: |
+      Every register entry must record: date, time, drug name, strength,
+      form, batch/lot, expiry, quantity in/out, running balance, patient
+      (administer/dispense), supplier/destination (receive/transfer),
+      operator, witness. Use the CD Log Entry form
+      (`salvia.dental.cd_log_entry`) which captures the full set.
+
+  - id: opioid_stewardship
+    title: "Opioid stewardship principle"
+    body: |
+      Opioids are not first-line for dental pain. NSAIDs ± paracetamol
+      provide superior or equivalent analgesia for most acute dental
+      pain (per Cochrane Reviews; ADA 2018 statement; SDCEP / NHS
+      guidance). Where an opioid is appropriate, the lowest effective
+      dose is prescribed for the shortest duration consistent with the
+      clinical indication.
+
+  - id: prescribing_limits
+    title: "Country-specific prescribing limits"
+    body_per_country:
+      NZ: |
+        Per Misuse of Drugs Regs 1977: Class B controlled drugs limited
+        to a maximum 7-day supply for dental treatment unless approved
+        by Medsafe. CD prescriptions are written on the H572 (paper) or
+        secure NZ ePrescription (NZePS). All elements per MoDR reg 29:
+        prescriber name, qualification, date, patient name & address,
+        drug, total quantity in words and figures, daily dose,
+        signature.
+      AU: |
+        Per state Drugs/Poisons Acts:
+        - Real-Time Prescription Monitoring (RTPM) check mandatory
+          before prescribing/dispensing S8 in Vic (SafeScript), NSW,
+          Qld, SA, WA, Tas, ACT, NT.
+        - Authority to prescribe S8 obtained where state requires
+          (e.g. Vic >8 weeks; Qld; NSW for non-cancer chronic pain).
+      UK: |
+        Per Misuse of Drugs Regs 2001 — Sch 2/3 prescriptions:
+        - Patient name and address.
+        - Drug, form, strength.
+        - Dose, frequency.
+        - Total quantity in words and figures.
+        - 28-day validity.
+        - Maximum 30-day supply (best practice; see Drug Tariff).
+        - Sch 2/3 prescriptions written on FP10MDA (instalment) or
+          standard FP10 in primary care.
+      US: |
+        Per state law and DEA:
+        - Many states (e.g. FL, NY, NJ, MA, CT, RI) impose 7-day acute
+          opioid limits for opioid-naïve patients.
+        - PDMP query mandatory before initial CII prescribing in most
+          states.
+        - Schedule II written prescriptions on tamper-resistant pads;
+          CA EPCS mandatory; NY I-STOP electronic-only.
+        - MATE Act 2023: prescribers must complete one-time 8-hr
+          training on substance-use treatment as DEA registration
+          renewal condition.
+
+  - id: pdmp_rtpm
+    title: "PDMP / RTPM checks"
+    body_per_country:
+      NZ: |
+        No formal national PDMP. Prescribers consult NZePS history and
+        Te Whatu Ora / DHB Pharmacy alerts. Best practice: ask patient
+        about other prescribers and check NZePS where available.
+      AU: |
+        RTPM check before any S8 prescribing where the state mandates
+        (Vic SafeScript: every prescribing/dispensing event). Outcome
+        of check noted in clinical record.
+      UK: |
+        No formal PDMP equivalent. Best practice: SCR (Summary Care
+        Record) check for chronic-pain or addiction patients.
+      US: |
+        PDMP query before initial CII opioid in 40+ states; query
+        results reviewed and acted upon. Documentation in chart.
+
+  - id: destruction
+    title: "Destruction and unwanted-stock disposal"
+    body_per_country:
+      NZ: |
+        CD destruction per MoDR 1977 reg 28 — witnessed by an authorised
+        person (registered health practitioner). Record drug, batch,
+        quantity, date, witness signature in destruction register.
+      AU: |
+        State-prescribed destruction process. NSW: witnessed by
+        pharmacist or authorised person; Vic: per Drugs, Poisons and
+        Controlled Substances Regs.
+      UK: |
+        CD Sch 2 destruction must be witnessed by an Authorised Witness
+        per CD Regs 2006 (Accountable Officer or designate). Record in
+        register and destroy by denaturation kit.
+      US: |
+        DEA Form 41 for registrant destruction; reverse-distributor
+        contracted for bulk. Two witnesses for destruction event;
+        denature so non-recoverable per DEA 21 CFR §1317.
+
+  - id: discrepancy_reporting
+    title: "Discrepancy and loss reporting"
+    body_per_country:
+      NZ: |
+        Any discrepancy investigated immediately. Loss/theft reported
+        to Police and Medsafe.
+      AU: |
+        Loss/theft reported to state Drugs/Poisons authority and Police
+        per state requirement.
+      UK: |
+        Loss/theft reported to the Accountable Officer and Police; CQC
+        notification under Reg 18 if patient harm. RIDDOR if staff
+        harm during handling.
+      US: |
+        Significant loss/theft reported on DEA Form 106 within one
+        business day; local police notified per state.
+
+  - id: prescribing_audit
+    title: "Prescribing audit"
+    body: |
+      Annual audit of CD prescribing patterns reviews:
+      - Volume by drug, by prescriber.
+      - Mean days supplied vs national reference.
+      - Repeat-prescribing pattern.
+      - Adherence to country prescribing limits.
+      - PDMP / RTPM check rate.
+      Findings drive a written corrective-action plan with named
+      owners.
+
+  - id: training
+    title: "Training and competence"
+    body: |
+      All prescribers complete CD prescribing CPD per country requirement
+      (NZ: DCNZ recertification; AU: AHPRA + RACGP/RACDS prescribing
+      modules; UK: GDC-aligned CPD; US: MATE Act 8-hr DEA training,
+      state opioid hours). Annual review of country prescribing
+      framework changes.

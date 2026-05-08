@@ -1,0 +1,132 @@
+id: salvia.shared.consultation_note
+name: "Consultation note"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  Standard SOAP-style consultation record for every patient encounter. The
+  primary clinical document a regulator inspects when reconstructing care.
+  AI extracts narrative fields from the post-encounter voice note; clinician
+  reviews and signs off.
+
+purpose_per_regulator:
+  NZ: "HIPC 2020 Rule 1 (collection); HDC Code Right 7 (informed consent recorded); Health (Retention of Health Information) Regulations 1996 (10-year retention)"
+  AU: "RACGP Standards 5th ed Criterion C7.1 (clinical records); APP 3 (collection); state Health Records Acts (e.g. Vic Health Records Act 2001)"
+  UK: "GMC Good Medical Practice 2024 §10–11 (records); CQC Reg 17 (good governance — accurate records); UK GDPR Art 5(1)(c)"
+  US: "HIPAA 45 CFR §164.502; state E/M coding requirements; CMS Conditions of Participation where applicable"
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.shared.records_retention_policy
+  - salvia.shared.consent_policy
+
+overall_prompt: |
+  Extract the patient encounter narrative into the structured fields below.
+  Use clinician's voice. Quote direct patient statements with quotation
+  marks. Do not infer beyond what was stated. Flag uncertainty in the
+  extraction-confidence channel rather than guessing.
+
+tags: [intake, encounter, core]
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+    help_text: "Pulled from the patient record. Never extracted from audio."
+
+  - key: encounter_datetime
+    label: "Encounter date & time"
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: location
+    label: "Encounter location"
+    type: select
+    config:
+      options:
+        - {label: "In-clinic", value: in_clinic}
+        - {label: "Home visit", value: home_visit}
+        - {label: "Telehealth — video", value: telehealth_video}
+        - {label: "Telehealth — phone", value: telehealth_phone}
+        - {label: "Other", value: other}
+
+  - key: presenting_complaint
+    label: "Presenting complaint"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "What the patient (or owner / family / NoK) reported as the reason for the visit. Use their words where direct quotes were given."
+
+  - key: history
+    label: "History"
+    type: long_text
+    ai_extract: true
+    help_text: "Relevant history of presenting complaint plus any updates to past medical / surgical / family / social / drug history elicited at this encounter."
+
+  - key: examination
+    label: "Examination"
+    type: long_text
+    ai_extract: true
+    phi: true
+    help_text: "Objective findings from physical examination, observations, and any in-room investigations."
+
+  - key: assessment
+    label: "Assessment / impression"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Working diagnosis, differential diagnoses, problem list updates."
+
+  - key: plan
+    label: "Plan"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Investigations ordered, treatments started, prescriptions, referrals, follow-up arrangements, safety-netting advice given."
+
+  - key: medications_today
+    label: "Medications administered or prescribed today"
+    type: long_text
+    ai_extract: true
+    help_text: "Drug, dose, route, indication. Controlled drugs must also be entered in the CD register — this field does not replace that."
+
+  - key: consent_recorded
+    label: "Consent recorded for this encounter"
+    type: button_group
+    config:
+      options:
+        - {label: "Verbal", value: verbal}
+        - {label: "Written (linked)", value: written}
+        - {label: "N/A — no procedure", value: na}
+    help_text: "If a procedure occurred, the corresponding signed consent form should be linked. Verbal consent must be documented in the note."
+
+  - key: communication
+    label: "Communication / patient-facing summary"
+    type: long_text
+    ai_extract: true
+    help_text: "What was explained to the patient (or representative). Important for HDC Right 6 (NZ), Montgomery (UK), and informed-consent record."
+
+  - key: red_flags_safety_netting
+    label: "Safety-netting / red-flag advice"
+    type: long_text
+    ai_extract: true
+    help_text: "What to watch for, when to return, when to seek emergency care."
+
+  - key: follow_up
+    label: "Follow-up arrangement"
+    type: text
+    ai_extract: true
+
+  - key: clinician
+    label: "Author"
+    type: system_field
+    source: staff_record
+    required: true
+    help_text: "Pulled from the signed-in clinician. Co-signers added at submit time."

@@ -1,0 +1,125 @@
+id: salvia.aged_care.pain_management
+name: "Pain Management Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service assesses and manages pain across all residents, including
+  residents who cannot self-report. Sets the assessment scales, the
+  reassessment-after-action standard, the opioid stewardship principles,
+  and the link to end-of-life care.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — clinical care, including pain management); HQSC; HDC Code Right 4."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (clinical safety — pain); Aged Care Quality Indicators (NQI) Pain — quarterly reporting; Australian Pain Society Pain in Residential Aged Care Facilities: Management Strategies (2nd edition); Therapeutic Goods Administration / state Drugs and Poisons rules for opioids."
+  UK: "NICE NG193 Chronic pain (primary and secondary); NICE QS181 End of life care; British Geriatrics Society Pain in older people: a comprehensive guide; CQC Reg 9 + Reg 12; British Pain Society guidance."
+  US: "42 CFR 483.25 F697 (pain management); MDS 3.0 v1.20.1 Section J (Pain) J0100–J0850 coding; CMS State Operations Manual Appendix PP F697; CDC Clinical Practice Guideline for Prescribing Opioids for Pain (2022 update, current)."
+
+clauses:
+  - id: scope_principles
+    title: Scope and principles
+    body: |
+      Pain is common, often under-recognised, and a clinical priority. Pain
+      assessment is performed routinely and at any change of condition.
+      Pain is treated as the resident reports it, including non-verbal
+      observation when the resident cannot self-report. Untreated pain is
+      a quality and safety issue.
+
+  - id: assessment_tools
+    title: Assessment tools
+    body: |
+      Verbal residents: Numeric Rating Scale (NRS 0–10) is the default;
+      Verbal Rating Scale (VRS) acceptable. Non-verbal residents (advanced
+      dementia, severe cognitive impairment): PainAD (Pain Assessment in
+      Advanced Dementia, Warden 2003) is the default. PainAD: five
+      subscales each 0–2 (breathing, negative vocalisation, facial
+      expression, body language, consolability), total 0–10. ≥2 = pain
+      warranting action; ≥4 = moderate-severe.
+
+  - id: assessment_cadence
+    title: Assessment cadence
+    body: |
+      On admission, on transfer of care, at every comprehensive care plan
+      review, at any change of condition, after every dose of PRN
+      analgesic (reassessment), and routinely per the resident's
+      individualised plan.
+
+  - id: individualised_plan
+    title: Individualised pain plan
+    body: |
+      The plan records: pain history, suspected source, scale used,
+      regular vs PRN analgesia, non-pharmacological strategies (heat/cold,
+      repositioning, distraction, music, family presence), end-of-life
+      considerations, and reassessment trigger. The plan is reviewed at
+      every comprehensive care plan review.
+
+  - id: opioid_stewardship
+    title: Opioid stewardship
+    body: |
+      Opioids are prescribed for indication-appropriate pain. Initial
+      doses are low; titration is documented; long-term use is reviewed
+      with deprescribing in mind for non-malignant pain (per CDC 2022;
+      Faculty of Pain Medicine guidance UK; AU Therapeutic Guidelines;
+      NZ HQSC opioid stewardship). Constipation prophylaxis at initiation.
+      Naloxone availability per service policy. Falls risk reviewed at
+      initiation (FRIDs).
+
+  - id: non_pharm
+    title: Non-pharmacological strategies
+    body: |
+      Pain management is multimodal. Examples: scheduled repositioning,
+      heat / cold, gentle massage, music, validation therapy in dementia,
+      activity engagement, family presence, comfortable positioning,
+      adequate rest. Non-pharmacological strategies are documented as
+      explicit interventions, not as 'comfort measures' filler.
+
+  - id: end_of_life_pain
+    title: Pain in end-of-life care
+    body: |
+      In the terminal phase, anticipatory prescribing covers pain,
+      breathlessness, anxiety/agitation, nausea, and respiratory
+      secretions (per NICE NG142, AU PEPA, NZ Te Ara Whakapiri). Doses
+      are titrated to symptom; route changed (typically subcutaneous) when
+      oral no longer practical.
+
+  - id: chemical_restraint_distinction
+    title: Distinction from chemical restraint
+    body: |
+      Analgesic prescribed to treat pain is treatment, not restraint.
+      Where a psychotropic is being considered to control behaviour, the
+      Restraint Authorisation pathway and Antipsychotic Stewardship
+      policy apply, not the pain pathway.
+
+  - id: indicators
+    title: Indicators
+    body_per_country:
+      AU: |
+        AU NQI Pain — quarterly reporting. Pattern reviewed at clinical
+        governance under Standard 2.
+      US: |
+        MDS J0100–J0850 coded each assessment. F697 surveyor expectation
+        of timely pain recognition and treatment.
+      NZ: |
+        Reviewed at clinical governance per Ngā Paerewa Section 2.
+      UK: |
+        Reg 17 governance review; CQC inspection lens on pain
+        recognition in dementia.
+
+  - id: training
+    title: Staff training
+    body: |
+      All clinical staff are trained in pain assessment including PainAD,
+      multimodal management, opioid pharmacology / safety, and
+      end-of-life pain. Refresher annually. PainAD scoring competency
+      signed off before independent use.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing / Pain Lead.

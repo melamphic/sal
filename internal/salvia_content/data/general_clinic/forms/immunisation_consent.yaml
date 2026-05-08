@@ -1,0 +1,186 @@
+id: salvia.general_clinic.immunisation_consent
+name: "Immunisation consent and record"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Vaccination consent and dose record. Captures vaccine, batch, dose, site,
+  route, screen-for-contraindications, observation period, and refusal where
+  declined. Country anchors include the NZ Immunisation Handbook and IMAC,
+  AU NIP / ATAGI / state Public Health Act, UK Green Book and PGD, US ACIP /
+  VICP / VIS hand-out requirements.
+
+purpose_per_regulator:
+  NZ: "Te Whatu Ora Immunisation Handbook 2024; IMAC standing-order template; HDC Code R7; HIPC Rule 1."
+  AU: "ATAGI Australian Immunisation Handbook (online edition); NIP Schedule; state Public Health Acts; AIR (Australian Immunisation Register Act 2015)."
+  UK: "Green Book Ch 1–4 (consent + Patient Group Direction); UKHSA pertussis / influenza / COVID PGDs; CQC Reg 11."
+  US: "ACIP Recommendations; CDC VIS (Vaccine Information Statement) — must be provided each dose under National Childhood Vaccine Injury Act §300aa-26; state immunisation registries; VICP."
+
+linked_policy_defaults:
+  - salvia.shared.consent_policy
+  - salvia.shared.privacy_policy
+  - salvia.general_clinic.cold_chain
+  - salvia.general_clinic.resuscitation_medical_emergency
+
+tags: [consent, vaccination, immunisation]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_weight
+    label: "Weight (kg) — if paediatric or weight-based dosing"
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: visit_type
+    label: "Visit type"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Routine schedule (childhood / adolescent)", value: "schedule"}
+        - {label: "Adult booster", value: "booster"}
+        - {label: "Travel", value: "travel"}
+        - {label: "Occupational", value: "occupational"}
+        - {label: "Catch-up / outbreak", value: "catchup"}
+        - {label: "Pregnancy (pertussis / influenza / RSV)", value: "pregnancy"}
+
+  - key: pre_screen_contraindications
+    label: "Pre-vaccination screen — contraindications and precautions"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Acute moderate-to-severe illness, anaphylaxis to prior dose or component, immunosuppression for live vaccines, recent IVIg, pregnancy. Use the country handbook screening checklist verbatim."
+
+  - key: previous_reactions
+    label: "Previous vaccine reactions"
+    type: long_text
+    ai_extract: true
+
+  - key: pregnancy_status
+    label: "Pregnancy / breastfeeding status (if applicable)"
+    type: select
+    config:
+      options:
+        - {label: "Not applicable", value: "na"}
+        - {label: "Not pregnant / not breastfeeding", value: "no"}
+        - {label: "Pregnant — gestation noted in details", value: "pregnant"}
+        - {label: "Breastfeeding", value: "breastfeeding"}
+        - {label: "Trying to conceive", value: "ttc"}
+
+  - key: written_information_provided
+    label: "Written information provided"
+    type: text
+    required: true
+    help_text: "NZ: Immunisation Handbook patient sheet; AU: ATAGI consumer info; UK: Green Book leaflet / patient information from UKHSA; US: CDC VIS — federally required to be given each dose with date of edition."
+
+  - key: vis_edition_date
+    label: "VIS edition date (US only)"
+    type: text
+    countries: [US]
+    required_per_country:
+      US: true
+    help_text: "Date printed on the VIS handed to patient. Must be the current CDC edition for that vaccine."
+
+  - key: consent_record
+    label: "Consent"
+    type: system.consent
+    required: true
+    config:
+      consent_type: invasive_procedure
+      require_witness: false
+    help_text: "Consent ledger entry. Captures patient (or parent/guardian) signature, vaccine names, risks acknowledged."
+
+  - key: vaccine_administered
+    label: "Vaccine(s) administered"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "List each vaccine: trade name + antigen, manufacturer, batch / lot number, expiry, dose, route (IM / SC / oral / intranasal), site (deltoid L/R, anterolateral thigh L/R), needle size."
+
+  - key: anatomical_site
+    label: "Site(s)"
+    type: select
+    config:
+      options:
+        - {label: "Left deltoid", value: "left_deltoid"}
+        - {label: "Right deltoid", value: "right_deltoid"}
+        - {label: "Left anterolateral thigh (vastus lateralis)", value: "left_thigh"}
+        - {label: "Right anterolateral thigh", value: "right_thigh"}
+        - {label: "Subcut left arm", value: "sc_left_arm"}
+        - {label: "Subcut right arm", value: "sc_right_arm"}
+        - {label: "Oral", value: "oral"}
+        - {label: "Intranasal", value: "intranasal"}
+        - {label: "Other (specify in details)", value: "other"}
+
+  - key: cold_chain_check
+    label: "Cold-chain check"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Within range — fridge log shows 2–8°C continuously", value: "in_range"}
+        - {label: "Excursion — vaccine assessed and approved for use (record in cold-chain breach form)", value: "excursion_approved"}
+        - {label: "Excursion — vaccine quarantined, alternative used", value: "quarantined"}
+    help_text: "Links to Cold Chain policy. Excursions trigger a cold-chain breach incident."
+
+  - key: drug_op_record
+    label: "Vaccine administration ledger entry"
+    type: system.drug_op
+    config:
+      operation: administer
+      controlled_only: false
+      confirm_required: true
+
+  - key: post_vaccination_observation
+    label: "Post-vaccination observation"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "≥15 min observation (extended to 30 min if anaphylaxis history). Document any reaction. NZ Handbook §2.3.3; AU Handbook 2.3.4; UK Green Book Ch 8; US ACIP General Best Practice 2023."
+
+  - key: refusal_record
+    label: "If declined — refusal record"
+    type: long_text
+    ai_extract: true
+    help_text: "Capture: which vaccines refused, reasons given, information offered, schedule for re-discussion. Avoid coercion language."
+
+  - key: aefi_followup
+    label: "Adverse Event Following Immunisation reporting plan"
+    type: long_text
+    help_text: "If any AEFI: report via NZ CARM, AU AusVaxSafety / TGA, UK Yellow Card, US VAERS. Link to ADR form on this clinic."
+
+  - key: registry_submission
+    label: "Registry submission"
+    type: select
+    config:
+      options:
+        - {label: "Submitted to NIR (NZ National Immunisation Register)", value: "nir"}
+        - {label: "Submitted to AIR (Australian Immunisation Register)", value: "air"}
+        - {label: "Submitted to NHS / NIVS / ImmForm (UK)", value: "uk_registry"}
+        - {label: "Submitted to state IIS (US)", value: "us_iis"}
+        - {label: "Pending", value: "pending"}
+
+  - key: signature_clinician
+    label: "Vaccinating clinician (name and registration)"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Date of administration"
+    type: date
+    required: true

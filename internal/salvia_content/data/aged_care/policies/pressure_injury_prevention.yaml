@@ -1,0 +1,141 @@
+id: salvia.aged_care.pressure_injury_prevention
+name: "Pressure Injury Prevention and Management Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service screens for pressure injury risk, prevents pressure injury
+  through repositioning, support surfaces, nutrition, continence and skin
+  care, and manages any pressure injury that develops. Aligned with
+  NICE CG179 (UK), F686 (US), Strengthened Standard 5 + AU NQI Pressure
+  Injuries (AU), and Ngā Paerewa (NZ).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — clinical care, wound management); HQSC pressure injury programme; ACC pressure injury prevention guidance."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — skin integrity); Aged Care Quality Indicators (NQI) Pressure Injuries — quarterly reporting separated by stage and acquisition; ACSQHC Preventing Pressure Injuries and Wound Management standard; Wounds Australia Pan Pacific Clinical Practice Guideline."
+  UK: "NICE CG179 Pressure ulcers: prevention and management; CQC Reg 12 (safe care); NHS Stop the Pressure / aSSKINg framework."
+  US: "42 CFR 483.25(b)(1) F686 Treatment/services to prevent/heal pressure ulcers; MDS 3.0 v1.20.1 Section M (Skin Conditions) coding (effective 1 Oct 2025); NPIAP / EPUAP / PPPIA International Guideline 2019."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to every resident from the day of admission. It
+      governs (a) pressure injury risk screening, (b) head-to-toe skin
+      inspection at admission, (c) preventive interventions, (d) wound
+      assessment and treatment where injury develops, (e) staging,
+      acquisition coding and reporting, and (f) family communication and
+      Duty-of-Candour engagement.
+
+  - id: screening
+    title: Screening tool and cadence
+    body: |
+      Risk is screened on admission within 24 hours, weekly for at-risk
+      residents, monthly for others, and at any change of condition. Tool
+      defaults: Braden Scale (US), Waterlow (UK), interRAI Pressure Ulcer
+      Risk Scale (NZ), facility tool aligned to ACSQHC / Wounds Australia
+      (AU). The tool informs but does not replace clinical judgement.
+
+  - id: skin_inspection
+    title: Skin inspection
+    body: |
+      A head-to-toe skin inspection is performed within 24 hours of
+      admission and at every shift change for high-risk residents. Any
+      pressure injury identified within 24 hours of admission is recorded
+      as Present on Admission (POA) — this distinction is critical for
+      F686 surveyor review (US) and for AU NQI counts.
+
+  - id: prevention_bundle
+    title: Prevention bundle (aSSKINg)
+    body: |
+      For at-risk residents, the prevention bundle includes: assess risk
+      and skin; surface (pressure-redistribution mattress and cushion;
+      heel off-loading device); skin inspection and care (cleansing,
+      barrier products, moisture management); keep moving (individualised
+      repositioning, typically 2-hourly when in bed and hourly when
+      seated, adjusted for the resident's surface and skin tolerance);
+      incontinence and moisture management (link to continence plan);
+      nutrition (link to nutrition screen); give information (resident
+      and family education).
+
+  - id: device_related
+    title: Medical device-related pressure injuries
+    body: |
+      Medical devices (NG tubes, oxygen tubing, catheters, splints, casts,
+      dentures) are inspected daily for pressure marks. Any device-related
+      pressure injury is staged on the same NPIAP/EPUAP scale and treated
+      identically. Mucosal pressure injuries (lips, mouth, vagina, urethra
+      from devices) are reported but not staged.
+
+  - id: assessment_of_active_injury
+    title: Assessment of an active injury
+    body: |
+      Any pressure injury is assessed using the Salvia Pressure Injury
+      form: site, stage (NPIAP/EPUAP 2019: Stage 1, Stage 2, Stage 3,
+      Stage 4, Unstageable, DTI, MDR-PI), differential considered (PI vs
+      MASD vs IAD vs arterial vs venous vs skin tear), dimensions (length
+      × width × depth), wound bed composition, exudate, peri-wound, signs
+      of infection, dressing plan, photograph (with photography consent
+      on file), and pain at dressing change.
+
+  - id: acquisition_coding
+    title: Acquisition coding (POA vs Facility-Acquired)
+    body: |
+      Acquisition is locked at the first assessment within 24 hours of
+      admission or return from hospital and is critical for reporting.
+      POA pressure injuries are not Incidents-ledger entries.
+      Facility-acquired pressure injuries Stage 2+ create an Incidents-
+      ledger row and feed regulator reporting. Worsening of a POA injury
+      is recorded as 'worsened' and is reviewed under the same governance
+      lens as a facility-acquired injury.
+
+  - id: reporting_indicators
+    title: Reporting and indicators
+    body_per_country:
+      NZ: |
+        New facility-acquired pressure injuries are reviewed at clinical
+        governance under Section 2 (Manaaki — adverse events). Where
+        threshold met, HealthCERT s.31 notification.
+      AU: |
+        AU NQI Pressure Injuries — quarterly reporting of injuries
+        Stage 2 and above (incl. Unstageable / DTI), separated by
+        acquisition (POA vs facility-acquired). SIRS engaged where the
+        injury is consequent on neglect.
+      UK: |
+        NHS Stop the Pressure / aSSKINg framework reporting where
+        commissioned. CQC Reg 12 (safe care); Reg 18 notification for
+        Category 3, 4 and Unstageable injuries; Reg 20 Duty of Candour
+        at moderate harm or above.
+      US: |
+        MDS 3.0 Section M coded each assessment. F686 surveyor review
+        triggered for facility-acquired injury. State Survey Agency
+        notification where neglect suspected.
+
+  - id: communication
+    title: Communication with resident and family
+    body: |
+      The resident (and nominated NoK) are informed of any new pressure
+      injury and the management plan. Open Disclosure / Duty of Candour
+      engaged at moderate harm or above. Photography is performed only
+      with photography consent on file (resident profile system widget).
+
+  - id: training
+    title: Staff training
+    body: |
+      All care staff complete induction training in pressure injury
+      prevention, repositioning technique, surface selection, and skin
+      assessment. Refresher annually. Wound staging competency is signed
+      off by the clinical lead before a staff member assesses
+      independently.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years and after any
+      sentinel event. Operational responsibility: Director of Nursing /
+      Wound Care Lead.

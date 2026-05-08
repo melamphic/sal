@@ -1,0 +1,138 @@
+id: salvia.aged_care.falls_prevention
+name: "Falls Prevention Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Multifactorial falls-risk reduction across the service: assessment cadence,
+  individualised plan, environmental safety, post-fall huddle, post-fall
+  monitoring, family communication, and trend analysis. Aligned with NICE
+  CG161 (UK), F689 (US), Strengthened Standard 5 + AU NQI Falls (AU), and
+  Ngā Paerewa (NZ).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 3 (assessment and planning) and Section 5 (clinical care); HQSC Falls programme; ACC injury prevention guidance."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — falls); Aged Care Quality Indicators (NQI) Falls and Major Injury — quarterly reporting; ACSQHC Preventing Falls and Harm from Falls in Older People (current)."
+  UK: "NICE CG161 Falls in older people: assessing risk and prevention; NICE QS86; CQC Reg 12 (safe care)."
+  US: "42 CFR 483.25(d) F689 (accidents — adequate supervision and assistive devices); MDS 3.0 v1.20.1 Section J1700–J1900 falls history coding (effective 1 Oct 2025)."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to every resident from the day of admission and
+      to all areas of the service including resident rooms, communal
+      spaces, bathrooms, and gardens. It governs assessment, prevention,
+      response, and learning.
+
+  - id: assessment
+    title: Assessment cadence
+    body: |
+      A falls-risk assessment is performed (a) on admission within 24
+      hours, (b) after any fall, (c) on return from hospital, (d) at
+      every change of condition, and (e) routinely at quarterly intervals.
+      The country-default risk tool is used as a structured aid; clinical
+      judgement is required regardless of score.
+
+  - id: prevention_plan
+    title: Individualised falls prevention plan
+    body: |
+      Every resident has an individualised falls plan as part of their
+      comprehensive care plan, with prioritised interventions tailored to
+      their risk profile. Examples include: low-low bed, sensor mat,
+      scheduled toileting, footwear review, vision review, vitamin D and
+      bone-health management, exercise / strength + balance programme,
+      medication review (FRIDs — falls-risk-increasing drugs), bedside
+      commode at night, hip protectors, environmental adjustments.
+
+  - id: environment
+    title: Environmental safety
+    body: |
+      Environmental factors are audited at admission and after any fall:
+      lighting (incl. nightlight), bed height, call bell within reach,
+      clutter, rugs, cords, bathroom rails, chair height, slippery floors,
+      visibility from common areas. The maintenance team holds a
+      facility-wide environmental falls audit at least quarterly.
+
+  - id: medication_review
+    title: Medication review
+    body: |
+      The pharmacist or treating GP reviews falls-risk-increasing drugs at
+      admission and after any fall. Categories scanned: psychotropics,
+      opioids, benzodiazepines, antihypertensives, diuretics, hypnotics,
+      anticonvulsants, anticholinergics, drugs causing hyponatraemia.
+      Deprescribing is an explicit option.
+
+  - id: post_fall_response
+    title: Post-fall response
+    body: |
+      Every fall triggers (a) immediate clinical assessment with vitals
+      including postural BP where safe, (b) head-strike screen with
+      neurological observation schedule (15-min × 2h, 30-min × 2h, hourly
+      × 4h, then 4-hourly × 24h) where head strike confirmed or suspected,
+      (c) GP / treating clinician notification per the Falls Incident form,
+      (d) family / NoK notification, (e) updated falls plan, and (f) a
+      post-fall huddle within 24 hours involving the staff who responded.
+
+  - id: anticoagulation_pathway
+    title: Anticoagulation and head strike
+    body: |
+      Residents on warfarin, a direct oral anticoagulant, or antiplatelets
+      have a lower threshold for hospital transfer after head strike given
+      subdural haematoma risk. The Falls Incident form prompts the
+      assessing nurse to check anticoagulation status from the resident
+      record and document the transfer decision.
+
+  - id: communication
+    title: Communication with family / NoK
+    body: |
+      Residents (with capacity) and their nominated NoK are informed of any
+      fall promptly. Open Disclosure / Duty of Candour is engaged where
+      moderate harm or above. The conversation is recorded on the Open
+      Disclosure form.
+
+  - id: governance_indicators
+    title: Governance and indicators
+    body_per_country:
+      NZ: |
+        Falls and major-injury falls are tracked and trended at the
+        clinical governance meeting. Significant events are reported under
+        the HQSC adverse-events framework and (where threshold met) under
+        HDS Safety Act 2001 s.31.
+      AU: |
+        Falls and Major Injury are NQI-mandated indicators with quarterly
+        Q-NQI reporting. Patterns are analysed at the clinical governance
+        meeting under Standard 2. SIRS is engaged where the fall is
+        consequent on neglect, inappropriate restrictive-practice use, or
+        unreasonable use of force.
+      UK: |
+        Falls resulting in fracture or other serious injury are notifiable
+        to CQC under Reg 18. Pattern analysis is reviewed under Reg 17
+        (good governance). Reg 20 (Duty of Candour) engages at moderate
+        harm or above.
+      US: |
+        Falls and major-injury falls are MDS J1900 coded. F689 supervisory
+        review is triggered for each fall with injury. Pattern review at
+        QAA Committee (F865 / F868). State Survey Agency notification
+        within 2 hours where serious bodily injury is suspected from
+        neglect; otherwise 24 hours.
+
+  - id: training
+    title: Staff training
+    body: |
+      All care staff complete induction training in falls awareness, safe
+      transfer technique, hoisting, post-fall first response, and the
+      neurological-observation schedule. Refresher annually. Manual
+      handling competency assessed annually.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years and after any
+      sentinel event. Operational responsibility: Director of Nursing /
+      Care Manager.

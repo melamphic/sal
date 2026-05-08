@@ -1,0 +1,213 @@
+id: salvia.veterinary.anaesthesia_surgery_consent
+name: "Anaesthesia & Surgery Consent"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Informed consent for general anaesthesia and the surgical or invasive procedure
+  to be performed. Captures the owner's authority to consent, the discussion of
+  benefits and material risks, financial estimate acknowledgement, and the
+  cascade / off-label clause where unauthorised products may be used. The signed
+  record is bound to the patient encounter and to the controlled-drug register
+  entries for any sedative or induction agent used.
+purpose_per_regulator:
+  NZ: "VCNZ Code of Professional Conduct §11 (Informed consent); HDC Code Right 7 (applied through the consumer-as-owner framing endorsed by VCNZ); ACVM Act 1997 s.10 (use of unauthorised compounds requires veterinarian's professional judgement and informed owner consent)."
+  AU: "AVA Guidelines on Informed Consent (2018, reaffirmed 2024); state Veterinary Practice Acts (e.g. NSW Veterinary Practice Act 2003 s.13; Vic Veterinary Practice Act 1997 s.55) requiring written estimate where fees likely to exceed the state threshold; AVA Anaesthesia Position Statement."
+  UK: "RCVS Code of Professional Conduct §11 (Communication and consent); RCVS Practice Standards Scheme small-animal modules v3.4 (Oct 2025) §SA.6.1 — written informed consent specimen form mandate; Veterinary Medicines Regulations 2013 reg 8 (cascade) requires written client consent for off-label use."
+  US: "AVMA Principles of Veterinary Medical Ethics (PVME) §VII (informed consent); state Veterinary Practice Acts (e.g. CA Bus & Prof Code §4826.6; TX Occ Code §801; FL Stat §474); AAHA Anesthesia Guidelines 2020. Some states (CA, NY, MA) require written consent for general anaesthesia by statute; others require it only as professional standard."
+linked_policy_defaults:
+  - salvia.veterinary.veterinary_medicines_cascade_sop
+  - salvia.veterinary.controlled_drugs_sop
+  - salvia.veterinary.infection_prevention_control
+  - salvia.shared.consent_policy
+  - salvia.shared.records_retention_policy
+tags: [consent, surgery, anaesthesia, invasive_procedure]
+overall_prompt: |
+  Extract from the pre-anaesthesia owner conversation and clinical examination.
+  Populate the procedure description, anaesthetic plan, identified risks, and
+  estimate range as discussed. Do NOT populate patient demographic fields
+  (name, species, breed, sex, weight, microchip) — those come from the patient
+  record. Do NOT populate the consent capture itself (signature, witness) —
+  the system.consent widget records those at the point of signature.
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+    help_text: "Patient identity is read from the patient record."
+
+  - key: subject_species_breed
+    label: Species & breed
+    type: system_field
+    source: patient_record.species_breed
+
+  - key: subject_sex_neuter
+    label: Sex / neuter status
+    type: system_field
+    source: patient_record.sex_neuter_status
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+    help_text: "Weight is taken from the most recent recorded weight on the patient record. Re-weigh on admission if pre-anaesthetic decisions depend on a current value."
+
+  - key: subject_microchip
+    label: Microchip
+    type: system_field
+    source: patient_record.microchip
+
+  - key: owner_ref
+    label: Owner / authorised agent
+    type: system_field
+    source: patient_record.owner
+    required: true
+    help_text: "Person presenting the animal must be the owner or hold the owner's written authority to consent."
+
+  - key: signer_authority
+    label: Authority of person signing
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Registered owner", value: "owner"}
+        - {label: "Authorised agent (written authority on file)", value: "agent_written"}
+        - {label: "Authorised agent (verbal — note who and when)", value: "agent_verbal"}
+        - {label: "Local-authority / pound officer", value: "authority"}
+    help_text: "If the signer is not the registered owner, record the basis of their authority in the notes below."
+
+  - key: authority_notes
+    label: Notes on authority (if not owner)
+    type: long_text
+    ai_extract: true
+
+  - key: procedure_description
+    label: Procedure(s) planned
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Describe in plain language the procedure(s) to be performed (e.g. ovariohysterectomy, dental scale & extractions of 108/208, exploratory laparotomy)."
+
+  - key: anaesthetic_plan
+    label: Anaesthetic plan
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Premed, induction agent, maintenance, planned analgesia. Note any pre-existing conditions (heart murmur, brachycephalic, geriatric) that modify the plan."
+
+  - key: asa_status
+    label: ASA physical status
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "I — normal healthy", value: "1"}
+        - {label: "II — mild systemic disease", value: "2"}
+        - {label: "III — severe systemic disease", value: "3"}
+        - {label: "IV — severe disease, constant threat to life", value: "4"}
+        - {label: "V — moribund, not expected to survive 24h without surgery", value: "5"}
+        - {label: "E — emergency modifier", value: "E"}
+
+  - key: material_risks_discussed
+    label: Material risks discussed with the owner
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Anaesthetic mortality (typical small-animal baseline ~0.05–0.17%; higher in ASA III–V, brachycephalic, geriatric), bleeding, infection, dehiscence, procedure-specific risks, possibility of intra-op findings requiring extension of surgery."
+
+  - key: cascade_offlabel_use
+    label: Cascade / off-label / unapproved-product use planned?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "No — all products are authorised for this species and indication", value: "no"}
+        - {label: "Yes — see cascade clause below", value: "yes"}
+
+  - key: cascade_offlabel_detail
+    label: Cascade / off-label products and indication
+    type: long_text
+    ai_extract: true
+    help_text: "List the product, the species/indication it is approved for, and why it is being used in this case. Required reading by the owner before signature where any cascade product is used."
+    label_per_country:
+      UK: "Cascade products (VMR 2013 reg 8) — list with justification"
+      AU: "Off-label products — list with AVA Prescribing Guideline justification"
+      NZ: "Compounded / unapproved products (ACVM Act s.10) — list with justification"
+      US: "Extra-label use under AMDUCA (food animals) or state-permitted off-label (companion) — list with justification"
+
+  - key: estimate_low
+    label: Estimate — low end
+    type: decimal
+    required: true
+    ai_extract: true
+
+  - key: estimate_high
+    label: Estimate — high end
+    type: decimal
+    required: true
+    ai_extract: true
+    help_text: "Owner is told the estimate is a range and that contact will be made before exceeding the high end. UK PSS and most AU state Acts require written estimate disclosure where the fee exceeds the prescribed threshold."
+
+  - key: contact_threshold_authority
+    label: Authority to proceed without contact up to
+    type: decimal
+    ai_extract: true
+    help_text: "Some practices ask owners to authorise an upper figure beyond which the surgeon must phone before continuing."
+
+  - key: blood_products_consent
+    label: Consent to administer blood / blood products if required
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes", value: "yes"}
+        - {label: "No", value: "no"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: cpr_status
+    label: CPR / resuscitation status
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Full CPR (open chest if indicated)", value: "full"}
+        - {label: "Closed-chest CPR + drugs only", value: "closed_chest"}
+        - {label: "Drugs only — no chest compressions", value: "drugs_only"}
+        - {label: "Do not resuscitate (DNR)", value: "dnr"}
+
+  - key: contact_during_surgery
+    label: Contact phone — reachable during surgery
+    type: text
+    required: true
+    pii: true
+    ai_extract: true
+
+  - key: alternative_contact
+    label: Alternative contact if primary unreachable
+    type: text
+    pii: true
+    ai_extract: true
+
+  - key: post_op_takehome_acknowledged
+    label: Owner acknowledges post-op discharge instructions will be given
+    type: select
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes", value: "yes"}
+
+  - key: consent
+    label: Informed consent capture
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: invasive_procedure
+      require_witness: true
+    help_text: "Owner (or authorised agent) signature and witness signature are captured here. Witness should be a member of clinical staff who heard the discussion. Signing is the explicit authorisation to proceed; the audit log retains the time, signer identity, and any witness identity."

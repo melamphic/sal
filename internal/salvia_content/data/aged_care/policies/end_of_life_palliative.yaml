@@ -1,0 +1,155 @@
+id: salvia.aged_care.end_of_life_palliative
+name: "End-of-Life and Palliative Care Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service identifies residents approaching end of life, manages
+  symptoms, supports the resident and family, coordinates with hospice or
+  palliative-care services, performs after-death care, and supports staff
+  through bereavement. Built on NICE NG142 (UK), F684 hospice rules (US),
+  Strengthened Standard 5 + PEPA (AU), and Te Ara Whakapiri (NZ).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — clinical care, end of life); HQSC Te Ara Whakapiri Toolkit (palliative-care principles); Ministry of Health Palliative Care Strategy."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.7 (End-of-life care); Aged Care Act 2024; Palliative Care Australia + PEPA (Programme of Experience in the Palliative Approach); CareSearch evidence base."
+  UK: "NICE NG142 End of life care for adults: service delivery; NICE NG31 Care of dying adults in the last days of life; Gold Standards Framework for primary care and care homes; CQC Reg 9 + Reg 12; Ambitions for Palliative and End of Life Care framework (national)."
+  US: "42 CFR 483.10 + 483.25 Quality of life and care; F684 Quality of care including hospice services; CMS Hospice conditions of participation 42 CFR 418; National Consensus Project Clinical Practice Guidelines for Quality Palliative Care 4th edition (current)."
+
+clauses:
+  - id: scope_principles
+    title: Scope and principles
+    body: |
+      End-of-life care is core business for residential aged care. Care
+      goals shift from curative to comfort. The resident's voice and
+      preferences guide every decision. Family/whānau are partners in
+      care. Symptoms are anticipated and managed. After-death care
+      respects the resident and family's cultural and spiritual
+      practice.
+
+  - id: identification
+    title: Identification of residents in last 12 months of life
+    body: |
+      The 'surprise question' is used routinely: 'Would I be surprised
+      if this resident died within 12 months?' A 'No' triggers an ACP
+      review and palliative-approach conversation. Other indicators:
+      multiple comorbidities with decline; recurrent hospital admissions;
+      advanced dementia (FAST 7+); progressive frailty; weight loss with
+      cachexia; advanced organ failure.
+
+  - id: symptom_management
+    title: Symptom management
+    body: |
+      Anticipatory prescribing covers: pain (regular + breakthrough,
+      typically opioid); breathlessness; anxiety / agitation
+      (benzodiazepine PRN); nausea / vomiting (anti-emetic); respiratory
+      secretions (anticholinergic). Subcutaneous route used when oral
+      no longer practical. Doses titrated to symptom; equianalgesic
+      conversion documented. Regular review of distress.
+
+  - id: ceiling_of_treatment
+    title: Ceiling of treatment
+    body: |
+      Where the resident's ACP and clinical situation indicate, a
+      ceiling of treatment is documented (e.g. 'no hospital transfer
+      except for symptom relief', 'no IV antibiotics', 'no artificial
+      nutrition / hydration'). Decisions are reviewed at every change.
+
+  - id: family_support
+    title: Family / whānau support
+    body: |
+      Family are welcomed 24/7 in the dying phase. A private space
+      offered. Refreshments offered. Spiritual / faith leader contacted
+      per request. Updates given proactively. After death, the family
+      is supported through bereavement; a follow-up call is offered at
+      6–8 weeks.
+
+  - id: cultural_spiritual
+    title: Cultural and spiritual practice
+    body_per_country:
+      NZ: |
+        Tikanga Māori — karakia, presence of whānau and iwi, kaumātua/
+        kuia where appropriate, body washing per tikanga, taonga
+        retained with whānau, repatriation to marae/urupā per whānau
+        wish. Pasifika practice honoured per family. Engage Māori /
+        Pasifika cultural support staff.
+      AU: |
+        Aboriginal and Torres Strait Islander Sorry Business protocols
+        — body care, family / community presence, smoking ceremony,
+        repatriation to Country. CALD faith and cultural practice
+        honoured.
+      UK: |
+        Faith-specific care of the dying and the body; specific timing
+        for some traditions (e.g. Jewish, Muslim burial within 24 hours
+        — coordinate with funeral director from time of death).
+      US: |
+        Faith-specific care; family time with body; specific religious
+        requirements honoured.
+
+  - id: hospice_partnership
+    title: Hospice partnership
+    body_per_country:
+      NZ: |
+        Local hospice service involvement where indicated; specialist
+        palliative-care advice on call.
+      AU: |
+        Specialist palliative-care service partnership; PEPA training
+        for staff; CareSearch resource for evidence-based practice.
+      UK: |
+        Local hospice / specialist palliative-care team; Gold
+        Standards Framework; community palliative care.
+      US: |
+        Hospice election under Medicare Hospice Benefit (42 CFR 418).
+        F684 surveyor lens — facility coordinates with hospice;
+        comprehensive care plan integrates hospice plan; written
+        agreement defines services.
+
+  - id: place_of_death
+    title: Place of death
+    body: |
+      The resident's preferred place of death is documented. Where the
+      preference is to die at the service ('home for them now'), every
+      effort is made to honour that. Hospital transfer in the dying
+      phase is a clinical decision balanced against the resident's
+      ACP and quality of remaining life.
+
+  - id: verification_certification
+    title: Verification and certification of death
+    body: |
+      Expected death is verified per the Verification of Expected
+      Death policy and form. Medical Certificate of Cause of Death is
+      issued by the medical practitioner separately. Coroner /
+      Medical Examiner referral where required.
+
+  - id: after_death_care
+    title: After-death care
+    body: |
+      Body care performed with dignity, respecting cultural and family
+      preferences. Personal effects inventoried and given to family per
+      resident wish. Funeral director engaged per family choice.
+
+  - id: staff_support_bereavement
+    title: Staff support and bereavement
+    body: |
+      Staff are supported through end-of-life situations. Debrief
+      offered after each death, with EAP access for those affected.
+      Loss of a long-term resident is a recognised grief.
+
+  - id: training
+    title: Staff training
+    body: |
+      All clinical staff complete induction training on the palliative
+      approach, common symptoms in dying, anticipatory prescribing,
+      verification of expected death, and cultural practice in dying.
+      Annual refresher.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing / Palliative Care Lead.

@@ -1,0 +1,241 @@
+id: salvia.general_clinic.resuscitation_medical_emergency
+name: "Resuscitation and medical emergency policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Defines the practice's preparedness for in-clinic medical emergencies,
+  including emergency drug kit composition, AED availability, anaphylaxis
+  response, staff competency, and drill cadence. Country anchors include the
+  NZ Foundation Standard + IMAC anaphylaxis guidance, AU RACGP C3.3 and the
+  GP doctor's bag (RACGP GP5.3), UK CQC GP Mythbusters 15 + 41, and US
+  OSHA + state medical-board emergency-preparedness rules.
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard 2024 (Indicator 12 emergency); IMAC anaphylaxis algorithm; Resuscitation Council NZ ANZCOR guidelines."
+  AU: "RACGP Standards 5th ed Criterion C3.3 (Clinical risk management) + GP5.3 (Doctor's bag); ARC ANZCOR guidelines; AHPRA Medical Board guidance."
+  UK: "CQC Fundamental Standards Reg 12 (safe care); CQC GP Mythbusters 15 (emergencies) + 41 (medicines); Resuscitation Council UK Quality Standards 2020; BMA / RCGP GP-emergency drug list."
+  US: "OSHA 29 CFR 1910.151 (medical and first aid); state medical-board office-emergency rules (FL 64B8-9.009, NY 8 NYCRR 60.3, CA Med Board); AHA BLS / ACLS; ADA-aligned facilities."
+
+clauses:
+  - id: scope
+    title: "Scope and purpose"
+    body: |
+      This policy applies to every clinical and non-clinical staff member at
+      this practice. It defines our preparedness for in-clinic medical
+      emergencies (cardiac arrest, anaphylaxis, severe asthma, hypoglycaemia,
+      seizure, opioid overdose, severe haemorrhage, choking) and the drill
+      cadence by which we keep readiness honest. The policy applies to all
+      sites operated by the practice, including outreach and home-visit work,
+      and to any third-party clinician (locum, allied health) operating from
+      practice premises.
+
+  - id: roles_and_responsibilities
+    title: "Roles and responsibilities"
+    body: |
+      The Practice Manager is accountable for emergency preparedness overall,
+      including kit checks, drill scheduling, and competency record-keeping.
+      The clinical lead (GP partner / supervising medical officer) is
+      accountable for medical content of the kit, drug currency, and the
+      clinical drill scenarios. Every clinician is accountable for being
+      competent to lead a resuscitation up to BLS minimum (ACLS / ALS for
+      doctors and senior nurses). Every administrative staff member must
+      know how to recognise an emergency, summon clinical help, ring the
+      ambulance, and perform compression-only CPR.
+
+  - id: emergency_drug_kit
+    title: "Emergency drug kit composition"
+    body_per_country:
+      NZ: |
+        Drug kit aligned to RNZCGP Foundation Standard 2024 + IMAC anaphylaxis
+        guidance. Minimum stock:
+          • Adrenaline 1:1000 — 6 ampoules of 1 mL (anaphylaxis); intramuscular.
+          • Adrenaline 1:10,000 — for cardiac arrest if doctor present and
+            trained; otherwise rely on ambulance arrival.
+          • Salbutamol pMDI 100 mcg + spacer — bronchospasm; nebuliser optional.
+          • Hydrocortisone 100 mg vial — anaphylaxis adjunct.
+          • Chlorphenamine 10 mg — antihistamine (or cetirizine oral).
+          • Glucagon 1 mg — hypoglycaemia.
+          • Glucose 40% oral gel + 50% IV.
+          • GTN spray — chest pain.
+          • Aspirin 300 mg — ACS.
+          • Naloxone 400 mcg/mL × 2 — opioid overdose.
+          • Diazepam 10 mg PR / midazolam 10 mg buccal — status epilepticus.
+          • IV fluids (0.9% NaCl 1L × 1) and giving set.
+          • Tranexamic acid 1g IV — major bleeding (per ANZCOR).
+          • AED with adult and paediatric pads, in date.
+          • Oxygen cylinder ≥460 L with regulator + non-rebreather mask + nasal
+            cannulae.
+          • Ambu / BVM with adult, child, infant masks.
+          • Suction (manual or electric), Yankauer tip.
+          • OP airways size 1–4; NP airways 6, 7, 8.
+          • Sphygmomanometer, pulse oximeter, glucometer, thermometer.
+          • Gloves, sharps container, drape, eye protection.
+        Drug currency check: monthly check of expiries, recorded in kit log.
+        Replacement before expiry; never extend.
+      AU: |
+        Drug kit aligned to RACGP GP5.3 doctor's bag + RACGP Standards 5th ed
+        Criterion C3.3. Minimum stock:
+          • Adrenaline 1:1000 (1 mg/mL) × 6 ampoules — IM for anaphylaxis (or
+            two adult EpiPen / Anapen 300 mcg auto-injectors if practice
+            chooses; manage cost vs. ampoule).
+          • Salbutamol pMDI + spacer; nebules 5 mg + driver if nebuliser kept.
+          • Hydrocortisone 100 mg + chlorphenamine 10 mg.
+          • Glucagon 1 mg + 50% glucose IV.
+          • GTN spray; aspirin 300 mg.
+          • Naloxone (Sch 3 over-the-counter pack acceptable for emergency
+            availability).
+          • Midazolam 5 mg/mL — buccal status epilepticus.
+          • IV fluids 0.9% NaCl 1L × 1; giving set; cannulae 18G + 20G.
+          • Tranexamic acid 1g IV.
+          • Oxygen cylinder + non-rebreather + cannulae.
+          • AED with adult + paediatric capability (paediatric pads or
+            attenuator).
+          • Ambu / BVM, OP / NP airways, suction, sphygmo, oximeter,
+            glucometer, thermometer, gloves, sharps container.
+        State-based variations apply for Sch 4/8 storage if any CDs are kept in
+        the bag (most general-practice bags exclude Sch 8 to simplify
+        register burden).
+      UK: |
+        Drug kit aligned to CQC GP Mythbuster 41 (Emergency medicines), BMA
+        GP emergency-drug consensus, and Resuscitation Council UK Quality
+        Standards. Minimum stock:
+          • Adrenaline 1:1000 1 mg/mL × 6 ampoules (anaphylaxis IM).
+          • Adrenaline 1:10000 for cardiac arrest if BLS+ trained on-site.
+          • Salbutamol 100 mcg pMDI + large-volume spacer.
+          • Hydrocortisone 100 mg + chlorphenamine 10 mg.
+          • Glucagon 1 mg + 50% glucose oral / 10% IV.
+          • GTN spray; aspirin 300 mg dispersible.
+          • Naloxone 400 mcg/mL × 2.
+          • Midazolam 10 mg/mL buccal — status epilepticus.
+          • Diazepam rectal 10 mg — paediatric back-up.
+          • Saline 0.9% 1L for IV access.
+          • Tranexamic acid 1g (RCUK 2021 inclusion).
+          • AED in date, Lone-Worker compliant if visited by single clinicians.
+          • Oxygen cylinder ≥455 L with mask set.
+          • BVM, airways, suction, sphygmo, oximeter, glucometer.
+        BNF entries cross-checked twice yearly. Practice MUST hold drugs to
+        manage anaphylaxis at minimum (CQC Mythbuster 41 explicit).
+      US: |
+        Drug kit aligned to OSHA 29 CFR 1910.151 + state medical-board office
+        rules + AHA BLS standards. Minimum stock:
+          • Epinephrine 1 mg/mL × 6 ampoules OR auto-injector (300 mcg adult +
+            150 mcg paediatric × 2 each).
+          • Albuterol MDI + spacer; nebulizer if asthma services performed.
+          • Methylprednisolone 125 mg IV + diphenhydramine 50 mg.
+          • Glucagon 1 mg + dextrose 50% (D50).
+          • Nitroglycerin SL spray; aspirin 325 mg chewable.
+          • Naloxone (Narcan) 4 mg intranasal × 2 (state Good Samaritan + ADP
+            laws permit holding).
+          • Midazolam 5 mg/mL or lorazepam 4 mg.
+          • IV fluids — 0.9% NaCl 1L; tubing; 18G + 20G IV catheters.
+          • Tranexamic acid 1g IV.
+          • Oxygen E-cylinder + non-rebreather + nasal cannula.
+          • AED — adult + paediatric pads.
+          • BVM, OPA / NPA, suction.
+        State minima vary — California Med Board, Florida 64B8-9.009, NY
+        8 NYCRR 60.3, etc. — review state rules and meet the most stringent.
+
+  - id: anaphylaxis_response
+    title: "Anaphylaxis recognition and response"
+    body: |
+      Recognition: sudden onset of skin / mucosal change PLUS respiratory
+      compromise OR cardiovascular compromise, after a likely allergen.
+      Treatment is adrenaline IM 0.5 mg adult / 0.15 mg child <30 kg (or 0.3
+      mg paediatric auto-injector) into the anterolateral mid-thigh, repeated
+      every 5 minutes if no response. Adjuncts (high-flow oxygen, IV fluids,
+      antihistamine, corticosteroid) DO NOT replace adrenaline. Call
+      ambulance immediately. Observe minimum 6–12 hours post-resolution
+      (NZ Resuscitation Council / ARC / RC UK / AAAAI). Re-supply the kit and
+      submit an ADR / AEFI report before end of shift.
+
+  - id: aed_and_cpr
+    title: "AED placement, BLS, and emergency-call protocol"
+    body: |
+      The AED is sited in a clearly signed, unlocked location accessible
+      within 60 seconds from any treatment room. Pads (adult + paediatric)
+      must be in date. The AED is checked weekly with the result logged.
+      Cardiac-arrest protocol: confirm unresponsiveness, call for help, ring
+      emergency services (111 / 000 / 999 / 911 — country-specific),
+      commence chest compressions, attach AED as soon as available, follow
+      its prompts. Two-person CPR rotated every 2 minutes. Document
+      everything as part of the post-event SEA / SEA-equivalent.
+
+  - id: staff_competency
+    title: "Staff competency and training"
+    body_per_country:
+      NZ: |
+        All clinical staff hold current BLS certification (NZRC or equivalent;
+        renewed every 12 months for first responders, 24 months for support).
+        GPs / Nurse Practitioners hold current ALS or PRIME if remote rural.
+        Reception / admin staff complete annual basic-life-awareness +
+        defibrillator-familiarisation training. Records held in the staff
+        training matrix and audited at the annual Foundation Standard
+        review.
+      AU: |
+        All clinical staff hold current ARC BLS (HLTAID011) or ALS as
+        appropriate. RACGP CPD log includes BLS hours. Anaphylaxis
+        annual recertification recommended (ASCIA). Reception / admin
+        complete CPR / AED awareness annually. Records in staff training
+        matrix.
+      UK: |
+        All staff complete annual BLS / Adult Basic Life Support to
+        Resuscitation Council UK standards (CQC Mythbuster 41 + Reg 18).
+        Clinicians complete additional Immediate Life Support (ILS) or
+        Advanced Life Support (ALS) where scope requires (e.g. minor
+        surgery). Anaphylaxis algorithm refresher annually. Records held
+        in mandatory-training matrix; CQC inspect this directly.
+      US: |
+        All staff hold current AHA BLS for Healthcare Providers (renewed
+        2-yearly). Clinicians performing sedation / IV anaesthesia hold
+        ACLS. Annual in-service includes anaphylaxis, opioid overdose
+        (naloxone), and AED use. State-specific hours may apply (TX 2 hr
+        opioid; CA 1557 LEP).
+
+  - id: drill_cadence
+    title: "Drill cadence and post-drill review"
+    body: |
+      The practice runs at least one full simulated medical emergency per
+      year (cardiac arrest, anaphylaxis, choking child, hypoglycaemic coma,
+      severe asthma — rotated). Drills are unannounced where safe. Each
+      drill is observed by the clinical lead and produces a one-page debrief
+      naming what worked, what didn't, and one or more action items.
+      Outstanding actions are reviewed at the monthly clinical-governance
+      meeting until closed. UK practices: a documented annual drill is a
+      CQC Mythbuster 41 expectation. AU: RACGP C3.3 expects evidence of
+      simulation. US: state medical-board office rules vary; meet the
+      most stringent.
+
+  - id: equipment_check_log
+    title: "Equipment check log"
+    body: |
+      The emergency-kit check log records: monthly drug expiries; weekly
+      AED self-test plus pad expiry; oxygen cylinder pressure; suction
+      battery; glucometer control-strip currency; consumables stocked.
+      Any deficiency triggers same-day resolution. The log is held in the
+      practice's clinical-governance record and available on request to the
+      regulator.
+
+  - id: documentation_and_handover
+    title: "Documentation, ambulance handover, and follow-up"
+    body: |
+      Every in-clinic emergency generates: (1) a clinical encounter note in
+      the patient's record; (2) an incident-ledger row via the system.incident
+      widget; (3) a Significant Event Analysis if outcome was serious or any
+      avoidable harm occurred. Ambulance handover uses ISBAR. Patient and
+      next-of-kin are informed, and Open Disclosure / Duty of Candour applies
+      where the incident meets the threshold (UK CQC Reg 20 explicit notifiable
+      safety incident standard; equivalent expectations elsewhere).
+
+  - id: review_and_currency
+    title: "Review and currency"
+    body: |
+      This policy is reviewed every 12 months or sooner if drug-list
+      guidance changes (e.g. ARC ANZCOR refresh; UK Resuscitation Council
+      revision; AHA emergency cardiovascular care updates). The currency
+      date at the top of this policy reflects the last full review.

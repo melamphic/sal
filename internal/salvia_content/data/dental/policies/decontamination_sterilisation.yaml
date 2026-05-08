@@ -1,0 +1,159 @@
+id: salvia.dental.decontamination_sterilisation
+name: "Decontamination & Sterilisation Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Reprocessing of reusable dental instruments end-to-end: pickup, transport,
+  cleaning (manual / ultrasonic / washer-disinfector), inspection, packaging,
+  steam sterilisation, storage, and traceability. Defines the local
+  decontamination unit (LDU) layout, daily/weekly tests, and validation
+  cadence.
+
+purpose_per_regulator:
+  NZ: "DCNZ IPC Practice Standard Dec 2024 §5; AS/NZS 4187:2014 (healthcare reprocessing); manufacturer IFU."
+  AU: "ADA Australia Guidelines for IPC 5th Ed 2024 §10; AS/NZS 4815:2006 (office-based) and AS/NZS 4187:2014 (where applicable)."
+  UK: "HTM 01-05 (Decontamination in Primary Care Dental Practices) — Essential Quality Requirements (EQR) minimum, Best Practice target; MHRA Medical Devices Regulations."
+  US: "CDC Summary IPC in Dental Settings 2024 §IV; FDA reusable device IFU; AAMI ST79; state board."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every reusable medical device used in patient care:
+      handpieces, burs (where reprocessable), scalers, cassettes, mirrors,
+      probes, tweezers, surgical kits. Single-use items (those marked with
+      the crossed-2 symbol) are never reprocessed.
+
+  - id: ldu_layout
+    title: "Local Decontamination Unit (LDU) layout"
+    body_per_country:
+      NZ: |
+        Dirty-to-clean unidirectional workflow per DCNZ IPC Std 2024 §5.
+        Separate dirty and clean zones; dedicated sinks; sealed transport
+        of contaminated instruments; effective separation by physical
+        barrier or distance + time.
+      AU: |
+        Per ADA AU 5th Ed §10 and AS/NZS 4815:2006: separate dirty and
+        clean areas with unidirectional workflow; ventilation appropriate
+        to chemical use; dedicated reprocessing sink ≠ clinical hand-wash
+        sink.
+      UK: |
+        HTM 01-05 EQR: dedicated reprocessing room or clearly demarcated
+        zones with dirty-to-clean flow; separate sinks for washing,
+        rinsing, and (if used) ultrasonic; clinical hand-wash sink
+        separate. Best Practice: dedicated decontamination room with
+        validated washer-disinfector + Type B vacuum steriliser.
+      US: |
+        CDC §IV.A: physical separation between dirty and clean processing
+        areas; one-way workflow; AAMI ST79 alignment for hospitals; office
+        equivalents per state board.
+
+  - id: cleaning
+    title: "Cleaning"
+    body: |
+      Pre-cleaning: keep instruments moist (cover or pre-soak) until
+      processed; do not allow bioburden to dry. Cleaning by validated
+      method:
+      - Washer-disinfector (preferred — HTM 01-05 Best Practice).
+      - Ultrasonic cleaner (manufacturer-specified time/freq, fresh
+        solution daily, daily foil/load test).
+      - Manual cleaning (long-handled brush under water level, dedicated
+        sink, neutral-pH enzymatic detergent).
+      All instruments inspected under magnification and adequate light
+      after cleaning. Re-clean if any soil visible.
+
+  - id: packaging_inspection
+    title: "Inspection and packaging"
+    body: |
+      Functional inspection (joints, sharpness, integrity). Damaged or
+      worn instruments removed from service. Packaging selected per cycle
+      type (steriliser-grade pouch with internal Class 1 indicator;
+      cassette wraps; rigid containers). Each pack labelled with cycle
+      ID, sterilisation date, and operator initials. Use-by date per
+      packaging IFU and country guidance (typically 6–12 months for
+      pouched, dry, undisturbed storage).
+
+  - id: cycle_parameters
+    title: "Sterilisation cycle parameters"
+    body: |
+      Standard cycles:
+      - 134°C ± 3°C for ≥3 minutes hold (porous load wrapped, Type B/S).
+      - 121°C ± 3°C for ≥15 minutes hold (alternative for heat-sensitive).
+      - Manufacturer-validated programme for cassette autoclaves.
+      Each cycle logged via the Sterilisation Cycle Log form
+      (`salvia.dental.sterilisation_cycle_log`). Parametric release on
+      visual confirmation of correct cycle parameters and indicator pass.
+
+  - id: testing_cadence
+    title: "Daily and periodic tests"
+    body_per_country:
+      NZ: |
+        DCNZ IPC Std 2024 §5: daily steam-penetration test (Bowie & Dick
+        or Helix per load type) on Type B; daily cycle parametric record;
+        weekly biological indicator (best practice); annual revalidation.
+      AU: |
+        ADA AU 5th Ed §10 and AS/NZS 4815:2006: each-day-of-use Class B
+        test; chemical indicator each load; biological indicator weekly
+        (or per state authority); annual revalidation by qualified
+        technician.
+      UK: |
+        HTM 01-05 §6: daily Bowie & Dick (Type B), Helix (hollow-load
+        PCD), residual-air test (Type N daily); steam quality / leak
+        weekly; periodic test set and annual revalidation by Authorised
+        Person (Decontamination).
+      US: |
+        CDC Summary IPC 2024 §IV.G: biological indicator weekly minimum
+        (each cycle for implantable devices); chemical integrator each
+        load; mechanical / parametric records each cycle; immediate
+        recall on positive BI, including patient-level recall back to
+        last documented negative BI.
+
+  - id: failure_management
+    title: "Failed-cycle / positive BI management"
+    body: |
+      On any failure (cycle parameters fail, chemical integrator fail,
+      Bowie & Dick fail, Helix fail, BI positive):
+      - Quarantine the load and any subsequent loads back to last
+        documented negative test.
+      - Take steriliser out of service; investigate root cause.
+      - Reprocess affected loads.
+      - Patient-level recall if quarantined items reached patients
+        (CDC 2024 §IV.G mandates).
+      - Significant Event Analysis with named follow-up.
+
+  - id: traceability
+    title: "Instrument traceability"
+    body: |
+      Each pack carries a load identifier linking back to the cycle log,
+      operator, and (best practice) the patient encounter at which it was
+      used. Best Practice (HTM 01-05; ADA AU 5th Ed): instrument-to-
+      patient traceability via cassette barcode or comparable system.
+
+  - id: storage
+    title: "Storage of sterilised stock"
+    body: |
+      Sterilised packs stored clean, dry, dust-free, and away from
+      direct sunlight; at least 250 mm above the floor; use-by date
+      observed. First-in-first-out rotation. Damaged or wet packs are
+      considered non-sterile and reprocessed.
+
+  - id: validation_revalidation
+    title: "Validation and revalidation"
+    body: |
+      Steriliser commissioned per manufacturer IFU + national standard
+      (HTM 01-05 IPS / AS/NZS 4187 / AAMI ST79). Annual revalidation by
+      a qualified technician (Authorised Person or vendor engineer).
+      Records retained for the working life of the steriliser plus the
+      jurisdictional retention period.
+
+  - id: handpieces
+    title: "Handpiece and ultrasonic device reprocessing"
+    body: |
+      Handpieces are reprocessed between every patient by autoclave
+      sterilisation per manufacturer IFU (no handpiece is "wipe-only").
+      Ultrasonic scalers and lines flushed and externally disinfected per
+      IFU; tips sterilised. Single-use prophylaxis cups are not
+      reprocessed.

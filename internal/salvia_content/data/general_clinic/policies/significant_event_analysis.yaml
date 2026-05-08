@@ -1,0 +1,154 @@
+id: salvia.general_clinic.significant_event_analysis
+name: "Significant event analysis policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Significant Event Analysis (SEA) / clinical incident review. Trigger
+  criteria, no-blame meeting structure, action register, and learning
+  capture. Country anchors include NZ Foundation Standard + HQSC,
+  AU RACGP QI3.1, UK CQC Reg 17 + RCGP SEA template, US OSHA + CMS QAPI.
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard 2024 (Indicator 8 — clinical risk); HQSC patient-safety; HDC Code R4."
+  AU: "RACGP Standards 5th ed Criterion QI3.1 (Improving clinical care); ACSQHC NSQHS Std 1 (Clinical Governance)."
+  UK: "CQC Fundamental Standards Reg 17 (Good governance); RCGP SEA template (Bowie / Sweeney method); NHS England Patient Safety Incident Response Framework (PSIRF) 2022."
+  US: "CMS Quality Assurance and Performance Improvement (QAPI); OSHA Recordkeeping 29 CFR 1904; Joint Commission RCA²; AHRQ Common Formats."
+
+clauses:
+  - id: scope
+    title: "Scope and definitions"
+    body: |
+      A significant event is anything — clinical or organisational — that
+      could have, or did, harm a patient or staff member; that exposed a
+      systems weakness; or that the practice wants to learn from.
+      Examples: missed cancer diagnosis, prescribing error, vaccine
+      cold-chain breach, suicide of a patient, complaint, near-miss with
+      a controlled drug, equipment failure, IT outage that delayed care,
+      breach of confidentiality, "good catch" that prevented harm.
+
+  - id: trigger_criteria
+    title: "Trigger criteria"
+    body: |
+      Any of the following triggers an SEA:
+        • Patient death or serious harm where care may have contributed.
+        • Diagnostic delay or missed diagnosis identified retrospectively.
+        • Medication error involving a controlled drug, high-risk
+          medicine, or any error reaching the patient.
+        • Failure of a results-handling, recall, or referral pathway.
+        • A complaint that names a clinical concern.
+        • A safeguarding referral where the practice's earlier handling
+          could have been better.
+        • An equipment, IT, or facility failure that caused harm or
+          near-harm.
+        • A "near miss" the team agrees is worth dissecting.
+        • Any event meeting the country's notifiable-incident threshold
+          (UK CQC Reg 18 notifiable safety incident; NZ HDC R6 open
+          disclosure; AU SIRS for residential aged care; US Joint
+          Commission Sentinel Event for accredited entities).
+
+  - id: no_blame_culture
+    title: "No-blame culture and Just Culture"
+    body: |
+      The SEA process is no-blame and oriented to system learning, NOT
+      individual punishment. The Just Culture model distinguishes: human
+      error (console / coach), at-risk behaviour (coach), reckless
+      behaviour (manage). The SEA itself does NOT discipline; if
+      reckless behaviour or competency concern emerges, that is escalated
+      separately to the appropriate HR / regulator process. Staff are
+      protected by the practice's whistleblowing / Speak Up arrangements
+      from any detriment for raising concerns.
+
+  - id: meeting_structure
+    title: "Meeting structure"
+    body: |
+      Within 10 working days of trigger, a structured SEA meeting takes
+      place. Attendees: the clinician(s) directly involved (where
+      willing — not coerced), the clinical lead, a non-involved peer
+      (chair), the practice manager, any specialist input needed. The
+      patient or family is invited where the event meets the threshold
+      and where they wish to attend (Open Disclosure / Duty of Candour
+      principles). The meeting follows the RCGP / Bowie 7-stage SEA
+      template: (1) what happened, (2) why, (3) what could have been
+      done differently, (4) what has been learnt, (5) what has been
+      changed, (6) action plan, (7) follow-up review date.
+
+  - id: action_register
+    title: "Action register and follow-up"
+    body: |
+      Each SEA produces an action register — owner, action, due date,
+      review date — held centrally. Actions are reviewed at every monthly
+      clinical-governance meeting until closed. Closure requires
+      evidence (audit, training certificate, equipment receipt). Open
+      actions persisting beyond their due date are escalated to the
+      practice partnership / clinical-board meeting.
+
+  - id: learning_capture
+    title: "Learning capture and dissemination"
+    body: |
+      The de-identified summary of every SEA is shared at the next
+      practice clinical-governance meeting and at the monthly all-staff
+      meeting. Lessons are filed in the practice's SEA log, indexed by
+      theme, and used in: induction of new staff; annual training plan;
+      protocol revision; trainee learning. SEA outputs are part of every
+      clinician's appraisal evidence (UK / NZ revalidation, AU CPD,
+      US MOC where relevant).
+
+  - id: external_reporting
+    title: "External reporting where required"
+    body_per_country:
+      NZ: |
+        Notifiable to HDC where the event harmed a consumer and the care
+        may have contributed; consider NotifiableHealthCare voluntary
+        reporting to HQSC; ACC treatment-injury claim assistance for
+        patient. Report to Coroner where death occurred under defined
+        circumstances (Coroners Act 2006 s.13).
+      AU: |
+        For general practice in AU there is no national mandatory SEA
+        reporting; state Coroners Act for relevant deaths; AHPRA
+        notification if a practitioner's conduct meets the mandatory
+        threshold; consideration of voluntary report to ACSQHC / state
+        clinical-excellence body. Document the reasoning either way.
+      UK: |
+        CQC Reg 18 notifiable safety incident: the registered
+        manager submits a notification to CQC. PSIRF (where applicable
+        in the system, e.g. PCN-led learning systems): de-identified
+        summary shared with the local patient-safety partner.
+        NHS Resolution / CNST claim assist where indicated. RIDDOR
+        reporting if employee injury or work-related fatality.
+      US: |
+        Joint Commission Sentinel Event for accredited entities:
+        report within 45 days. CMS QAPI evidence for hospital-affiliated
+        providers. State health-department adverse-event reporting per
+        state law (e.g. NY PSWS, MN AHE). OSHA 300 log for staff injury.
+        Consider voluntary report to AHRQ PSO for federal Patient
+        Safety & Quality Improvement Act protection.
+
+  - id: open_disclosure_link
+    title: "Link to Open Disclosure / Duty of Candour"
+    body: |
+      Where an event meets the country's open-disclosure / duty-of-candour
+      threshold, the SEA proceeds in parallel with the Open Disclosure
+      / Duty of Candour process (see related policy). The two processes
+      complement each other: Open Disclosure is patient-facing
+      (apology, explanation, ongoing communication); SEA is system-
+      facing (root cause, action). Both are documented and the patient
+      is offered access to the SEA learning summary on request.
+
+  - id: training
+    title: "Training"
+    body: |
+      All clinical and senior administrative staff complete SEA / RCA
+      training at induction (RCGP SEA module, NZ CMA online learning,
+      AU RACGP QI module, US Joint Commission RCA². Refresher every
+      3 years.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months. Currency date at the top of this policy.

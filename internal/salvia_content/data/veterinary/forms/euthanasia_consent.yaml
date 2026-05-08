@@ -1,0 +1,209 @@
+id: salvia.veterinary.euthanasia_consent
+name: "Euthanasia Consent"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Informed consent for the euthanasia of a companion or production animal.
+  Captures the authority of the signer to consent (registered owner or
+  authorised agent), confirmation of ownership, the planned method, the
+  disposition of the remains, and the aftercare contact. Signed before the
+  procedure and bound to the controlled-drug register entry that records the
+  euthanasia agent.
+purpose_per_regulator:
+  NZ: "VCNZ Code of Professional Conduct §11 (Informed consent) and §13 (End-of-life care); Animal Welfare Act 1999 s.138 (humane destruction); ACVM controlled-drug rules for pentobarbitone (Class C5, register entry per Misuse of Drugs Regs)."
+  AU: "AVA Policy on Euthanasia (reaffirmed 2024); state Veterinary Practice Acts; state Drugs & Poisons Acts (S4 pentobarbitone) requiring register entry; Prevention of Cruelty to Animals Acts (state) on humane methods."
+  UK: "RCVS Code of Professional Conduct §8 (Euthanasia); Veterinary Medicines Regulations 2013; Misuse of Drugs Regs 2001 (pentobarbital is Schedule 3, not CD register-entry mandatory but practice CDR entry strongly expected); Animal Welfare Act 2006 s.4 (humane destruction defence)."
+  US: "AVMA Guidelines for the Euthanasia of Animals (2020 edition, reaffirmed 2024); state Veterinary Practice Acts; DEA 21 CFR 1304 (pentobarbital is Schedule II, register entry mandatory); USDA APHIS guidance for production-animal euthanasia."
+linked_policy_defaults:
+  - salvia.veterinary.controlled_drugs_sop
+  - salvia.shared.consent_policy
+  - salvia.shared.records_retention_policy
+tags: [consent, euthanasia, end_of_life]
+overall_prompt: |
+  Extract the conversation around the euthanasia decision: clinical justification,
+  owner's understanding, chosen method, and remains disposition. Do not populate
+  patient demographics or the consent signature itself.
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_species_breed
+    label: Species & breed
+    type: system_field
+    source: patient_record.species_breed
+
+  - key: subject_sex_neuter
+    label: Sex / neuter status
+    type: system_field
+    source: patient_record.sex_neuter_status
+
+  - key: subject_age
+    label: Age
+    type: system_field
+    source: patient_record.age
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: subject_microchip
+    label: Microchip
+    type: system_field
+    source: patient_record.microchip
+
+  - key: owner_ref
+    label: Owner of record
+    type: system_field
+    source: patient_record.owner
+    required: true
+
+  - key: signer_name
+    label: Name of person signing
+    type: text
+    required: true
+    pii: true
+    ai_extract: true
+
+  - key: signer_relationship
+    label: Relationship to the animal
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Registered owner", value: "owner"}
+        - {label: "Spouse / partner of registered owner", value: "spouse_partner"}
+        - {label: "Authorised family member", value: "family"}
+        - {label: "Written authority of owner (held on file)", value: "written_agent"}
+        - {label: "Local-authority / pound / welfare officer", value: "authority"}
+        - {label: "Owner of production animal / herd manager", value: "herd_manager"}
+        - {label: "Other (record below)", value: "other"}
+
+  - key: ownership_confirmed
+    label: Ownership confirmed
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Confirmed via patient record / microchip / registration", value: "confirmed"}
+        - {label: "Confirmed via written authority on file", value: "written_authority"}
+        - {label: "Confirmed verbally — note circumstances", value: "verbal"}
+        - {label: "Local-authority / welfare-officer authority", value: "authority"}
+
+  - key: ownership_notes
+    label: Notes on ownership / authority
+    type: long_text
+    ai_extract: true
+
+  - key: clinical_indication
+    label: Clinical indication for euthanasia
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Plain-language reason: terminal illness, intractable pain, behavioural risk to humans, end-stage geriatric decline, severe trauma with poor prognosis, on-farm humane slaughter, etc."
+
+  - key: alternatives_discussed
+    label: Alternatives discussed
+    type: long_text
+    ai_extract: true
+    help_text: "Continued treatment, palliative / hospice care, referral, rehoming. If no alternatives are clinically appropriate, state so."
+
+  - key: method_planned
+    label: Method
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "IV pentobarbitone (preferred small animal)", value: "iv_pentobarbitone"}
+        - {label: "IV pentobarbitone with prior sedation", value: "iv_pentobarbitone_sedated"}
+        - {label: "Intra-cardiac / intra-organ pentobarbitone (anaesthetised animal only)", value: "intracardiac_anaesthetised"}
+        - {label: "Captive bolt then exsanguination (production / equine)", value: "captive_bolt"}
+        - {label: "Free bullet (on-farm emergency)", value: "free_bullet"}
+        - {label: "Inhalational (small mammal / exotic per AVMA / RCVS guidance)", value: "inhalational"}
+        - {label: "Other (record below)", value: "other"}
+    help_text: "All methods must be AVMA / AVA / RCVS / VCNZ acceptable for the species and circumstances."
+
+  - key: method_notes
+    label: Method notes
+    type: long_text
+    ai_extract: true
+
+  - key: sedation_planned
+    label: Pre-euthanasia sedation
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — recommended for owner-present euthanasia and most companion animals", value: "yes"}
+        - {label: "No — clinical reason recorded", value: "no"}
+
+  - key: owner_present
+    label: Owner choosing to be present
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — owner present at the procedure", value: "yes"}
+        - {label: "No — owner has chosen not to be present", value: "no"}
+        - {label: "Owner present for sedation only", value: "sedation_only"}
+
+  - key: remains_disposition
+    label: Remains disposition
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Communal cremation — ashes not returned", value: "communal"}
+        - {label: "Private (individual) cremation — ashes returned to owner", value: "private_returned"}
+        - {label: "Owner taking remains home for home burial", value: "home_burial"}
+        - {label: "Burial at private property (not the home property)", value: "other_burial"}
+        - {label: "Pet cemetery / memorial garden", value: "cemetery"}
+        - {label: "Submitted for necropsy first; disposition after", value: "necropsy_then"}
+        - {label: "On-farm disposal (production animal — note method)", value: "on_farm"}
+
+  - key: disposition_notes
+    label: Disposition notes
+    type: long_text
+    ai_extract: true
+    help_text: "Crematorium provider, urn / casket selection, return-to-owner timeline, home-burial considerations (depth, distance from waterways, pentobarbitone toxicity to wildlife if buried)."
+
+  - key: pentobarbitone_warning_acknowledged
+    label: Owner acknowledges pentobarbitone wildlife / scavenger toxicity warning (where home burial / on-farm disposal selected)
+    type: select
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — verbal warning given and information leaflet provided", value: "yes"}
+        - {label: "Not applicable (cremation or supervised disposal)", value: "na"}
+
+  - key: aftercare_contact
+    label: Aftercare contact (for ash return / paw print / fur clipping)
+    type: text
+    pii: true
+    ai_extract: true
+    help_text: "Phone or email for follow-up. Owner can decline aftercare keepsakes."
+
+  - key: keepsakes_requested
+    label: Keepsakes requested
+    type: long_text
+    ai_extract: true
+    help_text: "Paw print, fur clipping, ink-paw card. Note any specific requests."
+
+  - key: consent
+    label: Informed consent capture
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: euthanasia
+      require_witness: true
+    help_text: "Owner / authorised signer signature plus witness (member of clinical staff). Signature constitutes authority to proceed; controlled-drug register entry for the euthanasia agent is then required at administration."

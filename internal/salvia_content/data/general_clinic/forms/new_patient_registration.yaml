@@ -1,0 +1,355 @@
+id: salvia.general_clinic.new_patient_registration
+name: "New patient registration"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Enrolment / registration form for new patients joining the practice. Captures
+  demographics (drawn from the patient record where present), emergency contact,
+  GP / usual provider of record, ethnicity (with iwi-aware NZ and Aboriginal /
+  Torres Strait Islander AU options), country-specific health identifiers,
+  accessibility and interpreter needs, and consent to electronic communications.
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard Indicator 5; HIPC 2020 Rules 1–4; HDC Code Right 7; Te Whatu Ora PHO enrolment."
+  AU: "RACGP Standards 5th ed Criterion C2.1 (Patient identification) and C7.1 (Information management); APP 3 + APP 5 collection notice."
+  UK: "NHS GMS1 patient-registration form (Primary Medical Services); CQC Reg 17 records; UK GDPR Art 13 + DPA 2018."
+  US: "HIPAA 45 CFR 164.520 NPP (16 Feb 2026 SUD update); CMS Conditions for Coverage; ACA §1557 LEP / accessibility."
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.shared.records_retention_policy
+  - salvia.shared.consent_policy
+  - salvia.shared.subject_access_policy
+
+tags: [registration, intake, demographics]
+
+overall_prompt: |
+  This is an enrolment form. Patient identity fields (name, DOB, sex, address)
+  come from the patient record and are NOT extracted from voice or transcript.
+  Only fields like emergency contact, ethnicity declaration, and accessibility
+  needs are eligible for AI extraction when explicitly stated by the patient.
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_full_name
+    label: "Full legal name"
+    type: system_field
+    source: patient_record.full_name
+    pii: true
+    required: true
+
+  - key: subject_preferred_name
+    label: "Preferred name"
+    type: system_field
+    source: patient_record.preferred_name
+    pii: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    pii: true
+    required: true
+
+  - key: subject_sex_at_birth
+    label: "Sex recorded at birth"
+    type: system_field
+    source: patient_record.sex_at_birth
+
+  - key: subject_gender
+    label: "Gender identity"
+    type: select
+    config:
+      options:
+        - {label: "Female", value: "female"}
+        - {label: "Male", value: "male"}
+        - {label: "Non-binary", value: "non_binary"}
+        - {label: "Another term (please describe)", value: "other"}
+        - {label: "Prefer not to say", value: "prefer_not_to_say"}
+
+  - key: subject_address
+    label: "Residential address"
+    type: system_field
+    source: patient_record.address
+    pii: true
+    required: true
+
+  - key: subject_phone
+    label: "Mobile phone"
+    type: system_field
+    source: patient_record.phone
+    pii: true
+
+  - key: subject_email
+    label: "Email"
+    type: system_field
+    source: patient_record.email
+    pii: true
+
+  - key: nhi_number
+    label: "NHI number"
+    type: text
+    countries: [NZ]
+    required_per_country:
+      NZ: true
+    pii: true
+    help_text: "7-character NZ National Health Index identifier (3 letters + 4 digits, or 1 letter + 2 letters + 4 digits in 2024+ format)."
+
+  - key: medicare_number
+    label: "Medicare number"
+    type: text
+    countries: [AU]
+    required_per_country:
+      AU: true
+    pii: true
+    help_text: "10-digit Medicare number plus IRN (individual reference number) and expiry. Required for MBS billing."
+
+  - key: ihi_number
+    label: "Individual Healthcare Identifier (IHI)"
+    type: text
+    countries: [AU]
+    pii: true
+    help_text: "16-digit IHI for My Health Record interactions (Healthcare Identifiers Act 2010)."
+
+  - key: nhs_number
+    label: "NHS number"
+    type: text
+    countries: [UK]
+    required_per_country:
+      UK: true
+    pii: true
+    help_text: "10-digit NHS number (England/Wales) or CHI (Scotland) / Health and Care number (NI). Validate Mod-11 checksum at entry."
+
+  - key: gms1_previous_practice
+    label: "Previous GP practice (if known)"
+    type: text
+    countries: [UK]
+    pii: true
+    help_text: "Name and address of previous registered practice for GMS1 records transfer via PCSE."
+
+  - key: mbi_number
+    label: "Medicare Beneficiary Identifier (MBI)"
+    type: text
+    countries: [US]
+    pii: true
+    help_text: "11-character MBI from the patient's red, white, and blue Medicare card. Replaces the SSN-based HICN."
+
+  - key: insurance_payer
+    label: "Insurance / payer"
+    type: text
+    countries: [US]
+    required_per_country:
+      US: true
+    pii: true
+    help_text: "Primary insurance carrier, member ID, group number. Capture secondary if applicable."
+
+  - key: ethnicity_nz
+    label: "Ethnicity (you may choose more than one)"
+    type: select
+    countries: [NZ]
+    config:
+      options:
+        - {label: "Māori", value: "maori"}
+        - {label: "NZ European / Pākehā", value: "nz_european"}
+        - {label: "Samoan", value: "samoan"}
+        - {label: "Tongan", value: "tongan"}
+        - {label: "Cook Islands Māori", value: "cook_islands_maori"}
+        - {label: "Niuean", value: "niuean"}
+        - {label: "Tokelauan", value: "tokelauan"}
+        - {label: "Fijian", value: "fijian"}
+        - {label: "Other Pacific peoples", value: "other_pacific"}
+        - {label: "Chinese", value: "chinese"}
+        - {label: "Indian", value: "indian"}
+        - {label: "Other Asian", value: "other_asian"}
+        - {label: "Middle Eastern", value: "middle_eastern"}
+        - {label: "Latin American", value: "latin_american"}
+        - {label: "African", value: "african"}
+        - {label: "Other European", value: "other_european"}
+        - {label: "Other (please specify)", value: "other"}
+    help_text: "Stats NZ Ethnicity Standard 2005 (V2). Self-identified; multi-select."
+
+  - key: iwi_affiliation
+    label: "Iwi affiliation (if Māori)"
+    type: text
+    countries: [NZ]
+    help_text: "Free text — list iwi as patient identifies. Optional but encouraged for whakapapa connection and culturally safe care."
+
+  - key: ethnicity_au
+    label: "Are you of Aboriginal or Torres Strait Islander origin?"
+    type: select
+    countries: [AU]
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — Aboriginal", value: "aboriginal"}
+        - {label: "Yes — Torres Strait Islander", value: "tsi"}
+        - {label: "Yes — both Aboriginal and Torres Strait Islander", value: "both"}
+        - {label: "Prefer not to say", value: "prefer_not_to_say"}
+    help_text: "AIHW Standard Indigenous Question. Required for Closing the Gap PIP, MBS Indigenous Health Assessments (715), and chronic-disease subsidies."
+
+  - key: ethnicity_uk
+    label: "Ethnic group"
+    type: select
+    countries: [UK]
+    config:
+      options:
+        - {label: "White — British / English / Welsh / Scottish / NI", value: "white_british"}
+        - {label: "White — Irish", value: "white_irish"}
+        - {label: "White — Gypsy / Irish Traveller", value: "white_traveller"}
+        - {label: "White — Other", value: "white_other"}
+        - {label: "Mixed — White and Black Caribbean", value: "mixed_white_black_caribbean"}
+        - {label: "Mixed — White and Black African", value: "mixed_white_black_african"}
+        - {label: "Mixed — White and Asian", value: "mixed_white_asian"}
+        - {label: "Mixed — Other", value: "mixed_other"}
+        - {label: "Asian — Indian", value: "asian_indian"}
+        - {label: "Asian — Pakistani", value: "asian_pakistani"}
+        - {label: "Asian — Bangladeshi", value: "asian_bangladeshi"}
+        - {label: "Asian — Chinese", value: "asian_chinese"}
+        - {label: "Asian — Other", value: "asian_other"}
+        - {label: "Black — African", value: "black_african"}
+        - {label: "Black — Caribbean", value: "black_caribbean"}
+        - {label: "Black — Other", value: "black_other"}
+        - {label: "Arab", value: "arab"}
+        - {label: "Other ethnic group", value: "other"}
+        - {label: "Prefer not to say", value: "prefer_not_to_say"}
+    help_text: "ONS 2021 Census ethnic group categories — NHS Data Dictionary aligned."
+
+  - key: ethnicity_us
+    label: "Race and ethnicity"
+    type: select
+    countries: [US]
+    config:
+      options:
+        - {label: "Hispanic or Latino", value: "hispanic_latino"}
+        - {label: "Not Hispanic or Latino", value: "not_hispanic_latino"}
+        - {label: "American Indian or Alaska Native", value: "ai_an"}
+        - {label: "Asian", value: "asian"}
+        - {label: "Black or African American", value: "black"}
+        - {label: "Native Hawaiian or Other Pacific Islander", value: "nhpi"}
+        - {label: "White", value: "white"}
+        - {label: "Other / two or more races", value: "other"}
+        - {label: "Decline to answer", value: "decline"}
+    help_text: "OMB Directive 15 categories — required for ACA §1557 stratified-quality reporting and CMS demographic capture."
+
+  - key: preferred_language
+    label: "Preferred language"
+    type: text
+    help_text: "Language patient prefers for consultation and written material."
+    ai_extract: true
+
+  - key: interpreter_needed
+    label: "Do you need an interpreter?"
+    type: select
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — spoken language interpreter", value: "spoken"}
+        - {label: "Yes — NZSL / Auslan / BSL / ASL signed-language interpreter", value: "signed"}
+        - {label: "Yes — both", value: "both"}
+    help_text: "AU clinics: book TIS National. NZ: Language Line / Connecting Now. UK: NHS England Interpretation & Translation. US: Section 1557 LEP — qualified interpreter required, family members are not adequate."
+
+  - key: accessibility_needs
+    label: "Accessibility needs"
+    type: long_text
+    help_text: "Wheelchair access, hearing loop, large-print correspondence, dementia-friendly environment, neurodivergent accommodations. UK: Accessible Information Standard (DCB1605, mandatory in primary care)."
+    ai_extract: true
+
+  - key: emergency_contact_name
+    label: "Emergency contact — name"
+    type: text
+    pii: true
+    required: true
+    ai_extract: true
+
+  - key: emergency_contact_relationship
+    label: "Emergency contact — relationship"
+    type: text
+    ai_extract: true
+
+  - key: emergency_contact_phone
+    label: "Emergency contact — phone"
+    type: text
+    pii: true
+    required: true
+    ai_extract: true
+
+  - key: next_of_kin_authority
+    label: "Is the emergency contact authorised to receive clinical information?"
+    type: select
+    config:
+      options:
+        - {label: "Yes — full clinical information", value: "full"}
+        - {label: "Yes — limited (presence at facility, condition stable/serious)", value: "limited"}
+        - {label: "No — emergency contact only", value: "none"}
+    help_text: "Document patient consent before disclosing any clinical information to the emergency contact."
+
+  - key: usual_gp_practice
+    label: "Previous / usual GP or practice"
+    type: text
+    pii: true
+    help_text: "Name and address of any other practice the patient is enrolled with. Required to manage records-transfer and avoid double-funding (NZ PHO capitation, UK GMS list, AU MyMedicare)."
+
+  - key: e_communications_consent
+    label: "Consent to electronic communications"
+    type: system.consent
+    config:
+      consent_type: data_sharing
+      require_witness: false
+    help_text: "Patient consents to receive appointment reminders, results, and recall messages via email, SMS, or patient portal. Discloses risks of unencrypted channels and option to opt out at any time. NZ HIPC Rule 11; AU APP 6; UK UK GDPR Art 6(1)(a); US HIPAA 164.522."
+
+  - key: ecomm_channels
+    label: "Preferred electronic channels"
+    type: select
+    config:
+      options:
+        - {label: "SMS", value: "sms"}
+        - {label: "Email", value: "email"}
+        - {label: "Patient portal", value: "portal"}
+        - {label: "Postal mail only", value: "post"}
+        - {label: "Phone call only", value: "phone"}
+
+  - key: marketing_consent
+    label: "Consent to receive practice newsletters / health-promotion material"
+    type: select
+    config:
+      options:
+        - {label: "Yes", value: "yes"}
+        - {label: "No", value: "no"}
+    help_text: "Separate from clinical communications. Opt-in by default per AU Spam Act 2003, UK PECR, US TCPA, NZ Unsolicited Electronic Messages Act 2007."
+
+  - key: data_sharing_shared_care
+    label: "Consent to share records with hospital, specialist, and pharmacy under shared-care arrangements"
+    type: select
+    config:
+      options:
+        - {label: "Yes", value: "yes"}
+        - {label: "No", value: "no"}
+        - {label: "Limited (specify)", value: "limited"}
+    help_text: "NZ: GP2GP, Health Connect; AU: My Health Record opt-out / specialist letter; UK: NHS Summary Care Record, GP Connect; US: HIE participation."
+
+  - key: signature_patient
+    label: "Patient / authorised representative signature"
+    type: text
+    required: true
+    pii: true
+
+  - key: signature_date
+    label: "Date signed"
+    type: date
+    required: true
+
+  - key: registering_clinician
+    label: "Registering clinician / receptionist"
+    type: text
+    required: true

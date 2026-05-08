@@ -1,0 +1,179 @@
+id: salvia.aged_care.mental_capacity_consent
+name: "Mental Capacity, Consent and Supported Decision-Making Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service supports residents to make their own decisions, assesses
+  decision-specific capacity when in doubt, and identifies the lawful
+  decision-maker when a resident lacks capacity for a particular decision.
+  Sets the framework for supported decision-making, best-interests
+  decisions, statutory authorities, and emergency decisions. The UK
+  Mental Capacity Act 2005 has the strongest statutory writing
+  requirements; other countries are framework-based.
+
+purpose_per_regulator:
+  NZ: "Health and Disability Commissioner Code Right 7 (informed consent — every consumer is presumed competent unless reasonable grounds suggest otherwise; supported decision-making must be enabled); Protection of Personal and Property Rights Act 1988 (Welfare Guardian, EPOA Personal Care and Welfare); Mental Health (Compulsory Assessment and Treatment) Act 1992 where applicable."
+  AU: "Aged Care Act 2024 supported decision-making framework (s.16 supporters); state guardianship and powers of attorney legislation (e.g. NSW Guardianship Act 1987; Vic Powers of Attorney Act 2014 + Medical Treatment Planning and Decisions Act 2016; Qld Powers of Attorney Act 1998); Strengthened Aged Care Quality Standards Standard 1 (The person)."
+  UK: "Mental Capacity Act 2005 ss.1–4 (principles, capacity test, best interests), s.5 (acts in connection with care or treatment), s.6 (restraint conditions), ss.9–14 (Lasting Powers of Attorney), s.16 (Court appointed Deputies), s.24 (Advance Decision to Refuse Treatment), s.39A (IMCAs), Schedule A1 (DoLS); Liberty Protection Safeguards (LPS) deferred ≥2027 — DoLS remains live."
+  US: "42 CFR 483.10(c) (right to be informed about and participate in care); state law for capacity assessment and substitute decision-making (Health Care Proxy, Durable Power of Attorney for Health Care, state surrogate hierarchy, court guardianship); ACA §1557 language access; HIPAA right to access (45 CFR 164.524)."
+
+clauses:
+  - id: presumption_of_capacity
+    title: Presumption of capacity
+    body: |
+      Every resident is presumed to have capacity to make their own
+      decisions. Capacity is decision-specific and time-specific —
+      capacity for one decision does not imply capacity for another, and
+      capacity may fluctuate. A diagnosis of dementia, intellectual
+      disability or mental illness does not automatically mean a person
+      lacks capacity.
+
+  - id: support_first
+    title: Support first
+    body: |
+      All practicable steps are taken to help the resident make their
+      own decision before capacity is questioned: simplify language,
+      use visuals, allow time, address sensory aids (hearing, vision),
+      involve trusted family/whānau/friend, provide an interpreter,
+      choose the time of day when the resident is most alert. The
+      resident has a right to make an unwise decision.
+
+  - id: decision_specific_assessment
+    title: Decision-specific capacity assessment
+    body_per_country:
+      NZ: |
+        Capacity is assessed against the HDC Code and PPPR Act
+        thresholds. Where in doubt, the assessing clinician applies the
+        functional test: can the resident understand the information
+        relevant to the decision, retain it long enough to decide, weigh
+        it as part of the process, and communicate the decision (by any
+        means)? Documented decision-by-decision.
+      AU: |
+        Capacity assessed against state law (e.g. NSW Guardianship Act
+        criteria). Supported decision-making is the default under Aged
+        Care Act 2024 s.16 — supporters help the resident make their
+        own decision; substitute decision-making is the fallback.
+      UK: |
+        Capacity assessed under the four-stage test in MCA 2005 s.3:
+        understand the information relevant to the decision, retain
+        the information, use or weigh it, communicate the decision.
+        Two-stage: (1) is there an impairment of/disturbance in the
+        functioning of the mind or brain? (s.2(1)); (2) does it
+        prevent the person making this decision? (s.3). Recorded for
+        each decision.
+      US: |
+        Capacity assessed against state criteria. Many states require
+        physician or NP attestation for activation of an advance
+        directive or for finding incapacity. Recorded decision-by-
+        decision.
+
+  - id: supported_decision_making
+    title: Supported decision-making
+    body: |
+      The resident may choose a supporter (family, friend, advocate) to
+      help them understand information, communicate their decision, and
+      explain their decision to others. The supporter does not make the
+      decision. Supporters are formally recorded (AU under Aged Care Act
+      2024 s.16 supporter framework) or informally noted in the care
+      plan (NZ, UK, US).
+
+  - id: substitute_decision_makers
+    title: Substitute decision-makers when capacity lacks
+    body_per_country:
+      NZ: |
+        Hierarchy: activated Welfare Guardian under PPPR Act 1988;
+        activated EPOA (Personal Care and Welfare) — must be 'activated'
+        by certificate of mental incapacity; otherwise the treating
+        clinician acts in the resident's best interests with whānau
+        involvement. There is no statutory NoK hierarchy in NZ.
+      AU: |
+        State-specific hierarchy. NSW: 'Person Responsible' under
+        Guardianship Act 1987 — guardian, spouse, carer, close family
+        or friend in personal relationship. Vic: medical treatment
+        decision-maker under MTPDA 2016. Aged Care Rules 2025 RPSDM
+        hierarchy applies for restrictive practices specifically.
+      UK: |
+        Lasting Power of Attorney (Health & Welfare) where appointed
+        and registered with OPG. Court-appointed Deputy where Court of
+        Protection has appointed. Otherwise best-interests decision
+        under MCA s.4 with named decision-maker; IMCA instructed under
+        s.39A where the resident has no family or friend who is
+        appropriate to be consulted on serious medical treatment or
+        long-term accommodation.
+      US: |
+        Health Care Proxy or Durable Power of Attorney for Health Care
+        where executed. Otherwise state surrogate hierarchy (typically
+        spouse, adult child, parent, sibling, close friend). State
+        court guardianship where appointed.
+
+  - id: best_interests_uk
+    title: Best interests determination (UK MCA s.4)
+    body_per_country:
+      UK: |
+        The decision-maker must, so far as reasonably ascertainable,
+        consider: the resident's past and present wishes and feelings;
+        the resident's beliefs and values that would be likely to
+        influence the decision; other factors the resident would be
+        likely to consider; views of others engaged in caring for the
+        resident or interested in their welfare; views of the LPA or
+        Deputy; the least restrictive option (s.1(6)); whether the
+        resident may regain capacity. For life-sustaining treatment, the
+        decision must not be motivated by a desire to bring about death
+        (s.4(5)). Recorded with reasoning.
+
+  - id: emergency_decisions
+    title: Emergency decisions
+    body: |
+      In an emergency where the resident lacks capacity and cannot wait
+      for a substitute decision-maker, treatment is given to preserve
+      life or prevent serious deterioration. The substitute is informed
+      as soon as practicable and the decision is documented
+      retrospectively.
+
+  - id: written_information
+    title: Written information and accessible formats
+    body: |
+      Information about decisions is provided in plain language and in
+      the resident's preferred language and format (large print, audio,
+      easy-read, BSL/NZSL, translated). UK: Accessible Information
+      Standard SCCI 1605 followed.
+
+  - id: refusal
+    title: Right to refuse
+    body: |
+      A resident with capacity may refuse any treatment, including
+      life-sustaining treatment. UK: Advance Decision to Refuse
+      Treatment under MCA s.24 must be in writing, signed and witnessed
+      and specifically address life-sustaining treatment for it to be
+      legally binding for life-sustaining treatment (s.25(5)(6)).
+      US: 42 CFR 483.10(c)(6) right to refuse treatment.
+
+  - id: documentation
+    title: Documentation
+    body: |
+      Each capacity assessment is documented in the resident's record:
+      the decision in question, the test applied, the outcome, the
+      assessor, and the date. The substitute decision-maker (if any) is
+      named with their authority basis. Reviewed at every change of
+      condition.
+
+  - id: training
+    title: Staff training
+    body: |
+      All staff complete training on capacity, consent, supported
+      decision-making, and country-specific substitute frameworks.
+      Refresher annually. Senior clinical staff have advanced training
+      on best-interests decisions / s.39A IMCA referral / RPSDM
+      consultation.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: Director of Nursing / Care Manager.

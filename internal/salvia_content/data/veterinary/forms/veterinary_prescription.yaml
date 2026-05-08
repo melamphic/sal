@@ -1,0 +1,279 @@
+id: salvia.veterinary.veterinary_prescription
+name: "Veterinary Written Prescription"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  A written prescription issued by a registered veterinarian, for dispensing by
+  the issuing practice or by a third-party pharmacy. Captures prescriber
+  identification, animal / herd identification, the product, dosage, duration,
+  route, indication, withdrawal periods (food-producing animals), refills,
+  cascade or extra-label justification, and any controlled-drug specifics
+  required by jurisdiction. This form is the prescription itself, not the
+  dispensing log — the dispensing event is recorded separately on the controlled-
+  drug register entry or RVM/POM-V dispensing record where applicable.
+purpose_per_regulator:
+  NZ: "ACVM Act 1997 + ACVM (Exemptions and Prohibited Substances) Regulations 2011; VCNZ Code of Professional Conduct §15 (Prescribing); Misuse of Drugs Regulations 1977 reg 29 (CD prescriptions — for animal CDs the practice usually administers/dispenses but where written, must comply with reg 29: handwritten signature, indelible ink, animal identification, '7 days only' if administered solely for dental treatment is not a vet rule but for consistency the veterinary CD limit follows the standing 7-day MoH guidance for community CD prescriptions adapted to species)."
+  AU: "AVA Prescribing Guidelines (October 2023 edition); state Veterinary Practice Acts; state Drugs & Poisons / Health (Drugs and Poisons) Acts (S2/S3/S4/S8 scheduling); APVMA Veterinary Chemical Products labelling. CDs (S8) require written prescription with state-specific elements (e.g. Vic Drugs, Poisons and Controlled Substances Act 1981 s.30; NSW Poisons and Therapeutic Goods Reg 2008 cl.80)."
+  UK: "Veterinary Medicines Regulations 2013 (VMR) Sched 3 — POM-V/POM-VPS prescription requirements: prescriber name + RCVS reg #, address, animal/herd ID, product, dose, frequency, duration, withdrawal period (food animals); cascade declaration under reg 8 where prescribing outside the marketing authorisation; antibiotic prophylaxis statement under VMR Sched 3 §6 (RCVS Code §4.5). Controlled drugs: Misuse of Drugs Regs 2001 — Schedule 2/3 28-day validity; quantity in words AND figures; ink signature; for dental treatment additional limits do not apply to vet but the format does. CD destruction by authorised witness for Sched 2."
+  US: "DEA 21 CFR 1306 (controlled-substance prescriptions: DEA number, exact strength, quantity, refills); state Veterinary Practice Acts; state Boards of Pharmacy rules where vet writes for human-labelled product; AMDUCA + 21 CFR 530 for extra-label use in food-producing animals (mandates labelling, withdrawal extension, recordkeeping); FDA CVM guidance. EPCS where state mandates electronic CD prescribing."
+linked_policy_defaults:
+  - salvia.veterinary.veterinary_medicines_cascade_sop
+  - salvia.veterinary.controlled_drugs_sop
+  - salvia.shared.records_retention_policy
+tags: [prescription, medicines, controlled_drugs]
+overall_prompt: |
+  Extract from the consultation: clinical indication, drug product, dose, route,
+  frequency, duration, refills discussed, and (food animal) withdrawal period.
+  Do not populate prescriber identity, RCVS/state registration numbers, or
+  patient demographics — those are taken from the practitioner profile and
+  patient record. Do not infer dose calculations the clinician did not state.
+fields:
+  - key: prescriber_name
+    label: Prescribing veterinarian
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: prescriber_registration
+    label: Veterinary registration number
+    type: system_field
+    source: practitioner_record.registration_number
+    required: true
+    label_per_country:
+      NZ: "VCNZ Annual Practising Certificate number"
+      AU: "AVBC / state Vet Board registration number"
+      UK: "RCVS Membership number"
+      US: "State Veterinary License number + DEA registration (where prescribing CDs)"
+
+  - key: prescriber_dea
+    label: DEA registration number (controlled drugs)
+    type: system_field
+    source: practitioner_record.dea_registration
+    countries: [US]
+
+  - key: practice_address
+    label: Practice address
+    type: system_field
+    source: clinic_record.address
+    required: true
+
+  - key: prescription_date
+    label: Date of prescription
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: subject_ref
+    label: Patient / animal
+    type: system_field
+    source: patient_record
+    required: true
+    help_text: "For individual companion animals, identify the patient. For herd-level prescriptions in production animals, the herd / mob / class is the subject — see herd_identifier below."
+
+  - key: subject_species
+    label: Species
+    type: system_field
+    source: patient_record.species
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+    help_text: "Used for dose calculation. If the herd-level field is used, weight is per-animal estimate."
+
+  - key: subject_microchip
+    label: Microchip / NLIS / EID
+    type: system_field
+    source: patient_record.microchip
+
+  - key: herd_identifier
+    label: Herd / mob / flock identifier (production animals)
+    type: text
+    ai_extract: true
+    help_text: "Property identifier (PIC AU; NAIT NZ; CPH UK; PIN US), mob/group ID, approximate animal numbers, class (e.g. dairy heifers, finishing lambs)."
+
+  - key: owner_ref
+    label: Owner / responsible party
+    type: system_field
+    source: patient_record.owner
+    required: true
+
+  - key: product_name
+    label: Product (proprietary or generic)
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: product_active_ingredient
+    label: Active ingredient
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: product_form
+    label: Form
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Tablet / capsule", value: "tablet"}
+        - {label: "Oral liquid / suspension", value: "oral_liquid"}
+        - {label: "Injectable", value: "injectable"}
+        - {label: "Topical (cream / spot-on / spray)", value: "topical"}
+        - {label: "Ophthalmic", value: "ophthalmic"}
+        - {label: "Otic", value: "otic"}
+        - {label: "Inhaled", value: "inhaled"}
+        - {label: "Intramammary", value: "intramammary"}
+        - {label: "In-feed / in-water (production)", value: "in_feed_water"}
+        - {label: "Other", value: "other"}
+
+  - key: product_strength
+    label: Strength / concentration
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "e.g. 'meloxicam 1.5 mg/mL oral suspension'."
+
+  - key: dose_per_administration
+    label: Dose per administration
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "e.g. '0.1 mg/kg = 0.5 mg = 0.33 mL by mouth'."
+
+  - key: route
+    label: Route
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "PO (by mouth)", value: "po"}
+        - {label: "SC (subcutaneous)", value: "sc"}
+        - {label: "IM (intramuscular)", value: "im"}
+        - {label: "IV (intravenous)", value: "iv"}
+        - {label: "Topical", value: "topical"}
+        - {label: "Ophthalmic", value: "ophthalmic"}
+        - {label: "Otic", value: "otic"}
+        - {label: "Inhaled", value: "inhaled"}
+        - {label: "Intramammary", value: "intramammary"}
+        - {label: "In-feed", value: "in_feed"}
+        - {label: "In-water", value: "in_water"}
+        - {label: "Other", value: "other"}
+
+  - key: frequency
+    label: Frequency
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "e.g. 'every 12 hours', 'once daily', 'every 8 hours for the first 48 hours then every 12 hours'."
+
+  - key: duration
+    label: Duration
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "e.g. '7 days', 'until rechecked', '14 days then review'."
+
+  - key: total_quantity_supplied
+    label: Total quantity to dispense
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Words AND figures for any controlled drug (UK MoDR 2001 reg 15; AU state CD requirements). Example: 'Twenty-eight (28) tablets'."
+
+  - key: indication
+    label: Clinical indication
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: withdrawal_period
+    label: Withdrawal period — meat / milk / eggs / honey
+    type: long_text
+    ai_extract: true
+    help_text: "Mandatory for any food-producing animal. Where the cascade / extra-label use is invoked, withdrawal period must be set by the prescribing vet (UK VMR; US AMDUCA — minimum 7 days meat / 4 days milk if no data; NZ ACVM; AU APVMA). Note 'NOT FOR FOOD-PRODUCING ANIMALS' if applicable."
+
+  - key: refills_authorised
+    label: Refills authorised
+    type: text
+    ai_extract: true
+    countries: [US, AU, NZ]
+    help_text: "US: refills permitted on non-CD up to one year; CDs Schedule III–V max 5 refills within 6 months; CD Schedule II — no refills, new prescription required (DEA 21 CFR 1306). AU/NZ: state rules vary — typically nil refills on S8 / Class B."
+
+  - key: antibiotic_prophylaxis_statement
+    label: Antibiotic prophylaxis statement (where antibiotic prescribed)
+    type: long_text
+    ai_extract: true
+    help_text: "UK Sched 3 VMR §6 / RCVS Code §4.5: where an antibiotic is prescribed prophylactically, the clinical justification must be recorded. AU AVA Antimicrobial Prescribing Guidelines: record the indication category (therapeutic / metaphylactic / prophylactic). NZ MPI Antimicrobial Stewardship: justify under VCNZ guidance."
+
+  - key: cascade_statement
+    label: Cascade / off-label / extra-label declaration
+    type: long_text
+    ai_extract: true
+    label_per_country:
+      UK: "Cascade declaration (VMR 2013 reg 8) — products in order: (i) UK-authorised veterinary medicine for the species and condition; (ii) UK-authorised vet medicine for another species or condition; (iii) UK-authorised human medicine; (iv) imported authorised medicine; (v) extemporaneously prepared medicine. Record which step and why."
+      AU: "Off-label declaration per AVA Prescribing Guidelines Oct 2023. Justification, alternatives considered, owner consented. State-specific rules apply (e.g. Vic, NSW)."
+      NZ: "ACVM s.10 declaration — veterinarian's professional judgement that the product is required, that no authorised product is available, and that the owner has consented to its use."
+      US: "AMDUCA / 21 CFR 530 declaration for extra-label use in food-producing animals — drug, animal/group, condition, dose, route, withdrawal extension. For companion-animal extra-label, follow state rules."
+
+  - key: cd_schedule
+    label: Controlled-drug schedule
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not a controlled drug", value: "none"}
+        - {label: "NZ Class B / Schedule 2 (e.g. methadone)", value: "nz_b"}
+        - {label: "NZ Class C / Schedule 3 (e.g. tramadol, codeine, pentobarbitone for euthanasia)", value: "nz_c"}
+        - {label: "AU Schedule 4 (S4)", value: "au_s4"}
+        - {label: "AU Schedule 8 (S8)", value: "au_s8"}
+        - {label: "UK Schedule 2 CD (e.g. morphine, methadone, ketamine)", value: "uk_sch2"}
+        - {label: "UK Schedule 3 CD (e.g. buprenorphine, midazolam, pentobarbital, tramadol)", value: "uk_sch3"}
+        - {label: "UK Schedule 4 CD", value: "uk_sch4"}
+        - {label: "UK Schedule 5 CD", value: "uk_sch5"}
+        - {label: "US DEA Schedule II", value: "us_2"}
+        - {label: "US DEA Schedule III", value: "us_3"}
+        - {label: "US DEA Schedule IV", value: "us_4"}
+        - {label: "US DEA Schedule V", value: "us_5"}
+
+  - key: cd_specifics_uk
+    label: UK CD prescription specifics
+    type: long_text
+    ai_extract: false
+    countries: [UK]
+    help_text: "MoDR 2001 reg 15: handwritten OR typed, but signed in ink by the prescriber (computer-generated signatures not acceptable for Schedule 2/3); quantity in words AND figures; total quantity, dose, frequency, form; 28-day validity from date of issue. RCVS Practice Standards Scheme requires CDR entry on dispensing for Sched 2."
+
+  - key: cd_specifics_nz
+    label: NZ CD prescription specifics
+    type: long_text
+    ai_extract: false
+    countries: [NZ]
+    help_text: "Misuse of Drugs Regs 1977: signed and dated by prescriber, name and address of patient (here owner + animal), drug, dose, total quantity, prescriber name + APC. Veterinarians may not write CD prescriptions for human use. CD prescriptions for animal use generally remain in-practice; written prescriptions to a community pharmacy are exceptional."
+
+  - key: cd_specifics_au
+    label: AU CD prescription specifics
+    type: long_text
+    ai_extract: false
+    countries: [AU]
+    help_text: "State-specific. Most states require: handwritten S8 prescription with prescriber details, animal owner + species + ID, drug, strength, quantity in words and figures, dose, signed and dated. Some states require state authority for repeat S8 (e.g. Vic SafeScript-equivalent for vets is being scoped; not currently mandatory)."
+
+  - key: cd_specifics_us
+    label: US CD prescription specifics
+    type: long_text
+    ai_extract: false
+    countries: [US]
+    help_text: "DEA 21 CFR 1306: prescriber DEA number, full name + address, patient (here owner + animal description), drug, strength, dosage form, quantity, directions, refills (Schedule II — none), date, prescriber's signature. Many states now require electronic CD prescriptions (EPCS) — paper acceptable only with documented exemption. Schedule II prescription must be issued for a legitimate medical purpose."
+
+  - key: prescriber_signature
+    label: Prescriber signature
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: other
+      require_witness: false
+    help_text: "Captures the prescriber's signature and timestamp. For UK Schedule 2/3 CDs an ink (wet) signature is required by MoDR 2001 reg 15(2) — the digital signature here records issue, the printed prescription must be ink-signed before dispensing in the UK CD pathway. Where state EPCS applies (US) the digital signature is sufficient."

@@ -1,0 +1,148 @@
+id: salvia.aged_care.nutrition_hydration
+name: "Nutrition and Hydration Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service screens for malnutrition and dehydration risk, plans
+  individualised nutrition and hydration, manages modified diets and
+  fluids using the IDDSI framework, supports an enjoyable mealtime
+  experience, and responds to unplanned weight loss.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (clinical care — nutrition); Ministry of Health Food and Nutrition Guidelines for Healthy Older People; Dietitians NZ aged-care position."
+  AU: "Strengthened Aged Care Quality Standards Standard 6 (Food and Nutrition) — dedicated standard from 1 Nov 2025: enjoyable food, choice, adequate nutrition and hydration; Standard 5 Outcome 5.3 (clinical safety — weight loss); Aged Care Quality Indicators (NQI) Unplanned Weight Loss; Aged Care Act 2024."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 14 — meeting nutritional and hydration needs (a fundamental standard with criminal liability where breached and harm caused); NICE QS24 Nutrition support; NICE CG32 Nutrition support; British Dietetic Association Older People Specialist Group guidance."
+  US: "42 CFR 483.25(g) F692 (assisted nutrition and hydration) — facility ensures resident maintains acceptable parameters of nutritional status; 42 CFR 483.60 (Food and nutrition services) F800–F814 menu, kitchen, food handling; MDS 3.0 v1.20.1 Section K Swallowing/Nutritional Status; F812 sanitary food preparation."
+
+clauses:
+  - id: scope_principles
+    title: Scope and principles
+    body: |
+      Food is a clinical issue and a quality-of-life issue. The service
+      provides nutritionally adequate, culturally familiar, varied,
+      enjoyable food — not 'institutional'. Hydration is monitored. Choice
+      is offered at every meal. Dignity at mealtimes is non-negotiable.
+
+  - id: screening
+    title: Screening and weight monitoring
+    body: |
+      Every resident is screened for malnutrition risk on admission within
+      7 days using a validated tool (MNA-SF default; MUST common in UK;
+      MDS K0300 in US; interRAI in NZ). Weight is recorded on admission,
+      monthly thereafter, and at any change of condition. Unplanned
+      weight loss >5% in 3 months OR >10% in 6 months is an action
+      threshold.
+
+  - id: individualised_plan
+    title: Individualised nutrition and hydration plan
+    body: |
+      The plan documents: usual diet pattern, food preferences, cultural
+      and religious requirements, allergies and intolerances, modified
+      texture (IDDSI level for diet and fluids), independence at meals
+      (set-up, partial, full assistance), supplement use, fluid target,
+      and review trigger.
+
+  - id: iddsi
+    title: IDDSI framework for modified textures
+    body: |
+      The International Dysphagia Diet Standardisation Initiative (IDDSI)
+      is the framework used. Diet textures: Regular / Soft & Bite-Sized
+      (Level 6) / Minced & Moist (Level 5) / Pureed (Level 4) / Liquidised
+      (Level 3). Fluid levels: Thin (Level 0) / Slightly Thick (Level 1)
+      / Mildly Thick (Level 2) / Moderately Thick (Level 3) / Extremely
+      Thick (Level 4). Speech-language therapy assessment is sought for
+      any change to fluid level.
+
+  - id: hydration
+    title: Hydration
+    body: |
+      Default fluid target ≥1500 mL/day, individualised. Drinks offered
+      at every interaction; water available in resident's room; hydration
+      rounds at minimum 2-hourly during the day. Fluid restrictions only
+      with documented clinical reason.
+
+  - id: mealtime_experience
+    title: Mealtime experience
+    body_per_country:
+      NZ: |
+        Meals reflect tikanga and Pasifika practice where requested.
+        Karakia at mealtimes where the resident wishes. Whānau may
+        bring food per service kitchen rules.
+      AU: |
+        Standard 6 explicitly: food is enjoyable, varied, served at the
+        right temperature, served in a relaxed environment, with choice.
+        Aboriginal and Torres Strait Islander food practices honoured;
+        CALD food traditions honoured.
+      UK: |
+        Reg 14: food and drink suitable for nutritional and hydration
+        needs, in suitable quantities. Mealtimes are protected (no
+        non-essential interruptions). Faith and cultural foods provided
+        on request.
+      US: |
+        F800–F814: balanced and nutritious meals; food prepared by
+        methods that conserve nutritive value, flavour, and appearance;
+        meals at usual mealtimes with no more than 14 hours between
+        evening meal and breakfast; 3 meals plus a snack; substitutes
+        of similar nutritive value when food is refused.
+
+  - id: assistance_at_meals
+    title: Assistance at meals
+    body: |
+      Residents needing assistance with eating are supported one-to-one
+      where possible. Staff sit at the resident's level. Attention is
+      paid to pacing, texture, swallowing safety. Force-feeding is never
+      acceptable. Refusal is documented and the contributing factor
+      explored.
+
+  - id: end_of_life_eating
+    title: Eating at end of life
+    body: |
+      In the terminal phase, the goal shifts from nutritional adequacy to
+      comfort and pleasure. Reduced intake is normal. Comfort feeding is
+      offered. Artificial nutrition / hydration is provided only where
+      clinically indicated and consistent with the resident's advance
+      care plan.
+
+  - id: food_safety
+    title: Food safety
+    body: |
+      Kitchen and food handling complies with applicable food-safety
+      regulation: NZ Food Act 2014 and Food Regulations 2015; AU Food
+      Standards Code; UK Food Hygiene Regulations 2006 + EHO; US 21 CFR
+      117 + state food code + F812. HACCP-equivalent process in place.
+
+  - id: response_to_weight_loss
+    title: Response to weight loss
+    body: |
+      Significant unplanned weight loss triggers a comprehensive review:
+      dietitian referral, dental/oral check, swallowing assessment,
+      medication review, depression screen, infection screen, supplement
+      plan, and an updated individualised plan. AU NQI flagged.
+
+  - id: indicators
+    title: Indicators
+    body_per_country:
+      AU: |
+        NQI Unplanned Weight Loss reported quarterly. Significant loss
+        is an indicator that drives clinical-governance action under
+        Standard 2.
+      US: |
+        F692 surveyor lens. F800–F814 dietary deficiencies. MDS K0300
+        coded each assessment.
+      NZ: |
+        Significant weight loss reviewed at clinical governance meeting
+        under Section 2.
+      UK: |
+        Reg 14 inspection lens. Reg 17 governance review.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing + Catering Manager.

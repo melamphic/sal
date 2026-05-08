@@ -1,0 +1,219 @@
+id: salvia.general_clinic.sick_certificate_fit_note
+name: "Sick certificate / fit note"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Work-capacity certificate. Statutory layouts diverge significantly between
+  countries — UK uses the statutory Med 3 fit note ("may be fit"/"not fit") with
+  required fields and adjustments; NZ uses ACC18 (work injury) or a Work
+  Capacity Medical Certificate; AU uses the MBS-aligned medical certificate;
+  US is per-employer / per-state (FMLA where applicable).
+
+purpose_per_regulator:
+  NZ: "Accident Compensation Act 2001; ACC18 / WCMC; MCNZ Statement on professional standards."
+  AU: "Health Practitioner Regulation National Law (issuing of medical certificates); RACGP fitness-for-work statement; MBS items 16–23 attendance certificate."
+  UK: "Statement of Fitness for Work (Med 3); Social Security (Medical Evidence) Regulations 1976 (as amended 2022 to allow non-doctor issuers — nurses, OTs, pharmacists, physios)."
+  US: "FMLA Certification (WH-380-E / WH-380-F); state short-term disability; ADA reasonable-accommodation; employer-specific."
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.shared.records_retention_policy
+
+tags: [certificate, fit_note, work_capacity]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_address
+    label: "Patient address"
+    type: system_field
+    source: patient_record.address
+    pii: true
+
+  - key: assessment_method
+    label: "Assessment method"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Face-to-face consultation", value: "f2f"}
+        - {label: "Telephone consultation", value: "phone"}
+        - {label: "Video consultation", value: "video"}
+        - {label: "Written report / records review only", value: "report_only"}
+    help_text: "UK Med 3: must be assessment, in person OR by remote means. Document the basis."
+
+  - key: assessment_date
+    label: "Assessment date"
+    type: date
+    required: true
+
+  - key: certificate_period_from
+    label: "Period — from"
+    type: date
+    required: true
+
+  - key: certificate_period_to
+    label: "Period — to"
+    type: date
+    required: true
+    help_text: "UK Med 3 first 6 months: max 3-month duration; after 6 months may be longer (no maximum but state reason)."
+
+  - key: condition_summary
+    label: "Diagnosis / condition (with patient consent for inclusion)"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Brief, factual. AU certificates can omit diagnosis if patient does not consent (RACGP). UK Med 3 requires the condition account."
+
+  - key: body_per_country_block
+    label: "Country-specific certificate fields (see help)"
+    type: long_text
+    required: true
+    help_text: "See per-country variations below — populated based on clinic country selected at registration."
+
+  # NZ ACC18 / WCMC fields
+  - key: nz_certificate_type
+    label: "Certificate type"
+    type: select
+    countries: [NZ]
+    config:
+      options:
+        - {label: "ACC18 — work injury / accident", value: "acc18"}
+        - {label: "Work Capacity Medical Certificate (WCMC) — non-injury / illness", value: "wcmc"}
+        - {label: "Sick leave certificate (Holidays Act 2003)", value: "holidays_act"}
+
+  - key: nz_acc_claim_number
+    label: "ACC claim number"
+    type: text
+    countries: [NZ]
+    pii: true
+
+  - key: nz_capacity_status
+    label: "Capacity status"
+    type: select
+    countries: [NZ]
+    config:
+      options:
+        - {label: "Fully unfit for any work", value: "fully_unfit"}
+        - {label: "Fit for selected duties (specify below)", value: "selected"}
+        - {label: "Fit for normal work", value: "fit"}
+
+  - key: nz_selected_duties
+    label: "Selected duties / restrictions (NZ)"
+    type: long_text
+    countries: [NZ]
+    ai_extract: true
+
+  # AU MBS Cert fields
+  - key: au_certificate_type
+    label: "Certificate type"
+    type: select
+    countries: [AU]
+    config:
+      options:
+        - {label: "Medical certificate — unfit for usual duties", value: "unfit_usual"}
+        - {label: "Medical certificate — modified duties", value: "modified"}
+        - {label: "Medical certificate — pre-existing condition flare-up", value: "flare"}
+        - {label: "Carer's certificate (caring for ill family member)", value: "carer"}
+
+  - key: au_diagnosis_consent
+    label: "Patient consents to include diagnosis on certificate?"
+    type: select
+    countries: [AU]
+    config:
+      options:
+        - {label: "Yes — diagnosis stated", value: "yes"}
+        - {label: "No — generic medical condition only", value: "no"}
+
+  # UK Med 3 fit note fields
+  - key: uk_fit_for_work
+    label: "Med 3 status"
+    type: select
+    countries: [UK]
+    required_per_country:
+      UK: true
+    config:
+      options:
+        - {label: "Not fit for work", value: "not_fit"}
+        - {label: "May be fit for work — taking account of the following advice", value: "may_be_fit"}
+
+  - key: uk_advice
+    label: "If 'may be fit for work' — advice and adjustments"
+    type: long_text
+    countries: [UK]
+    ai_extract: true
+    help_text: "Tick all that apply: phased return to work; altered hours; amended duties; workplace adaptations. Free-text advice to employer."
+
+  - key: uk_will_need_reassessment
+    label: "Will the patient need to be reassessed at end of this period?"
+    type: select
+    countries: [UK]
+    config:
+      options:
+        - {label: "Yes — reassess", value: "yes"}
+        - {label: "No — return to work expected", value: "no"}
+
+  - key: uk_issuer_profession
+    label: "Issuing professional (UK 2022 amendment allows nurse / OT / physio / pharmacist)"
+    type: select
+    countries: [UK]
+    config:
+      options:
+        - {label: "Doctor (GP / hospital)", value: "doctor"}
+        - {label: "Registered nurse", value: "nurse"}
+        - {label: "Occupational therapist", value: "ot"}
+        - {label: "Physiotherapist", value: "physio"}
+        - {label: "Pharmacist", value: "pharmacist"}
+
+  # US fields
+  - key: us_certificate_type
+    label: "Certificate type"
+    type: select
+    countries: [US]
+    config:
+      options:
+        - {label: "FMLA Certification — employee (WH-380-E)", value: "fmla_employee"}
+        - {label: "FMLA Certification — family member (WH-380-F)", value: "fmla_family"}
+        - {label: "Short-term disability (state)", value: "std"}
+        - {label: "Workers' compensation", value: "wc"}
+        - {label: "ADA reasonable-accommodation request", value: "ada"}
+        - {label: "Employer-specific letter", value: "employer"}
+
+  - key: us_essential_functions_affected
+    label: "Essential job functions affected"
+    type: long_text
+    countries: [US]
+    ai_extract: true
+    help_text: "FMLA / ADA reasoning: list essential functions and which are impaired. Required for accommodation analysis."
+
+  - key: us_estimated_frequency
+    label: "Estimated frequency / duration of incapacity (FMLA)"
+    type: text
+    countries: [US]
+    help_text: "Required on WH-380 for intermittent FMLA leave."
+
+  - key: signature_clinician
+    label: "Issuing clinician name and registration"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Issue date"
+    type: date
+    required: true

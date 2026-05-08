@@ -1,0 +1,126 @@
+id: salvia.aged_care.outbreak_management
+name: "Outbreak Management Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service detects, declares, manages, communicates about, and stands
+  down a suspected or confirmed outbreak of infectious disease (respiratory,
+  gastrointestinal, skin, or other). Sets the early-warning threshold,
+  the line-listing process, control measures, communication, and regulator
+  notification.
+
+purpose_per_regulator:
+  NZ: "Public Health Act 2016 (Pae Ora); Health Act 1956 schedule of notifiable diseases; Public Health Surveillance / National Public Health Service / Te Whatu Ora regional public-health units; Ngā Paerewa NZS 8134:2021 Section 4."
+  AU: "Communicable Diseases Network Australia (CDNA) National Guidelines for the Prevention, Control and Public Health Management of Outbreaks of Acute Respiratory Infection / Gastroenteritis in Residential Care Facilities (current); Strengthened Aged Care Quality Standards Standard 4 + Standard 5; state public-health legislation."
+  UK: "Health and Social Care Act 2008 Code of Practice (Hygiene Code 2022) outbreak section; UKHSA outbreak management guidance; CQC Reg 12; Health Protection (Notification) Regulations 2010."
+  US: "42 CFR 483.80 F880 (infection control program including outbreak detection); CDC Long-term Care outbreak detection thresholds; state notifiable-disease law; CMS QSO outbreak reporting."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy covers acute respiratory illness (incl. COVID-19,
+      influenza, RSV), gastroenteritis (norovirus, C. difficile),
+      scabies and other skin infestations, and any communicable disease
+      meeting outbreak criteria.
+
+  - id: early_warning
+    title: Early-warning thresholds
+    body: |
+      Outbreak suspected when: ≥2 epidemiologically-linked respiratory
+      cases within 72 hours; ≥2 gastrointestinal cases within 48 hours;
+      ≥1 confirmed case of measles / TB / MERS / influenza A novel
+      strain; or ≥3 unexplained deaths within 7 days. The IPC Lead is
+      notified immediately.
+
+  - id: declaration
+    title: Declaration and outbreak team
+    body: |
+      An outbreak is declared by the IPC Lead in consultation with the
+      treating GP / public-health authority. An outbreak management
+      team is convened: IPC Lead, Care Manager, Catering Manager,
+      Cleaning Lead, GP (or public-health representative), Pharmacist.
+      Roles and contact details listed.
+
+  - id: line_listing
+    title: Line listing
+    body: |
+      A line list is started at outbreak declaration: resident name (or
+      ID), room, onset date, symptoms, sample taken (date / type),
+      result, status (active / recovered / hospitalised / deceased),
+      contacts and exposures, isolation status. Updated daily.
+
+  - id: control_measures
+    title: Control measures
+    body: |
+      Symptomatic residents isolated (single room or cohorted) until
+      symptom-free for organism-specific period. Symptomatic staff
+      excluded from work until cleared. Visitor restrictions per public
+      health advice. Communal activities suspended where appropriate.
+      Enhanced cleaning of high-touch surfaces and shared equipment.
+      PPE availability ensured. Hand-hygiene audits intensified.
+
+  - id: testing_treatment
+    title: Testing and treatment
+    body: |
+      Diagnostic testing per national / state guideline. Antiviral
+      prophylaxis / treatment per public-health advice (e.g.
+      oseltamivir for confirmed influenza A in unvaccinated residents).
+      Antimicrobial use stewardship-aligned.
+
+  - id: communication
+    title: Communication
+    body: |
+      Residents and family are informed promptly of the outbreak status
+      and any visitor restrictions. Information accessible (large print,
+      translated, BSL/NZSL where requested). Updates at agreed cadence.
+      Local media spokesperson named. Internal staff communication
+      channel maintained.
+
+  - id: regulator_notification
+    title: Regulator notification
+    body_per_country:
+      NZ: |
+        Local public-health unit (Te Whatu Ora) notified at outbreak
+        declaration. Notifiable diseases reported per Health Act 1956.
+        HealthCERT s.31 notification where outbreak meets serious-event
+        threshold.
+      AU: |
+        Local public-health unit notified at outbreak declaration per
+        CDNA guidelines. Aged Care Quality and Safety Commission
+        notified per Aged Care Rules 2025. SIRS where consequent on
+        neglect.
+      UK: |
+        UKHSA Health Protection Team notified for relevant outbreaks
+        per Health Protection (Notification) Regulations 2010.
+        CQC notified under Reg 18 where outbreak meets threshold.
+      US: |
+        State health department notified per state notifiable-disease
+        law. CMS QSO outbreak reporting where required. CDC NHSN
+        long-term-care reporting where enrolled.
+
+  - id: stand_down
+    title: Stand-down criteria
+    body: |
+      Outbreak declared over when: no new cases for two incubation
+      periods of the organism; final environmental clean completed;
+      symptomatic staff cleared; line list closed; debrief scheduled.
+
+  - id: debrief_learning
+    title: Debrief and learning
+    body: |
+      Outbreak debrief within 14 days of stand-down: timeline, what
+      worked, gaps, system improvements, training needs. Findings
+      reviewed at clinical governance and inform IPC programme update.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually and after every
+      outbreak. Operational responsibility: IPC Lead.

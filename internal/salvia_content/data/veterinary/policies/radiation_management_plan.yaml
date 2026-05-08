@@ -1,0 +1,205 @@
+id: salvia.veterinary.radiation_management_plan
+name: "Radiation Management Plan"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  The practice's plan for the safe use of ionising radiation: radiograph and
+  CT acquisition, fluoroscopy, and dental radiography. Names the responsible
+  persons and advisers, sets dose-monitoring and training cadence, defines
+  signage and access control, mandates equipment register and quality assurance,
+  prescribes lead-PPE testing, and describes the response to a pregnancy
+  declaration.
+purpose_per_regulator:
+  NZ: "Radiation Safety Act 2016; Office of Radiation Safety (ORS) Code of Practice C9 — Radiation Safety in Veterinary Radiology (current edition); Source / Use Licence held by the practice; Radiation Safety Officer (RSO) appointed in writing."
+  AU: "Australian Radiation Protection and Nuclear Safety Agency (ARPANSA) Radiation Protection Series RPS 17 — Safety Guide for Radiation Protection in Veterinary Medicine; state radiation protection legislation (e.g. Vic Radiation Act 2005; NSW Radiation Control Act 1990; Qld Radiation Safety Act 1999; WA Radiation Safety Act 1975); Radiation Safety Officer (RSO) and source licence."
+  UK: "Ionising Radiations Regulations 2017 (IRR17); Local Rules for each radiation-controlled area; Radiation Protection Adviser (RPA) appointed under reg 14; Radiation Protection Supervisor (RPS) appointed under reg 18; HSE notification for radiation work; RCVS Practice Standards Scheme module on imaging."
+  US: "State-specific radiation control programs (most states adopt some version of the Suggested State Regulations for Control of Radiation, SSRCR); FDA / CDRH for equipment performance; OSHA 1910.1096 for occupational exposure (pre-empted in agreement states by state plans); NCRP Report 148 — Radiation Protection in Veterinary Medicine (the controlling guidance document)."
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This plan applies to all use of ionising radiation at the practice:
+      x-ray (general radiography, dental, fluoroscopy), CT, and any source-
+      based device. It applies to every staff member, contractor, owner, and
+      visitor who may enter a radiation-controlled area. It does not cover
+      MRI (non-ionising — covered under MRI safety SOP) or ultrasound.
+
+  - id: responsible_persons
+    title: "Responsible persons"
+    body_per_country:
+      NZ: |
+        Radiation Safety Officer (RSO): named registered staff member,
+        appointed in writing under the practice's ORS Use Licence. The RSO
+        is responsible for compliance with the Radiation Safety Act 2016,
+        the ORS Code of Practice C9, and the practice's Use Licence
+        conditions. A Radiation Safety Adviser (consultant) may be retained
+        for technical advice.
+      AU: |
+        Radiation Safety Officer (RSO): named in the practice's source
+        licence. State-specific titles apply (e.g. NSW Certified Radiation
+        Expert; Vic Radiation Management Licence holder). The RSO is
+        accountable for compliance with state radiation protection law and
+        ARPANSA RPS 17.
+      UK: |
+        Radiation Protection Adviser (RPA): an external suitably qualified
+        adviser appointed in writing under IRR17 reg 14. The RPA advises
+        on Local Rules, designation of controlled and supervised areas,
+        contingency arrangements, and dosimetry. Radiation Protection
+        Supervisor (RPS): an internal staff member appointed under reg 18,
+        responsible for the day-to-day supervision of work with ionising
+        radiation in accordance with the Local Rules.
+      US: |
+        Radiation Safety Officer (RSO) named on the practice's state radiation
+        machine registration. NCRP Report 148 names the RSO as the responsible
+        person for the radiation safety program.
+
+  - id: training
+    title: "Training and competency"
+    body: |
+      Every staff member who operates radiographic equipment or holds an
+      animal during exposure receives training before first exposure and at
+      least annually thereafter. Training covers: ALARA principles; the
+      practice's Local Rules / RSO procedures; correct use of lead PPE;
+      dose-monitoring; pregnancy declaration; positioning to avoid hand-in-
+      beam; and emergency response. Training is recorded on the staff
+      training register.
+    body_per_country:
+      UK: |
+        Training is required by IRR17 reg 15 for any worker entering a
+        controlled area; the standard is 'adequate information, instruction
+        and training'. RCVS PSS module on imaging requires documented
+        annual refresher.
+      US: |
+        Training cadence per state radiation regulation; most adopt NCRP
+        Report 148 Section 6 — initial training plus annual refresher.
+
+  - id: dose_monitoring
+    title: "Personal dose monitoring"
+    body: |
+      Every staff member who operates radiographic equipment, restrains
+      patients during exposure, or routinely enters a controlled area is
+      issued a personal dosimeter (TLD or OSL). Badges are worn at chest
+      level outside lead apron, with an additional badge at collar level
+      outside apron for staff with significant fluoroscopy exposure. Badges
+      are returned to the dosimetry service quarterly (or monthly per
+      regulator). Reports are reviewed by the RSO/RPS and any reading
+      exceeding the practice investigation level is investigated and
+      recorded in the dose register. The dose register is retained in
+      accordance with country retention rules (UK IRR17 reg 25 — for the
+      person's life and at least 30 years after the last entry; NZ ORS C9 —
+      retained 30 years; AU state radiation regs 30 years; US NCRP 148 +
+      state — minimum 30 years).
+    body_per_country:
+      UK: |
+        Classified workers (designated under IRR17 reg 21 because they may
+        receive >6 mSv/year effective dose or >3/10 of any equivalent dose
+        limit) are required to be monitored by an HSE-approved dosimetry
+        service. Investigation level set in Local Rules (typical 1 mSv/month).
+      US: |
+        Monitoring required where any worker is likely to receive 10% of
+        the annual occupational dose limit; NCRP 148 recommends monitoring
+        for any vet staff routinely involved in imaging. Annual
+        occupational dose limit 50 mSv whole body (1 rem/quarter).
+
+  - id: equipment_register
+    title: "Equipment register and quality assurance"
+    body: |
+      A written equipment register lists every source of ionising radiation
+      at the practice: machine type, manufacturer, model, serial number,
+      tube head, generator, kV/mA range, year of manufacture / install,
+      and the source/registration number under the relevant licence. Each
+      machine has a documented commissioning report and an annual quality
+      assurance check including kV accuracy, output reproducibility,
+      collimation, beam alignment, and (CT) dose index. Service records
+      are retained for the life of the equipment plus 5 years.
+
+  - id: lead_ppe_testing
+    title: "Lead PPE: aprons, thyroid shields, gloves, glasses"
+    body: |
+      Every lead apron, thyroid shield, lead glove, and lead glasses is
+      identified on the lead-PPE register, with a unique ID, year of
+      issue and last test date. Lead PPE is inspected annually under
+      fluoroscopy or radiograph for cracks, holes and continuity of the
+      lead-equivalent material. Items failing inspection are taken out of
+      service immediately and disposed via the licensed lead-waste pathway.
+      Lead PPE is hung — not folded — between uses. Records retained for
+      the life of the item plus 5 years.
+
+  - id: signage_and_access
+    title: "Signage, controlled / supervised areas"
+    body_per_country:
+      NZ: |
+        The radiography room is designated a controlled area for the
+        duration of exposure. Trefoil radiation symbol, 'X-ray in use'
+        warning light operated from the control panel, and lead-lined door
+        per shielding survey. ORS Code C9 specifies signage and access.
+      AU: |
+        State-specific. ARPANSA RPS 17 calls for a controlled area
+        designated by signage including the trefoil symbol, warning light,
+        and rules on entry. Shielding survey is required at install and
+        on relocation.
+      UK: |
+        IRR17 reg 17 requires designation of a controlled area where any
+        person may receive >6 mSv/year or >3/10 of an equivalent-dose limit;
+        practical effect: the radiography room is a controlled area during
+        exposure. Demarcated with trefoil sign, warning light, and Local
+        Rules posted at the entry.
+      US: |
+        State-specific signage rules; NCRP 148 calls for posting of
+        radiation symbol and warning light. CDRH equipment performance
+        standards apply to the machine itself.
+
+  - id: pregnancy_declaration
+    title: "Pregnancy and breastfeeding declarations"
+    body: |
+      Any staff member who is or may be pregnant is invited (not required) to
+      declare their pregnancy in writing to the RSO/RPS. On declaration the
+      practice manages exposure to keep the equivalent dose to the foetus
+      below the regulator-set limit (UK IRR17 reg 9: foetal equivalent dose
+      ≤1 mSv from declaration to end of pregnancy; NZ ORS C9 1 mSv; AU
+      ARPANSA RPS 17 1 mSv; US NCRP 148: 0.5 mSv/month and 5 mSv total).
+      Practical measures: re-allocation of imaging duty; additional
+      shielding; not holding patients in-beam; restricted access to
+      controlled areas; offer of additional dosimeter at abdomen level
+      under apron. Declaration is voluntary; staff declining to declare may
+      not be subjected to additional restriction. Declaration may be
+      withdrawn at any time. Confidentiality maintained per privacy policy.
+
+  - id: holding_animals
+    title: "Holding animals during exposure"
+    body: |
+      Patients are restrained mechanically (sandbags, troughs, ties, V-shaped
+      cradles) and / or chemically (sedation, anaesthesia) wherever
+      practicable. No staff member's hand may be in the primary beam.
+      Where holding is unavoidable, the holder wears a full-cover lead
+      apron, thyroid shield, and lead gloves; rotates with other staff to
+      share dose; pregnant staff and staff aged under 18 do not hold;
+      owners are not asked to hold patients.
+
+  - id: contingency
+    title: "Contingency and incidents"
+    body: |
+      Foreseeable incidents (e.g. door opened during exposure, machine
+      malfunction with continuous output, accidental high-dose to a worker)
+      are addressed in written contingency procedures kept with the Local
+      Rules. Any incident is recorded in the radiation incident log and
+      reported to the regulator per country rule (UK HSE under RIDDOR if
+      injury or accidental >6 mSv; NZ ORS notifiable under Radiation Safety
+      Act; AU state regulator; US state radiation control program).
+
+  - id: review
+    title: "Plan review"
+    body: |
+      This plan is reviewed annually by the RSO/RPS in consultation with the
+      RPA (UK) / Radiation Safety Adviser (NZ) / state regulator (AU/US)
+      and after any equipment change, room change, or significant incident.
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      Linked to: salvia.veterinary.infection_prevention_control;
+      salvia.shared.health_safety_policy;
+      salvia.shared.records_retention_policy;
+      salvia.shared.info_security_policy.

@@ -1,0 +1,167 @@
+id: salvia.aged_care.controlled_drugs
+name: "Controlled Drugs Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service receives, stores, administers, witnesses, reconciles, and
+  destroys controlled drugs. Country-specific schedule, register and
+  destruction rules apply. The CD register is maintained as the
+  Salvia Controlled Drug Register Entry form, with running balances
+  computed by the ledger.
+
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975; Misuse of Drugs Regulations 1977 reg 19, 28, 29, 41 (register entries, prescriptions, administration, destruction); Medicines Act 1981; Pharmacy Council NZ Standards for Medicines Management; Ngā Paerewa NZS 8134:2021 Section 5."
+  AU: "State Drugs and Poisons Acts (e.g. NSW Poisons and Therapeutic Goods Act 1966 + Regulation 2008; Vic Drugs, Poisons and Controlled Substances Act 1981 + Reg 2017; Qld Medicines and Poisons Act 2019 + Regulation 2021); Therapeutic Goods Administration Standard for the Uniform Scheduling of Medicines and Poisons (SUSMP); state real-time prescription monitoring (SafeScript Vic, RTPM Qld) where applicable to PBS prescribing."
+  UK: "Misuse of Drugs Act 1971; Misuse of Drugs Regulations 2001 reg 14, 15, 16, 17, 18, 19, 20, 23 (Schedule classifications, prescriptions, administration, registers); Misuse of Drugs (Safe Custody) Regulations 1973; Health Act 2006 ss.17–25 (accountable officers); CQC Reg 12; NICE SC1."
+  US: "Controlled Substances Act 1970; DEA 21 CFR 1304 (recordkeeping — biennial inventory; Form 222 for Schedule II receipt; Form 41 for destruction; Form 106 for theft/loss within one business day); 42 CFR 483.45(b)(3) (controlled drug accountability); state pharmacy boards; state Prescription Drug Monitoring Programs (PDMPs)."
+
+clauses:
+  - id: scope_definitions
+    title: Scope and definitions
+    body: |
+      'Controlled drug' means a drug subject to country scheduling rules:
+      NZ Class A/B/C; AU Schedule 4 (where state schedule recordable) and
+      Schedule 8; UK Schedule 1–5 CD; US DEA Schedule I–V. This policy
+      governs all CDs held or administered by the service.
+
+  - id: roles_authority
+    title: Roles and authority
+    body: |
+      A named senior clinical staff member is the CD lead. CD safe access
+      is restricted to authorised staff. UK appoints an Accountable
+      Officer or sub-CDLO under the Health Act 2006. AU operations follow
+      the named senior nurse / DON model under state law. US pharmacy
+      consultant role under F756.
+
+  - id: receipt
+    title: Receipt
+    body: |
+      CDs received from pharmacy are checked against the order at
+      delivery — drug, strength, quantity, expiry, batch. Receipt is
+      entered in the CD register at the time of receipt by the receiving
+      nurse and witness (UK Schedule 2; AU S8; US Schedule II via DEA
+      Form 222; NZ Class B/C). Discrepancies escalated to the CD lead and
+      pharmacist same-day.
+
+  - id: storage
+    title: Storage
+    body_per_country:
+      NZ: |
+        CDs stored in a locked safe meeting Misuse of Drugs (Safety)
+        Regulations 1977 specifications. Keys held by registered nurse
+        on duty.
+      AU: |
+        S8 stored in a state-compliant safe (typically 16–25 mm steel
+        with multi-point lock; some states require alarmed safe in new
+        builds). Keys / electronic credentials with DON or designated RN.
+      UK: |
+        CDs stored in cabinet meeting Misuse of Drugs (Safe Custody)
+        Regulations 1973: minimum BS2881 standard or approved equivalent;
+        bolted to fabric of the building. Keys with the registered
+        manager / nurse in charge.
+      US: |
+        CDs stored in a securely locked, substantially constructed
+        cabinet (DEA security standards 21 CFR 1301.75). Schedule II
+        separated from Schedule III–V where state requires.
+
+  - id: administration_witness
+    title: Administration and witness
+    body: |
+      Each CD administration is witnessed by a second authorised staff
+      member who confirms drug, strength, dose, resident, and balance
+      after. The Salvia Medication Chart entry plus the Controlled Drug
+      Register Entry form are completed at the same time; the
+      system.drug_op widget enforces witness capture for any
+      controlled-drug administration (operation: administer,
+      controlled_only: true, confirm_required: true).
+
+  - id: register
+    title: Register
+    body_per_country:
+      NZ: |
+        Register kept per Misuse of Drugs Regs 1977 reg 41: chronological,
+        indelible, no erasures, corrections by line-through and signature.
+        Retained at least 10 years from date of last entry.
+      AU: |
+        Register per state requirements: typically a bound register or
+        approved electronic system; daily/shift balance check; entries
+        chronological with witness signature for S8.
+      UK: |
+        Schedule 2 register per Misuse of Drugs Regs 2001 reg 19, 20:
+        separate register / page for each drug + strength + form;
+        entries within 24 hours of the transaction; chronological;
+        retained at least 2 years from the date of last entry.
+      US: |
+        DEA 21 CFR 1304: biennial inventory; perpetual inventory good
+        practice; Schedule II separate; records preserved 2 years
+        federal — many states require longer.
+
+  - id: reconciliation
+    title: Reconciliation
+    body: |
+      Shift-change reconciliation by the outgoing and incoming nurses;
+      both sign the register. Discrepancies investigated immediately and
+      escalated to the CD lead. Unresolved discrepancies are reported to
+      the regulator (NZ Medicines Control / AU state Drugs and Poisons
+      Office / UK CD Accountable Officer / US DEA Form 106).
+
+  - id: destruction
+    title: Destruction
+    body_per_country:
+      NZ: |
+        CDs no longer required, expired, or contaminated are denatured
+        and destroyed witnessed by two authorised persons; entered in
+        the register with the reason and witness identities. Pharmacy
+        destruction service used where possible.
+      AU: |
+        S8 destruction by an authorised witness per state rules
+        (typically pharmacist or police officer or authorised inspector).
+        Recorded with reason and witness.
+      UK: |
+        Schedule 2 destruction witnessed by an Authorised Witness (CDAO
+        or designated person under Schedule 2A of the MoDR Amendment
+        Regulations 2007). Schedule 3 destruction recorded by the
+        practice in the manner determined by the practice.
+      US: |
+        DEA-registered reverse distributor used; or witnessed
+        destruction with DEA Form 41 for Schedule II–V on premises per
+        21 CFR 1304.21(e). Destruction must render the drug
+        non-retrievable.
+
+  - id: discrepancies_loss
+    title: Discrepancies, loss, theft
+    body: |
+      Any unexplained discrepancy or suspected loss/theft is investigated
+      same-day. Reported per country: NZ Medicines Control; AU state
+      Drugs and Poisons Office; UK CD Accountable Officer + Police; US
+      DEA Form 106 within one business day + state. Linked to the
+      Reportable Incident form.
+
+  - id: prescriptions
+    title: Prescriptions
+    body: |
+      Country-specific prescription rules apply. UK: Schedule 2/3 — 28-day
+      validity, quantity in words AND figures, ink signature
+      (computer-generated signatures not acceptable for handwriting
+      element). AU: state rules (e.g. Vic SafeScript) for real-time
+      monitoring. NZ: Misuse of Drugs Regs reg 29 written prescription
+      requirements. US: DEA 21 CFR 1306; EPCS where state requires.
+
+  - id: training
+    title: Staff training
+    body: |
+      All staff handling CDs complete induction training plus annual
+      refresher on the CD framework, the safe and the register. Witness
+      competency is signed off before independent witnessing.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: CD Lead / Director of Nursing.

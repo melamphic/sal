@@ -1,0 +1,323 @@
+id: salvia.dental.medical_history
+name: "Medical History & Health Questionnaire"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Pre-treatment medical-history intake covering ASA classification, allergies,
+  current medications (including anticoagulants/antiplatelets and bisphosphonates
+  with MRONJ risk), pregnancy, lifestyle factors, and conditions of medical
+  concern. Mandatory at first visit and reviewed at every recall.
+
+purpose_per_regulator:
+  NZ: "DCNZ Standards Framework: Practice Standard – Patient Records & Consent; HIPC 2020 Rule 1; HDC Code Right 6 (informed)."
+  AU: "Dental Board of Australia – Guidelines on Dental Records (2019); ADA Australia Schedule of Services & Glossary; APP 3."
+  UK: "GDC Standards 4.1 (clinical records); CQC Reg 17 (good governance); UK GDPR Art 9."
+  US: "ADA Caries / Periodontal / Medical-history guidance; HIPAA Privacy Rule §164.514; state dental practice acts."
+
+linked_policy_defaults:
+  - salvia.dental.infection_prevention_control
+  - salvia.dental.medical_emergencies_resuscitation
+
+tags: [intake, medical_history, recall]
+
+overall_prompt: |
+  Extract the patient's reported medical history from the transcript into the
+  structured fields. Capture allergies and reactions verbatim. If the patient
+  mentions any anticoagulant, antiplatelet, bisphosphonate, antiresorptive,
+  or immunosuppressant by name, record it under current_medications and flag
+  the relevant risk field. Do NOT infer ASA class — leave for clinician.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_full_name
+    label: Full name
+    type: system_field
+    source: patient_record.full_name
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_sex
+    label: Sex
+    type: system_field
+    source: patient_record.sex
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: review_date
+    label: Date of history review
+    type: date
+    required: true
+    ai_extract: true
+    help_text: "Today's date if completed in clinic; otherwise the date the patient signed the form."
+
+  - key: reviewed_by
+    label: Reviewed by (clinician)
+    type: text
+    required: true
+
+  - key: chief_complaint
+    label: Reason for today's visit
+    type: long_text
+    ai_extract: true
+    help_text: "Patient's words wherever practical."
+
+  - key: gp_name
+    label: General practitioner / family physician
+    type: text
+    ai_extract: true
+
+  - key: last_gp_visit
+    label: Date last seen by GP
+    type: date
+    ai_extract: true
+
+  - key: asa_classification
+    label: ASA Physical Status
+    type: select
+    required: true
+    help_text: "Clinician judgement after review. ASA III+ usually warrants medical consult before invasive treatment."
+    config:
+      options:
+        - {label: "ASA I — Healthy", value: "asa_1"}
+        - {label: "ASA II — Mild systemic disease", value: "asa_2"}
+        - {label: "ASA III — Severe systemic disease, not incapacitating", value: "asa_3"}
+        - {label: "ASA IV — Severe systemic disease, constant threat to life", value: "asa_4"}
+        - {label: "ASA V — Moribund", value: "asa_5"}
+        - {label: "ASA E — Emergency suffix", value: "asa_e"}
+
+  - key: allergies_present
+    label: Any drug, latex, food or other allergies?
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "No known allergies", value: "none"}
+        - {label: "Yes", value: "yes"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: allergies_detail
+    label: Allergy details (agent, reaction, severity)
+    type: long_text
+    ai_extract: true
+    pii: true
+    help_text: "Record agent, reaction (rash / anaphylaxis / GI / other), and severity. Latex sensitivity must be recorded."
+
+  - key: current_medications
+    label: Current medications (drug, dose, frequency, indication)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Include OTC, herbal/complementary, and recreational. Cross-check anticoagulant/antiplatelet/bisphosphonate flags."
+
+  - key: anticoagulant_antiplatelet
+    label: On anticoagulant or antiplatelet therapy?
+    type: button_group
+    required: true
+    ai_extract: true
+    help_text: "Includes warfarin, DOACs (apixaban/rivaroxaban/dabigatran/edoxaban), heparin, aspirin, clopidogrel, ticagrelor, prasugrel."
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes", value: "yes"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: anticoagulant_detail
+    label: Agent, indication, last INR if warfarin
+    type: long_text
+    ai_extract: true
+    help_text: "For warfarin record INR within 24h pre-procedure (target 2–4 for routine extractions per SDCEP / NICE NG196)."
+
+  - key: bisphosphonate_antiresorptive
+    label: Past or current bisphosphonate, denosumab, romosozumab, antiangiogenic?
+    type: button_group
+    required: true
+    ai_extract: true
+    help_text: "MRONJ (medication-related osteonecrosis of the jaw) risk. Includes IV oncologic bisphosphonates (zoledronate, pamidronate)."
+    config:
+      options:
+        - {label: "Never", value: "never"}
+        - {label: "Currently taking", value: "current"}
+        - {label: "Previously taken", value: "past"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: bisphosphonate_detail
+    label: Agent, route (oral/IV), duration, indication
+    type: long_text
+    ai_extract: true
+    help_text: "Cumulative oral exposure ≥4 yrs or any IV use raises MRONJ risk; consult AAOMS 2022 / SDCEP MRONJ guidance."
+
+  - key: pregnancy_status
+    label: Pregnant or breastfeeding?
+    type: button_group
+    ai_extract: true
+    pii: true
+    help_text: "Ask all patients of childbearing potential. Influences imaging, drug, and timing decisions."
+    config:
+      options:
+        - {label: "Not applicable", value: "na"}
+        - {label: "No", value: "no"}
+        - {label: "Pregnant — gestation noted in detail", value: "pregnant"}
+        - {label: "Breastfeeding", value: "breastfeeding"}
+        - {label: "Trying to conceive", value: "ttc"}
+        - {label: "Prefer not to say", value: "withheld"}
+
+  - key: pregnancy_detail
+    label: Pregnancy / breastfeeding detail
+    type: text
+    ai_extract: true
+    pii: true
+
+  - key: smoking_status
+    label: Smoking / vaping status
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Never", value: "never"}
+        - {label: "Ex-smoker", value: "ex"}
+        - {label: "Current — pack-years recorded in detail", value: "current"}
+        - {label: "Vape only", value: "vape"}
+
+  - key: smoking_detail
+    label: Smoking detail (pack-years, quit date if ex)
+    type: text
+    ai_extract: true
+
+  - key: alcohol_use
+    label: Alcohol use (AUDIT-C concept)
+    type: select
+    ai_extract: true
+    help_text: "Useful for sedation safety, bleeding risk, and oral cancer screening conversations."
+    config:
+      options:
+        - {label: "Never", value: "never"}
+        - {label: "Within recommended limits", value: "moderate"}
+        - {label: "Above recommended limits", value: "above"}
+        - {label: "Concerning / dependent", value: "dependent"}
+        - {label: "Declined to answer", value: "declined"}
+
+  - key: recreational_drugs
+    label: Recreational drug use
+    type: long_text
+    ai_extract: true
+    pii: true
+    help_text: "Especially methamphetamine (caries pattern), cannabis (xerostomia), opioids (sedation interactions), stimulants (anaesthesia risk)."
+
+  - key: cardiac_history
+    label: Cardiac history
+    type: long_text
+    ai_extract: true
+    help_text: "MI, stents, valve disease/replacement, IE prophylaxis indication (per AHA 2021 update / NICE CG64), pacemaker/ICD, hypertension."
+
+  - key: respiratory_history
+    label: Respiratory history
+    type: long_text
+    ai_extract: true
+    help_text: "Asthma (last exacerbation, ICS use, bring inhaler), COPD, OSA, recent URTI."
+
+  - key: endocrine_history
+    label: Endocrine history (diabetes, thyroid, adrenal)
+    type: long_text
+    ai_extract: true
+    help_text: "For diabetes capture HbA1c if known; relevant to perio prognosis, MRONJ, and post-op infection."
+
+  - key: bleeding_disorders
+    label: Bleeding / clotting disorders
+    type: long_text
+    ai_extract: true
+    help_text: "Haemophilia, vWD, ITP, hereditary bleeding tendency, family history."
+
+  - key: bbv_status
+    label: Blood-borne virus status (Hep B, Hep C, HIV)
+    type: long_text
+    ai_extract: true
+    pii: true
+    phi: true
+    help_text: "Optional disclosure. Standard precautions apply regardless. Record only what the patient discloses."
+
+  - key: malignancy_history
+    label: Cancer history (esp. head/neck radiation, chemotherapy)
+    type: long_text
+    ai_extract: true
+    help_text: "Head and neck radiotherapy raises ORN risk; chemotherapy/immunotherapy affects timing."
+
+  - key: psychiatric_history
+    label: Mental health history relevant to dental care
+    type: long_text
+    ai_extract: true
+    pii: true
+
+  - key: prior_anaesthetic_problems
+    label: Previous problems with anaesthesia or sedation
+    type: long_text
+    ai_extract: true
+    help_text: "Family history of malignant hyperthermia, suxamethonium apnoea, post-op nausea, awareness."
+
+  - key: implants_prosthetics
+    label: Joint / cardiac / other implants
+    type: long_text
+    ai_extract: true
+    help_text: "Influences antibiotic prophylaxis decision per ADA / AAOS 2014 (not routine for prosthetic joint patients)."
+
+  - key: infectious_disease
+    label: Communicable / notifiable infections
+    type: long_text
+    ai_extract: true
+    pii: true
+    help_text: "TB, COVID-19, MRSA colonisation; do not delay urgent care but plan IPC accordingly."
+
+  - key: family_history
+    label: Family medical history relevant to dentistry
+    type: long_text
+    ai_extract: true
+
+  - key: nz_ethnicity_iwi
+    label: Ethnicity / iwi affiliation (optional)
+    type: text
+    ai_extract: true
+    pii: true
+    countries: [NZ]
+    help_text: "Optional self-identification per Stats NZ ethnicity standard; supports equity reporting under Te Tiriti o Waitangi."
+
+  - key: us_emergency_contact_consent_npp
+    label: HIPAA Notice of Privacy Practices acknowledged
+    type: button_group
+    countries: [US]
+    required_per_country:
+      US: true
+    help_text: "HIPAA §164.520 NPP acknowledgement (16 Feb 2026 update incorporates SUD records Part 2 alignment)."
+    config:
+      options:
+        - {label: "Acknowledged in writing", value: "ack_written"}
+        - {label: "Acknowledged verbally — written attempt failed", value: "ack_verbal"}
+        - {label: "Declined", value: "declined"}
+
+  - key: patient_signature_obtained
+    label: Patient (or guardian) signature obtained
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Yes — paper", value: "paper"}
+        - {label: "Yes — electronic", value: "electronic"}
+        - {label: "No — to follow", value: "no"}
+
+  - key: clinician_notes
+    label: Clinician's free-text notes / red flags
+    type: long_text
+    ai_extract: true

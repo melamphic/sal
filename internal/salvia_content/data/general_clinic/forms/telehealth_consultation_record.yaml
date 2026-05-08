@@ -1,0 +1,173 @@
+id: salvia.general_clinic.telehealth_consultation_record
+name: "Telehealth consultation record"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Encounter note for a remote (video or telephone) consultation. Captures
+  identification, patient location, technology and quality, fall-back plan if
+  the link fails, recognition of limits-of-remote-care, and the SOAP note. Use
+  alongside the Telehealth Consult Consent form (referenced via the consent
+  policy and a clause within this record).
+
+purpose_per_regulator:
+  NZ: "MCNZ Statement on Telehealth (2020; reviewed 2024); HDC Code R4 + R7."
+  AU: "Medical Board of Australia Telehealth Guidelines 2023; RACGP Telehealth Guide; MBS telehealth items + 12-month established-relationship rule."
+  UK: "GMC Remote Prescribing Good Practice (Sept 2024 update); CQC GP Mythbuster 109 (Online primary care); GMC Good Medical Practice 2024."
+  US: "AMA H-480.946 telemedicine; CMS telehealth waiver / 2026 PHE-end transition; state telehealth licensure compacts (IMLC, NLC, PSY-PACT); HIPAA-compliant platform."
+
+linked_policy_defaults:
+  - salvia.shared.consent_policy
+  - salvia.shared.privacy_policy
+  - salvia.shared.info_security_policy
+
+tags: [telehealth, encounter, remote]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: encounter_modality
+    label: "Modality"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Video", value: "video"}
+        - {label: "Telephone audio only", value: "phone"}
+        - {label: "Asynchronous secure messaging", value: "async"}
+        - {label: "Started video, fell back to phone", value: "video_to_phone"}
+
+  - key: identity_verified
+    label: "Patient identity verification"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Three-point verification: full name, DOB, and one of (address / NHI / Medicare / NHS no / ID document held to camera). Document method used."
+
+  - key: patient_location
+    label: "Patient location at time of consultation"
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Geographic location confirmed at start of encounter. Required for: AU MBS telehealth eligibility, US state-licensure jurisdiction, UK lawful prescribing if patient overseas, NZ ACC accident location."
+
+  - key: clinician_location
+    label: "Clinician location"
+    type: text
+    required: true
+    help_text: "Declared to patient at start. Required for AU TH 2023 Guidelines and US cross-state telehealth."
+
+  - key: third_party_present
+    label: "Anyone else present at either end?"
+    type: long_text
+    ai_extract: true
+    help_text: "Patient end: support person, interpreter, child. Clinician end: trainee, scribe (if so, AI scribe consent must already be on file). Disclose all parties."
+
+  - key: technology_quality
+    label: "Audio / video quality and any issues"
+    type: long_text
+    ai_extract: true
+
+  - key: tech_failure_plan
+    label: "Technology failure plan agreed at start"
+    type: long_text
+    required: true
+    help_text: "Agreed fall-back if call drops: clinician to ring patient back on recorded number; if not reachable, escalate per emergency disposition. Document the recall number used."
+
+  - key: limits_of_remote_care
+    label: "Limits of remote care discussed"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Cannot examine, auscultate, palpate, take obs (unless patient self-reports). Patient agrees to attend in-person if clinical concern requires."
+
+  - key: telehealth_consent_on_file
+    label: "Telehealth consent on file"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Yes — referenced telehealth consent form id and date", value: "yes"}
+        - {label: "No — captured at start of this encounter (consent block below)", value: "this_encounter"}
+
+  - key: telehealth_consent
+    label: "Telehealth consent (if not already on file)"
+    type: system.consent
+    config:
+      consent_type: telemedicine
+      require_witness: false
+    help_text: "Patient consents to remote care, accepts limits, accepts that audio/video is not recorded unless separately consented (per AI scribe policy if applicable)."
+
+  - key: subjective
+    label: "Subjective (presenting complaint, history)"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: objective
+    label: "Objective (visible findings, patient-reported obs)"
+    type: long_text
+    ai_extract: true
+
+  - key: assessment
+    label: "Assessment / impression"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: plan
+    label: "Plan"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: prescriptions_issued
+    label: "Prescriptions issued"
+    type: long_text
+    ai_extract: true
+    help_text: "GMC Sept 2024: remote prescribing of high-risk medicines (opioids, sedatives, weight-loss injectables) requires reasonable steps to access prior records and avoid mismatch. AU SafeScript / state RTPM check required. NZ controlled-drug e-Rx. US: DEA Ryan Haight / state PDMP query mandatory in 40+ states."
+
+  - key: safety_netting_advice
+    label: "Safety-netting advice given"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Specific symptoms that should prompt urgent in-person review or ED. Time horizon. Whom to call after-hours."
+
+  - key: follow_up_arrangement
+    label: "Follow-up"
+    type: long_text
+    ai_extract: true
+
+  - key: emergency_escalation_used
+    label: "Was emergency escalation used?"
+    type: select
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — patient advised to attend ED / call 111 / 000 / 911 / 999", value: "ed"}
+        - {label: "Yes — clinician contacted ambulance directly", value: "ambulance"}
+
+  - key: signature_clinician
+    label: "Clinician name and registration"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Date and time of consultation"
+    type: date
+    required: true

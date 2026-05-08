@@ -1,0 +1,133 @@
+id: salvia.aged_care.dnacpr
+name: "DNACPR / Allow Natural Death Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How decisions about cardiopulmonary resuscitation are made, recorded,
+  reviewed and accessed at the point of need. DNACPR / AND / NFR / DNR
+  decisions are clinical decisions requiring discussion with the resident
+  (where capacity permits) or substitute decision-maker. Tracey-compliant
+  in the UK; ReSPECT widely used; AU state forms; NZ HQSC ACP; US POLST/
+  MOLST DNR section.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 7 (informed choice including future); HQSC Advance Care Planning programme; Ngā Paerewa NZS 8134:2021 Section 5; Resuscitation Council NZ guidance."
+  AU: "Strengthened Aged Care Quality Standards Standard 5; state Advance Care Directive law; Resuscitation Council Australia + ANZCOR guidance; state-specific Not-For-Resuscitation / Resuscitation Plan forms."
+  UK: "Tracey v Cambridge University Hospitals NHS Foundation Trust [2014] EWCA Civ 822 — duty to consult patient or person interested in their welfare before recording DNACPR (unless that conversation would cause physical or psychological harm); ReSPECT national framework (Resuscitation Council UK); CQC Reg 9 + Reg 11; NICE NG142; Mental Capacity Act 2005."
+  US: "42 CFR 483.10(c)(6) right to refuse treatment; state Advance Directive law; POLST / MOLST forms in 46 states; CMS State Operations Manual."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to every decision about whether
+      cardiopulmonary resuscitation (CPR) will be attempted in the event
+      of cardiopulmonary arrest in a resident of the service. The
+      decision is documented before it is needed.
+
+  - id: clinical_decision_with_consultation
+    title: Clinical decision with consultation
+    body: |
+      The decision whether to attempt CPR is a clinical decision made by
+      the treating clinician. The clinician must consult the resident
+      (with capacity) or the substitute decision-maker about the
+      decision. Consultation is required even where CPR is judged
+      clinically futile (UK Tracey; UK Winspear v City Hospitals
+      Sunderland NHS FT). The resident may decline CPR; this refusal is
+      respected.
+
+  - id: presumption
+    title: Presumption in absence of decision
+    body: |
+      In the absence of a documented decision, CPR will be attempted on
+      arrest. This default makes early conversation and clear
+      documentation essential.
+
+  - id: forms_country
+    title: Country-specific forms
+    body_per_country:
+      NZ: |
+        HQSC Advance Care Plan template; Resuscitation Council NZ
+        guidance documentation. Decision recorded in the resident's
+        clinical record and on the Salvia Advance Care Plan form.
+      AU: |
+        State NFR / Resuscitation Plan form (e.g. Vic 'Goals of Care'
+        forms; NSW NFR form; Qld Acute Resuscitation Plan). Recorded
+        on the Salvia ACP form alongside.
+      UK: |
+        DNACPR form (NHS standard or local trust variant) OR ReSPECT
+        form (Recommended Summary Plan for Emergency Care and
+        Treatment) — ReSPECT covers the wider treatment plan and is
+        recommended where adopted. Recorded on the Salvia ACP form.
+      US: |
+        POLST / MOLST form (Portable Medical Order signed by clinician)
+        in 46 states; or state DNR form. Living Will / Health Care
+        Proxy supplements. Recorded on the Salvia ACP form.
+
+  - id: capacity_and_substitute
+    title: Capacity and substitute decision-makers
+    body: |
+      Where the resident has capacity, their decision is determinative.
+      Where the resident lacks capacity:
+      - NZ: Welfare Guardian or activated EPOA-PCW; otherwise treating
+        clinician with whānau involvement.
+      - AU: state-specific substitute decision-maker hierarchy.
+      - UK: LPA Health & Welfare or Court Deputy where appointed;
+        otherwise best-interests decision under MCA s.4 with
+        consultation of family / friend or IMCA per s.39A.
+      - US: Health Care Proxy / DPA-HC; otherwise state surrogate
+        hierarchy.
+
+  - id: review
+    title: Review of decisions
+    body: |
+      Each DNACPR / AND decision is reviewed at every comprehensive
+      care plan review and at any significant change of condition. The
+      resident may revoke their decision at any time. The decision is
+      reviewed on every transfer back from hospital (some hospital
+      forms expire on discharge; the residential decision must be
+      restated).
+
+  - id: communication
+    title: Communication
+    body: |
+      The decision is communicated to all clinical staff on duty. The
+      form / order is filed at the front of the resident's clinical
+      record (and electronic flag on the eMAR / chart). On hospital
+      transfer, the form / a copy travels with the resident.
+
+  - id: response_to_arrest
+    title: Response to cardiopulmonary arrest
+    body: |
+      Where DNACPR is in place: do not initiate CPR; provide comfort
+      and dignity care; notify the GP; notify family. Where DNACPR is
+      not in place: initiate CPR per Resuscitation Council
+      guidelines; call emergency services; continue until handover or
+      cessation per clinical lead.
+
+  - id: training
+    title: Staff training
+    body: |
+      Clinical staff are trained in: how to find a resident's DNACPR
+      decision quickly; the legal and ethical framework; the response
+      to arrest; and de-briefing after any cardiopulmonary event.
+      Refresher annually with a BLS / CPR competency.
+
+  - id: governance
+    title: Governance
+    body: |
+      DNACPR decisions are reviewed in a sample at clinical governance
+      to ensure consultation occurred and is documented, the form is
+      accessible at point of care, and review cadence is honoured.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing.

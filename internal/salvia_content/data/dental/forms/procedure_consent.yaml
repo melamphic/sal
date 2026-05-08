@@ -1,0 +1,192 @@
+id: salvia.dental.procedure_consent
+name: "Procedure Consent (Extraction / RCT / Implant / Periodontal Surgery)"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Single parametric consent form for invasive dental procedures. Procedure
+  type drives the risks and post-op instructions, but the structure
+  (diagnosis, options, material risks, alternatives, no-treatment, consent)
+  is shared. Use one form per procedure occurrence, not per visit.
+
+purpose_per_regulator:
+  NZ: "DCNZ Practice Standard – Informed Consent; HDC Code Right 7; Health and Disability Commissioner Act 1994."
+  AU: "Dental Board AU Code of Conduct §3.5; Rogers v Whitaker (1992) HCA materiality test."
+  UK: "GDC Standards 3 (consent); Montgomery v Lanarkshire (2015) UKSC 11; CQC Reg 11."
+  US: "ADA Principles of Ethics §1.B (informed consent); state law (Cobbs v Grant CA / Canterbury v Spence DC); HIPAA documentation."
+
+linked_policy_defaults:
+  - salvia.dental.medical_emergencies_resuscitation
+
+tags: [consent, surgical]
+
+overall_prompt: |
+  Capture the procedure type, tooth/region, diagnosis, and the material
+  risks discussed. Pull risks verbatim where possible. Do NOT auto-suggest
+  risks not mentioned by the clinician.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: consent_date
+    label: Consent date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: clinician_obtaining_consent
+    label: Clinician obtaining consent
+    type: text
+    required: true
+
+  - key: procedure_type
+    label: Procedure type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Simple extraction", value: "extraction_simple"}
+        - {label: "Surgical extraction (incl. third molar)", value: "extraction_surgical"}
+        - {label: "Root canal treatment (RCT)", value: "rct"}
+        - {label: "Re-RCT / endodontic retreatment", value: "rct_retreat"}
+        - {label: "Apicectomy", value: "apicectomy"}
+        - {label: "Dental implant placement", value: "implant"}
+        - {label: "Implant uncovering / abutment", value: "implant_stage_2"}
+        - {label: "Bone graft / sinus lift", value: "bone_graft"}
+        - {label: "Periodontal flap surgery", value: "perio_flap"}
+        - {label: "Crown lengthening", value: "crown_lengthening"}
+        - {label: "Gingivectomy / frenectomy", value: "gingivectomy"}
+        - {label: "Biopsy / lesion excision", value: "biopsy"}
+        - {label: "Other (detail in narrative)", value: "other"}
+
+  - key: tooth_or_site
+    label: Tooth / site (FDI or Universal)
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: diagnosis
+    label: Diagnosis / clinical justification
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: procedure_description
+    label: Description of procedure for the patient
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Plain-English description: what will happen, anaesthetic plan, expected duration."
+
+  - key: material_risks_general
+    label: General material risks discussed
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Pain, bleeding, swelling, bruising, infection, dry socket (extractions), failure of treatment."
+
+  - key: material_risks_specific
+    label: Procedure-specific material risks
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Extraction: nerve (IAN/lingual/mental) injury, oroantral communication,
+      jaw fracture, MRONJ where risk factors present.
+      RCT: instrument fracture, perforation, sodium hypochlorite accident,
+      vertical root fracture, persistent infection.
+      Implant: integration failure, sinus / IAN injury, peri-implantitis,
+      aesthetic outcome.
+      Perio surgery: recession, root sensitivity, mobility increase.
+
+  - key: alternatives_discussed
+    label: Alternatives discussed
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: no_treatment_implication
+    label: Implications of no treatment
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: anaesthesia_plan
+    label: Anaesthesia plan
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Local anaesthetic only", value: "la"}
+        - {label: "LA + minimal/oral sedation", value: "la_oral"}
+        - {label: "LA + N₂O", value: "la_n2o"}
+        - {label: "LA + IV moderate sedation", value: "la_iv"}
+        - {label: "General anaesthesia (referred)", value: "ga"}
+
+  - key: implant_specific_disclosure
+    label: Implant-specific disclosure (system, components, surgical guide)
+    type: long_text
+    ai_extract: true
+    help_text: "Include manufacturer, lot/serial of fixture per FDA UDI / EU MDR / TGA UDI / Medsafe traceability."
+
+  - key: medications_post_op
+    label: Post-op medications planned
+    type: long_text
+    ai_extract: true
+    help_text: "Antibiotic stewardship: prescribe only when clinically indicated. Opioid sparing per country opioid stewardship policy."
+
+  - key: post_op_instructions_issued
+    label: Post-op instructions issued
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Yes — written", value: "written"}
+        - {label: "Yes — verbal", value: "verbal"}
+        - {label: "Both", value: "both"}
+
+  - key: consent_capacity_confirmed
+    label: Patient has decision-making capacity
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — confirmed", value: "yes"}
+        - {label: "No — surrogate / parent / EPOA acting", value: "surrogate"}
+        - {label: "Borderline — capacity assessment recorded", value: "assessment"}
+
+  - key: surrogate_decision_maker
+    label: Surrogate / parent / EPOA name and authority
+    type: text
+    ai_extract: true
+    pii: true
+
+  - key: questions_addressed
+    label: Patient questions and clinician responses
+    type: long_text
+    ai_extract: true
+
+  - key: invasive_procedure_consent
+    label: Procedure consent
+    type: system.consent
+    required: true
+    config:
+      consent_type: invasive_procedure
+
+  - key: clinician_notes
+    label: Clinician notes
+    type: long_text
+    ai_extract: true

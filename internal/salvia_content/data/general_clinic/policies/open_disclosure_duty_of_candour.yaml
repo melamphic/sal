@@ -1,0 +1,166 @@
+id: salvia.general_clinic.open_disclosure_duty_of_candour
+name: "Open disclosure / duty of candour policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Notifiable-safety-incident → patient apology + investigation + ongoing
+  communication. UK has the strongest written requirement (CQC Reg 20
+  notification + apology workflow). NZ HDC Right 6 + Open Disclosure NZ.
+  AU RACGP QI3.2 + ACSQHC Australian Open Disclosure Framework.
+  US state + Joint Commission.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 6 + Right 11; Open Disclosure NZ Standard (HQSC); ACC Treatment Injury Cl 2(1)(b)."
+  AU: "Australian Open Disclosure Framework 2013 (ACSQHC); RACGP Standards 5th ed QI3.2; AHPRA Good Medical Practice s.7."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014, Reg 20 — Duty of Candour; CQC Mythbuster 36 / 67."
+  US: "Joint Commission Standard RI.01.02.01 (disclosure of unanticipated outcomes); state apology statutes (~38 states); CMS Conditions of Participation."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies whenever a patient experiences a "notifiable safety
+      incident" / "harm event" / "adverse event meeting the disclosure
+      threshold". The threshold differs by country (see Section 3) but
+      always covers: unintended or unexpected harm during care that
+      results in death, severe harm, moderate harm, or prolonged
+      psychological harm. It also covers: a near-miss the patient knows
+      about, a complaint that on review is upheld, and any event for
+      which an apology is owed.
+
+  - id: principles
+    title: "Principles"
+    body: |
+      The practice commits to: (1) acknowledging the event to the
+      patient (and family where the patient consents) at the earliest
+      reasonable opportunity; (2) saying sorry — a meaningful apology
+      that is NOT an admission of legal liability per the country's
+      apology law; (3) explaining what happened in plain language,
+      including what is not yet known; (4) describing what will be done
+      to investigate; (5) telling the patient what changes will follow;
+      (6) supporting the patient through the process — including
+      offering a single contact person, choice of meeting location,
+      and access to advocacy / interpretation; (7) documenting every
+      step in the patient record AND in the practice's safety log.
+
+  - id: thresholds
+    title: "Threshold for invoking duty of candour / open disclosure"
+    body_per_country:
+      NZ: |
+        HDC Code Right 6 obliges open communication on any care issue.
+        Open Disclosure NZ Standard (HQSC 2017) defines the formal
+        process for any "patient safety event" involving harm or
+        unexpected outcome. Practical threshold: any event that caused
+        harm, that the patient may discover via a record, or where the
+        family / patient has questions.
+      AU: |
+        ACSQHC Australian Open Disclosure Framework 2013 / RACGP QI3.2.
+        Clinical incident threshold: any unintended consequence of care
+        causing harm. Apply Open Disclosure to all moderate / severe
+        harm and to near-miss where the patient is aware.
+      UK: |
+        CQC Reg 20 statutory duty of candour applies to "notifiable
+        safety incident": any unintended or unexpected incident in care
+        that, in the reasonable opinion of a healthcare professional,
+        could result in OR has resulted in death, severe harm, moderate
+        harm, or prolonged psychological harm. Notification, written
+        follow-up, apology, and inquiry are all statutorily required.
+      US: |
+        Joint Commission RI.01.02.01: licensed independent practitioner
+        informs patient about unanticipated outcomes including sentinel
+        events. State law in ~38 states protects "I'm sorry" statements
+        from being used as admission of liability in malpractice. CMS
+        Conditions of Participation expect disclosure where harm
+        occurred.
+
+  - id: workflow
+    title: "Disclosure workflow"
+    body: |
+      Step 1 — Recognise: any clinician identifying a candidate event
+      flags it within 24 hours to the clinical lead.
+      Step 2 — Initial conversation: a senior clinician contacts the
+      patient (or family / next of kin per consent) within 7 days
+      (UK CQC Reg 20 — "as soon as reasonably practicable"; AU OD
+      framework similar; HDC Code R6 ongoing; US state-specific). The
+      conversation acknowledges the event, expresses sympathy / apology,
+      and describes the next steps.
+      Step 3 — Written follow-up: a written letter follows within 10
+      working days (UK Reg 20 — written statement provided; AU OD
+      framework — full disclosure if the patient consents). Letter
+      includes the facts known, the apology, the investigation plan,
+      and a single named contact.
+      Step 4 — Investigation: SEA / RCA conducted (see SEA policy).
+      Step 5 — Disclosure of investigation findings: shared with the
+      patient on completion, in plain language; any system changes
+      explained.
+      Step 6 — Closure: the case is closed only when the patient
+      confirms they have no further questions or chooses to disengage.
+
+  - id: apology
+    title: "Apology — wording and protection"
+    body: |
+      An apology is meaningful and unambiguous. Acceptable wording:
+      "I am sorry that you have suffered this harm" or "I am sorry that
+      our care fell short of what you should have received." Avoid
+      "we are sorry IF…" qualifications. Apology laws protect this
+      statement from being used as an admission of liability:
+      NZ Apology Act 2006; AU state-by-state Civil Liability Acts
+      apology provisions; UK NHS Resolution Saying Sorry guidance + CQC
+      Reg 20(2)(b) explicit; US ~38 state apology statutes. Document
+      the apology verbatim in the record.
+
+  - id: roles
+    title: "Roles"
+    body: |
+      The practice partner / clinical director is the named accountable
+      lead for open disclosure. The clinician most responsible for the
+      patient's care leads the patient conversation where willing and
+      appropriate; if not, a senior peer leads. A nominated practice
+      manager handles administrative continuity (single point of
+      contact for the patient, scheduling meetings, sending letters).
+      Staff involved are offered immediate peer support and access to
+      the practice EAP.
+
+  - id: documentation
+    title: "Documentation"
+    body: |
+      Documented in the patient record AND in the practice's safety
+      log: date of event; date of recognition; date of first
+      conversation with patient; written-statement date; investigation
+      reference; disclosure-of-findings date; closure date. The
+      written statement is held in the safety log (UK Reg 20(4)
+      explicit). Every contact with the patient is recorded.
+
+  - id: complaints_link
+    title: "Link to complaints process"
+    body: |
+      Where the patient escalates to a formal complaint, the open-
+      disclosure process and the complaints process run in parallel.
+      They are not alternatives. The open-disclosure conversation
+      includes signposting to: NZ HDC Advocacy Service; AU AHPRA / state
+      health-complaints commissioner; UK PHSO / ICB complaints route;
+      US state medical board + Joint Commission Office of Quality and
+      Patient Safety.
+
+  - id: training
+    title: "Training"
+    body: |
+      All clinical staff complete open-disclosure training at induction
+      (RACGP eLearning OD / HQSC OD module / RCGP / IHI Disclosure
+      module). Senior clinicians who lead disclosure conversations
+      complete advanced communication-skills training every 3 years.
+      The practice runs a tabletop disclosure scenario annually as part
+      of clinical governance.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on regulator-framework refresh
+      (CQC Reg 20 amendments; ACSQHC OD Framework refresh; HQSC OD
+      Standard refresh). Currency date at the top of this policy.

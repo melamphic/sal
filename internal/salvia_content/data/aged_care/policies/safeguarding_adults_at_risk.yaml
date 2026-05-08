@@ -1,0 +1,142 @@
+id: salvia.aged_care.safeguarding_adults_at_risk
+name: "Safeguarding Adults at Risk Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service prevents, recognises, records and refers concerns of
+  abuse, neglect, exploitation, or self-neglect of an adult at risk.
+  Built on UK Care Act 2014 s.42 (statutory safeguarding duty), AU SIRS
+  scheme, US 42 CFR 483.12 + state APS, and NZ vulnerable adult /
+  Family Violence Act 2018 framework.
+
+purpose_per_regulator:
+  NZ: "Vulnerable Children Act 2014 (now Oranga Tamariki Act 1989 amendments) and adult-safeguarding obligations under various Acts; Family Violence Act 2018; Care of Children Act 2004 where children involved; Crimes Act 1961 elder-abuse provisions; HDC Code Right 4. Office for Seniors / Age Concern Elder Abuse Response Service."
+  AU: "Aged Care Act 2024 ss.149–155 SIRS; Aged Care Rules 2025 Part 7 reportable incidents; Aged Care Quality and Safety Commission powers; state Crimes Acts; National Plan to Respond to the Abuse of Older Australians."
+  UK: "Care Act 2014 s.42 (Local Authority duty to make enquiries where adult has needs for care/support, is experiencing or at risk of abuse/neglect, and unable to protect themselves due to those needs); Care and Support Statutory Guidance (current); Mental Capacity Act 2005; CQC Reg 13 (safeguarding from abuse and improper treatment); Local Authority Designated Officer (LADO) where allegation against staff; Safeguarding Adults Boards under Care Act 2014 s.43."
+  US: "42 CFR 483.12 (free from abuse, neglect, exploitation); 42 CFR 483.95(c) abuse training; F600 (free from abuse and neglect); F602 misappropriation; F606 reporting; state Adult Protective Services (APS) law; Elder Justice Act 2010; CMS hotline; state mandatory reporting."
+
+clauses:
+  - id: scope
+    title: Scope and definitions
+    body: |
+      'Adult at risk' is any resident who has needs for care and
+      support and is, or is at risk of, abuse, neglect or
+      exploitation. Categories of abuse: physical; psychological /
+      emotional; sexual; financial / material; neglect or acts of
+      omission; institutional; discriminatory; domestic; modern slavery;
+      self-neglect.
+
+  - id: zero_tolerance
+    title: Zero tolerance
+    body: |
+      The service has zero tolerance for abuse and neglect. Every staff
+      member, visitor, contractor, family member or volunteer is
+      expected to report concerns. Whistleblowing is supported.
+
+  - id: prevention
+    title: Prevention
+    body: |
+      Prevention measures include: rigorous staff screening (separate
+      Staff Screening / Vetting Policy); induction and refresher
+      training; person-centred care; visible leadership; strong
+      complaints handling; open culture; supervision and support; clear
+      policies on restraint, medication, photography, money handling.
+
+  - id: recognise
+    title: Recognise — signs to look for
+    body: |
+      Staff are trained to recognise: unexplained injuries; behavioural
+      change (withdrawal, fear of specific staff or visitors); poor
+      hygiene or untreated wounds; weight loss; pressure injuries
+      developing in well-supervised residents; financial irregularities
+      (missing belongings, unexplained withdrawals); staff overly
+      involved in resident finances; complaints of pain.
+
+  - id: record_refer
+    title: Record and refer
+    body: |
+      A concern is recorded immediately on the Salvia Reportable
+      Incident form (or the Medication Error / Falls form where the
+      route is via that form first), with detail and verbatim quotes
+      where possible. The concern is escalated to the senior nurse on
+      duty and to the Care Manager / Registered Manager.
+
+  - id: external_referral
+    title: External referral
+    body_per_country:
+      NZ: |
+        Police where a crime is suspected; Age Concern Elder Abuse
+        Response Service for advice; HDC for breach of Code; HealthCERT
+        for service-level concerns; Family Violence Act 2018 protections.
+      AU: |
+        SIRS report via the Aged Care Quality and Safety Commission
+        portal — Priority 1 within 24 hours, Priority 2 within 30 days,
+        per Aged Care Rules 2025 Part 7; police where crime suspected;
+        OPAN for advocacy.
+      UK: |
+        Local Authority adult safeguarding (Care Act 2014 s.42)
+        referral; LADO where allegation against a staff member;
+        police where crime suspected; CQC notification under Reg 18.
+      US: |
+        State Adult Protective Services (APS); State Survey Agency
+        within 2 hours where serious bodily injury suspected, otherwise
+        within 24 hours (42 CFR 483.12(c)); police where crime
+        suspected; state ombudsman; CMS hotline for federal
+        certification concerns.
+
+  - id: protective_actions
+    title: Immediate protective actions
+    body: |
+      Where a resident is at imminent risk: separate from the alleged
+      perpetrator (including suspending staff member pending
+      investigation per HR policy); preserve evidence (do not clean
+      scene of suspected sexual assault — call police first); ensure
+      medical assessment; offer support / advocacy; involve cultural
+      support staff where appropriate.
+
+  - id: investigation
+    title: Investigation
+    body: |
+      Internal investigation runs in parallel with external referral
+      where required. The investigator is independent of the alleged
+      perpetrator's line management. Documentation maintained
+      contemporaneously. Findings reviewed by the Registered Manager /
+      DON and clinical governance.
+
+  - id: support
+    title: Support for the resident and others
+    body: |
+      The resident is offered psychological / counselling support,
+      family / NoK liaison (with the resident's consent), and advocacy.
+      Other residents who may be affected are identified and supported.
+      Staff members affected are offered support / EAP.
+
+  - id: confidentiality
+    title: Confidentiality
+    body: |
+      Information shared on a need-to-know basis. Resident's voice and
+      wishes respected, while balancing duty to protect. Where the
+      resident lacks capacity for the safeguarding decision, the
+      substitute decision-maker is involved (or in UK, an IMCA per MCA
+      s.39A as applicable).
+
+  - id: training
+    title: Staff training
+    body: |
+      All staff complete safeguarding training at induction and
+      annually. Senior staff complete enhanced safeguarding training
+      (Level 3 in UK; senior nurse level in AU; equivalent in NZ /
+      US). Training covers recognition, recording, referring, and
+      whistleblowing.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: Service Manager / Safeguarding Lead.

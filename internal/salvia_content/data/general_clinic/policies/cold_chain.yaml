@@ -1,0 +1,151 @@
+id: salvia.general_clinic.cold_chain
+name: "Vaccine cold-chain policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Storage, monitoring, and breach management for vaccines and other
+  refrigerated biologicals. Defines fridge specification, twice-daily
+  min/max recording, cold-chain failure procedure, transport rules, and
+  registration with the country immunisation programme.
+
+purpose_per_regulator:
+  NZ: "Te Whatu Ora 2017 National Standards for Vaccine Storage & Transportation; Cold Chain Management Plan (CCMP) annual; Immunisation Handbook 2024 §2.4."
+  AU: "Strive for 5 (4th ed 2024) — National Vaccine Storage Guidelines; annual cold-chain self-audit; state PHU notification of any breach."
+  UK: "Green Book Ch 3 (Storage, distribution and disposal of vaccines); UKHSA Vaccine Incident Guidance; CQC Reg 12."
+  US: "CDC Vaccine Storage and Handling Toolkit (2025 ed); VFC Program Operations Guide; state immunization program rules."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every vaccine, biological, and temperature-sensitive medicine
+      stored at this practice (e.g. immunoglobulins, insulin in clinical
+      stock, oxytocin), to vaccines transported to off-site clinics, and to
+      vaccines couriered between practice sites. It applies whether the
+      stock is publicly funded, private, or trial-related.
+
+  - id: fridge_specification
+    title: "Fridge specification and placement"
+    body: |
+      The vaccine fridge is purpose-built (pharmacy-grade) with: forced-air
+      circulation, ≥1.7 °C uniformity across the chamber, a min/max
+      thermometer with audible alarm, a continuous logger or external probe,
+      a lockable door, and a designated power circuit (ideally on a UPS or
+      generator-backed circuit). Domestic / bar fridges are not acceptable.
+      Placement: ≥10 cm from walls, away from heat sources and direct sun,
+      with the door fully closing. Vaccines must not be stored on the floor,
+      door shelves, or in the freezer.
+
+  - id: monitoring_and_logging
+    title: "Daily monitoring and logging"
+    body: |
+      Twice each working day a designated cold-chain coordinator records:
+      current temperature, minimum-since-last-read, maximum-since-last-read.
+      The min/max is reset after each reading. Acceptable range is 2–8 °C.
+      Records are kept for at least 7 years (longer where regulator
+      mandates) and reviewed monthly. A second person countersigns the log
+      monthly. Continuous loggers download weekly into a digital archive.
+
+  - id: stock_rotation
+    title: "Stock rotation, receipt, and segregation"
+    body: |
+      Vaccines are placed in the fridge within 5 minutes of delivery and
+      checked for cold-chain integrity (validated thermal indicator on the
+      esky). Stock is rotated FIFO with shorter-expiry stock used first.
+      Public-funded and private stock are segregated and clearly labelled.
+      Patient-supplied stock (e.g. private travel vaccines or trial
+      products) is bagged with patient identifier and used only for that
+      patient.
+
+  - id: breach_procedure
+    title: "Cold-chain breach procedure"
+    body_per_country:
+      NZ: |
+        On any reading <2 °C or >8 °C: (1) quarantine ALL vaccines in the
+        affected fridge — do NOT discard; (2) label "DO NOT USE — pending
+        cold-chain assessment"; (3) record the breach in the cold-chain log
+        and open an incident-ledger row; (4) contact the National
+        Immunisation Programme cold-chain advisor (or PHO equivalent) within
+        2 working days; (5) follow the assessor's instructions for use,
+        return, or destruction. Any expired-after-breach product is
+        destroyed and a new CCMP review is due.
+      AU: |
+        On any reading <2 °C or >8 °C: (1) quarantine all stock in a
+        labelled bag; (2) record breach details — date, time, duration,
+        min and max reached, action taken — in the cold-chain breach log;
+        (3) phone the state Public Health Unit / Immunisation Coordinator
+        within one business day; (4) await advice on heat / freeze
+        stability; (5) destroy or return stock per advice. Document the
+        outcome and update the practice's annual cold-chain self-audit
+        return.
+      UK: |
+        On any reading <2 °C or >8 °C: (1) quarantine all stock; (2)
+        record temperature, duration, root cause; (3) contact the local
+        Screening & Immunisation Team (SIT) / UKHSA team using the Vaccine
+        Incident Guidance flowchart; (4) follow the UKHSA stability
+        decision; (5) any vaccine that cannot be assured is destroyed via
+        controlled-waste route and a Yellow Card filed if a patient was
+        given product later judged compromised.
+      US: |
+        On any reading <2 °C or >8 °C: (1) move stock to functioning storage
+        and label "DO NOT USE"; (2) document on Temperature Excursion
+        Worksheet (CDC); (3) contact each manufacturer with stability
+        question — submit lot, NDC, duration, min/max — and the VFC
+        coordinator if VFC stock; (4) await stability determination;
+        (5) destroy compromised stock via biohazard route and document on
+        VFC Vaccine Return form.
+
+  - id: transport
+    title: "Off-site transport"
+    body: |
+      For outreach clinics, vaccines travel in a validated transport
+      container with two ice-pack rows (top and bottom), one calibrated
+      thermometer in-pack, and a transit log. Travel time minimised; if
+      >2 hours, a phase-change or eutectic-pack system is used. On arrival
+      the transport thermometer min/max is read, recorded, and the stock
+      placed into a destination fridge within 5 minutes. Empty
+      transport-pack returned with stock card.
+
+  - id: alarms_and_power
+    title: "Alarms and power-failure response"
+    body: |
+      The fridge alarm activates audibly and via SMS / email to a named
+      after-hours staffer for any breach >5 minutes. In a power-failure:
+      keep door closed; activate the practice's continuity protocol;
+      relocate stock to back-up site if outage exceeds 4 hours
+      (NZ NS 2017 / AU Strive for 5 / Green Book / CDC) before fridge
+      temperature loses range.
+
+  - id: annual_audit
+    title: "Annual audit / self-audit"
+    body: |
+      The cold-chain coordinator completes the annual audit return (NZ
+      CCMP; AU annual self-audit to state PHU; UK as part of QOF /
+      practice declaration; US VFC compliance visit). Results — including
+      any minor non-conformances — are tabled at the practice's
+      clinical-governance meeting. The audit identifies any equipment to
+      replace or training to repeat.
+
+  - id: training
+    title: "Training and roles"
+    body: |
+      A named cold-chain coordinator (registered nurse or senior healthcare
+      assistant) and a deputy are appointed and named in this policy. Both
+      complete cold-chain training annually (NZ IMAC or PHO course; AU
+      NCIRS; UK Green Book Ch 3 self-study + practice quiz; US CDC You
+      Call the Shots — Vaccine Storage). All vaccinators complete the
+      same training as part of their immunisation competency.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on the publication of new national
+      guidance (Te Whatu Ora; Strive for 5 ed change; Green Book
+      revision; CDC Toolkit revision). Currency date reflects the most
+      recent review.

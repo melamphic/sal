@@ -1,0 +1,173 @@
+id: salvia.aged_care.restraint_minimisation
+name: "Restraint and Restrictive Practices Minimisation Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Sets the service's commitment to eliminate restrictive practices wherever
+  possible, the requirements for last-resort use, the alternatives expected
+  to be tried first, the consent and authorisation rules per country, the
+  Behaviour Support Plan requirement, and the monitoring / review cadence.
+  Restrictive practices are: chemical (psychotropic for behaviour),
+  physical (lap belts, harnesses, bed rails as restraint), mechanical
+  (gloves, splints), environmental (locked unit, locked room), and
+  seclusion.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Part 6 (Restraint and seclusion — including elimination strategy, approval, monitoring, review, and the requirement that strategic-plan objectives aim to eliminate restraint); Mental Health (Compulsory Assessment and Treatment) Act 1992 where applicable; Protection of Personal and Property Rights Act 1988."
+  AU: "Aged Care Act 2024 ss.144–148 and Aged Care Rules 2025 Part 7 Division 162: 162-55 BSP requirements where restrictive practice assessed as necessary; 162-60 BSP where practice used; 162-65 BSP where ongoing use indicated; 162-70 review and revise; 162-75 consultation. RPSDM (Restrictive Practices Substitute Decision-Maker) hierarchy. Strengthened Aged Care Quality Standards Standard 5 Outcome 5.5."
+  UK: "Mental Capacity Act 2005 ss.5, 6 (restraint), s.4A (deprivation of liberty); Deprivation of Liberty Safeguards (DoLS, MCA Schedule A1) — LPS deferred ≥2027; Care Quality Commission Restraint Policy and Positive Behaviour Support Policy registration requirements (effective 9 February 2026); CQC Reg 11 (consent), Reg 13 (safeguarding from abuse / improper treatment), Reg 13(4) (no restraint unless necessary and proportionate); Mental Health Units (Use of Force) Act 2018 where relevant."
+  US: "42 CFR 483.10(e) (right to be free from restraint imposed for purposes of discipline or convenience); 42 CFR 483.12 (free from abuse, neglect, exploitation); F605 Right to be free from physical or chemical restraints; F606 Right to be free from involuntary seclusion; F607 Development and implementation of written policies and procedures; 42 CFR 483.45(c)(3)(iii) psychotropic drug use; state restraint statutes."
+
+clauses:
+  - id: commitment_elimination
+    title: Commitment to elimination
+    body: |
+      The service is committed to eliminating restrictive practices. The
+      starting position is that no restrictive practice will be used. Where
+      a restrictive practice is unavoidable to prevent imminent harm, it
+      will be the least restrictive option, used for the shortest time
+      possible, and reviewed regularly with the goal of withdrawal.
+
+  - id: definitions
+    title: Definitions
+    body: |
+      - Chemical restraint: a medication used primarily to control
+        behaviour rather than to treat a diagnosed mental or physical
+        condition. Antipsychotics, benzodiazepines and antidepressants
+        prescribed for behavioural control fall within scope.
+      - Physical restraint: any device or staff hold that restricts
+        freedom of movement. Lap belts, harnesses, bed rails used to
+        prevent the resident leaving the bed, and recliner chairs that
+        the resident cannot exit.
+      - Mechanical restraint: gloves and splints applied to prevent
+        purposeful movement (excluding clinical splinting for fracture or
+        wound).
+      - Environmental restraint: locked dementia units, locked rooms,
+        and any environment from which the resident cannot freely leave.
+      - Seclusion: confinement of the resident alone in a room from
+        which they cannot freely exit.
+
+  - id: alternatives_first
+    title: Alternatives must be tried first
+    body: |
+      Before any restrictive practice is used, evidence-based alternatives
+      must be attempted and documented. Examples include: activity
+      engagement; sensory modulation (Snoezelen, music, weighted blanket);
+      pain assessment and treatment; infection screen; medication review
+      to deprescribe offending drug; environmental modification (lighting,
+      noise, layout); validation therapy and dementia-specific approaches;
+      one-to-one staffing; family visits; relocation of room; review of
+      sleep and toileting routines.
+
+  - id: behaviour_support_plan
+    title: Behaviour Support Plan (BSP)
+    body_per_country:
+      NZ: |
+        Where restrictive practices may be used or are used, a Behaviour
+        Support Plan is integrated into the resident's care plan
+        (Ngā Paerewa Section 3 + Part 6). The BSP names triggers,
+        de-escalation strategies, the practices authorised, the
+        monitoring schedule, and the review owner.
+      AU: |
+        Aged Care Rules 2025 Div 162-55: where a registered provider
+        assesses that restrictive practices may be necessary, a BSP must
+        be developed and integrated with the Care and Services Plan.
+        Div 162-65 — where ongoing use indicated, BSP must specify
+        elimination/reduction targets. Div 162-70 — BSP reviewed at
+        least every 12 months and after any significant change.
+        Div 162-75 — consultation with resident, RPSDM, and treating
+        clinicians.
+      UK: |
+        From 9 February 2026, CQC requires a Positive Behaviour Support
+        (PBS) policy and a separate Restraint policy as conditions of
+        registration. The PBS plan integrates with the resident's care
+        plan and references the Mental Capacity Act and least-restrictive
+        principle. Where a deprivation of liberty arises, DoLS
+        authorisation is sought (LPS deferred ≥2027).
+      US: |
+        For chemical restraint, F758 requires gradual dose reduction
+        (GDR) attempts at least annually unless clinically
+        contraindicated; rationale documented. For physical restraint,
+        F605 requires demonstrated need to treat medical symptoms with
+        physician order specifying duration and circumstances. State
+        BSP requirements vary; facility behaviour management programme
+        is documented.
+
+  - id: consent_authorisation
+    title: Consent and authorisation
+    body_per_country:
+      NZ: |
+        Consent: resident with capacity, or Welfare Guardian
+        (PPPR Act 1988) or activated EPOA (Personal Care and Welfare).
+        For seclusion or chemical restraint, medical practitioner sign-off
+        and engagement of any organisational restraint approval pathway
+        per Ngā Paerewa Part 6.
+      AU: |
+        Consent: resident with capacity, or RPSDM under Aged Care Rules
+        2025 hierarchy: (1) appointed RPSDM, (2) partner, (3) close
+        family/friend in personal relationship, (4) Aged Care Quality
+        and Safety Commissioner. Authorising health practitioner per
+        Aged Care Rules 2025.
+      UK: |
+        Consent: resident with capacity (assessed under MCA 2005 s.2/3).
+        Where lacks capacity: best-interests decision under MCA s.4 with
+        IMCA where no family / friend (s.39A); DoLS authorisation where
+        deprivation of liberty engaged. Force used only where necessary
+        and proportionate (MCA s.6).
+      US: |
+        Consent: resident, or legal representative where resident lacks
+        capacity. Physician's order required for restraint specifying
+        circumstances and duration (F605, 42 CFR 483.10(e)(1)).
+
+  - id: chemical_restraint
+    title: Chemical restraint specifically
+    body: |
+      A psychotropic drug is a chemical restraint when prescribed primarily
+      to control behaviour rather than to treat a diagnosed mental or
+      physical illness. Use requires (a) documented clinical justification,
+      (b) consent or substitute consent, (c) specified review date with a
+      gradual dose reduction (GDR) plan unless clinically contraindicated,
+      and (d) integration with the BSP. Antipsychotic stewardship is
+      governed by the separate Antipsychotic Stewardship Policy (STOMP /
+      F758 GDR / NQI antipsychotic indicator).
+
+  - id: monitoring_during_use
+    title: Monitoring during use
+    body: |
+      Continuous observation during seclusion. 15-minute observations for
+      physical restraint, including circulation, comfort, dignity, and
+      agitation. Chemical restraint reviewed clinically at 24 hours, then
+      72 hours, then weekly minimum until withdrawn or until at the agreed
+      maintenance dose with documented justification.
+
+  - id: notification
+    title: Notification and reporting
+    body: |
+      All restrictive-practice authorisations are recorded on the Salvia
+      Restraint Authorisation form, which writes to the clinical record
+      and (for AU) feeds the SIRS dashboard for inappropriate-use
+      determinations. UK DoLS starts/changes/ends are notifiable to CQC
+      under Reg 18. NZ seclusion events are reported under Ngā Paerewa
+      Part 6. US chemical-restraint reductions are reviewed at least
+      annually under F758.
+
+  - id: training
+    title: Staff training
+    body: |
+      All clinical staff complete training on dementia care, person-centred
+      approaches to behaviours of concern, de-escalation, and the legal
+      framework for restrictive practices in their jurisdiction. Refresher
+      training annually. Training records are kept against each staff
+      member.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational responsibility:
+      Director of Nursing / Care Manager.

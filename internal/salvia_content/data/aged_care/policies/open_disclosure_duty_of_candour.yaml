@@ -1,0 +1,144 @@
+id: salvia.aged_care.open_disclosure_duty_of_candour
+name: "Open Disclosure / Duty of Candour Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service responds when something goes wrong — being open and
+  honest with residents and families, providing an apology, explaining
+  what happened, what is being done, and what is being learned. UK
+  Reg 20 Duty of Candour is statutory; AU has a national framework;
+  NZ HDC Code Right 6; US Resident Rights communication.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 6 (right to be fully informed including about an adverse event); HQSC Open Disclosure framework (current); Coroners Act 2006 obligations where unexpected death."
+  AU: "Strengthened Aged Care Quality Standards Standard 1 (The person — open and honest communication); Aged Care Quality and Safety Commission Open Disclosure framework; ACSQHC Australian Open Disclosure Framework (national)."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 20 — Duty of Candour (statutory). Engaged at notifiable safety incident: death; severe harm; moderate harm; prolonged psychological harm. Requires (a) notify person as soon as reasonably practicable; (b) provide a true account; (c) advise of further enquiries; (d) include an apology; (e) follow up in writing."
+  US: "42 CFR 483.10 right to be informed; ACA principles of transparency; state apology laws (e.g. Sorry Works); state mandatory adverse-event disclosure laws (varies); Joint Commission Speak Up principles."
+
+clauses:
+  - id: principles
+    title: Principles
+    body: |
+      When something goes wrong, the resident and their nominated family
+      / NoK are told promptly, honestly and respectfully. An apology is
+      offered. The service explains what happened, what is being done in
+      response, and what is being learned. Open Disclosure is part of
+      care, not an extra step.
+
+  - id: when_to_engage
+    title: When to engage Open Disclosure / Duty of Candour
+    body_per_country:
+      NZ: |
+        Engaged for any adverse event causing harm or affecting the
+        resident's experience materially, per HQSC framework and
+        HDC Code Right 6.
+      AU: |
+        Engaged for any incident causing harm or near-miss with
+        significant potential for harm. Required under Strengthened
+        Standard 1; ACQSC Open Disclosure framework.
+      UK: |
+        Engaged for any 'notifiable safety incident' — death; severe
+        harm; moderate harm; or prolonged psychological harm of 28+
+        days. Reg 20 is statutory; failure is a criminal offence.
+      US: |
+        Engaged for any adverse event causing harm or affecting care
+        materially. State apology laws may protect the conversation
+        from being treated as an admission.
+
+  - id: who_leads
+    title: Who leads the conversation
+    body: |
+      A senior clinical staff member (typically the Care Manager,
+      Director of Nursing, or treating GP) leads the conversation, with
+      the staff member directly involved present where appropriate.
+      Training in Open Disclosure / Duty of Candour conversations
+      required before leading.
+
+  - id: timing
+    title: Timing
+    body: |
+      The conversation is held as soon as reasonably practicable after
+      the event — typically within 24 hours for serious events, no
+      later than 7 days. UK Reg 20: 'as soon as reasonably practicable'
+      with no fixed time; in practice within 10 working days for the
+      written follow-up.
+
+  - id: what_to_say
+    title: What to say
+    body: |
+      The conversation includes: factual account of what happened
+      (separating known facts from theories); an apology / expression
+      of regret with words used recorded; what is being done in
+      response (clinical care change, internal investigation status);
+      what is being learned (preliminary findings, with promise of
+      further conversation); next steps with owners and timeframes;
+      offer of further meeting; written follow-up.
+
+  - id: apology
+    title: Apology
+    body: |
+      An apology is required. UK Reg 20(3)(a) explicit. AU framework
+      requires expression of regret. Many US states protect apology
+      language from being treated as a legal admission. The actual
+      words used are recorded on the Salvia Open Disclosure form.
+
+  - id: written_follow_up
+    title: Written follow-up
+    body: |
+      A written notification follows the verbal conversation, with the
+      same content, within a reasonable timeframe. Required under UK
+      Reg 20(4); best practice elsewhere.
+
+  - id: cultural_consideration
+    title: Cultural and accessibility considerations
+    body: |
+      Conversations are held in the resident's / family's preferred
+      language with qualified interpreter where needed. Tikanga Māori,
+      Aboriginal and Torres Strait Islander Sorry Business, faith
+      leader presence, and accessible-information formats are honoured
+      as in the Cultural Safety Policy.
+
+  - id: documentation
+    title: Documentation
+    body: |
+      Each Open Disclosure / Duty of Candour event is recorded on the
+      Salvia Open Disclosure form, linked to the originating incident
+      ledger row. The record includes attendees, factual account,
+      apology words, response, learning, next steps, written follow-up
+      status, and acknowledgement.
+
+  - id: support_for_staff
+    title: Support for staff involved
+    body: |
+      Staff involved in an adverse event are supported through the
+      conversation — managerial support, peer support, EAP access. A
+      blame-free culture is reinforced; system contributing factors
+      are explored at clinical governance.
+
+  - id: training
+    title: Staff training
+    body: |
+      All clinical leaders complete Open Disclosure / Duty of Candour
+      training at induction and refresher every two years. Training
+      includes the legal framework, the apology, cultural
+      considerations, and difficult-conversation skills.
+
+  - id: governance
+    title: Governance
+    body: |
+      Open Disclosure events are tracked at clinical governance.
+      Patterns reviewed under QAPI / Standard 2 / Reg 17 / Section 2.
+      External notification routed via the Reportable Incident form
+      where required.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing / Quality Lead.

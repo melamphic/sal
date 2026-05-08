@@ -1,0 +1,226 @@
+id: salvia.dental.sedation_consent
+name: "Sedation Consent (Oral / Inhalation N₂O / IV / GA)"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Informed consent and pre-sedation assessment for dental sedation across
+  oral, inhalation nitrous oxide, IV moderate, and general anaesthesia
+  modalities. Captures fasting compliance, ASA fitness, agent disclosure,
+  monitoring plan, and escort confirmation. Country-specific governance
+  references injected via per-country fields.
+
+purpose_per_regulator:
+  NZ: "DCNZ Sedation Practice Standard March 2026 (NZRC CORE Immediate ≤2 yrs for all sedation team; AED mandatory if sedating; capnography for moderate+)."
+  AU: "ADA AU Schedule 3 Sedation Guidelines; state Drugs/Poisons Acts; ANZCA PS09 (GA); Dental Board AU Conscious Sedation Endorsement."
+  UK: "IACSD (Intercollegiate Advisory Committee for Sedation in Dentistry) 2020 Standards; SAAD Standards; CQC Reg 12; GDC Standards 7.2."
+  US: "ADA Guidelines for Use of Sedation and General Anesthesia by Dentists (Oct 2016, updated 2024); state dental board sedation permit; AHA BLS/ACLS."
+
+linked_policy_defaults:
+  - salvia.dental.sedation_governance
+  - salvia.dental.medical_emergencies_resuscitation
+  - salvia.dental.controlled_drugs_opioid_prescribing
+
+tags: [consent, sedation, anaesthesia]
+
+overall_prompt: |
+  Extract the sedation modality, agents, doses, fasting status, escort
+  arrangement, and ASA fitness. Risks dictated should be captured in
+  risks_discussed verbatim. Do NOT auto-classify ASA — leave for clinician.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+    required: true
+
+  - key: assessment_date
+    label: Pre-sedation assessment date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: planned_procedure
+    label: Procedure to be performed under sedation
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: sedation_modality
+    label: Sedation modality
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Minimal — oral only", value: "minimal_oral"}
+        - {label: "Inhalation nitrous oxide / oxygen", value: "n2o"}
+        - {label: "Moderate — IV (single agent)", value: "iv_moderate_single"}
+        - {label: "Moderate — IV (multi-agent / titrated)", value: "iv_moderate_multi"}
+        - {label: "Deep sedation", value: "deep"}
+        - {label: "General anaesthesia (operating-theatre referral)", value: "ga"}
+
+  - key: asa_classification
+    label: ASA Physical Status
+    type: select
+    required: true
+    help_text: "ASA III generally requires consultant anaesthetist input; ASA IV not for office sedation."
+    config:
+      options:
+        - {label: "ASA I", value: "asa_1"}
+        - {label: "ASA II", value: "asa_2"}
+        - {label: "ASA III — escalate", value: "asa_3"}
+        - {label: "ASA IV — refer", value: "asa_4"}
+
+  - key: airway_assessment
+    label: Airway assessment (Mallampati / mouth opening / neck mobility)
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: agents_planned
+    label: Planned sedation agents and dose ranges
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Drug, route, planned dose range, max. Witnessed at the chair before administration."
+
+  - key: monitoring_plan
+    label: Monitoring plan
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "SpO₂ continuous; capnography mandatory for moderate+ (DCNZ 2026 §6, IACSD 2020, ADA US 2016 update); BP intermittent; HR/ECG for IV."
+
+  - key: fasting_compliance
+    label: "Fasting compliance (per ASA / RCoA: 6h solids, 2h clear fluids)"
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Confirmed compliant", value: "compliant"}
+        - {label: "Non-compliant — proceed cancelled", value: "non_compliant_cancelled"}
+        - {label: "Non-compliant — risk-benefit accepted (rationale recorded)", value: "non_compliant_proceed"}
+        - {label: "N/A (oral / N₂O minimal)", value: "na"}
+
+  - key: fasting_instructions_issued
+    label: Fasting instructions issued in advance
+    type: button_group
+    config:
+      options:
+        - {label: "Yes — written", value: "yes_written"}
+        - {label: "Yes — verbal only", value: "yes_verbal"}
+        - {label: "Not required (modality)", value: "na"}
+
+  - key: escort_confirmed
+    label: Responsible adult escort confirmed
+    type: button_group
+    required: true
+    ai_extract: true
+    help_text: "Required for IV / deep / GA modalities; for minimal oral / N₂O depending on agent + dose. IACSD 2020 §11."
+    config:
+      options:
+        - {label: "Yes — present and identified", value: "yes_present"}
+        - {label: "Yes — confirmed by phone", value: "yes_phone"}
+        - {label: "No — sedation cancelled / downgraded", value: "no_cancelled"}
+        - {label: "Not required (modality)", value: "na"}
+
+  - key: pregnancy_status
+    label: Pregnancy / breastfeeding status
+    type: select
+    ai_extract: true
+    pii: true
+    config:
+      options:
+        - {label: "Not applicable", value: "na"}
+        - {label: "No", value: "no"}
+        - {label: "Pregnant — gestation noted in detail", value: "pregnant"}
+        - {label: "Breastfeeding", value: "breastfeeding"}
+
+  - key: risks_discussed
+    label: Risks and adverse events discussed
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Common (nausea, dizziness, prolonged drowsiness), infrequent (vein irritation, paradoxical reaction), rare (apnoea, aspiration, allergy, awareness, death). Tailor to agent."
+
+  - key: alternatives_discussed
+    label: Alternatives to sedation discussed
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Local anaesthesia alone, behavioural techniques, referral, treatment under GA hospital pathway."
+
+  - key: post_sedation_instructions
+    label: Post-sedation instructions issued
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "No driving / signing legal documents / operating machinery for 24h; supervised by responsible adult; emergency contact."
+
+  - key: nz_team_qualifications
+    label: Sedation team current qualifications
+    type: long_text
+    countries: [NZ]
+    required_per_country:
+      NZ: true
+    help_text: "DCNZ Sedation Standard March 2026: NZRC CORE Immediate certificate ≤2 yrs for all sedation team members; AED on premises if sedating."
+
+  - key: uk_iacsd_recovery_criteria
+    label: Recovery criteria (UK IACSD 2020 §13)
+    type: long_text
+    countries: [UK]
+    help_text: "Discharge against modified Aldrete or equivalent; documented before patient leaves clinic."
+
+  - key: us_state_permit
+    label: State sedation permit verified
+    type: text
+    countries: [US]
+    required_per_country:
+      US: true
+    help_text: "Operator permit class (e.g. CA Conscious / Oral / GA) recorded; ADA Sedation Guidelines 2016 + state board."
+
+  - key: au_endorsement_state_authority
+    label: AU sedation endorsement / state authority verified
+    type: text
+    countries: [AU]
+    required_per_country:
+      AU: true
+    help_text: "Dental Board AU Conscious Sedation Endorsement (where applicable) and state Drugs/Poisons authority for the agents used."
+
+  - key: sedation_consent
+    label: Sedation consent
+    type: system.consent
+    required: true
+    config:
+      consent_type: sedation
+      require_witness: true
+
+  - key: agent_administration
+    label: Sedation agent administration record
+    type: system.drug_op
+    required: true
+    config:
+      operation: administer
+      controlled_only: false
+      confirm_required: true
+
+  - key: clinician_notes
+    label: Clinician notes
+    type: long_text
+    ai_extract: true

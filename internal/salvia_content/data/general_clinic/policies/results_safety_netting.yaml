@@ -1,0 +1,153 @@
+id: salvia.general_clinic.results_safety_netting
+name: "Results handling and safety-netting policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Inbox management, abnormal-result follow-up, patient-not-contactable
+  escalation, and the failure-to-receive policy. Country anchors include
+  NZ Foundation Standard, AU RACGP GP2.2, UK CQC GP Mythbuster 57, and
+  US CMS conditions on results communication.
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard 2024 (Indicator 4 — clinical follow-up); HDC Code R4 + R6; HQSC Patient Safety guidance."
+  AU: "RACGP Standards 5th ed Criterion GP2.2 (Follow-up of tests, results and referrals); ACSQHC Communicating for Safety NSQHS Std 6."
+  UK: "CQC GP Mythbuster 57 (Failure-safe systems for follow-up of test results); RCGP results-handling guidance; NICE; NHS Resolution Six System Indicators."
+  US: "CMS Conditions of Participation (test reporting); CLIA 42 CFR 493 (lab result reporting time); state malpractice case law (Misdiagnosis #1 cause of paid claims)."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every clinical result that arrives at this practice:
+      pathology, imaging, ECG, spirometry, biopsy histology, screening
+      programme, secondary-care letters with embedded results, and any
+      result the practice has requested from another provider. Includes
+      inbound reports about admitted patients, emergency-department
+      attendances, and outpatient clinics.
+
+  - id: receipt_and_inbox
+    title: "Receipt and inbox management"
+    body: |
+      All results arrive in a single inbox queue per clinician PLUS a
+      whole-practice unallocated queue. Each result is allocated within
+      one working day. The named requesting clinician is the default
+      reviewer; if absent, a covering clinician is named in the
+      cover-arrangement matrix. Reception staff do NOT triage clinical
+      content; they may sort by patient, urgency flag, and reviewer.
+      Out-of-hours: the on-call clinician reviews flagged urgent / acute
+      results; non-urgent waits next working day.
+
+  - id: review_priority
+    title: "Review priority and turnaround"
+    body: |
+      Critical results (life-threatening — e.g. K+ >6.5, troponin
+      positive, INR >5, biopsy showing cancer, acute imaging finding):
+      reviewed within 1 hour of receipt and patient contacted same day.
+      Abnormal-but-not-critical: reviewed within 2 working days; patient
+      contacted within 5 working days unless results require sooner. Normal
+      results: reviewed within 3 working days; patient notified per
+      pre-agreed channel (portal, SMS, no-news-is-good-news only where
+      explicitly agreed at request time).
+
+  - id: clinician_actions
+    title: "Reviewing clinician's actions"
+    body: |
+      The reviewing clinician annotates every result with: (a) a category
+      (normal / borderline / abnormal-needs-action / critical); (b) the
+      action (no action / inform patient / book review / call patient /
+      refer / repeat test); (c) the named contact owner if action
+      delegated; (d) the date by which the action is due. The action and
+      due-date trigger a follow-up workflow; the result is NOT closed
+      until the action is documented complete.
+
+  - id: patient_communication
+    title: "Patient communication"
+    body: |
+      Patients are informed of their results via the channel agreed at
+      request time. Critical results are communicated by direct phone
+      call from a clinician, not via text or portal alone. Abnormal
+      results requiring action are communicated by phone OR by portal
+      message with explicit "please book within X days" instruction.
+      For complex / sensitive results (cancer histology, HIV, sexual-
+      health diagnoses), the conversation is face-to-face or video
+      where the patient prefers, with adequate time and documented
+      consent for the disclosure context.
+
+  - id: patient_not_contactable
+    title: "Patient-not-contactable escalation"
+    body: |
+      If reasonable attempts to contact a patient with an abnormal
+      result fail (≥3 attempts on different days using all channels on
+      file), the practice escalates: (a) registered letter to last
+      known address requesting contact; (b) cross-check with NHS / NZ
+      enrolment / Medicare / state health-information-exchange for
+      updated address; (c) for life-threatening results, notify the
+      next-of-kin or emergency contact within the bounds of confidentiality;
+      (d) consider safeguarding referral if the patient is a vulnerable
+      adult / child / has a known mental-health condition. All steps
+      documented; the case stays open until contact is made or the
+      reviewing clinician determines further pursuit is futile.
+
+  - id: failure_to_receive
+    title: "Failure-to-receive policy"
+    body: |
+      Where a result is expected but does not arrive within the
+      provider's stated turnaround (e.g. histology >2 weeks; imaging
+      >5 working days; routine bloods >2 working days), the requesting
+      clinician chases the provider and documents the chase. A weekly
+      audit cross-references all referrals / requests against received
+      results to identify any "lost" cases. UK CQC GP Mythbuster 57
+      explicitly requires a failure-safe system; this is the practice's
+      implementation.
+
+  - id: incidental_findings
+    title: "Incidental findings"
+    body: |
+      Incidental findings (e.g. lung nodule on rib X-ray) are reviewed
+      against current guideline (Fleischner Society for lung; AAA / renal
+      cyst protocols; thyroid TIRADS) and the action — discharge, repeat
+      imaging, refer — is documented. The patient is told about the
+      incidental finding and given a written summary of the surveillance
+      plan.
+
+  - id: covering_arrangements
+    title: "Covering arrangements"
+    body: |
+      Every clinician names a default and back-up covering clinician.
+      When the clinician is on leave / sick / part-time off, results
+      flow to the cover. The receptionist updates the cover schedule
+      weekly; clinicians starting leave forward their inbox queue
+      explicitly. No result sits in an inbox of an absent clinician.
+
+  - id: audit
+    title: "Audit and clinical governance"
+    body: |
+      The practice audits results-handling quarterly: (a) average days
+      from receipt to review; (b) number of results overdue beyond
+      threshold; (c) any patient-not-contactable cases closed without
+      contact; (d) any "lost" requests caught by the failure-to-receive
+      reconciliation. Results tabled at the monthly clinical-governance
+      meeting and any individual case meeting threshold goes through
+      Significant Event Analysis.
+
+  - id: training
+    title: "Training"
+    body: |
+      All clinical and reception staff complete annual training on
+      results-handling, including: critical-result thresholds, identity-
+      verification before disclosure, the difference between "abnormal"
+      and "critical", how to escalate, and how to document. Locums and
+      new starters complete this on the first day before working solo.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on regulator-guidance refresh
+      (CQC GP Mythbuster updates, RACGP standards refresh, RNZCGP
+      Foundation Standard refresh). Currency date at top.

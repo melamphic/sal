@@ -1,0 +1,189 @@
+id: salvia.aged_care.verification_expected_death
+name: "Verification of Expected Death"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Registered nurse verification of an expected death (where authorised by
+  jurisdiction and by the resident's clinical pathway). Captures the time of
+  death, the absence of vital signs, the family / GP / coroner notification
+  status, the body care performed (with cultural and family preferences
+  honoured), and the removal arrangement. This form is the verification
+  record; certification of death (the medical certificate of cause of death)
+  is the responsibility of the medical practitioner separately. UNEXPECTED
+  death is NOT verified on this form — it routes through the Reportable
+  Incident form to coroner / regulator notification.
+
+purpose_per_regulator:
+  NZ: "Births, Deaths, Marriages and Relationships Registration Act 2021 (medical certification by doctor or NP); Coroners Act 2006 ss.13–14 (Coroner notification for unexpected/suspicious death); Ngā Paerewa NZS 8134:2021 Section 3 (end-of-life care) and Section 1 (Pae ora rights — death tikanga); HQSC Te Ara Whakapiri palliative care framework."
+  AU: "State Births, Deaths and Marriages Acts; state Coroners Acts (e.g. NSW Coroners Act 2009 s.6 reportable deaths; Vic Coroners Act 2008 s.4); Strengthened Aged Care Quality Standards Standard 5 (Clinical Care — end of life); Palliative Care Australia A guide for the verification of death by registered nurses (2021); state-specific RN verification authority."
+  UK: "Births and Deaths Registration Act 1953; Medical Examiner system (England, Wales 2024 — independent scrutiny of all non-coronial deaths from 9 Sep 2024); RCN guidance on confirmation/verification of expected adult death (2020, current); NICE NG142 End of life care; CQC Reg 16 notification of death of a service user."
+  US: "State pronouncement-of-death law (varies — RN authority for expected death in many states); 42 CFR 483.10(g) (information communication including post-mortem); state Vital Statistics Acts; CMS conditions of participation; CMS Hospice rules where on hospice."
+
+linked_policy_defaults:
+  - salvia.aged_care.end_of_life_palliative
+  - salvia.aged_care.dnacpr
+  - salvia.aged_care.cultural_safety
+  - salvia.aged_care.advance_care_planning
+  - salvia.aged_care.resident_rights
+
+tags: [end_of_life, death, verification]
+
+overall_prompt: |
+  Capture the verification record. Voice extraction may populate observations
+  and family contact context. Time of death, signs verified, and notification
+  fields must be set explicitly by the verifying RN. This form is for
+  EXPECTED death only — if the death is unexpected, do not use this form;
+  preserve the scene and route via Reportable Incident.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: time_of_death
+    label: Time and date of death
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Recorded time as observed at the moment of verification (or, where unwitnessed, the time of finding)."
+
+  - key: expected_pathway_documented
+    label: Expected death pathway documented
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — palliative / end-of-life care plan in place; ACP documents preferences", value: "yes_acp"}
+        - {label: "Yes — terminal phase recognised by treating clinician; clinical pathway active", value: "yes_clinical"}
+        - {label: "No — death NOT expected — STOP, do not use this form, route via Reportable Incident", value: "no_stop"}
+
+  - key: verifier_name
+    label: Verifying registered nurse
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: verifier_authority
+    label: Verifier authority basis
+    type: long_text
+    required: true
+    ai_extract: false
+    label_per_country:
+      NZ: "RN authorised by the service to verify expected death per HQSC / Te Ara Whakapiri framework; medical certificate of cause of death issued separately by doctor or NP under BDM Act 2021."
+      AU: "RN authorised under state RN verification framework (Palliative Care Australia 2021 guide adopted); state legislation governs (e.g. NSW Public Health Regulation 2022). Certification by medical practitioner separately."
+      UK: "RN verification of expected adult death per RCN 2020 guidance and provider policy; medical certificate of cause of death (MCCD) issued by attending doctor; medical examiner scrutiny applies (England, Wales)."
+      US: "State law-dependent — many states permit RN pronouncement of expected death (e.g. NY, NJ, MA, CA via hospice). Pronouncement separate from certification; medical certifier completes death certificate."
+
+  - key: signs_verified
+    label: Signs verified (absence of)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Standard observation period: at least 5 minutes confirming absence of
+      central pulse, absence of heart sounds on auscultation, absence of
+      respiratory effort with no chest movement and no breath sounds, fixed
+      and dilated pupils non-reactive to light, no response to verbal or
+      painful stimulus. Where in doubt, escalate to medical practitioner.
+
+  - key: gp_notified
+    label: GP / treating doctor notified
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — notified for MCCD / death certification", value: "yes"}
+        - {label: "Pending — out of hours, will be notified at morning", value: "pending"}
+
+  - key: coroner_consideration
+    label: Coroner consideration
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Not reportable — death expected, anticipated, natural cause", value: "not_reportable"}
+        - {label: "Reportable — medical practitioner contacting Coroner / Medical Examiner", value: "reportable"}
+        - {label: "Reportable — in-care death within statutory window (e.g. NSW <24h post-restraint)", value: "in_care"}
+    help_text: |
+      NZ Coroners Act 2006 s.13: Coroner notified for sudden, unexpected,
+      violent, suspicious deaths, deaths in care of state, and certain other
+      categories. AU state Coroners Acts (e.g. NSW s.6 reportable deaths
+      include deaths in care). UK Medical Examiner / Coroner referral for
+      non-natural / unknown / unexpected. US state Medical Examiner /
+      Coroner thresholds.
+
+  - key: family_present_at_death
+    label: Family present at the time of death
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — family present", value: "yes"}
+        - {label: "No — family being contacted", value: "no_contacting"}
+        - {label: "No — no NoK / unable to contact", value: "no_no_nok"}
+
+  - key: family_notified_datetime
+    label: Family / NoK notified — date and time
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: cultural_spiritual_practice_honoured
+    label: Cultural / spiritual practice honoured at and after death
+    type: long_text
+    required: true
+    ai_extract: true
+    label_per_country:
+      NZ: "Tikanga Māori — body remains with whānau where requested, no removal of taonga without whānau, karakia, body washing per whānau preference, repatriation to marae/urupā where requested. Pasifika practices honoured per family direction. Other cultures per pre-recorded ACP preferences."
+      AU: "Aboriginal and Torres Strait Islander Sorry Business / Sad News protocols — body care, stay with the body, smoking ceremony, repatriation to Country. CALD faith and cultural practices honoured."
+      UK: "Faith-specific body care (washing, dressing, shrouding); presence of religious leader; specific timing requirements (e.g. Jewish, Muslim burial within 24 hours)."
+      US: "Faith-specific body care; family time with body; specific religious requirements honoured."
+
+  - key: body_care_performed
+    label: Body care performed (last offices / post-mortem care)
+    type: long_text
+    ai_extract: true
+    help_text: "Per family preference and cultural practice. Document who participated. Personal effects inventoried and given to family per resident wish."
+
+  - key: removal_arrangement
+    label: Removal arrangement (funeral director / mortuary)
+    type: long_text
+    ai_extract: true
+    help_text: "Funeral director name, time of removal, family preferences for accompaniment / departure ritual."
+
+  - key: cqc_reg16_notification
+    label: CQC Reg 16 notification (UK)
+    type: select
+    ai_extract: false
+    countries: [UK]
+    config:
+      options:
+        - {label: "Submitted — without delay", value: "submitted"}
+        - {label: "Pending — within 24h where reasonably practicable", value: "pending"}
+    help_text: "Reg 16: registered persons must notify CQC of the death of a service user without delay. Where the death is also notifiable under Reg 18 (e.g. preceded by an incident), use the Reportable Incident form to capture both."
+
+  - key: us_state_survey_required
+    label: US State Survey notification required
+    type: select
+    ai_extract: false
+    countries: [US]
+    config:
+      options:
+        - {label: "Yes — death where abuse/neglect suspected (≤2h SBI / ≤24h otherwise)", value: "yes"}
+        - {label: "No — expected death, no suspicion", value: "no"}

@@ -1,0 +1,246 @@
+id: salvia.dental.sterilisation_cycle_log
+name: "Sterilisation Cycle Log"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Per-cycle log for steam sterilisers in the dental practice. Captures
+  cycle parameters, indicators, and load contents. Frequency of
+  Bowie-Dick / Helix / biological tests is country-aware: HTM 01-05 weekly
+  for vacuum sterilisers (UK), CDC weekly biological (US), DCNZ IPC
+  Practice Standard Dec 2024 (NZ), ADA Australia Guidelines for IPC 5th Ed
+  2024 (AU).
+
+purpose_per_regulator:
+  NZ: "DCNZ IPC Practice Standard Dec 2024 §5 (sterilisation monitoring); AS/NZS 4187:2014 healthcare reprocessing."
+  AU: "ADA Australia Guidelines for IPC 5th Edition 2024 §10; AS/NZS 4815:2006 office-based; AS/NZS 4187:2014 healthcare."
+  UK: "HTM 01-05 Decontamination in Primary Care Dental Practices §6 (validation/testing); CQC Reg 12; MHRA medical device regs."
+  US: "CDC Summary of IPC Practices in Dental Settings 2024 §IV.G (weekly spore test); state board; OSHA exposure plans."
+
+linked_policy_defaults:
+  - salvia.dental.decontamination_sterilisation
+  - salvia.dental.infection_prevention_control
+
+tags: [ipc, sterilisation]
+
+overall_prompt: |
+  Extract cycle ID, autoclave ID, indicator results, and load contents.
+  Map any failure (B&D fail, Helix fail, BI positive) to a load
+  quarantine flag. Don't infer pass when results not stated.
+
+fields:
+  - key: cycle_date
+    label: Cycle date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: cycle_time
+    label: Cycle start time
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: load_identifier
+    label: Load / cycle identifier
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Sequential daily ID (e.g. 2026-05-08-LOAD-03)."
+
+  - key: steriliser_id
+    label: Steriliser ID / serial number
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: steriliser_type
+    label: Steriliser type
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Type B vacuum (porous load)", value: "type_b"}
+        - {label: "Type S vacuum (manufacturer-specified)", value: "type_s"}
+        - {label: "Type N non-vacuum (solid unwrapped)", value: "type_n"}
+        - {label: "Statim cassette autoclave", value: "statim"}
+        - {label: "Other", value: "other"}
+
+  - key: cycle_program
+    label: Cycle program
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "e.g. 134°C wrapped, 121°C unwrapped, 134°C prion."
+
+  - key: target_temperature_c
+    label: Target temperature (°C)
+    type: decimal
+    required: true
+    ai_extract: true
+
+  - key: target_pressure_kpa
+    label: Target pressure (kPa)
+    type: decimal
+    ai_extract: true
+
+  - key: hold_time_min
+    label: Hold time (minutes)
+    type: decimal
+    required: true
+    ai_extract: true
+
+  - key: cycle_pass_fail
+    label: Cycle pass/fail (parametric release)
+    type: button_group
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Pass", value: "pass"}
+        - {label: "Fail — load quarantined", value: "fail"}
+        - {label: "Aborted", value: "aborted"}
+
+  - key: bowie_dick_test
+    label: Bowie & Dick test (vacuum sterilisers)
+    type: select
+    ai_extract: true
+    help_text: "Daily on Type B per HTM 01-05 §6.27 (UK); each day of use per CDC; AS/NZS 4815:2006 (AU office-based) per cycle indicator + daily as relevant."
+    config:
+      options:
+        - {label: "Pass", value: "pass"}
+        - {label: "Fail", value: "fail"}
+        - {label: "Not performed today", value: "not_today"}
+        - {label: "Not applicable (Type N)", value: "na"}
+
+  - key: helix_test
+    label: Helix test (hollow-load PCD)
+    type: select
+    ai_extract: true
+    help_text: "Daily for Type B used for hollow loads (HTM 01-05 §6.30)."
+    config:
+      options:
+        - {label: "Pass", value: "pass"}
+        - {label: "Fail", value: "fail"}
+        - {label: "Not performed today", value: "not_today"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: chemical_indicator_class
+    label: Chemical indicator class (ISO 11140)
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Class 1 — process indicator (each pack)", value: "class_1"}
+        - {label: "Class 4 — multi-variable", value: "class_4"}
+        - {label: "Class 5 — integrating", value: "class_5"}
+        - {label: "Class 6 — emulating", value: "class_6"}
+        - {label: "Not used", value: "none"}
+
+  - key: chemical_indicator_result
+    label: Chemical indicator result
+    type: button_group
+    ai_extract: true
+    config:
+      options:
+        - {label: "Pass", value: "pass"}
+        - {label: "Fail", value: "fail"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: biological_indicator_run
+    label: Biological / spore test run today
+    type: button_group
+    ai_extract: true
+    help_text: "Frequency: UK HTM 01-05 not routine for B but quarterly Type N validation; CDC US weekly minimum; DCNZ IPC Std 2024 weekly best-practice; ADA AU 5th Ed 2024 weekly."
+    config:
+      options:
+        - {label: "Yes — incubating", value: "yes_incubating"}
+        - {label: "Yes — read", value: "yes_read"}
+        - {label: "No — not the test day", value: "no"}
+
+  - key: biological_indicator_result
+    label: Biological indicator result (when read)
+    type: button_group
+    ai_extract: true
+    config:
+      options:
+        - {label: "Negative (sterile)", value: "negative"}
+        - {label: "Positive (failure — load quarantined)", value: "positive"}
+        - {label: "Pending", value: "pending"}
+        - {label: "Not run today", value: "na"}
+
+  - key: load_contents
+    label: Load contents (pack list)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "List instrument trays / packs / cassettes by name or tracking ID. Use kit names if linked to instrument tracking."
+
+  - key: linked_instruments
+    label: Linked instrument tracking IDs
+    type: text
+    ai_extract: true
+    help_text: "Pack barcodes / kit IDs for traceability — supports instrument-to-patient lookup."
+
+  - key: operator_name
+    label: Operator name
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: operator_signature_method
+    label: Operator sign-off
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Initial paper log", value: "paper"}
+        - {label: "Electronic — system credentialed", value: "electronic"}
+
+  - key: water_quality_check
+    label: Water quality / reservoir check
+    type: button_group
+    ai_extract: true
+    help_text: "Reservoir water at start of day per HTM 01-05 §6.41 (UK); manufacturer schedule otherwise."
+    config:
+      options:
+        - {label: "OK", value: "ok"}
+        - {label: "Refilled", value: "refilled"}
+        - {label: "Out of spec — corrective action", value: "out_of_spec"}
+        - {label: "Not required this cycle", value: "na"}
+
+  - key: corrective_action
+    label: Corrective action (if any)
+    type: long_text
+    ai_extract: true
+
+  - key: nz_dcnz_notes
+    label: NZ DCNZ Practice Standard alignment notes
+    type: text
+    countries: [NZ]
+    help_text: "DCNZ IPC Practice Standard Dec 2024 §5 — daily user records + cycle parametric release + periodic test calendar."
+
+  - key: au_ada_notes
+    label: AU ADA / AS notes
+    type: text
+    countries: [AU]
+    help_text: "ADA AU Guidelines for IPC 5th Ed 2024 §10; AS/NZS 4815:2006 office-based; AS/NZS 4187:2014 hospital-grade."
+
+  - key: uk_htm_notes
+    label: UK HTM 01-05 alignment
+    type: text
+    countries: [UK]
+    help_text: "HTM 01-05 essential vs best-practice quality compliance scoring referenced in CQC inspection."
+
+  - key: us_cdc_notes
+    label: US CDC alignment
+    type: text
+    countries: [US]
+    help_text: "CDC Summary IPC in Dental Settings 2024 §IV.G; weekly BI; immediate quarantine + recall on positive BI."
+
+  - key: clinician_notes
+    label: Notes
+    type: long_text
+    ai_extract: true
