@@ -1,0 +1,224 @@
+id: salvia.aged_care.nutrition_screen_weight
+name: "Nutrition Screen and Weight Monitoring"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Validated nutrition screen plus weight chart entry. Default tools: MNA-SF
+  (Mini Nutritional Assessment Short Form — validated for ≥65 years) widely
+  used internationally; MUST (Malnutrition Universal Screening Tool) common
+  in UK; MDS Section K + facility tool (US). Captures weight, weight trend,
+  BMI, swallowing/dental status, mealtime independence, IDDSI texture/fluid
+  modification where used, supplement plan and dietitian/SLT referral.
+  Unintentional loss of >5% in 3 months OR >10% in 6 months flags significant
+  weight loss for action.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — clinical care, including nutrition); NZ Aged Care Nutrition guidance from Ministry of Health; Dietitians NZ aged-care position statement."
+  AU: "Strengthened Aged Care Quality Standards Standard 6 (Food and Nutrition) — dedicated standard from 1 Nov 2025: enjoyable food, choice, and adequate nutrition and hydration; Aged Care Quality Indicators (NQI) Unplanned Weight Loss — quarterly reporting; Aged Care Act 2024 requirements on food."
+  UK: "NICE QS24 Nutrition support in adults; NICE CG32 Nutrition support; CQC Reg 14 (meeting nutritional and hydration needs) — Reg 14 is a fundamental standard with criminal liability where breached and harm caused."
+  US: "42 CFR 483.25(g) F692 (assisted nutrition and hydration) — facility ensures resident maintains acceptable parameters of nutritional status (body weight, protein levels) unless clinically unavoidable; MDS 3.0 v1.20.1 Section K (Swallowing/Nutritional Status) — K0200 height/weight, K0300 weight loss, K0510 nutritional approaches."
+
+linked_policy_defaults:
+  - salvia.aged_care.nutrition_hydration
+  - salvia.aged_care.pressure_injury_prevention
+  - salvia.aged_care.care_planning
+  - salvia.aged_care.end_of_life_palliative
+
+tags: [nutrition, weight, ledger]
+
+overall_prompt: |
+  Capture the screening and weight entry. Voice extraction may populate
+  intake pattern, swallowing observations, food preferences, and dietary
+  modifications. Weight, height, BMI must be entered explicitly — do not
+  infer. Weight-loss flag is computed from prior weights on the chart (the
+  loader compares against the resident's weight history).
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_age
+    label: Age
+    type: system_field
+    source: patient_record.age
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_height
+    label: Height (cm)
+    type: system_field
+    source: patient_record.height_cm
+
+  - key: assessment_date
+    label: Date of screen / weighing
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: weight_kg
+    label: Weight today (kg)
+    type: decimal
+    required: true
+    ai_extract: true
+
+  - key: bmi
+    label: BMI
+    type: decimal
+    ai_extract: false
+    help_text: "Auto-calculated from height + weight where both present. ≤22 in older adults flagged for review (lower threshold than general adult BMI ≤18.5)."
+
+  - key: weight_trend
+    label: Weight trend (vs prior weights)
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Stable (within ±2.5%)", value: "stable"}
+        - {label: "Gain (record reason if intentional)", value: "gain"}
+        - {label: "Loss <5% in 3 months — monitor", value: "loss_minor"}
+        - {label: "Loss >5% in 3 months — significant — action", value: "loss_significant_3mo"}
+        - {label: "Loss >10% in 6 months — severe — action", value: "loss_severe_6mo"}
+
+  - key: tool_used
+    label: Screening tool used
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "MNA-SF (Mini Nutritional Assessment Short Form)", value: "mnasf"}
+        - {label: "MUST (Malnutrition Universal Screening Tool)", value: "must"}
+        - {label: "MDS K0300 (US — facility supplemented)", value: "mds_k0300"}
+        - {label: "interRAI nutritional indicators (NZ)", value: "interrai"}
+        - {label: "Facility tool (record name)", value: "facility"}
+
+  - key: tool_score
+    label: Tool score / band
+    type: text
+    ai_extract: false
+    help_text: "MNA-SF: 12–14 normal, 8–11 at risk, ≤7 malnourished. MUST: 0 low risk, 1 medium, ≥2 high. Document the score and the band."
+
+  - key: appetite_intake
+    label: Appetite and food intake — last 7 days
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Normal — eats most of meals", value: "normal"}
+        - {label: "Reduced — eats less than half", value: "reduced"}
+        - {label: "Poor — minimal intake", value: "poor"}
+        - {label: "Refusing meals — investigation needed", value: "refusing"}
+
+  - key: fluid_intake
+    label: Fluid intake adequacy
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Adequate (≥1500 mL/day or per individualised target)", value: "adequate"}
+        - {label: "Marginal", value: "marginal"}
+        - {label: "Inadequate — dehydration risk / signs", value: "inadequate"}
+        - {label: "On fluid restriction (record reason)", value: "restricted"}
+
+  - key: swallowing_status
+    label: Swallowing status
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Normal", value: "normal"}
+        - {label: "Mild difficulty — coughing / throat clearing on certain textures", value: "mild"}
+        - {label: "Moderate dysphagia — modified diet in place", value: "moderate"}
+        - {label: "Severe dysphagia — SLT involvement / NG/PEG considered", value: "severe"}
+
+  - key: iddsi_diet_level
+    label: IDDSI diet texture level (where modified)
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Regular (no modification)", value: "regular"}
+        - {label: "Soft & Bite-Sized (Level 6)", value: "level_6"}
+        - {label: "Minced & Moist (Level 5)", value: "level_5"}
+        - {label: "Pureed (Level 4)", value: "level_4"}
+        - {label: "Liquidised (Level 3)", value: "level_3"}
+
+  - key: iddsi_fluid_level
+    label: IDDSI fluid level
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Thin (Level 0 — regular fluids)", value: "level_0"}
+        - {label: "Slightly Thick (Level 1)", value: "level_1"}
+        - {label: "Mildly Thick (Level 2)", value: "level_2"}
+        - {label: "Moderately Thick (Level 3)", value: "level_3"}
+        - {label: "Extremely Thick (Level 4)", value: "level_4"}
+
+  - key: dental_oral_health
+    label: Dental / oral-health status affecting nutrition
+    type: long_text
+    ai_extract: true
+    help_text: "Dentures (fit, daily wear), missing teeth, oral pain, dry mouth, oral thrush, gum disease."
+
+  - key: independence_at_meals
+    label: Independence at meals
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Fully independent", value: "independent"}
+        - {label: "Set-up assistance only (cutting, opening, prompting)", value: "set_up"}
+        - {label: "Partial assistance with eating", value: "partial"}
+        - {label: "Full assistance — fed by staff", value: "full"}
+
+  - key: food_preferences_culture
+    label: Food preferences, cultural / religious requirements
+    type: long_text
+    ai_extract: true
+
+  - key: supplements
+    label: Oral nutritional supplements / fortification in place
+    type: long_text
+    ai_extract: true
+    help_text: "Type (Ensure, Fortisip, Resource, Two Cal HN, etc.), frequency, who reviews adherence."
+
+  - key: dietitian_slt_referral
+    label: Dietitian / SLT referral
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Already involved", value: "involved"}
+        - {label: "New referral required", value: "new_referral"}
+        - {label: "Not currently required", value: "not_required"}
+
+  - key: action_plan
+    label: Action plan and review trigger
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: au_nqi_weight_loss_flag
+    label: AU NQI Unplanned Weight Loss flag
+    type: select
+    ai_extract: false
+    countries: [AU]
+    config:
+      options:
+        - {label: "Yes — significant unplanned loss this period", value: "yes"}
+        - {label: "Yes — consecutive unplanned loss", value: "yes_consecutive"}
+        - {label: "No", value: "no"}
