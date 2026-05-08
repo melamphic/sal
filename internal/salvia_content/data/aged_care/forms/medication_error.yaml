@@ -1,0 +1,183 @@
+id: salvia.aged_care.medication_error
+name: "Medication Error / Near-Miss Report"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Report of a medication error or near-miss. Captures error type (wrong drug,
+  wrong dose, wrong route, wrong time, wrong resident, omitted, duplicated,
+  expired, contaminated), discovery (who/when), harm severity, immediate
+  action, GP / family / regulator notification, and a preliminary root-cause
+  analysis. Some errors are SIRS reportable (AU). UK CQC notifications under
+  Reg 12 / Reg 18 may apply where harm is significant. US F760 (free of any
+  significant medication errors) defines the surveyor lens. NZ HQSC adverse
+  events framework applies.
+
+purpose_per_regulator:
+  NZ: "HQSC Adverse events reporting; HealthCERT s.31 HDS Safety Act 2001 notification thresholds; Ngā Paerewa NZS 8134:2021 Section 2 (Manaaki — adverse events); Pharmacy Council NZ Standards for Medicines Management."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — medication management); Aged Care Rules 2025 Part 7 reportable incidents — medication errors causing harm or arising from neglect are SIRS reportable; ACQSC Open Disclosure Framework."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 12 (safe care), reg 17 (good governance), reg 18 (notifications of other incidents — death/serious injury); CQC Medicines Mythbuster; NICE SC1; National Reporting and Learning System (NRLS) where used; Reg 20 Duty of Candour engaged at moderate harm or above."
+  US: "42 CFR 483.45(f) F760 (residents are free of any significant medication errors); F759 (medication error rate <5%); CMS State Operations Manual Appendix PP; state board reporting where applicable; DEA Form 106 for controlled-substance loss."
+
+linked_policy_defaults:
+  - salvia.aged_care.medication_management
+  - salvia.aged_care.controlled_drugs
+  - salvia.aged_care.open_disclosure_duty_of_candour
+  - salvia.aged_care.clinical_governance_qapi
+  - salvia.aged_care.reportable_incident
+
+tags: [incident, medication, ledger]
+
+overall_prompt: |
+  Capture the error or near-miss. Voice extraction can populate the
+  description, discovery, immediate action and preliminary contributing
+  factors. The harm classification, regulator-notification trigger and
+  systems response must be set explicitly by the clinician/manager.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: incident_datetime
+    label: Date and time of error / discovery
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: discovery_method
+    label: How was the error discovered?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Self-disclosed by administering staff", value: "self"}
+        - {label: "Identified by another staff member at handover / round check", value: "handover"}
+        - {label: "Identified at next dose / missing-dose audit", value: "next_dose"}
+        - {label: "Resident reported / observed adverse effect", value: "resident"}
+        - {label: "Family raised concern", value: "family"}
+        - {label: "Pharmacy / external review", value: "pharmacy"}
+        - {label: "Audit / quality round", value: "audit"}
+
+  - key: error_type
+    label: Error type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Wrong drug", value: "wrong_drug"}
+        - {label: "Wrong dose (over)", value: "wrong_dose_over"}
+        - {label: "Wrong dose (under)", value: "wrong_dose_under"}
+        - {label: "Wrong route", value: "wrong_route"}
+        - {label: "Wrong time / late", value: "wrong_time"}
+        - {label: "Wrong resident", value: "wrong_resident"}
+        - {label: "Omitted dose (not given)", value: "omitted"}
+        - {label: "Duplicated dose", value: "duplicated"}
+        - {label: "Expired / contaminated drug given", value: "expired_contaminated"}
+        - {label: "Drug given without prescription / order", value: "no_order"}
+        - {label: "Allergy / contraindication ignored", value: "allergy"}
+        - {label: "Documentation / charting error only", value: "documentation"}
+        - {label: "CD discrepancy / loss / theft", value: "cd_discrepancy"}
+        - {label: "Near-miss — caught before reaching resident", value: "near_miss"}
+
+  - key: drug_involved
+    label: Drug(s) involved (name, strength, intended dose, given dose)
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: harm_classification
+    label: Harm classification
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Near-miss — no resident exposure", value: "near_miss"}
+        - {label: "No harm — exposure but no symptom / no monitoring needed", value: "no_harm"}
+        - {label: "Minor harm — increased monitoring required, no clinical intervention", value: "minor"}
+        - {label: "Moderate harm — clinical intervention required (Duty of Candour engaged UK)", value: "moderate"}
+        - {label: "Severe harm — hospital transfer or sustained injury", value: "severe"}
+        - {label: "Death", value: "death"}
+
+  - key: immediate_action
+    label: Immediate action taken
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Resident clinical response (vital signs, antidote/reversal, monitoring schedule), drug recovered/disposed of, prescriber contacted, family informed."
+
+  - key: gp_notified
+    label: GP / treating clinician notified
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — verbally", value: "verbal"}
+        - {label: "Yes — electronically", value: "electronic"}
+        - {label: "Pending — within timeframe", value: "pending"}
+        - {label: "Not required (documentation-only error, no exposure)", value: "not_required"}
+
+  - key: family_notified
+    label: Family / NoK notified
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — under Open Disclosure / Duty of Candour", value: "yes_open"}
+        - {label: "Pending", value: "pending"}
+        - {label: "Not required (resident with capacity declined notification, OR documentation-only)", value: "not_required"}
+
+  - key: regulator_notification_required
+    label: Regulator notification required
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — see Reportable Incident form for routing", value: "yes_reportable"}
+        - {label: "No — internal only, captured in QAPI / Std 2 / Reg 17 review", value: "internal"}
+    label_per_country:
+      AU: "SIRS reportable where: error caused (or could have caused) harm; arose from neglect; involved unreasonable use of force; or affected medication for restrictive practice. Aged Care Rules 2025 Part 7."
+      UK: "CQC Reg 18 notification: death; serious injury; allegations of abuse; events that prevent the registered person from carrying on the regulated activity safely. Reg 20 Duty of Candour at moderate harm or above."
+      NZ: "HealthCERT notification under HDS Safety Act 2001 s.31 where the event meets serious-event threshold."
+      US: "State Survey Agency notification under state rules; CMS hotline for abuse/neglect; DEA Form 106 within one business day for CD loss/theft."
+
+  - key: preliminary_contributing_factors
+    label: Preliminary contributing factors / root cause
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      System factors: chart layout / look-alike sound-alike packaging /
+      interruption during round / staffing level / handover gap / unfamiliar
+      drug / illegible prescription / unclear PRN order / medication storage /
+      authentication weakness on eMAR. Human factors: knowledge gap, fatigue,
+      distraction, deviation from procedure. Avoid blame language — name the
+      system contribution clearly.
+
+  - key: corrective_actions
+    label: Corrective actions / system response
+    type: long_text
+    ai_extract: true
+
+  - key: incident
+    label: Incidents-ledger entry
+    type: system.incident
+    required: true
+    ai_extract: false
+    config:
+      incident_type: medication_error
+      min_severity: low
+    help_text: "Submitting this form writes the Incidents row. The ledger row is the source of truth for trend analysis (errors per 1000 doses), QAPI / Reg 17 / Std 2 review, and (where required) regulator reporting via the Reportable Incident form."
