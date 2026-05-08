@@ -392,14 +392,16 @@ const formCols = `id, clinic_id, group_id, name, description, overall_prompt, ta
 func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormRecord, error) {
 	const q = `
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
-		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		                   salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + formCols
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description,
 		p.OverallPrompt, p.Tags, p.CreatedBy,
 		p.SourceMarketplaceListingID, p.SourceMarketplaceVersionID, p.SourceMarketplaceAcquisitionID,
+		p.SalviaTemplateID, p.SalviaTemplateVersion, p.SalviaTemplateState, p.FrameworkCurrencyDate,
 	)
 	rec, err := scanForm(row)
 	if err != nil {
