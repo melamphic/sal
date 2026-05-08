@@ -431,8 +431,9 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 
 	const formQ = `
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
-		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		                   salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + formCols
 
 	fp := p.Form
@@ -440,6 +441,7 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 		fp.ID, fp.ClinicID, fp.GroupID, fp.Name, fp.Description,
 		fp.OverallPrompt, fp.Tags, fp.CreatedBy,
 		fp.SourceMarketplaceListingID, fp.SourceMarketplaceVersionID, fp.SourceMarketplaceAcquisitionID,
+		fp.SalviaTemplateID, fp.SalviaTemplateVersion, fp.SalviaTemplateState, fp.FrameworkCurrencyDate,
 	)
 	formRec, err := scanForm(formRow)
 	if err != nil {
@@ -1302,6 +1304,7 @@ func scanForm(row scannable) (*FormRecord, error) {
 		&f.OverallPrompt, &f.Tags, &f.CreatedBy,
 		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason, &f.RetiredBy,
 		&f.SourceMarketplaceListingID, &f.SourceMarketplaceVersionID, &f.SourceMarketplaceAcquisitionID,
+		&f.SalviaTemplateID, &f.SalviaTemplateVersion, &f.SalviaTemplateState, &f.FrameworkCurrencyDate,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
