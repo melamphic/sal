@@ -838,6 +838,7 @@ func scanPolicy(row scannable) (*PolicyRecord, error) {
 	err := row.Scan(
 		&r.ID, &r.ClinicID, &r.FolderID, &r.Name, &r.Description,
 		&r.CreatedBy, &r.CreatedAt, &r.UpdatedAt, &r.ArchivedAt, &r.RetireReason,
+		&r.SalviaTemplateID, &r.SalviaTemplateVersion, &r.SalviaTemplateState, &r.FrameworkCurrencyDate,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
