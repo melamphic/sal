@@ -1,0 +1,184 @@
+id: salvia.aged_care.reportable_incident
+name: "Reportable Incident — Regulator Notification"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Meta-form that routes a serious incident to the correct regulator-notification
+  target by country. Records the incident essentials, the route (AU SIRS via
+  Aged Care Quality and Safety Commission portal Priority 1 ≤24h or Priority 2
+  ≤30d; NZ HealthCERT s.31 HDS Safety Act 2001; UK CQC Notification Reg 16/17/
+  18; US CMS / State Survey Agency / Adult Protective Services), the
+  submission reference, the open-disclosure step, and the closure date. Built
+  to be the single record of regulator-facing notification across Salvia.
+
+purpose_per_regulator:
+  NZ: "Health and Disability Services (Safety) Act 2001 s.31 (notification of risk to life or health); Ngā Paerewa NZS 8134:2021 Section 2 (adverse events); HQSC reportable events guidance; HDC Code Right 6 + 10; Coroners Act 2006 s.13 (notify Coroner for unexpected death)."
+  AU: "Aged Care Act 2024 ss.149–155 (Serious Incident Response Scheme — SIRS); Aged Care Rules 2025 Part 7 (reportable incidents — 8 categories: unreasonable use of force, unlawful sexual contact / inappropriate sexual conduct, psychological / emotional abuse, unexpected death, stealing / financial coercion, neglect, inappropriate use of restrictive practices, unexplained absence from care). Priority 1 reports within 24 hours via the GPMS / My Aged Care provider portal; Priority 2 within 30 days. Re-issued ACQSC SIRS guidance (Feb 2026)."
+  UK: "Care Quality Commission (Registration) Regulations 2009 reg 16 (notification of death of a service user), reg 17 (notification of death/incident in NHS-affiliated providers), reg 18 (notification of other incidents — death, injury, abuse allegation, application to deprive liberty, prevention from carrying on the regulated activity); CQC reg 20 Duty of Candour."
+  US: "42 CFR 483.12(c) — Reporting of suspected abuse, neglect, exploitation: report immediately and not later than 2 hours where serious bodily injury is suspected, otherwise not later than 24 hours, to the State Survey Agency and Adult Protective Services and (where applicable) law enforcement; F600 (free from abuse and neglect); F602 misappropriation; F606 reporting of abuse; CMS hotline for abuse/neglect; state mandatory reporting."
+
+linked_policy_defaults:
+  - salvia.aged_care.mandatory_reporting
+  - salvia.aged_care.safeguarding_adults_at_risk
+  - salvia.aged_care.open_disclosure_duty_of_candour
+  - salvia.aged_care.clinical_governance_qapi
+  - salvia.shared.complaints_policy
+
+tags: [reportable, regulator, ledger]
+
+overall_prompt: |
+  Capture the regulator-facing notification. The incident itself should
+  already exist as a row in the Incidents ledger (created by Falls / PI /
+  Medication Error / Open Disclosure / etc.). This form classifies the
+  incident against the country routing rules, captures the submission
+  reference, and tracks closure. AI extraction is permitted for the
+  narrative description; classification and submission references must be
+  explicit.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+
+  - key: incident_datetime
+    label: Date and time of incident
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: incident_summary
+    label: Incident summary
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Plain-English summary suitable for the regulator portal narrative. What happened, where, who was involved, immediate clinical impact, immediate action."
+
+  - key: linked_incident_record
+    label: Linked Incidents-ledger row
+    type: text
+    ai_extract: false
+    help_text: "Reference to the originating incident (Fall / Pressure Injury / Medication Error / Open Disclosure)."
+
+  - key: au_sirs_category
+    label: AU SIRS reportable category
+    type: select
+    ai_extract: false
+    countries: [AU]
+    config:
+      options:
+        - {label: "Unreasonable use of force", value: "force"}
+        - {label: "Unlawful sexual contact / inappropriate sexual conduct", value: "sexual"}
+        - {label: "Psychological or emotional abuse", value: "psychological"}
+        - {label: "Unexpected death", value: "death"}
+        - {label: "Stealing or financial coercion by a staff member", value: "financial"}
+        - {label: "Neglect", value: "neglect"}
+        - {label: "Inappropriate use of restrictive practices", value: "restrictive"}
+        - {label: "Unexplained absence from care (≥8h or earlier per provider risk assessment)", value: "absence"}
+
+  - key: au_sirs_priority
+    label: AU SIRS priority level
+    type: select
+    ai_extract: false
+    countries: [AU]
+    config:
+      options:
+        - {label: "Priority 1 — must report within 24 hours", value: "p1"}
+        - {label: "Priority 2 — must report within 30 days", value: "p2"}
+    help_text: "Priority 1 where: significant harm or distress; reasonable likelihood of police involvement; or it is otherwise prudent to notify within 24 hours. Priority 2 otherwise."
+
+  - key: nz_healthcert_classification
+    label: NZ HealthCERT s.31 notification
+    type: select
+    ai_extract: false
+    countries: [NZ]
+    config:
+      options:
+        - {label: "Notifiable — risk to life or health", value: "notifiable"}
+        - {label: "Internal only — does not meet s.31 threshold (record reasoning)", value: "internal"}
+
+  - key: uk_cqc_notification_type
+    label: UK CQC notification (Reg 16 / 17 / 18 / DoLS)
+    type: select
+    ai_extract: false
+    countries: [UK]
+    config:
+      options:
+        - {label: "Reg 16 — death of a service user (notify CQC without delay; not later than 24 hours where reasonably practicable)", value: "reg16"}
+        - {label: "Reg 17 — death of a service user (NHS-affiliated providers)", value: "reg17"}
+        - {label: "Reg 18 — death/serious injury/allegation of abuse/police-attended/inability to carry on safely", value: "reg18"}
+        - {label: "DoLS — deprivation-of-liberty starting / varying / ending", value: "dols"}
+        - {label: "Other / Reg 12 + Duty of Candour only (no CQC notification, but written process required)", value: "doc_only"}
+
+  - key: us_routing
+    label: US notification routing
+    type: select
+    ai_extract: false
+    countries: [US]
+    config:
+      options:
+        - {label: "State Survey Agency — abuse/neglect/exploitation with serious bodily injury (≤2h)", value: "ssa_2h"}
+        - {label: "State Survey Agency — abuse/neglect/exploitation, no serious injury (≤24h)", value: "ssa_24h"}
+        - {label: "Adult Protective Services", value: "aps"}
+        - {label: "Law enforcement (suspected crime)", value: "le"}
+        - {label: "Long-Term Care Ombudsman", value: "ombud"}
+        - {label: "DEA Form 106 — controlled-substance loss/theft (within 1 business day)", value: "dea"}
+        - {label: "CMS Quality Improvement Organization / hotline", value: "cms"}
+
+  - key: submission_reference
+    label: Submission reference / case number
+    type: text
+    ai_extract: false
+    help_text: "Captured after submission to the regulator. Include any acknowledgement IDs."
+
+  - key: submission_datetime
+    label: Date and time of submission
+    type: text
+    ai_extract: false
+
+  - key: submitter_name
+    label: Submitting staff member
+    type: text
+    ai_extract: false
+
+  - key: open_disclosure_meeting_held
+    label: Open Disclosure / Duty of Candour meeting held
+    type: select
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — record on Open Disclosure form", value: "yes"}
+        - {label: "Pending — scheduled", value: "pending"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: closure_status
+    label: Closure status
+    type: select
+    ai_extract: false
+    config:
+      options:
+        - {label: "Open — investigation in progress", value: "open"}
+        - {label: "Closed — regulator has accepted final report", value: "closed"}
+        - {label: "Escalated — regulator has requested further action", value: "escalated"}
+        - {label: "Withdrawn / not substantiated (record basis)", value: "withdrawn"}
+
+  - key: closure_date
+    label: Closure date
+    type: date
+    ai_extract: false
+
+  - key: incident
+    label: Incidents-ledger entry
+    type: system.incident
+    required: true
+    ai_extract: false
+    config:
+      incident_type: reportable
+      min_severity: high
+    help_text: "Reportable incidents are always at least 'high' severity. The ledger row links the source incident, the regulator route, the submission reference, and the closure."
