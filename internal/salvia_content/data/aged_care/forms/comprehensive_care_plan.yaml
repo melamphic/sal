@@ -1,0 +1,228 @@
+id: salvia.aged_care.comprehensive_care_plan
+name: "Comprehensive Care Plan"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Person-centred comprehensive care plan ("Care and Services Plan" in Australia,
+  "Plan of Care" in the United States). Documents goals, interventions, the
+  multidisciplinary team, the review cadence, and the resident's voice. Built
+  on the admission assessment plus the external instrument result (interRAI for
+  NZ, MDS for US, AN-ACC for AU). Required to be developed within 7 days of
+  the comprehensive assessment in the US (F656); within 14 days under the
+  AU Strengthened Standards; on admission then reviewed at each change of
+  condition under NZ Ngā Paerewa Section 3.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 3 (Pae ora — Healthy futures: needs assessment, individualised care planning, regular review). Plan must be co-designed with the person, whānau and culturally appropriate. interRAI Long-Term Care Facility instrument outputs feed the plan."
+  AU: "Strengthened Aged Care Quality Standards Standard 3 (Care and Services) — initial Care and Services Plan within 14 days of entry, reviewed at least every 12 months and at change of condition. Standard 5 (Clinical Care) for clinical sub-plans (continence, falls, skin, nutrition, pain, mental health, end of life). Aged Care Act 2024 Chapter 3."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 9 (person-centred care); NICE NG97 (Dementia: care plan), NG21 (Home care), QS181 (End of life care); CQC fundamental standards. Mental Capacity Act 2005 where capacity is at issue."
+  US: "42 CFR 483.21(b)(2) F656 — comprehensive care plan within 7 days of completion of the comprehensive assessment; F657 — care plan revised after each MDS; participation by interdisciplinary team and resident/representative. MDS 3.0 RAI Manual v1.20.1 (effective 1 Oct 2025) is the assessment instrument."
+
+linked_policy_defaults:
+  - salvia.aged_care.care_planning
+  - salvia.aged_care.advance_care_planning
+  - salvia.aged_care.cultural_safety
+  - salvia.aged_care.resident_rights
+  - salvia.shared.consent_policy
+
+tags: [care_plan, mdt, person_centred]
+
+overall_prompt: |
+  Capture the multidisciplinary care planning meeting. Resident and family voice
+  are central — record verbatim where stated. Demographics and current
+  medications come from the resident record. The external assessment ID
+  (interRAI / MDS / AN-ACC) must be referenced, not duplicated. Goals must be
+  measurable. Interventions must name a responsible role.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: plan_date
+    label: Date of plan
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: plan_type
+    label: Plan type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Initial comprehensive care plan", value: "initial"}
+        - {label: "Routine review", value: "routine_review"}
+        - {label: "Significant change of condition review", value: "soc_review"}
+        - {label: "Annual review", value: "annual"}
+        - {label: "Post-hospitalisation review", value: "post_hospital"}
+
+  - key: external_assessment_reference
+    label: External assessment instrument reference
+    type: text
+    ai_extract: false
+    label_per_country:
+      NZ: "interRAI Long-Term Care Facility assessment ID and date"
+      AU: "AN-ACC assessment ID + date (separately, latest comprehensive nursing assessment ID)"
+      UK: "Local authority Care Act assessment ID where applicable"
+      US: "MDS 3.0 assessment reason code (Admission/Annual/SCSA/Quarterly), ARD (Assessment Reference Date), CAA triggered list"
+
+  - key: mdt_attendees
+    label: Multidisciplinary team — attendees
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Roles present: registered nurse, GP/medical officer, allied health (physio/OT/dietitian/SLT), care manager, key worker, resident, family/whānau/NoK. Include who attended in person, by phone, or by document only."
+
+  - key: resident_present
+    label: Was the resident present?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — present and contributing", value: "present_contributing"}
+        - {label: "Yes — present but unable to contribute (capacity / fatigue)", value: "present_passive"}
+        - {label: "No — unable to attend (record reason)", value: "absent"}
+        - {label: "No — resident declined to attend", value: "declined"}
+
+  - key: family_present
+    label: Family / NoK / advocate present?
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — in person", value: "yes_in_person"}
+        - {label: "Yes — by phone / video", value: "yes_remote"}
+        - {label: "No — declined the invite", value: "declined"}
+        - {label: "No — could not attend, plan shared in writing", value: "shared_writing"}
+        - {label: "Not applicable — no NoK / sole resident", value: "na"}
+
+  - key: resident_voice_what_matters
+    label: "Resident's voice — what matters to me"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Record verbatim where possible. Cultural identity, spiritual practice, relationships, daily rhythm, food preferences, things to maintain, things to improve, what 'a good day' looks like."
+
+  - key: cultural_spiritual_preferences
+    label: Cultural / spiritual preferences and practices
+    type: long_text
+    ai_extract: true
+    label_per_country:
+      NZ: "Te ao Māori, te reo Māori use, iwi/hapū connection, tikanga around meals, rongoā Māori use, wairua / spiritual support, end-of-life tikanga (Ngā Paerewa Section 1)."
+      AU: "Aboriginal and Torres Strait Islander identity and Country, CALD heritage, language, cultural practices around meals, dress, family/community involvement, spiritual practice."
+      UK: "Religion, language, dietary requirements, cultural festivals, faith leader contact, dress and modesty."
+      US: "Race/ethnicity self-identified, language preference (LEP per ACA §1557), religion, dietary requirements, cultural traditions."
+
+  - key: clinical_problem_list
+    label: Clinical problem list
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Active diagnoses with status (controlled / progressing / stable). Pulled from medical record where possible."
+
+  - key: goals_short_term
+    label: Short-term goals (next 1–3 months) — measurable
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Goals must be measurable and time-bound. Each goal should map to one or more interventions. Resident-facing language."
+
+  - key: goals_long_term
+    label: Long-term goals (6–12 months)
+    type: long_text
+    ai_extract: true
+    help_text: "Maintenance goals (e.g. 'maintain ability to walk to dining room with frame'), preference goals (e.g. 'continue weekly visits to garden'), end-of-life goals (link to Advance Care Plan)."
+
+  - key: interventions
+    label: Interventions — what we do, who is responsible, how often
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Format: domain → intervention → responsible role → frequency → review date.
+      Domains to consider: clinical (medication, wound, pain, continence, falls,
+      skin, nutrition/hydration, mental health, dementia care), functional
+      (mobility, ADLs, transfers), psychosocial (engagement, family, key
+      relationships, sexuality and intimacy where relevant), cultural / spiritual,
+      end-of-life (link to ACP).
+
+  - key: falls_plan
+    label: Falls prevention plan summary
+    type: long_text
+    ai_extract: true
+    help_text: "Reference Falls Risk form result. Interventions: footwear, environment, vision/hearing, medication review, exercise programme, post-fall huddle commitment."
+
+  - key: skin_pi_plan
+    label: Pressure injury / skin plan summary
+    type: long_text
+    ai_extract: true
+    help_text: "Reference Pressure Injury form. Repositioning schedule, surface (mattress/cushion), nutrition, continence link, photography schedule for any active wound."
+
+  - key: continence_plan
+    label: Continence plan summary
+    type: long_text
+    ai_extract: true
+
+  - key: nutrition_hydration_plan
+    label: Nutrition and hydration plan summary
+    type: long_text
+    ai_extract: true
+    help_text: "Reference Nutrition Screen. IDDSI texture/fluid level if modified. Mealtime assistance level. Weight monitoring frequency. Oral health plan."
+
+  - key: pain_plan
+    label: Pain management plan summary
+    type: long_text
+    ai_extract: true
+    help_text: "Verbal vs non-verbal scale (NRS / PainAD), regular vs PRN analgesia, non-pharmacological strategies, review trigger."
+
+  - key: mental_health_dementia_plan
+    label: Mental health / dementia plan
+    type: long_text
+    ai_extract: true
+    help_text: "Mood, anxiety, sleep, BPSD (behavioural and psychological symptoms of dementia) approach, antipsychotic stewardship (link to STOMP / GDR — F758), social engagement plan."
+
+  - key: end_of_life_plan_summary
+    label: End-of-life / advance care planning summary
+    type: long_text
+    ai_extract: true
+    help_text: "Reference Advance Care Plan form. Ceiling of treatment, DNACPR/AND, hospital transfer preference, spiritual support, family contact at deterioration."
+
+  - key: review_cadence
+    label: Review cadence
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Monthly", value: "monthly"}
+        - {label: "Quarterly", value: "quarterly"}
+        - {label: "Six-monthly", value: "six_monthly"}
+        - {label: "Annual + on change of condition", value: "annual_plus_soc"}
+        - {label: "On change of condition only (palliative phase)", value: "soc_only"}
+
+  - key: next_review_date
+    label: Next planned review date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: resident_acknowledgement
+    label: Resident / representative acknowledgement
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: treatment_plan
+      require_witness: false
+    help_text: "Captures the resident's (or substitute decision-maker's) acknowledgement that the plan reflects their preferences and that they have received a copy. This is not a 'consent to treatment' but a record of involvement under person-centred-care duties (CQC Reg 9 / F656 / Std 3 / Section 3)."
