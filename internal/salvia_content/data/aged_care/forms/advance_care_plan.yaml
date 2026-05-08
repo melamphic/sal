@@ -1,0 +1,247 @@
+id: salvia.aged_care.advance_care_plan
+name: "Advance Care Plan"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Advance Care Plan / Goals of Care record. Documents the resident's preferences
+  for treatment when they may no longer be able to speak for themselves —
+  ceiling of treatment, treatments declined (including CPR / intubation /
+  artificial nutrition / IV antibiotics / hospital transfer), spiritual and
+  cultural preferences at end of life, and the substitute decision-maker.
+  This form complements (not replaces) any country-specific instrument such
+  as a NZ EPOA, AU Statutory Declaration / Advance Care Directive, UK ADRT
+  under MCA 2005, or US POLST/MOLST. The clinical signature here is the
+  treating clinician's record of the conversation.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 7 (informed choice and consent — including future consent); Protection of Personal and Property Rights Act 1988 (Welfare Guardian + EPOA); Ngā Paerewa NZS 8134:2021 Section 3 (planning) and tikanga around death/dying; Health Quality & Safety Commission Advance Care Planning programme guidance (current)."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 (Clinical Care — end of life) and Standard 1 (The person — supported decision-making); Aged Care Act 2024 supporter framework; state Advance Care Directive legislation (e.g. Vic Medical Treatment Planning and Decisions Act 2016; NSW common law + Guardianship Act 1987; Qld Powers of Attorney Act 1998)."
+  UK: "Mental Capacity Act 2005 ss.1–4 (capacity, best interests), s.24 (Advance Decision to Refuse Treatment — ADRT), s.25 (validity); NICE NG142 (End of life care for adults: service delivery); ReSPECT (Recommended Summary Plan for Emergency Care and Treatment) widely adopted; CQC Reg 9 (person-centred care)."
+  US: "Patient Self-Determination Act 1990; 42 CFR 483.10(c)(6) (right to refuse treatment); state Advance Directive law; POLST / MOLST forms in 46 states (Portable Medical Orders, signed by clinician). HIPAA 16 Feb 2026 NPP update (no impact here)."
+
+linked_policy_defaults:
+  - salvia.aged_care.advance_care_planning
+  - salvia.aged_care.dnacpr
+  - salvia.aged_care.end_of_life_palliative
+  - salvia.aged_care.cultural_safety
+  - salvia.shared.consent_policy
+
+tags: [advance_care_planning, end_of_life, consent]
+
+overall_prompt: |
+  Capture the advance care planning conversation. The resident's words are
+  central — record verbatim where possible. Distinguish wishes (preferences)
+  from refusals (legally binding under MCA s.24 UK, POLST orders US, etc.).
+  Where the resident lacks capacity, the conversation is with the substitute
+  decision-maker and is best-interests / hierarchy of authority based;
+  document who consented and on what authority.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: conversation_date
+    label: Date of conversation
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: conversation_type
+    label: Conversation type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Initial ACP conversation (admission or trigger)", value: "initial"}
+        - {label: "Update / change (record what changed)", value: "update"}
+        - {label: "Annual review", value: "annual"}
+        - {label: "Triggered by deterioration / approaching end of life", value: "deterioration"}
+
+  - key: capacity_assessment
+    label: Capacity for this decision
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resident has capacity for this decision (presumed; supported)", value: "has_capacity"}
+        - {label: "Capacity fluctuates — captured at a moment of capacity (record time / observation)", value: "fluctuating"}
+        - {label: "Resident does not have capacity — substitute / best-interests decision", value: "no_capacity"}
+    label_per_country:
+      UK: "Capacity assessed under MCA 2005 s.2/3 — record the four-stage test outcome and the decision-specific finding."
+      AU: "Capacity assessed against the supported decision-making framework (Aged Care Act 2024) and state law."
+      NZ: "Capacity assessed under PPPR Act 1988; HDC Right 7(2) entitlement to informed consent presumed."
+      US: "Capacity assessed against state standards; physician/NP attestation may be required for activation of advance directive."
+
+  - key: signer_role
+    label: Who is making this advance care plan?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resident, with capacity, for themselves", value: "self"}
+        - {label: "Resident with supporter (supported decision-making)", value: "supported"}
+        - {label: "Substitute decision-maker (best interests / hierarchy)", value: "substitute"}
+
+  - key: substitute_authority
+    label: Substitute decision-maker authority
+    type: long_text
+    pii: true
+    ai_extract: true
+    label_per_country:
+      NZ: "Welfare Guardian (PPPR Act 1988) or Activated EPOA (Personal Care and Welfare). Record document type, date activated, mental incapacity certificate."
+      AU: "Hierarchy under state Guardianship/Powers of Attorney Act + Aged Care Act 2024 supporter framework. Record state, document type, date."
+      UK: "Lasting Power of Attorney (Health and Welfare) — record OPG registration; or Court-appointed Deputy; or best-interests decision under MCA s.4 with named decision-maker."
+      US: "Health Care Proxy / Durable Power of Attorney for Health Care, or state-recognised surrogate hierarchy. POLST may be signed by clinician with surrogate's consent."
+
+  - key: cpr_preference
+    label: Cardiopulmonary resuscitation (CPR)
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Attempt CPR / full resuscitation", value: "for_cpr"}
+        - {label: "DO NOT attempt CPR (DNACPR / AND / DNR)", value: "dnacpr"}
+        - {label: "DNACPR for cardiopulmonary arrest only — full treatment otherwise", value: "dnacpr_only"}
+        - {label: "Decision deferred — discuss again at next review", value: "deferred"}
+    help_text: "Document the words used by the resident or substitute decision-maker. UK: record if a separate ReSPECT / DNACPR form is in place. US: record if a separate POLST/MOLST is in place. NZ: link to HQSC Advance Care Plan template if used."
+
+  - key: hospital_transfer_preference
+    label: Hospital transfer preference at deterioration
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Transfer to hospital for full active treatment", value: "transfer_full"}
+        - {label: "Transfer for symptom relief only (not for ICU / aggressive treatment)", value: "transfer_symptom"}
+        - {label: "Stay at the facility — no transfer; treat in place", value: "stay"}
+        - {label: "Decision contextual — discuss with family at the time", value: "contextual"}
+
+  - key: intubation_ventilation
+    label: Intubation / mechanical ventilation
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "For intubation / ventilation if clinically indicated", value: "for"}
+        - {label: "Not for intubation or ventilation", value: "against"}
+        - {label: "Time-limited trial only — discuss at the time", value: "trial"}
+
+  - key: artificial_nutrition_hydration
+    label: Artificial nutrition / hydration (NG, PEG, IV)
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Accept artificial nutrition/hydration if clinically indicated", value: "for"}
+        - {label: "Decline NG / PEG; oral comfort feeding only", value: "decline_tube"}
+        - {label: "Decline IV fluids in end-of-life phase", value: "decline_iv"}
+        - {label: "Decline all artificial nutrition and hydration", value: "decline_all"}
+        - {label: "Time-limited trial only", value: "trial"}
+
+  - key: iv_antibiotics
+    label: IV antibiotics
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "For IV antibiotics for treatable infection", value: "for"}
+        - {label: "Oral antibiotics only", value: "oral_only"}
+        - {label: "Decline antibiotics in end-of-life phase", value: "decline_eol"}
+        - {label: "Decline all antibiotics", value: "decline_all"}
+
+  - key: blood_products
+    label: Blood transfusion / products
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Accept", value: "accept"}
+        - {label: "Decline (record reason if cultural/religious)", value: "decline"}
+
+  - key: dialysis
+    label: Dialysis
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not applicable", value: "na"}
+        - {label: "Accept", value: "accept"}
+        - {label: "Decline / withdraw", value: "decline"}
+
+  - key: organ_donation_preference
+    label: Organ / tissue donation preference
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — wishes to donate", value: "yes"}
+        - {label: "No — does not wish to donate", value: "no"}
+        - {label: "Not discussed", value: "not_discussed"}
+
+  - key: spiritual_cultural_preferences
+    label: Spiritual / cultural preferences at end of life
+    type: long_text
+    ai_extract: true
+    label_per_country:
+      NZ: "Tikanga around dying — karakia, presence of whānau/iwi, kaumātua/kuia, body care after death (washing, hair, no removal of taonga without whānau, body to remain so spirit can leave), repatriation of the tūpāpaku to the marae/urupā. Engage Māori cultural support staff where requested."
+      AU: "Aboriginal and Torres Strait Islander Sorry Business / Sad News protocols where applicable; CALD religious/cultural practices; clergy contact."
+      UK: "Faith leader contact; rituals before/at/after death; modesty preferences; specific care of the body."
+      US: "Faith / religious tradition contact; rituals before/at/after death; modesty preferences."
+
+  - key: family_to_contact_at_deterioration
+    label: Family / NoK / advocate to contact at deterioration
+    type: long_text
+    pii: true
+    ai_extract: true
+
+  - key: things_that_matter_at_eol
+    label: "What matters most to me at the end of my life"
+    type: long_text
+    ai_extract: true
+    help_text: "Verbatim where possible. Examples: pain-free, with family, in my own bed, with music, with my pet, knowing my affairs are settled, no fuss."
+
+  - key: existing_documents
+    label: Existing legal advance directives on file
+    type: long_text
+    ai_extract: true
+    help_text: "List all instruments already executed: NZ EPOA + Advance Directive form; AU state ACD + EPOA + supporter agreement; UK LPA H&W + ADRT under MCA s.24 + ReSPECT form; US Living Will + DPA-HC + POLST/MOLST. Record date, witnesses, location of original."
+
+  - key: review_trigger
+    label: Review trigger / when to revisit
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Annual review", value: "annual"}
+        - {label: "Six-monthly review", value: "six_monthly"}
+        - {label: "On change of condition", value: "soc"}
+        - {label: "On admission/discharge from hospital", value: "post_hospital"}
+
+  - key: consent
+    label: Consent / acknowledgement
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: treatment_plan
+      require_witness: true
+    help_text: "Captures the signature of the resident (with capacity) or the substitute decision-maker, plus a witness (clinician). This is the record of the conversation, not a substitute for any country-specific statutory instrument. UK: where a refusal is to be legally binding for life-sustaining treatment, MCA 2005 s.25(5)(6) requires written, signed AND witnessed AND specifying the life-sustaining-treatment refusal — record those elements explicitly in 'existing_documents'."
