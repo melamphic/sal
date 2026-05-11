@@ -123,6 +123,13 @@ type PolicyResponse struct {
 	Draft *PolicyVersionResponse `json:"draft,omitempty"`
 	// LatestPublished is the most recent frozen version; nil on a brand-new policy.
 	LatestPublished *PolicyVersionResponse `json:"latest_published,omitempty"`
+	// Salvia v1 prebuilt content lineage — non-empty only when the policy was
+	// installed by the salvia_content materialiser. Powers the "Made by
+	// Salvia v1" badge and the Library panel.
+	SalviaTemplateID      *string `json:"salvia_template_id,omitempty"`
+	SalviaTemplateVersion *int    `json:"salvia_template_version,omitempty"`
+	SalviaTemplateState   *string `json:"salvia_template_state,omitempty" enum:"default,forked,deleted"`
+	FrameworkCurrencyDate *string `json:"framework_currency_date,omitempty"`
 }
 
 // PolicyListResponse is a paginated list of policies.
@@ -754,6 +761,13 @@ func toPolicyResponse(p *PolicyRecord) *PolicyResponse {
 	if p.ArchivedAt != nil {
 		s := p.ArchivedAt.Format(time.RFC3339)
 		r.ArchivedAt = &s
+	}
+	r.SalviaTemplateID = p.SalviaTemplateID
+	r.SalviaTemplateVersion = p.SalviaTemplateVersion
+	r.SalviaTemplateState = p.SalviaTemplateState
+	if p.FrameworkCurrencyDate != nil {
+		s := p.FrameworkCurrencyDate.Format("2006-01-02")
+		r.FrameworkCurrencyDate = &s
 	}
 	return r
 }
