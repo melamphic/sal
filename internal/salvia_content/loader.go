@@ -48,7 +48,7 @@ func LoadAll() ([]Template, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("salvia_content.loader.LoadAll: %w", err)
 	}
 	return out, nil
 }
