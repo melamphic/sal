@@ -1,0 +1,200 @@
+id: salvia.aged_care.restraint_authorisation
+name: "Restrictive Practice Authorisation"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Authorisation record for the use of a restrictive practice — chemical
+  (psychotropic for behavioural symptoms), physical (lap belts, bed rails as
+  restraint, recliner trapping the resident), mechanical (gloves), environmental
+  (locked unit, locked rooms), or seclusion. Restrictive practices are last
+  resort. This form captures the practice itself, the alternatives tried, the
+  risks/benefits discussion, the consent (resident or RPSDM/welfare-guardian/
+  IMCA-DoLS/responsible-party as appropriate by country), the prescribing /
+  authorising clinician, the duration authorised, and the monitoring schedule.
+  Country sign-off model differs significantly — see body_per_country.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Part 6 (Restraint and seclusion — including elimination strategy, approval, monitoring, review); Mental Health (Compulsory Assessment and Treatment) Act 1992 where applicable; Protection of Personal and Property Rights Act 1988 (Welfare Guardian)."
+  AU: "Aged Care Act 2024 ss.144–148 (use of restrictive practices) and Aged Care Rules 2025 Part 7 Division 162 (162-55 BSP requirements where assessed as necessary; 162-65 ongoing use; 162-75 consultation; 162-70 review). Restrictive Practices Substitute Decision-Maker (RPSDM) hierarchy: appointed RPSDM, partner, family, friend, then Aged Care Quality and Safety Commissioner. Strengthened Quality Standards Standard 5 Outcome 5.5."
+  UK: "Mental Capacity Act 2005 ss.5, 6 (restraint), s.4A (deprivation of liberty); Deprivation of Liberty Safeguards (DoLS — schedule A1 MCA) — Liberty Protection Safeguards (LPS) deferred ≥2027; CQC Reg 11 (consent) and Reg 13 (safeguarding service users from abuse and improper treatment) and Reg 13(4) (no restraint unless necessary and proportionate); Care Quality Commission Restraint Policy registration requirement (effective 9 February 2026)."
+  US: "42 CFR 483.10(e) (right to be free from restraints) and 42 CFR 483.12 (free from abuse/neglect); F605 (right to be free from physical or chemical restraints not required to treat medical symptoms); F607 (development and implementation of written policies); 42 CFR 483.45(c)(3) (psychotropic drug use); state restraint statutes."
+
+linked_policy_defaults:
+  - salvia.aged_care.restraint_minimisation
+  - salvia.aged_care.antipsychotic_stewardship
+  - salvia.aged_care.mental_capacity_consent
+  - salvia.aged_care.safeguarding_adults_at_risk
+  - salvia.shared.consent_policy
+
+tags: [restraint, restrictive_practice, consent, behaviour_support]
+
+overall_prompt: |
+  Capture the clinical rationale, the alternatives tried, the practice
+  authorised, who consented and on what authority, and the monitoring plan.
+  This is a high-stakes authorisation — the AI should NOT infer consent or
+  authorisation. Voice extraction can populate the rationale and alternatives;
+  consent and clinician sign-off must be explicit fields.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: authorisation_date
+    label: Authorisation date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: practice_type
+    label: Type of restrictive practice
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Chemical — psychotropic for behaviour (antipsychotic / benzodiazepine / antidepressant used for behaviour)", value: "chemical"}
+        - {label: "Physical — lap belt, harness, bed rails used as restraint", value: "physical"}
+        - {label: "Mechanical — gloves, splints used to prevent movement", value: "mechanical"}
+        - {label: "Environmental — locked unit / secure dementia unit / locked room", value: "environmental"}
+        - {label: "Seclusion — confinement alone in a room from which the person cannot freely exit", value: "seclusion"}
+
+  - key: practice_description
+    label: Description of the practice
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "What exactly is being applied: drug name + dose + frequency, or device + how/when applied, or environment. Specific is better — this is reviewed by inspectors."
+
+  - key: clinical_rationale
+    label: Clinical rationale (harm being prevented)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "What harm to the resident or others does this prevent? The practice must be proportionate to that harm. Distinguish 'distressing behaviour' (not a justification on its own) from 'imminent harm' (justification)."
+
+  - key: alternatives_tried
+    label: Alternatives attempted before this practice
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Document each alternative tried, when, and why it did not work.
+      Examples: change of routine, environmental modification (lighting, noise),
+      activity engagement, sensory modulation (Snoezelen, music), pain
+      assessment + treatment, infection screen, medication review (deprescribe
+      offending drug), one-to-one staffing, family visits, relocation of room,
+      validation therapy, dementia-specific approaches (Newcastle Behaviour
+      Support Framework, etc).
+
+  - key: behaviour_support_plan_in_place
+    label: Behaviour Support Plan (BSP) in place?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — BSP attached / referenced", value: "yes_bsp"}
+        - {label: "No — BSP being developed (record target date)", value: "developing"}
+        - {label: "Not required for this practice (record reason)", value: "not_required"}
+    help_text: "AU Aged Care Rules 2025 Part 7 Div 162-55: where use of a restrictive practice is assessed as necessary, a BSP must be developed and integrated into the Care and Services Plan. UK CQC PBS Policy required for registration from 9 Feb 2026."
+
+  - key: risks_benefits_discussed
+    label: Risks / benefits discussed with resident and/or substitute
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Risks: falls, deconditioning, pressure injury, dignity loss, increased agitation, side effects (chemical), iatrogenic harm. Benefits: prevention of named harm. Document the conversation and the response."
+
+  - key: consent_basis
+    label: Basis of consent / authorisation
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resident has capacity and consents to the practice", value: "self"}
+        - {label: "Substitute / proxy consent (record authority below)", value: "substitute"}
+        - {label: "Statutory authorisation (DoLS, mental health order, court order)", value: "statutory"}
+        - {label: "Emergency use without prior consent (record retrospective process)", value: "emergency"}
+
+  - key: country_specific_consent_authority
+    label: Consent authority (country-specific detail)
+    type: long_text
+    required: true
+    ai_extract: false
+    label_per_country:
+      NZ: "Welfare Guardian (PPPR Act 1988) or activated EPOA-PCW. Where seclusion or chemical restraint, also reference Ngā Paerewa Part 6 approval workflow and any organisational restraint approval committee."
+      AU: "Restrictive Practices Substitute Decision-Maker (RPSDM) per Aged Care Rules 2025 hierarchy: (1) appointed RPSDM, (2) partner, (3) close family/friend with personal relationship, (4) Aged Care Quality and Safety Commissioner. Record name, relationship, document type."
+      UK: "If a deprivation of liberty: DoLS authorisation in place (record reference number, expiry date) — DoLS remains live until LPS commences (deferred ≥2027). Where the resident lacks capacity and there is no DoLS, an IMCA must be instructed under MCA s.39A. Record best-interests decision under MCA s.4."
+      US: "Resident, or legal representative where resident lacks capacity (state law; Health Care Proxy / DPA-HC). 42 CFR 483.10(e)(1): right to be free from restraint imposed for purposes of discipline or convenience; restraint only to treat medical symptoms with informed consent and a physician order specifying duration and circumstances."
+
+  - key: authoriser_name
+    label: Authorising clinician (medical practitioner where required)
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "For chemical restraint, the prescriber. For physical/mechanical/environmental in residential aged care: country-specific — AU requires authorisation by an approved health practitioner per Aged Care Rules 2025 Div 162. US requires a physician's order. UK requires MDT decision plus, if DoL, BIA / DoLS authorisation. NZ requires medical practitioner sign-off for chemical restraint."
+
+  - key: duration_authorised
+    label: Duration authorised
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Maximum duration before re-authorisation. Best practice: shortest duration consistent with the clinical justification. Specific times for chemical restraint (e.g. PRN with maximum frequency); physical practices specified by activity/time of day."
+
+  - key: monitoring_schedule
+    label: Monitoring schedule during use
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Frequency of observation, what is checked (circulation, comfort, dignity, agitation, side effects), who reviews and when. Seclusion: continuous observation. Physical restraint: 15-minute observation typical. Chemical restraint: clinical review at 24/72 hours then weekly minimum."
+
+  - key: review_date
+    label: Mandatory review date
+    type: date
+    required: true
+    ai_extract: true
+    help_text: "AU: BSP review at least every 12 months under Aged Care Rules 2025 Div 162-70, sooner where the practice is escalating. UK / DoLS: 12-month maximum standard authorisation. US: chemical restraint requires GDR consideration at least every 6 months (F758)."
+
+  - key: review_owner
+    label: Review owner
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: notification_required
+    label: External notification required?
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — SIRS reportable (AU)", value: "sirs_au"}
+        - {label: "Yes — DoLS notification to CQC (UK)", value: "dols_uk"}
+        - {label: "Yes — HealthCERT seclusion notification (NZ)", value: "healthcert_nz"}
+        - {label: "Yes — F605/F607 survey reportable (US)", value: "us_state"}
+        - {label: "No external notification required", value: "no"}
+    help_text: |
+      AU: inappropriate use of restrictive practices is a SIRS reportable
+      incident under the Aged Care Rules 2025. UK: starting/varying/ending a
+      DoLS is notifiable to CQC (Reg 18). NZ: seclusion event reporting under
+      Ngā Paerewa Part 6.
+
+  - key: consent
+    label: Consent capture
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: treatment_plan
+      require_witness: true
+    help_text: "Signature of resident (with capacity) or RPSDM / welfare-guardian / health-proxy as applicable, with a witness (clinical staff member). For emergency use (no prior consent) the form is signed within 24 hours of use and the retrospective process is documented in 'country_specific_consent_authority'."

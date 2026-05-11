@@ -1,0 +1,209 @@
+id: salvia.veterinary.notifiable_disease_report
+name: "Notifiable Disease Report"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Report of a suspected or confirmed notifiable animal disease, made by a
+  veterinarian to the relevant national authority. Captures the species and
+  premises identification, clinical signs, suspected disease, samples taken,
+  and the contact-trace network of recent animal movements. Submission is
+  duplicated to the regulator's hotline / online channel; this form is the
+  practice's audit copy of that report.
+purpose_per_regulator:
+  NZ: "Biosecurity Act 1993 s.46 (suspected exotic notifiable organism) — report to Ministry for Primary Industries (MPI) Exotic Pest & Disease Hotline 0800 80 99 66 immediately. Animal Products Act 1999 + ACVM Act for notifiable conditions in food-producing animals. List of notifiable organisms maintained by MPI Biosecurity New Zealand."
+  AU: "Biosecurity Act 2015 (Cwth) + state Stock Diseases / Animal Diseases Acts. Suspected emergency animal disease — report to Emergency Animal Disease Watch Hotline 1800 675 888 (24/7); state Chief Veterinary Officer (CVO) follow-up. National Notifiable Disease List maintained by DAFF; state-specific lists add to the federal floor."
+  UK: "Animal Health Act 1981 + specific Orders (e.g. Specified Diseases (Notification) Order 2012, Avian Influenza (England) Order 2006, Foot and Mouth Disease Order 2006). Suspicion of notifiable disease — report to APHA (Animal & Plant Health Agency) duty vet. England 03000 200 301; Scotland local APHA office; Wales 03003 038 268; NI DAERA 0300 200 7840. Failure to report is a criminal offence."
+  US: "Animal Health Protection Act (7 USC §8301) administered by USDA APHIS Veterinary Services. Suspected foreign animal disease — report to State Animal Health Official (SAHO) AND USDA Area Veterinarian-in-Charge (AVIC). Per-state notifiable lists maintained by State Departments of Agriculture; federal list maintained by APHIS. National Animal Health Reporting System (NAHRS) for routine reportable disease."
+linked_policy_defaults:
+  - salvia.veterinary.infection_prevention_control
+  - salvia.shared.records_retention_policy
+tags: [notifiable_disease, biosecurity, public_health, incident]
+overall_prompt: |
+  Extract presenting signs, suspected disease, herd/premises detail, sample
+  collection, and the chain of recent animal movements. Do not populate
+  premises identifiers (PIC / NAIT / CPH / PIN) from inference — they must be
+  confirmed against farm records.
+fields:
+  - key: incident
+    label: Notifiable disease incident
+    type: system.incident
+    required: true
+    ai_extract: false
+    config:
+      incident_type: notifiable_disease
+      min_severity: medium
+    help_text: "Captures the incident in the practice's incident ledger, with severity, status, and notification timestamp. The widget links the incident to follow-up actions (sample submission, regulator confirmation, premises restriction)."
+
+  - key: report_datetime
+    label: Date & time of report
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: notifying_vet
+    label: Notifying veterinarian
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: notifying_vet_registration
+    label: Veterinary registration number
+    type: system_field
+    source: practitioner_record.registration_number
+    required: true
+
+  - key: regulator_target
+    label: Submitted to (regulator / hotline)
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "MPI Exotic Pest & Disease Hotline 0800 80 99 66 (NZ)", value: "nz_mpi"}
+        - {label: "AU Emergency Animal Disease Hotline 1800 675 888", value: "au_ead"}
+        - {label: "AU State CVO direct", value: "au_state_cvo"}
+        - {label: "APHA duty vet (UK England 03000 200 301; Scotland local; Wales 03003 038 268; NI 0300 200 7840)", value: "uk_apha"}
+        - {label: "USDA APHIS AVIC + State Animal Health Official (US)", value: "us_aphis_saho"}
+
+  - key: report_reference_number
+    label: Regulator report reference number (returned by hotline)
+    type: text
+    ai_extract: true
+
+  - key: subject_individual_or_herd
+    label: Individual animal or herd / flock report?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Individual animal", value: "individual"}
+        - {label: "Herd / flock / mob (production or wildlife)", value: "herd"}
+
+  - key: subject_ref
+    label: Patient (individual)
+    type: system_field
+    source: patient_record
+
+  - key: subject_species
+    label: Species
+    type: system_field
+    source: patient_record.species
+    required: true
+
+  - key: animal_count
+    label: Animals affected (count)
+    type: number
+    ai_extract: true
+
+  - key: animal_count_at_risk
+    label: Animals at risk on premises (count)
+    type: number
+    ai_extract: true
+
+  - key: premises_id
+    label: Premises identifier
+    type: text
+    required: true
+    ai_extract: true
+    label_per_country:
+      NZ: "NAIT number / RVM property ID"
+      AU: "Property Identification Code (PIC)"
+      UK: "County Parish Holding (CPH) number"
+      US: "Premises Identification Number (PIN)"
+
+  - key: premises_address
+    label: Premises address
+    type: long_text
+    required: true
+    pii: true
+    ai_extract: true
+
+  - key: gps_coordinates
+    label: GPS coordinates (lat, long)
+    type: text
+    ai_extract: true
+
+  - key: suspected_disease
+    label: Suspected disease
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Examples: foot-and-mouth disease, classical swine fever, highly pathogenic avian influenza, lumpy skin disease, ASF, BSE. Use the regulator's published list."
+
+  - key: case_definition_match
+    label: Case definition criteria met
+    type: long_text
+    ai_extract: true
+    help_text: "Map presenting signs to the regulator's case definition. Note whether this is suspected, presumptive, or confirmed."
+
+  - key: presenting_signs
+    label: Presenting clinical signs
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: onset_date
+    label: Onset date (first sign)
+    type: date
+    ai_extract: true
+
+  - key: morbidity_mortality
+    label: Morbidity / mortality so far
+    type: long_text
+    ai_extract: true
+
+  - key: samples_taken
+    label: Samples taken
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Type of sample (blood, swab, tissue, faeces), number, transport medium, lab destination. NZ: AHL Wallaceville. AU: state vet lab + CSIRO ACDP. UK: APHA Weybridge. US: NVSL Ames or NAHLN-approved state lab."
+
+  - key: sample_chain_of_custody
+    label: Sample chain-of-custody reference
+    type: text
+    ai_extract: true
+
+  - key: contact_tracing
+    label: Contact tracing — recent animal movements
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Movements onto and off the premises in the past 28 days (or longer for diseases with extended incubation). Markets, shows, transport companies, shared equipment, contractors, visitors."
+
+  - key: biosecurity_measures_in_place
+    label: Biosecurity measures already in place at the premises
+    type: long_text
+    ai_extract: true
+
+  - key: regulator_directions_received
+    label: Directions received from regulator
+    type: long_text
+    ai_extract: true
+    help_text: "Movement standstill, samples to be collected, premises restriction, owner instructions. Record verbatim where possible."
+
+  - key: practice_followup_actions
+    label: Practice follow-up actions
+    type: long_text
+    ai_extract: true
+    help_text: "Clinic biosecurity (decontamination, equipment quarantine), staff PPE / health checks, contact-tracing for other patients seen on the same visit."
+
+  - key: linked_zoonotic_risk
+    label: Zoonotic-risk concern
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "No zoonotic risk identified", value: "no"}
+        - {label: "Yes — public health authority also notified", value: "yes_notified"}
+        - {label: "Yes — public health authority not yet notified", value: "yes_pending"}
+
+  - key: public_health_notification
+    label: Public health notification details
+    type: long_text
+    ai_extract: true
+    help_text: "Where zoonotic. NZ: Public Health Service / Te Whatu Ora. AU: state health department. UK: UKHSA. US: state health department + CDC."

@@ -1,0 +1,169 @@
+id: salvia.aged_care.care_planning
+name: "Care Planning Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service assesses each resident, develops a person-centred
+  comprehensive care plan, involves the resident and their family/whānau,
+  and reviews the plan as conditions change. Sets the cadence, the
+  multidisciplinary team responsibilities, and the link to external
+  assessment instruments (interRAI / MDS / AN-ACC).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 3 (Pae ora — Healthy futures: needs assessment, individualised planning, regular review). interRAI Long-Term Care Facility instrument is the New Zealand standard assessment instrument."
+  AU: "Strengthened Aged Care Quality Standards Standard 3 (Care and Services) and Standard 5 (Clinical Care) — comprehensive Care and Services Plan within 14 days of entry, reviewed at least every 12 months and at change of condition; Aged Care Act 2024 Chapter 3."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 9 (person-centred care); NICE NG97 (Dementia: assessment, management) and NG21 (Home care for older people); CQC fundamental standards."
+  US: "42 CFR 483.20 (Resident assessment) and 42 CFR 483.21 — F655 Baseline Care Plan within 48h, F656 Comprehensive Care Plan within 7 days of MDS completion, F657 Care plan revisions; MDS 3.0 RAI Manual v1.20.1 (effective 1 Oct 2025)."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to all residents from the day of admission. It
+      covers (a) the comprehensive nursing assessment within 24 hours of
+      admission, (b) completion of any country-mandated external instrument
+      (interRAI in NZ, MDS in US, AN-ACC for funding in AU, Care Act
+      assessment where applicable in UK), (c) development of a baseline care
+      plan and subsequent comprehensive person-centred plan, (d) ongoing
+      review, and (e) the transfer of care plan information to receiving
+      services on discharge.
+
+  - id: principles
+    title: Principles
+    body: |
+      Care planning is person-centred and informed by the resident's voice,
+      goals, history, culture, and family relationships. Goals are
+      measurable. Interventions name a responsible role and a frequency.
+      The plan is written in plain language and is accessible in the
+      resident's preferred language and format. The resident (or substitute
+      decision-maker where the resident lacks capacity) is involved in
+      every plan review.
+
+  - id: timeframes
+    title: Timeframes
+    body_per_country:
+      NZ: |
+        Initial nursing assessment within 24 hours of admission. interRAI
+        Long-Term Care Facility assessment commenced within 21 days of
+        admission and updated at least every 6 months thereafter and on
+        significant change of condition. Person-centred care plan in
+        place from admission and reviewed concurrently with each interRAI
+        review and at significant change of condition (Ngā Paerewa
+        NZS 8134:2021 Section 3).
+      AU: |
+        Initial nursing assessment within 24 hours of admission. AN-ACC
+        funding assessment per Department of Health timeframes.
+        Comprehensive Care and Services Plan within 14 days of entry
+        (Strengthened Aged Care Quality Standards Standard 3); reviewed
+        at least every 12 months and at any significant change of
+        condition. Behaviour Support Plan integrated where restrictive
+        practices may be considered (Aged Care Rules 2025 Div 162-55).
+      UK: |
+        Initial nursing assessment within 24 hours of admission. Care plan
+        commenced from admission and finalised within 14 days. Reviewed at
+        least monthly and at any change of condition (NICE NG97 / Reg 9
+        person-centred care). Where Local Authority Care Act assessment
+        applies, link the assessment outcome to the care plan.
+      US: |
+        Initial nursing assessment within 24 hours. Baseline care plan
+        within 48 hours of admission (F655). Admission MDS 3.0 within
+        14 days; comprehensive care plan within 7 days of MDS completion
+        (F656, 42 CFR 483.21(b)(2)(i)). Care plan revisions after each
+        subsequent MDS (Quarterly, Annual, Significant Change in Status
+        Assessment).
+
+  - id: mdt_involvement
+    title: Multidisciplinary team
+    body: |
+      The comprehensive care plan is developed by an interdisciplinary
+      team including, at minimum: the resident's keyworker / primary
+      registered nurse; the medical practitioner; an allied health
+      practitioner where indicated (physio, OT, dietitian, speech-language
+      therapist); and the resident and their family/whānau or substitute
+      decision-maker. Where a domain-specific plan is needed (falls,
+      pressure injury, continence, nutrition, pain, mental health,
+      behaviour support, end-of-life), it is developed alongside, not
+      separately from, the comprehensive plan.
+
+  - id: resident_voice
+    title: Resident voice and supported decision-making
+    body: |
+      Every plan records the resident's voice in their own words wherever
+      possible. Where the resident has capacity, they are the primary
+      decision-maker; supporters may assist. Where the resident lacks
+      capacity for a specific decision, the plan records the basis of the
+      substitute decision (best interests with named decision-maker, or a
+      statutory authority such as a Welfare Guardian / EPOA / LPA-H&W /
+      Health Care Proxy / state guardianship order). Capacity is assessed
+      decision-by-decision, never assumed once-and-for-all.
+
+  - id: cultural_safety
+    title: Cultural and spiritual safety
+    body_per_country:
+      NZ: |
+        Care planning gives effect to Te Tiriti o Waitangi. For Māori
+        residents, the plan records iwi/hapū connection, te reo and
+        tikanga preferences, rongoā Māori use, wairua / spiritual support,
+        and engagement of cultural support staff. For Pasifika residents,
+        the plan records community, language, and family role in care
+        decisions. Ngā Paerewa NZS 8134:2021 Section 1 (Pae ora — Healthy
+        futures, including Māori and Pasifika) is the explicit standard.
+      AU: |
+        Care planning records Aboriginal or Torres Strait Islander
+        identity and Country, CALD heritage, language, and faith
+        practices. Standard 1 (The person) requires culturally safe
+        care; Standard 6 (Food) requires culturally familiar food.
+      UK: |
+        Care planning records religion, language, dietary requirements,
+        and cultural practices. Equality Act 2010 protected
+        characteristics are considered. Accessible Information Standard
+        (SCCI 1605 / DCB1605) is followed for communication needs.
+      US: |
+        Care planning records race/ethnicity, language preference (LEP
+        per ACA §1557), religion, and cultural practices. 42 CFR
+        483.10(g)(3) — communication in a manner the resident can
+        understand.
+
+  - id: review_triggers
+    title: Review triggers
+    body: |
+      A care plan review is triggered by: any unplanned hospital admission;
+      return from hospital; any fall with injury or any second fall in 90
+      days; any new pressure injury Stage 2+ or worsening; unplanned
+      weight loss meeting the significant-loss threshold; new pain
+      requiring regular analgesia; any restrictive-practice authorisation
+      or change; antipsychotic initiation or change; resident or family
+      request; complaint receipt; and the routine cadence above.
+
+  - id: documentation
+    title: Documentation and access
+    body: |
+      Care plans are stored in the resident's clinical record and are
+      accessible to all staff providing care. A copy is offered to the
+      resident and their nominated representative. Plans are written in
+      plain language. Where an external instrument generates the data
+      (interRAI, MDS), the instrument's output identifier is referenced —
+      the plan does not duplicate the instrument fields but builds on its
+      results.
+
+  - id: handover_transfer
+    title: Handover and transfer
+    body: |
+      On transfer to hospital, the resident's care plan summary, advance
+      care plan, current medication list, allergies, and behaviour-support
+      plan (where in place) accompany the resident. On discharge from the
+      service, the family / receiving service receives a written care plan
+      summary.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years or when the
+      regulatory framework changes materially. Operational
+      responsibility: Care Manager / Director of Nursing.

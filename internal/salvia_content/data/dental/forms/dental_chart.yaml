@@ -1,0 +1,159 @@
+id: salvia.dental.dental_chart
+name: "Dental Chart / Odontogram"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Per-tooth status capture (odontogram) with restorations, missing teeth,
+  mobility, recession, and pathology. Supports both FDI/ISO and Universal
+  numbering systems. The tooth grid uses the blocks field type so each tooth
+  can carry typed status arrays; narrative findings are captured alongside.
+
+purpose_per_regulator:
+  NZ: "DCNZ Practice Standard – Patient Records (clinical examination must record dental charting); HDC Code Right 4 (provider standard)."
+  AU: "Dental Board of Australia – Guidelines on Dental Records 2019 §3 (clinical findings); ADA AU Schedule of Services."
+  UK: "GDC Standards 4.1; FGDP(UK) Clinical Examination & Record Keeping (3rd Ed)."
+  US: "ADA CDT codes; state dental practice acts; HIPAA records §164.530(j) 6-year minimum (varies by state)."
+
+linked_policy_defaults:
+  - salvia.dental.radiation_safety
+
+tags: [examination, charting]
+
+overall_prompt: |
+  Extract per-tooth findings into the tooth_grid. For each tooth dictated,
+  record numbering system used (FDI vs Universal — both can coexist if
+  clinician switches), surfaces involved (M/O/D/B/L/I), status (sound,
+  caries, restoration, missing, mobile, etc.), and material if a restoration
+  is named. Do NOT infer pathology from absence of mention.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: examination_date
+    label: Examination date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: examining_clinician
+    label: Examining clinician
+    type: text
+    required: true
+
+  - key: numbering_system
+    label: Tooth numbering system used
+    type: select
+    required: true
+    help_text: "FDI/ISO 3950 is standard outside North America. Both systems may coexist in transcripts."
+    config:
+      options:
+        - {label: "FDI (ISO 3950) — used everywhere outside North America", value: "fdi"}
+        - {label: "Universal Numbering System (USA)", value: "universal"}
+        - {label: "Palmer notation", value: "palmer"}
+
+  - key: dentition_stage
+    label: Dentition stage
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Primary (deciduous)", value: "primary"}
+        - {label: "Mixed", value: "mixed"}
+        - {label: "Permanent", value: "permanent"}
+
+  - key: tooth_grid
+    label: Per-tooth findings
+    type: blocks
+    ai_extract: true
+    help_text: |
+      Repeated block per tooth. Each block: tooth_id (FDI 11-48 or Universal
+      1-32 or primary 51-85 / A-T), surfaces (M/O/D/B/L/I), status
+      (sound, caries, restoration, missing, unerupted, impacted, mobile,
+      crown, bridge_pontic, bridge_abutment, implant, root_canal_treated,
+      veneer, fractured, attrition, abrasion, erosion, resorption,
+      pathology, other), restoration_material (amalgam, composite, GIC,
+      ceramic, gold, PFM, zirconia, other), mobility_grade (0/I/II/III),
+      pocket_depths (mesial/buccal/distal/lingual), notes.
+
+  - key: missing_teeth_summary
+    label: Missing teeth (summary)
+    type: text
+    ai_extract: true
+
+  - key: existing_restorations_summary
+    label: Existing restorations (summary)
+    type: long_text
+    ai_extract: true
+
+  - key: caries_risk
+    label: Caries risk assessment
+    type: select
+    ai_extract: true
+    help_text: "Per ADA Caries Risk Assessment / SDCEP Prevention & Management of Dental Caries."
+    config:
+      options:
+        - {label: "Low", value: "low"}
+        - {label: "Moderate", value: "moderate"}
+        - {label: "High", value: "high"}
+        - {label: "Extreme", value: "extreme"}
+
+  - key: perio_screening_score
+    label: Periodontal screening result (BPE / PSR)
+    type: text
+    ai_extract: true
+    help_text: "BPE used in UK/AU/NZ; PSR (0–4) used in US. Record sextant scores."
+
+  - key: occlusion_summary
+    label: Occlusion / Angle classification
+    type: text
+    ai_extract: true
+
+  - key: soft_tissue_examination
+    label: Soft tissue / oral cancer screen findings
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Lips, vestibule, tongue (lateral borders), floor of mouth, palate, oropharynx, lymph nodes. Document negative findings."
+
+  - key: tmj_findings
+    label: TMJ / occlusal findings
+    type: long_text
+    ai_extract: true
+
+  - key: radiographs_taken
+    label: Radiographs / imaging taken today
+    type: long_text
+    ai_extract: true
+    help_text: "Type, justification, kVp/mAs if recorded. Justification required per IRMER 2017 (UK), ORS C-4 (NZ), ARPANSA RPS C-7 (AU), state (US)."
+
+  - key: intraoral_photos
+    label: Intra-oral photographs taken
+    type: button_group
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — consent on file", value: "yes_consent"}
+        - {label: "Yes — consent obtained today", value: "yes_today"}
+
+  - key: pathology_findings
+    label: Pathology / lesions of concern
+    type: long_text
+    ai_extract: true
+    help_text: "Describe site, size, colour, consistency, duration. Photograph and refer if persistent ≥3 weeks per Cancer Council / NICE NG12."
+
+  - key: charting_notes
+    label: Additional charting notes
+    type: long_text
+    ai_extract: true

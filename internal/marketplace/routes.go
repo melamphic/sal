@@ -243,6 +243,82 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, canManage},
 	}, h.suspendListing)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "update-marketplace-listing",
+		Method:      http.MethodPatch,
+		Path:        "/api/v1/marketplace/listings/{listing_id}",
+		Summary:     "Update listing metadata (publisher self-serve)",
+		Description: "Partial update — only non-null body fields are applied. Draft listings allow any field; published listings reject changes to name / pricing / bundle_type (those require archive + relist or Salvia moderation).",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.updateListing)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "archive-marketplace-listing",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/marketplace/listings/{listing_id}/archive",
+		Summary:     "Archive a listing (publisher self-serve)",
+		Description: "Sets status to 'archived'. Existing acquisitions remain valid; new acquire/purchase requests reject. Idempotent. Suspended listings cannot be archived (Salvia must lift the suspension first).",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.archiveListing)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-marketplace-listing",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/marketplace/listings/{listing_id}",
+		Summary:     "Delete a draft listing",
+		Description: "Hard-deletes a listing along with any unpublished version rows. Only valid when status='draft'; published listings must be archived instead so historical acquisitions still resolve.",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.deleteListing)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-marketplace-pack-forms",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/marketplace/listings/{listing_id}/pack-forms",
+		Summary:     "List the source forms composing a pack listing",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.listPackForms)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "set-marketplace-pack-forms",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/marketplace/listings/{listing_id}/pack-forms",
+		Summary:     "Replace the source-form composition of a pack listing",
+		Description: "Atomic replace — the body's ordered array of tenant form UUIDs becomes the new pack composition. Only valid while the listing is a draft (composition is locked once published so existing buyers don't see surprise changes).",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.setPackForms)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-my-marketplace-earnings",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/marketplace/my/earnings",
+		Summary:     "List paid acquisitions for my publisher",
+		Description: "Returns paid acquisitions (active + refunded) with platform fees and net publisher cut, most-recent first. Free acquisitions excluded — they never carry money.",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.listMyEarnings)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "my-marketplace-earnings-summary",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/marketplace/my/earnings/summary",
+		Summary:     "Monthly earnings summary",
+		Description: "Up to 36 months of bucketed gross/fee/net + order/refund counts for the caller's publisher. Default window is 12 months.",
+		Tags:        []string{"Marketplace"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, canManage},
+	}, h.myEarningsSummary)
+
 	// ── Stripe webhook (raw Chi, no auth — signature-verified) ───────────────
 
 	r.Post("/api/v1/marketplace/webhooks/stripe", h.StripeWebhookHandler())

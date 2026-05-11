@@ -1,0 +1,159 @@
+id: salvia.general_clinic.mandatory_training
+name: "Mandatory training policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Training matrix and cadence for every member of the practice — clinical
+  and non-clinical. Topics include BLS, IPC, safeguarding, information
+  governance, fire safety, manual handling, anaphylaxis, equality &
+  diversity, chaperone, and country-specific additions (UK Oliver McGowan
+  from 2026; US OSHA bloodborne pathogens).
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard 2024 (Indicator 2 — workforce competence); HSWA 2015 employer duty."
+  AU: "RACGP Standards 5th ed Criterion C7.2 (Educational requirements); WHS Act state implementations; AHPRA CPD requirements."
+  UK: "CQC GP Mythbuster 70 (Mandatory training); CQC Reg 18 (staffing); Skills for Health Core Skills Training Framework; Oliver McGowan Code of Practice (mandatory from 2026 across CQC-regulated services)."
+  US: "OSHA 29 CFR 1910 (multiple subparts); HIPAA 164.530(b) workforce training; CMS Conditions of Participation; state nurse / medical practice acts CME."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every employee, contractor, locum, trainee, and
+      volunteer at the practice. The training matrix is held by the
+      Practice Manager. It defines the topic, scope, frequency, evidence
+      type, and named training source for each role.
+
+  - id: matrix_topics_clinical
+    title: "Required topics — clinical staff"
+    body: |
+      Clinical staff (GPs, nurses, nurse practitioners, healthcare
+      assistants, pharmacists, paramedics):
+        • Basic Life Support — annual.
+        • Anaphylaxis algorithm — annual.
+        • Infection prevention and control (IPC) — annual + on protocol
+          change.
+        • Hand hygiene + PPE — annual.
+        • Sharps and needlestick / bloodborne pathogens — annual.
+        • Safeguarding children Level 3 + adults Level 3 — triennial
+          (annual update on refresher).
+        • Information governance / data protection — annual.
+        • Equality, diversity, and inclusion — annual.
+        • Mental Capacity / consent — biennial.
+        • Chaperone training — at induction + biennial refresh.
+        • Fire safety — annual.
+        • Manual handling — biennial.
+        • Cold chain — annual (vaccinators).
+        • Controlled drugs — annual.
+        • Sepsis recognition — biennial.
+        • Domestic / family violence — biennial (NZ: VIP); US: biennial
+          IPV; UK: biennial; AU: biennial.
+        • Country-specific additions per Section 3.
+
+  - id: matrix_topics_admin
+    title: "Required topics — administrative / reception staff"
+    body: |
+      Administrative and reception staff:
+        • Basic Life Support / CPR + AED awareness — annual.
+        • Information governance / data protection — annual.
+        • Confidentiality and consent — annual.
+        • Equality, diversity, and inclusion — annual.
+        • Safeguarding (Level 1 / 2) — biennial.
+        • Fire safety — annual.
+        • Manual handling — biennial.
+        • Conflict resolution / personal safety — biennial.
+        • Cold chain (if handling deliveries) — annual.
+        • Chaperone (if covering chaperone role) — biennial.
+
+  - id: country_specific
+    title: "Country-specific topics"
+    body_per_country:
+      NZ: |
+        Te Tiriti o Waitangi + cultural safety (MCNZ Statement on cultural
+        safety — annual at induction + every 3 years). NZQA First Aid
+        certificate for clinical staff working remotely. Gambling-harm
+        awareness and family-violence VIP training annually.
+      AU: |
+        Aboriginal and Torres Strait Islander cultural safety training
+        annually (RACGP / AHPRA Cultural Safety Strategy). State Working
+        with Children / NDIS Worker Screening induction. AHPRA Code of
+        Conduct refresher annually. SafeScript onboarding for all
+        prescribers.
+      UK: |
+        Oliver McGowan Mandatory Training on Learning Disability and
+        Autism — Tier 1 for all staff, Tier 2 for clinical staff (Code of
+        Practice mandatory across all CQC-regulated providers). PREVENT
+        WRAP / Basic Awareness — annual. Accessible Information Standard
+        — annual. Mental Capacity Act / Deprivation of Liberty — biennial.
+        Domestic abuse + Female Genital Mutilation — biennial.
+      US: |
+        OSHA Bloodborne Pathogens — annual (29 CFR 1910.1030). HIPAA
+        Privacy + Security — annual (164.530(b)). MATE Act 8-hour
+        DEA training — once per DEA registration cycle. State opioid
+        / pain CME (e.g. TX 2hr, NY 3hr). Workplace violence prevention
+        — annual (state — CA, NY, OR mandates). Cultural and
+        linguistic competency — annual (HHS / ACA §1557).
+
+  - id: induction
+    title: "Induction"
+    body: |
+      Every new starter completes the practice induction within the
+      first 5 working days, including: tour of the premises, fire
+      evacuation, IPC walk-through, IT and confidentiality, personal
+      safety (lone-worker if applicable), introduction to the SEA
+      and complaints process, and meeting the safeguarding lead.
+      Mandatory online modules due before any solo patient contact.
+      Locums complete an abbreviated induction tailored to the visit
+      length.
+
+  - id: evidence_and_records
+    title: "Evidence and records"
+    body: |
+      The training matrix records, for each staff member: training
+      topic, date completed, source (provider, course title), expiry,
+      certificate location. Certificates are uploaded centrally; the
+      Practice Manager audits monthly for any topic overdue. Overdue
+      training >30 days triggers a conversation with the staff
+      member; >90 days triggers role-restriction (e.g. clinical staff
+      with overdue BLS cannot work without a co-clinician on site).
+
+  - id: cpd_revalidation_link
+    title: "Link to CPD / revalidation / appraisal"
+    body: |
+      Mandatory training counts toward each clinician's CPD /
+      revalidation / appraisal requirement (UK GMC + NMC; NZ MCNZ + NCNZ;
+      AU AHPRA CPD; US state CME). The annual appraisal includes
+      review of the training record. Non-completion of mandatory
+      training is a discussion item at appraisal.
+
+  - id: funding_and_time
+    title: "Funding and time allocation"
+    body: |
+      The practice funds mandatory training and provides paid time to
+      complete it. Staff may not be charged for required topics. Online
+      modules are completed in work time; in-person courses are paid
+      time and travel. Annual training calendar is published at the
+      start of the year.
+
+  - id: monitoring
+    title: "Monitoring and audit"
+    body: |
+      The Practice Manager presents a quarterly training-matrix
+      compliance report to the practice partnership / clinical board.
+      The report shows percentage compliance by topic and by team,
+      overdue items, and any role-restriction in force. CQC / RACGP /
+      RNZCGP / accrediting body inspection draws from this report.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months. New mandatory topics added when a
+      regulator publishes them (e.g. UK Oliver McGowan added 2024,
+      Tier 1 mandated 2026; US MATE Act added 2023). Currency date
+      at the top of this policy.

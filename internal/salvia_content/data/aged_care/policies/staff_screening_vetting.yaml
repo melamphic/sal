@@ -1,0 +1,153 @@
+id: salvia.aged_care.staff_screening_vetting
+name: "Staff Screening and Vetting Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Pre-employment and ongoing screening of staff, volunteers, contractors
+  and agency workers. Sets the country-specific check requirements
+  (NZ Children's Act 2014 + sector vetting; AU NDIS Worker Screening +
+  state police; UK DBS Enhanced + Barred Lists; US state criminal
+  background + nurse aide registry), the minimum re-screen interval, the
+  registration verification, and the right-to-work checks.
+
+purpose_per_regulator:
+  NZ: "Children's Act 2014 (children's worker safety checks where applicable); Vulnerable Children Act 2014 amendments; Ministry of Justice criminal record checks; NZ Aged Care Sector — Aged Residential Care Services Agreement clauses on staff screening; Health Practitioners Competence Assurance Act 2003 (registration verification); Immigration Act 2009 (right to work)."
+  AU: "Aged Care Act 2024 + Aged Care Rules 2025 staff screening obligations; NDIS Worker Screening Database (where the worker is in a risk-assessed role and the provider is also NDIS-registered); state police checks; AHPRA registration verification (for clinicians); state Working with Vulnerable People schemes where applicable."
+  UK: "Disclosure and Barring Service (DBS) Enhanced check with Adults' Barred List for any person working in a regulated activity in adult social care; NMC / GMC / GDC registration verification; right-to-work check under Immigration, Asylum and Nationality Act 2006; CQC Reg 19 (fit and proper persons employed); Schedule 3 of Health and Social Care Act 2008 (Regulated Activities) Regulations 2014."
+  US: "42 CFR 483.95(c) abuse training; state criminal background checks (varies; many states fingerprint-based); FBI federal check for many states; Nurse Aide Registry checks (federal requirement under OBRA / 42 CFR 483.156); Office of Inspector General (OIG) List of Excluded Individuals/Entities (LEIE) check for healthcare workers; state Sex Offender Registry; I-9 right to work."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to every person engaged by the service in any
+      role that brings them into contact with residents — employees,
+      contractors, volunteers, agency workers and any other categories.
+      It applies before commencement of duties and throughout
+      engagement.
+
+  - id: pre_employment_checks
+    title: Pre-employment checks
+    body_per_country:
+      NZ: |
+        Mandatory pre-employment checks: Ministry of Justice criminal
+        history check (clean or risk-assessed); identity verification;
+        right-to-work check; for clinical staff, registration
+        verification with the relevant Council (NCNZ, MCNZ, etc); two
+        professional referees including the most recent employer;
+        children's worker safety check where applicable.
+      AU: |
+        Mandatory: state-issued National Police Check (within last 12
+        months); AHPRA registration verification for clinicians;
+        NDIS Worker Screening Check where role triggers; right to work
+        (Australian citizen / permanent resident / valid visa);
+        Statutory Declaration where the candidate has lived overseas
+        in the prior 10 years; two professional referees.
+      UK: |
+        Mandatory: DBS Enhanced check including Adults' Barred List
+        (the law requires this for regulated activity, and the
+        applicant must NOT be on the Barred List); NMC/GMC/GDC
+        registration verification; full employment history with gaps
+        explained; right to work; two professional referees including
+        last employer; CQC Reg 19 fit and proper persons declaration
+        for directors.
+      US: |
+        Mandatory: state criminal background check (often
+        fingerprint-based); FBI federal check where state requires;
+        Nurse Aide Registry check (state); OIG LEIE check; state Sex
+        Offender Registry where applicable; I-9 right to work; state
+        nurse / clinician licence verification; references including
+        last employer.
+
+  - id: re_screening
+    title: Re-screening intervals
+    body: |
+      Repeated checks at:
+      - Annual licence / registration renewal verification for all
+        clinical staff.
+      - Re-DBS check every 3 years (UK) — or use of DBS Update Service
+        for continuous monitoring.
+      - Re-police check at the interval required by funding body or
+        state (AU varies; NZ ARRC service agreement).
+      - Annual OIG LEIE check (US).
+      - Immediate re-check on any allegation, conviction notification,
+        or break in service.
+
+  - id: agency_volunteers
+    title: Agency staff, volunteers, contractors
+    body: |
+      Agency staff: prior to deployment, the service receives written
+      assurance from the agency that all required checks are current.
+      Volunteers: undergo the same checks as employees in equivalent
+      contact. Contractors with resident contact: same standard or
+      escorted.
+
+  - id: registration_verification
+    title: Professional registration verification
+    body: |
+      Clinical staff (RNs, ENs, doctors, allied health, pharmacists)
+      have their registration verified at hire and at every annual
+      renewal. Verification recorded with date and source. Conditions
+      on a registration are recorded and the role adjusted where
+      required.
+
+  - id: declaration_disclosure
+    title: Self-declaration and disclosure obligations
+    body: |
+      Staff declare on hire any past convictions (subject to
+      'spent conviction' rules per country) and any pending charges,
+      regulator investigations, or barring orders. Ongoing duty to
+      disclose changes — convictions, regulator findings, or any matter
+      that would bear on fitness for the role.
+
+  - id: induction_competency
+    title: Induction and competency
+    body: |
+      Newly hired staff complete induction before independent practice,
+      including: this policy, the Restraint Minimisation policy, the
+      Safeguarding policy, the Mandatory Reporting policy, IPC, manual
+      handling, fire safety, and role-specific clinical competencies.
+
+  - id: ongoing_monitoring
+    title: Ongoing monitoring
+    body: |
+      Performance, complaints, supervision and clinical outcomes are
+      monitored. Concerns are escalated to HR / Service Manager. Where
+      a staff member is the subject of a serious allegation,
+      precautionary suspension is considered while investigation
+      proceeds.
+
+  - id: termination_referral
+    title: Termination and referral to regulator / barring
+    body: |
+      Where a staff member is dismissed or resigns following abuse,
+      neglect, or serious misconduct, referral is made:
+      - NZ: to the relevant Council; HDC where indicated.
+      - AU: to AHPRA (clinicians); to NDIS Worker Screening Unit
+        (where applicable); SIRS for the underlying incident.
+      - UK: to NMC / GMC / GDC; DBS referral required by law where
+        the dismissal involves harm to an adult at risk (s.45 SVGA
+        2006); LADO closure.
+      - US: to state nurse aide registry (placement on the registry as
+        a finding); state licensing board; OIG; State Survey Agency.
+
+  - id: records
+    title: Records
+    body: |
+      A staff personnel file holds: identity, right-to-work, criminal
+      record check, registration, references, training records, and
+      monitoring outcomes. Retained per Salvia shared
+      records_retention_policy.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually and on any change to
+      regulator screening rules. Operational responsibility: HR /
+      Service Manager.

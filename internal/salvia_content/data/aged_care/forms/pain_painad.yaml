@@ -1,0 +1,127 @@
+id: salvia.aged_care.pain_painad
+name: "Pain Assessment — PainAD (non-verbal)"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Pain assessment using PainAD (Pain Assessment in Advanced Dementia) for
+  residents who cannot self-report pain reliably (advanced dementia,
+  severe cognitive impairment). Five subscales scored 0–2 (breathing,
+  negative vocalisation, facial expression, body language, consolability),
+  total 0–10. Activity at observation matters (rest vs care vs ambulating).
+  Captures action taken (analgesic / non-pharm) and a planned reassessment.
+  Verbal residents should use NRS or similar; this form is the non-verbal
+  default.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 5 (Manaakitia — pain management); HQSC pain in older adults; HDC Code Right 4."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — pain management); Aged Care Quality Indicators (NQI) Pain — quarterly reporting; Australian Pain Society Pain in Residential Aged Care Facilities: Management Strategies (2nd edition, current)."
+  UK: "NICE NG193 Chronic pain (primary and secondary); NICE QS181 End of life care; British Geriatrics Society pain guidance; CQC Reg 9 + 12."
+  US: "42 CFR 483.25 F697 (pain management); MDS 3.0 v1.20.1 Section J0100–J0850 (pain assessment); CMS State Operations Manual Appendix PP F697 guidance."
+
+linked_policy_defaults:
+  - salvia.aged_care.pain_management
+  - salvia.aged_care.medication_management
+  - salvia.aged_care.end_of_life_palliative
+
+tags: [pain, painad, ledger, dementia]
+
+overall_prompt: |
+  Capture the PainAD assessment as the clinician observes. Voice extraction
+  may populate behavioural descriptors (the resident's vocalisations, facial
+  expression, posture). The five subscale scores must be set explicitly by
+  the clinician, not inferred from narrative. Reassessment time is required
+  when any analgesic action is taken.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: assessment_datetime
+    label: Date and time of assessment
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: activity_at_observation
+    label: Activity at observation
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "At rest", value: "rest"}
+        - {label: "During personal care (washing, dressing, toileting, repositioning)", value: "care"}
+        - {label: "During ambulating / transfer", value: "ambulating"}
+        - {label: "During wound dressing change", value: "dressing_change"}
+        - {label: "During eating", value: "eating"}
+
+  - key: pain_score
+    label: PainAD score capture
+    type: system.pain_score
+    required: true
+    ai_extract: false
+    config:
+      scale_id: painad
+    help_text: |
+      PainAD (Warden, Hurley, Volicer 2003). Five subscales 0–2:
+      Breathing (0 normal · 1 occasional laboured · 2 noisy/laboured/Cheyne-Stokes),
+      Negative vocalisation (0 none · 1 occasional moan/groan · 2 repeated calling/crying),
+      Facial expression (0 smiling/inexpressive · 1 sad/frightened/frowning · 2 grimacing),
+      Body language (0 relaxed · 1 tense/distressed pacing · 2 rigid/fists/striking),
+      Consolability (0 not needed · 1 distracted/reassured by voice or touch · 2 unable to console).
+      Total 0–10. ≥2 = present pain warranting action; ≥4 = moderate-severe.
+
+  - key: clinical_observation_notes
+    label: Clinical observation notes (verbatim cues)
+    type: long_text
+    ai_extract: true
+    help_text: "Specific behaviours seen / heard. Useful for trend interpretation across multiple PainAD entries."
+
+  - key: suspected_pain_source
+    label: Suspected pain source
+    type: long_text
+    ai_extract: true
+    help_text: "Known osteoarthritis / fracture / pressure injury / wound / constipation / urinary retention / oral pain / referred pain / new-onset (investigate)."
+
+  - key: action_taken
+    label: Action taken
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Specify both pharmacological (drug, dose, route, time) and non-pharmacological (repositioning, warm pack, distraction, reassurance, family presence) actions."
+
+  - key: prn_analgesic_given
+    label: PRN analgesic given?
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — record drug/dose/route below", value: "yes"}
+        - {label: "No — non-pharmacological measures only", value: "no"}
+        - {label: "No — regular analgesic only at this observation", value: "regular_only"}
+
+  - key: prn_drug_dose
+    label: PRN drug, dose, route, time given
+    type: text
+    ai_extract: true
+
+  - key: reassessment_time
+    label: Planned reassessment time
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Typical: 30 minutes after PO analgesic, 15 minutes after IM/SC/IV. Always reassess within 60 minutes of any intervention."
+
+  - key: care_plan_change_recommended
+    label: Care plan change recommended (regular analgesic, GP review, referral)
+    type: long_text
+    ai_extract: true

@@ -1,0 +1,178 @@
+id: salvia.dental.radiation_safety
+name: "Dental Radiation Safety Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Justification, optimisation, and limitation of dose for dental
+  radiography (intraoral, panoramic, cephalometric, and CBCT). Defines
+  the named radiation roles, controlled-area arrangements, dose
+  reference levels, training, and pregnancy declaration handling.
+
+purpose_per_regulator:
+  NZ: "Office of Radiation Safety (ORS) Code of Practice for Diagnostic and Interventional Radiology, Radiation Safety Code C-4 — December 2024 update; Radiation Safety Act 2016."
+  AU: "ARPANSA Radiation Protection Series RPS C-7 (2025) Code for Radiation Protection in Dentistry; state radiation acts (e.g. NSW Radiation Control Act 1990; Vic Radiation Act 2005)."
+  UK: "Ionising Radiations Regulations 2017 (IRR17); Ionising Radiation (Medical Exposure) Regulations 2017 (IR(ME)R 2017); Faculty of General Dental Practice / FGDP Selection Criteria for Dental Radiography."
+  US: "FDA / ADA Selection Criteria for Dental Radiographic Examinations 2012 (under review 2025); state radiation control programs; NCRP Report No. 177 dental CBCT."
+
+clauses:
+  - id: scope
+    title: "Scope and named roles"
+    body_per_country:
+      NZ: |
+        Per ORS C-4 Dec 2024:
+        - Licensee — practice owner/principal under the Radiation Safety Act.
+        - Designated Radiation Safety Officer (RSO) — names a competent
+          person responsible for day-to-day arrangements.
+        - Operator — registered dentist or qualified dental radiographer.
+      AU: |
+        Per ARPANSA RPS C-7 (2025):
+        - Radiation Management Plan (RMP) approved by the state regulator.
+        - Radiation Safety Officer (RSO) named for the practice.
+        - Operator — dentist or licensed dental radiographer per state.
+      UK: |
+        Per IRR17 / IR(ME)R 2017:
+        - Employer — legal duty-holder.
+        - Radiation Protection Adviser (RPA) — appointed competent
+          consultant.
+        - Radiation Protection Supervisor (RPS) — named on-site supervisor.
+        - IR(ME)R Referrer / Practitioner / Operator — three IR(ME)R
+          duty-holder roles documented for every exposure.
+        - Medical Physics Expert (MPE) — appointed for CBCT.
+      US: |
+        Per state radiation control program (e.g. CA RHB, NY DOH BEER):
+        - Registrant — practice owner.
+        - Designated Radiation Person — typically the practice principal.
+        - Operator — dentist or state-credentialed dental radiographer.
+
+  - id: justification
+    title: "Justification of every exposure"
+    body: |
+      No radiograph is taken without clinical justification recorded in
+      the patient record. Selection follows:
+      - UK: FGDP/RCS Selection Criteria; IR(ME)R 2017 reg 11.
+      - NZ: ORS C-4 §4 + DCNZ guidance.
+      - AU: ARPANSA RPS C-7 §4 + ADA AU selection criteria.
+      - US: ADA/FDA Selection Criteria 2012.
+      Pregnancy is screened before any imaging. Justification must show
+      the question being answered and why image-free alternatives are
+      insufficient.
+
+  - id: optimisation
+    title: "Optimisation (ALARP / ALARA)"
+    body: |
+      Doses kept As Low As Reasonably Practicable (UK) / Achievable (US)
+      / consistent with diagnostic intent (NZ/AU). Specific measures:
+      - Rectangular collimation for periapical / bitewing.
+      - F-speed film or digital sensors only.
+      - Lead apron not routinely required for periapical/bitewing per
+        ADA 2024 statement (dose to thyroid/gonads negligible with
+        collimation), but available on patient request.
+      - Thyroid collar on intraoral and panoramic where feasible per
+        FGDP / state law.
+      - CBCT field of view minimised to the region of interest.
+      - kVp / mAs / time set to manufacturer reference for the equipment.
+
+  - id: drls
+    title: "Diagnostic Reference Levels and dose audit"
+    body_per_country:
+      NZ: |
+        ORS C-4 §6 audit cadence: annual dose audit against NZ DRLs
+        (intraoral, panoramic, CBCT). Records retained ≥10 years.
+      AU: |
+        ARPANSA published DRLs for dental imaging; annual audit per
+        state regulator + RPS C-7 §5.
+      UK: |
+        IR(ME)R 2017 reg 13: DRLs reviewed periodically. Practice
+        compares average doses to national reference values; local DRLs
+        set if practice population varies.
+      US: |
+        NCRP / FDA reference values; state-mandated equipment
+        calibration intervals (typically every 1–4 years depending on
+        modality and state).
+
+  - id: equipment_qa
+    title: "Equipment quality assurance"
+    body: |
+      Equipment maintained per manufacturer schedule and country
+      regulator. Annual independent dose / image-quality QA by an MPE
+      (UK), licensed RSO (AU/NZ), or state-credentialed inspector (US).
+      Faulty equipment taken out of service and not used until certified.
+
+  - id: cbct
+    title: "CBCT-specific provisions"
+    body: |
+      Used only where 2D imaging is insufficient and the clinical
+      benefit justifies the higher dose. CBCT operator/practitioner
+      holds appropriate CBCT training (e.g. SEDENTEXCT criteria UK;
+      ADA US Position 2012; ARPANSA RPS C-7 §7 AU). Field of view
+      always restricted to the region of clinical interest. CBCT
+      reports retained per records-retention policy and read by a
+      reporter with appropriate competence (radiologist or trained
+      dentist).
+
+  - id: pregnancy
+    title: "Pregnancy declaration"
+    body: |
+      Patients of childbearing potential are asked about pregnancy
+      before any imaging. If pregnant or possibly pregnant, the
+      operator/practitioner reassesses justification; non-urgent imaging
+      is deferred. Where exposure is clinically necessary, optimisation
+      measures are documented.
+
+  - id: controlled_areas
+    title: "Controlled areas and operator position"
+    body: |
+      Treatment rooms with X-ray equipment are designated controlled
+      areas. Operator stands ≥2 m from the tube head and at 90–135°
+      from the central beam, behind a barrier where one is installed.
+      No staff or unprotected accompanying adult remains in the
+      controlled area during exposure unless clinically essential and
+      lead-protected.
+
+  - id: training
+    title: "Training and CPD"
+    body_per_country:
+      NZ: |
+        Operator radiation training current per DCNZ recertification
+        cycle. CPD maintained.
+      AU: |
+        Per ARPANSA RPS C-7 §3: induction + refresher every 5 years
+        minimum; state may require more frequent.
+      UK: |
+        IR(ME)R 2017 reg 17: documented training adequate for role
+        (referrer / practitioner / operator). 5-yearly refresher of
+        practical operator training; CPD logged.
+      US: |
+        State-mandated radiology certification for dental assistants
+        (varies by state). Continuing education hours per state.
+
+  - id: incidents
+    title: "Radiation incident reporting"
+    body_per_country:
+      NZ: |
+        Notify ORS of any unintended exposure / lost-source / equipment
+        failure exceeding regulator threshold; HSWA notifiable to
+        WorkSafe if staff harm.
+      AU: |
+        Notify state regulator per RPS C-7 §8; ARPANSA national
+        reporting where applicable.
+      UK: |
+        IRR17 reg 36 incidents to HSE; IR(ME)R reg 8(4) significantly-
+        higher-than-intended exposures notified to CQC and DHSC. RPA
+        review.
+      US: |
+        State radiation control program notification per state law;
+        equipment-related events to FDA per medical-device reporting
+        rules.
+
+  - id: records_retention
+    title: "Records and retention"
+    body: |
+      Radiograph and exposure records form part of the patient record
+      and follow the practice's overall records retention policy. Dose
+      audit, QA, and training records retained ≥10 years (NZ) / per
+      state law (US) / 50 years post-employment for dosimetry where
+      worn (UK IRR17).

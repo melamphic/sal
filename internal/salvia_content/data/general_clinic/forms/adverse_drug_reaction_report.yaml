@@ -1,0 +1,213 @@
+id: salvia.general_clinic.adverse_drug_reaction_report
+name: "Adverse drug reaction report"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Pharmacovigilance report for a suspected adverse drug reaction (including
+  vaccines and devices used as drugs). Submitted to the country's regulator —
+  NZ CARM (Centre for Adverse Reactions Monitoring); AU TGA via the Database
+  of Adverse Event Notifications; UK MHRA Yellow Card; US FDA MedWatch.
+
+purpose_per_regulator:
+  NZ: "Medicines Act 1981 s.41; Medsafe / CARM (University of Otago) reporting scheme; vaccine ADRs cross-reported to AEFI."
+  AU: "Therapeutic Goods Act 1989; TGA Black Triangle list; consumers and HCPs may report; pharmacovigilance obligations on sponsors."
+  UK: "Yellow Card Scheme — MHRA + Commission on Human Medicines; mandatory for serious / new / Black Triangle (▼) medicines; covers devices and vaccines."
+  US: "FDA MedWatch (Form 3500 voluntary HCP / 3500A mandatory manufacturer / 3500B consumer); VAERS for vaccines; FDAAA 2007."
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.general_clinic.controlled_drugs
+
+tags: [pharmacovigilance, adverse_event, incident]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_sex_at_birth
+    label: "Sex recorded at birth"
+    type: system_field
+    source: patient_record.sex_at_birth
+
+  - key: subject_weight
+    label: "Weight (kg)"
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: subject_id_number
+    label: "Health identifier"
+    type: system_field
+    source: patient_record.health_identifier
+    pii: true
+
+  - key: drug_name
+    label: "Suspect drug — generic and brand"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: drug_indication
+    label: "Indication for suspect drug"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: drug_dose_route_frequency
+    label: "Dose / route / frequency"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: drug_batch_lot
+    label: "Batch / lot number (mandatory for biologicals and vaccines)"
+    type: text
+    ai_extract: true
+    help_text: "MHRA Yellow Card and VAERS specifically require lot for vaccines / biologicals."
+
+  - key: drug_start_date
+    label: "Drug start date"
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: drug_stop_date
+    label: "Drug stop date (if stopped)"
+    type: date
+    ai_extract: true
+
+  - key: concomitant_medications
+    label: "Concomitant medications (other current drugs)"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: relevant_history
+    label: "Relevant medical history (renal / hepatic, allergies, prior reactions)"
+    type: long_text
+    ai_extract: true
+
+  - key: reaction_description
+    label: "Description of reaction"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: reaction_onset
+    label: "Reaction onset date / time relative to dose"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: reaction_severity
+    label: "Severity"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Mild — no intervention", value: "mild"}
+        - {label: "Moderate — required treatment but resolved", value: "moderate"}
+        - {label: "Severe — hospitalised / disabling / life-threatening", value: "severe"}
+        - {label: "Death — drug suspected to have contributed", value: "death"}
+
+  - key: serious_criteria
+    label: "Meets seriousness criteria? (any of: death, life-threatening, hospitalisation, persistent disability, congenital anomaly, medically important)"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Yes — serious", value: "serious"}
+        - {label: "No — non-serious", value: "non_serious"}
+    help_text: "ICH E2A definition. 'Serious' triggers expedited 15-day reporting in commercial pharmacovigilance and same-priority HCP reporting."
+
+  - key: outcome
+    label: "Outcome"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Recovered / resolved", value: "recovered"}
+        - {label: "Recovering", value: "recovering"}
+        - {label: "Recovered with sequelae", value: "sequelae"}
+        - {label: "Not recovered", value: "ongoing"}
+        - {label: "Fatal", value: "fatal"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: dechallenge
+    label: "Dechallenge (drug stopped / dose reduced)"
+    type: select
+    config:
+      options:
+        - {label: "Reaction abated on stopping / reducing", value: "abated"}
+        - {label: "Reaction continued", value: "continued"}
+        - {label: "Drug not stopped", value: "not_stopped"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: rechallenge
+    label: "Rechallenge (drug restarted)"
+    type: select
+    config:
+      options:
+        - {label: "Not rechallenged", value: "no"}
+        - {label: "Rechallenged — reaction recurred", value: "recurred"}
+        - {label: "Rechallenged — no recurrence", value: "no_recurrence"}
+
+  - key: causality_assessment
+    label: "Causality (clinician's assessment)"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Certain", value: "certain"}
+        - {label: "Probable / likely", value: "probable"}
+        - {label: "Possible", value: "possible"}
+        - {label: "Unlikely", value: "unlikely"}
+        - {label: "Conditional / unclassified", value: "conditional"}
+
+  - key: incident_record
+    label: "Incident ledger entry"
+    type: system.incident
+    required: true
+    config:
+      incident_type: medication_adverse
+      min_severity: low
+
+  - key: submission_target
+    label: "Submitted to"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "NZ CARM (https://carm.otago.ac.nz)", value: "nz_carm"}
+        - {label: "AU TGA (DAEN portal)", value: "au_tga"}
+        - {label: "UK MHRA Yellow Card", value: "uk_yc"}
+        - {label: "US FDA MedWatch (Form 3500)", value: "us_medwatch"}
+        - {label: "US VAERS (vaccines)", value: "us_vaers"}
+
+  - key: submission_reference
+    label: "Submission reference / acknowledgement number"
+    type: text
+
+  - key: submission_date
+    label: "Date submitted"
+    type: date
+    required: true
+
+  - key: signature_reporter
+    label: "Reporting clinician (name, registration, contact)"
+    type: text
+    required: true

@@ -1,0 +1,161 @@
+id: salvia.dental.sedation_governance
+name: "Sedation Governance Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  The practice's policy for safe provision of dental sedation across oral,
+  inhalation N₂O, IV moderate, and (where referred) GA. Defines scope of
+  practice, training, equipment, monitoring, fasting, recovery, and
+  governance — anchored to the country's sedation framework.
+
+purpose_per_regulator:
+  NZ: "DCNZ Sedation Practice Standard March 2026 (NZRC CORE Immediate ≤2yrs; AED if sedating; capnography for moderate+; ASA III escalation)."
+  AU: "ADA AU Schedule 3 Sedation Guidelines; Dental Board of Australia Conscious Sedation Endorsement; ANZCA PS09 (GA); state Drugs/Poisons Acts."
+  UK: "IACSD (Intercollegiate Advisory Committee for Sedation in Dentistry) 2020 Standards; SAAD Standards; CQC Reg 12; GDC Standards 7.2; RCS Eng standards."
+  US: "ADA Guidelines for the Use of Sedation and General Anesthesia by Dentists (Oct 2016, updated 2024); state dental board sedation permits; AHA BLS/ACLS/PALS."
+
+clauses:
+  - id: scope
+    title: "Scope of practice"
+    body: |
+      This policy applies to every clinician, dental assistant, hygienist,
+      and administrative staff member involved in pre-sedation assessment,
+      sedation delivery, intra-procedural monitoring, recovery, or
+      discharge. Sedation is delivered only within the operator's
+      authorisation per the country framework cited in this policy.
+
+  - id: training_requirements
+    title: "Training and authorisation"
+    body_per_country:
+      NZ: |
+        Per DCNZ Sedation Practice Standard March 2026:
+        - Sedationist must hold DCNZ scope endorsement aligned to the
+          modality.
+        - All sedation team members hold a current NZRC CORE Immediate
+          certificate (renewed ≤2 years).
+        - AED on premises is mandatory whenever sedation is provided.
+        - Capnography is mandatory for moderate IV sedation and deeper.
+      AU: |
+        Per ADA AU Schedule 3 + Dental Board AU Conscious Sedation
+        Endorsement:
+        - Operator holds CSE for the modality (ConvSed / DCN / IV).
+        - State Drugs/Poisons authority recorded for each agent.
+        - ANZCOR ALS / ALS2 for sedationist where moderate/deep IV.
+        - ANZCA PS09 governs GA in operating-theatre referral.
+      UK: |
+        Per IACSD 2020:
+        - Sedationist must hold a current IACSD-recognised qualification
+          (e.g. SAAD National Diploma) and complete annual update.
+        - Second appropriately-trained person dedicated to monitoring.
+        - All staff IACSD ILS-equivalent or above; annual refresher.
+      US: |
+        Per ADA Sedation Guidelines 2016 (updated 2024) and state board:
+        - Operator holds the state-issued permit class corresponding to
+          the deepest level of sedation administered.
+        - AHA ACLS for moderate IV+; PALS for paediatric moderate IV+.
+        - Annual permit renewal where applicable; CE per state.
+
+  - id: pre_sedation_assessment
+    title: "Pre-sedation assessment"
+    body: |
+      Documented per the Sedation Consent form
+      (`salvia.dental.sedation_consent`). Includes: medical history,
+      medications, allergies, ASA classification, airway examination
+      (Mallampati / mouth opening / TMJ), fasting status, escort, BMI,
+      pregnancy status, prior anaesthesia experience.
+      ASA III patients require consultant input; ASA IV patients are
+      not suitable for office sedation.
+
+  - id: equipment
+    title: "Equipment standard"
+    body: |
+      Required at every sedation:
+      - Continuous SpO₂ pulse oximetry.
+      - Capnography (waveform) for moderate IV sedation and deeper —
+        DCNZ 2026 §6, IACSD 2020 §9, ADA US 2016 update §3.
+      - Non-invasive blood pressure measurement.
+      - Continuous ECG for IV moderate or deeper, and any patient
+        with cardiac comorbidity.
+      - Suction (high-volume).
+      - Oxygen with bag-valve-mask of appropriate sizes.
+      - Reversal agents on site (flumazenil for benzodiazepines;
+        naloxone for opioids).
+      - AED on premises (DCNZ March 2026 mandatory if sedating).
+
+  - id: monitoring
+    title: "Intra-procedural monitoring"
+    body: |
+      A second appropriately-trained person continuously monitors the
+      patient. Vitals recorded at minimum every 5 minutes onto the
+      sedation record: SpO₂, HR, BP, EtCO₂ (where in use), depth of
+      sedation (Modified Observer's Assessment of Alertness/Sedation, or
+      equivalent). Drug name, dose, time recorded for every titration.
+
+  - id: fasting
+    title: "Fasting requirements"
+    body: |
+      Per ASA / RCoA fasting guidance: 6 hours solids + non-clear fluids,
+      2 hours clear fluids. Non-compliance: cancel and reschedule unless
+      a documented risk-benefit decision justifies proceeding (e.g.
+      acute pain). For minimal oral / N₂O alone, light meal 2 hours
+      pre-procedure is acceptable per IACSD.
+
+  - id: recovery_discharge
+    title: "Recovery and discharge"
+    body_per_country:
+      NZ: |
+        Patient remains on monitored recovery until DCNZ recovery criteria
+        met: airway patent, oriented to baseline, able to ambulate with
+        assistance if minimal, vital signs at baseline. Escort confirmed
+        before discharge. Written take-home instructions issued.
+      AU: |
+        Modified Aldrete or equivalent score documented. Escort
+        confirmed; written take-home instructions; emergency contact.
+      UK: |
+        IACSD 2020 §13 recovery criteria documented before patient
+        leaves the surgery. Escort confirmed. Written instructions
+        issued. Contact number provided for out-of-hours queries.
+      US: |
+        ADA Sedation Guidelines §5: discharge criteria documented
+        before release. Escort confirmed for IV / deep / GA. Written
+        instructions; emergency contact.
+
+  - id: agent_register
+    title: "Sedation agent register"
+    body: |
+      Sedation drugs (most are controlled — midazolam, fentanyl, propofol,
+      ketamine, methoxyflurane in AU/NZ) are recorded per dose in the CD
+      Log Entry form (`salvia.dental.cd_log_entry`). The register is
+      reconciled at the end of each session and at month-end. Any
+      discrepancy triggers an incident report and CD register
+      investigation.
+
+  - id: drill_schedule
+    title: "Sedation drills"
+    body: |
+      In addition to the general medical-emergency drill, a sedation-
+      specific scenario drill is conducted at least annually: airway
+      compromise / oversedation / anaphylaxis to sedation agent /
+      reversal-agent administration. Records retained ≥3 years.
+
+  - id: cpd
+    title: "CPD and competency review"
+    body: |
+      Sedation CPD logged separately from general dental CPD per country
+      requirement (IACSD 12 hrs/yr UK; ADA AU sedation hours per CSE
+      conditions; state board annual hours US; DCNZ recertification
+      audit NZ). Annual competency review by the Practice Principal or
+      named clinical lead.
+
+  - id: incident_review
+    title: "Sedation incident review"
+    body: |
+      Any sedation-related adverse event (oversedation, hypoxia <90%
+      >30 sec, paradoxical reaction, prolonged recovery, unplanned
+      hospital transfer) is recorded as an incident
+      (`system.incident`) and reviewed within 7 days by the Practice
+      Principal. Aggregate trends reviewed annually; learnings fed back
+      into protocol.

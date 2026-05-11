@@ -1,0 +1,182 @@
+id: salvia.general_clinic.social_media_advertising
+name: "Social media and advertising policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Practice promotion, social media, testimonial restrictions, and rules
+  governing staff personal accounts. Country anchors include NZ MCNZ
+  Statement on advertising, AU AHPRA Advertising Guidelines + Medical
+  Board Australia testimonial-ban, UK GMC Good Medical Practice 2024 +
+  ASA, US FTC + state medical-board rules.
+
+purpose_per_regulator:
+  NZ: "Medical Council of New Zealand Statement on advertising; HDC Code R6 (informed information); Fair Trading Act 1986; Therapeutic Products Act 2023."
+  AU: "AHPRA Advertising Guidelines (2024); Health Practitioner Regulation National Law s.133 (testimonial ban); Medical Board of Australia Code of Conduct s.9.13."
+  UK: "GMC Good Medical Practice 2024 (paragraphs 65–73); ASA / CAP Code Section 12 + 15; CQC Reg 17."
+  US: "FTC Act §5 (deceptive advertising); FDA promotion rules; state medical-board advertising rules (vary heavily)."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to all communications by the practice and by staff in
+      their professional capacity, on every channel: practice website,
+      social media (Facebook, Instagram, X, TikTok, LinkedIn, YouTube),
+      print, broadcast, search-engine listings, online directories,
+      sponsored content, and any third-party platform that displays
+      practice branding. It also sets the rules for staff personal
+      accounts that identify their employer or profession.
+
+  - id: principles
+    title: "Principles"
+    body: |
+      Communications must be: truthful and accurate; capable of
+      substantiation; in the public interest; respectful of patient
+      privacy and dignity; consistent with the country's profession-
+      specific advertising rules; and never misleading by omission.
+      We do not exploit fear or vulnerability, do not make claims of
+      cure, do not compare unfavourably to other clinicians, and do
+      not use sensational before/after imagery.
+
+  - id: testimonials_and_reviews
+    title: "Testimonials and patient reviews"
+    body_per_country:
+      NZ: |
+        MCNZ Statement on advertising: testimonials may be used but
+        must be genuine, current, and not misleading. We do not solicit
+        testimonials for individual clinicians' clinical care in a way
+        that could be misleading. We do not include unverifiable claims
+        of clinical outcome.
+      AU: |
+        Health Practitioner Regulation National Law s.133 prohibits the
+        use of testimonials in advertising of regulated health services.
+        AHPRA Advertising Guidelines 2024 clarify the scope: we do NOT
+        publish testimonials about clinical care on our channels; we do
+        NOT solicit testimonials. We may publish factual, non-clinical
+        feedback (e.g. about reception experience, parking) where it is
+        clearly framed as such. We do NOT pay for reviews. We respond
+        professionally to public reviews without identifying the patient.
+      UK: |
+        GMC GMP 2024 paragraph 67–69: any advertising must be honest,
+        accurate, and decent. Patient testimonials permitted if genuine,
+        not misleading, and the patient has consented. ASA / CAP Code
+        Section 12 (medicines / medical devices). We do not solicit
+        clinical testimonials for individual clinicians.
+      US: |
+        FTC Endorsement Guides 16 CFR Part 255: testimonials must
+        reflect actual experience and any material connection (gift /
+        payment / family relation) must be disclosed. State medical-
+        board rules vary — some states (e.g. NY) restrict testimonials
+        about specific outcomes. Reviews on third-party platforms are
+        permitted but the practice does not write fake reviews and does
+        not pay for positive reviews.
+
+  - id: confidentiality_in_communications
+    title: "Confidentiality in communications"
+    body: |
+      No identifiable patient information appears in any communication
+      without explicit, documented consent (separate to clinical
+      consent for treatment). This includes: photographs (clinical or
+      otherwise); case studies; "patient of the day"; before/after
+      images; social-media stories of patient encounters. Pixelation /
+      cropping is NOT sufficient anonymisation if the person could be
+      identified by friends, family, or community. Where consent is
+      given, it is recorded with date, scope (which channels, how long),
+      and revocability.
+
+  - id: clinical_claims
+    title: "Clinical claims and evidence"
+    body: |
+      Any clinical claim — about a treatment, service, or outcome — is
+      supported by current evidence and capable of substantiation
+      (RCT / systematic review / regulator approval). We do NOT
+      promote unproven therapies. We do NOT use endorsements that
+      imply a treatment is more effective than evidence supports. We
+      avoid superlatives ("best", "leading") without measurable basis.
+      Generic terms ("safe", "effective") are used only with reference
+      to evidence.
+
+  - id: prescription_only_medicines
+    title: "Prescription-only medicines and devices"
+    body_per_country:
+      NZ: |
+        Medsafe permits direct-to-consumer advertising of prescription
+        medicines. Therapeutic Products Act 2023 framework applies on
+        commencement. Advertising must comply with Therapeutic Products
+        Advertising Code and not promote off-label use.
+      AU: |
+        Direct-to-consumer advertising of Sch 4 / Sch 8 prescription
+        medicines is generally prohibited (Therapeutic Goods Act 1989
+        Part 5-1; Therapeutic Goods Advertising Code). Cosmetic
+        services advertising tightly regulated under TGA cosmetic-
+        injectables guidance (2023 reform).
+      UK: |
+        Direct-to-consumer advertising of POMs is prohibited (Human
+        Medicines Regulations 2012 Part 14). Generic advice and
+        condition awareness permitted.
+      US: |
+        DTC advertising of prescription drugs is permitted by FDA but
+        must include risk and brief summary. The practice does not
+        advertise specific prescription medicines except where a public-
+        health context requires (vaccine availability, smoking cessation
+        funding).
+
+  - id: staff_personal_accounts
+    title: "Staff personal social-media accounts"
+    body: |
+      Staff are expected to maintain professional standards on personal
+      accounts where they identify as a clinician or as employed at
+      this practice. Specifically: do not post identifiable patient
+      information; do not engage with patients via personal channels;
+      do not bring the profession into disrepute; do not respond to
+      complaints / negative reviews about the practice on personal
+      accounts (route via the practice complaints process); declare
+      conflicts where relevant. UK: GMC GMP 2024 paragraphs 70–72.
+      AU: AHPRA Social Media Guidance 2019. NZ: MCNZ Statement on use
+      of the internet. US: AMA Code 2.3.2.
+
+  - id: staff_endorsement_disclosure
+    title: "Endorsement, sponsorship, and conflict disclosure"
+    body: |
+      Any commercial relationship between the practice or a staff
+      member and a product / service / pharmaceutical / device must be
+      disclosed in any communication that mentions the product. This
+      applies to: speaking fees, advisory boards, sponsored travel,
+      product samples, equity stakes. The practice maintains a
+      conflicts register. US: FTC §5 disclosure required; AU: AHPRA
+      / MBA conflict guidance; UK: ABPI Code; NZ: Medsafe
+      transparency.
+
+  - id: response_to_negative_review
+    title: "Response to negative reviews and complaints online"
+    body: |
+      Negative reviews are responded to within 5 working days with a
+      neutral, non-identifying, professional message inviting the
+      reviewer to engage with the practice complaints process. The
+      practice does NOT confirm or deny the reviewer is a patient. The
+      response does not respond to specific clinical claims publicly.
+      Staff are forbidden from posting personal counter-reviews or
+      retaliatory content.
+
+  - id: monitoring_and_governance
+    title: "Monitoring and governance"
+    body: |
+      A named partner / director is the social-media accountable
+      officer. Posts are scheduled and reviewed against this policy
+      before publication. The website's clinical content is reviewed
+      every 6 months for accuracy. Staff training on this policy is
+      completed at induction and at any policy update.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on regulator-guidance refresh
+      (AHPRA Advertising Guidelines updates 2024; UK GMC GMP refresh;
+      MCNZ statement updates; FTC Endorsement Guides updates).
+      Currency date at the top of this policy.

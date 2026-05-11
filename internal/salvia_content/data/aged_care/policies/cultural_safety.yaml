@@ -1,0 +1,166 @@
+id: salvia.aged_care.cultural_safety
+name: "Cultural Safety Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service ensures every resident receives culturally safe care,
+  recognising the explicit obligations to Māori under Te Tiriti o
+  Waitangi (NZ), Aboriginal and Torres Strait Islander peoples (AU),
+  the protected characteristics of the Equality Act 2010 (UK), and the
+  language access / civil rights obligations under ACA §1557 and
+  Title VI (US). Culture is not optional and not a 'nice to have' —
+  it is a clinical and rights issue.
+
+purpose_per_regulator:
+  NZ: "Te Tiriti o Waitangi; Ngā Paerewa NZS 8134:2021 Section 1 (Pae ora — Healthy futures, including dedicated Māori and Pasifika clauses); HDC Code Right 1 (respect including respect for the consumer's culture, values, beliefs); Pae Ora (Healthy Futures) Act 2022 Te Tiriti obligations."
+  AU: "Strengthened Aged Care Quality Standards Standard 1 (The person — dignity, respect, individuality) and Standard 7 (Inclusion and diversity — Aboriginal and Torres Strait Islander people, CALD, LGBTI+, care leavers, veterans); Aged Care Act 2024 Statement of Rights; Racial Discrimination Act 1975."
+  UK: "Equality Act 2010 — protected characteristics: age, disability, gender reassignment, marriage and civil partnership, pregnancy and maternity, race, religion or belief, sex, sexual orientation; Human Rights Act 1998; CQC Reg 9 + Reg 10; Accessible Information Standard SCCI 1605."
+  US: "Affordable Care Act §1557 (Section 1557 — non-discrimination on the basis of race, colour, national origin, sex, age, disability — including LEP language access); Title VI Civil Rights Act 1964; Americans with Disabilities Act 1990; 42 CFR 483.10(g) (communication including language access); state law."
+
+clauses:
+  - id: principles
+    title: Principles
+    body: |
+      Culturally safe care is care delivered in a way that respects the
+      resident's identity, language, beliefs, practices and family /
+      community structures, and that the resident experiences as
+      respectful and safe (cultural safety is judged by the recipient,
+      not the provider).
+
+  - id: nz_te_tiriti
+    title: Te Tiriti o Waitangi commitments (NZ)
+    body_per_country:
+      NZ: |
+        The service gives effect to Te Tiriti o Waitangi as required by
+        Pae Ora (Healthy Futures) Act 2022 and Ngā Paerewa NZS 8134:2021
+        Section 1.1. Practice obligations:
+        (1) Tino rangatiratanga — Māori residents and whānau exercise
+            authority over their care; co-design.
+        (2) Equity — actively reduce inequities; data disaggregated by
+            ethnicity; outcomes reviewed.
+        (3) Active protection — staff trained in tikanga; cultural
+            support staff available; escalate when needed.
+        (4) Options — services delivered in te reo Māori where
+            requested; rongoā Māori facilitated; access to kaumātua/
+            kuia; tapu observed (e.g. food separated from heads).
+        (5) Partnership — engagement with iwi/hapū where the service
+            sits on or near rohe.
+        Pasifika residents are supported per Le Va / Ministry of Health
+        Pasifika frameworks; community and language access enabled.
+
+  - id: au_aboriginal_torres
+    title: Aboriginal and Torres Strait Islander commitments (AU)
+    body_per_country:
+      AU: |
+        The service supports Aboriginal and Torres Strait Islander
+        residents per the Strengthened Aged Care Quality Standards
+        Standard 7 — Inclusion and diversity. Practice:
+        (1) Acknowledgement of Country at admission and at significant
+            events.
+        (2) Cultural identity recorded in care plan including Country,
+            language group, mob, family structure.
+        (3) Aboriginal and Torres Strait Islander Health Worker / Liaison
+            Officer engaged where available.
+        (4) Sorry Business / Sad News protocols honoured at end of life;
+            family / community presence enabled; smoking ceremony where
+            requested; repatriation to Country.
+        (5) Reconciliation Action Plan or equivalent in place.
+        CALD residents are supported with language access, culturally
+        familiar food (Standard 6), and faith / community connection.
+
+  - id: uk_equality_diversity
+    title: Equality and diversity commitments (UK)
+    body_per_country:
+      UK: |
+        The service complies with the Equality Act 2010, prohibiting
+        discrimination on protected characteristics: age, disability,
+        gender reassignment, marriage and civil partnership, pregnancy
+        and maternity, race, religion or belief, sex, sexual
+        orientation. Reasonable adjustments are made for residents with
+        disabilities. Religious dietary requirements provided.
+        Accessible Information Standard SCCI 1605 applied.
+
+  - id: us_civil_rights
+    title: Civil rights and language access (US)
+    body_per_country:
+      US: |
+        The service complies with ACA §1557, Title VI, and ADA. Notice
+        of non-discrimination posted. Language access for residents
+        with limited English proficiency: qualified interpreters (not
+        family or untrained staff for clinical decisions); written
+        materials translated for top languages in service area; tagline
+        notices in the top 15 state languages where required. Effective
+        communication for residents with disabilities.
+
+  - id: language_communication
+    title: Language and communication
+    body: |
+      Residents communicate in their preferred language and mode.
+      Trained / qualified interpreters used for clinical decisions, ACP
+      conversations, complaints, capacity assessments. Family is not
+      used as the interpreter for clinical decisions (conflict of
+      interest and accuracy concerns) without explicit resident consent.
+
+  - id: spiritual_faith
+    title: Spiritual and faith care
+    body: |
+      Residents may practice their faith. Faith leader contacts
+      maintained. Prayer space made available where requested.
+      Religious dietary requirements provided. End-of-life faith
+      practice honoured per the End-of-Life Policy.
+
+  - id: lgbti_inclusion
+    title: LGBTI+ inclusion
+    body: |
+      Residents' sexual orientation, gender identity, and chosen family
+      relationships are respected. Care plan records preferred name and
+      pronouns. Same-sex partners and chosen family welcomed as next of
+      kin. Staff trained in inclusive practice. AU Strengthened
+      Standard 7 explicit; UK Equality Act 2010; US ACA §1557; NZ HDC
+      Code Right 1.
+
+  - id: training
+    title: Staff training
+    body: |
+      All staff complete cultural safety training at induction and
+      annually:
+      - NZ: Te Tiriti, tikanga Māori, Pasifika frameworks.
+      - AU: Aboriginal and Torres Strait Islander cultural safety;
+        CALD; LGBTI+ inclusion.
+      - UK: Equality Act + protected characteristics; cultural and
+        religious diversity; from 2026 Oliver McGowan Mandatory
+        Training (legal Apr–Jun 2026 quarter) for learning disability
+        and autism.
+      - US: ACA §1557 / Title VI / ADA cultural and linguistic
+        competence training.
+
+  - id: representation_governance
+    title: Representation in governance
+    body: |
+      Where the service population includes significant cultural groups,
+      representatives are involved in governance. NZ: iwi / Māori
+      health provider engagement. AU: Aboriginal and Torres Strait
+      Islander community advisor; CALD community advisor where
+      applicable.
+
+  - id: complaints_culture
+    title: Complaints with cultural lens
+    body: |
+      Cultural concerns are escalated alongside the standard complaints
+      pathway. Cultural advocates and external bodies (NZ Te Aka
+      Whai Ora successor / iwi advocacy; AU OPAN, ACQSC; UK Equality
+      and Human Rights Commission; US Office for Civil Rights / state
+      ombud) are accessible.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years and after any
+      cultural-related complaint or incident. Operational
+      responsibility: Service Manager / Cultural Safety Lead.

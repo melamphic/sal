@@ -1,0 +1,216 @@
+id: salvia.veterinary.veterinary_medicines_cascade_sop
+name: "Veterinary Medicines & Cascade SOP"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Standard operating procedure for the legal handling of veterinary medicines:
+  prescription category authority (POM-V / RVM / S4 / S8 / Schedules II–V),
+  the cascade or extra-label decision tree where no authorised product exists
+  for the species or indication, written client consent for off-label use,
+  documentation of the decision, and the records retention that follows.
+purpose_per_regulator:
+  NZ: "ACVM Act 1997 s.10 (use of unauthorised compounds requires veterinarian's professional judgement and client consent); ACVM Notice — RVM (Restricted Veterinary Medicine) authorising-vet rules; VCNZ Code of Professional Conduct §15."
+  AU: "Agvet Code 1994; APVMA registration requirements; AVA Prescribing Guidelines (October 2023 edition) including the antimicrobial prescribing categories (green / amber / red); state Drugs & Poisons / Health (Drugs and Poisons) Acts."
+  UK: "Veterinary Medicines Regulations 2013 reg 8 (cascade) and reg 18 (POM-V/POM-VPS) and reg 24 (suitable person to dispense); RCVS Code of Professional Conduct §4.5 + §4.6 (medicines); RCVS Practice Standards Scheme small-animal modules v3.4 (Oct 2025) module 3."
+  US: "Animal Medicinal Drug Use Clarification Act of 1994 (AMDUCA), implemented at 21 CFR Part 530, governing extra-label drug use in food-producing animals; FDA CVM guidance for companion-animal extra-label; state Veterinary Practice Acts on companion-animal off-label."
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This SOP covers every prescription, administration, dispensing and
+      supply of a veterinary medicine in the practice. It applies to
+      authorised veterinary medicines used per the marketing authorisation
+      (label use), to off-label or extra-label use of an authorised
+      veterinary medicine, and to the use of human-labelled or unauthorised
+      products under the cascade.
+
+  - id: prescription_category
+    title: "Prescription category authority"
+    body_per_country:
+      NZ: |
+        New Zealand uses the ACVM regime: GSL (general sales list);
+        Pharmacy-only; Restricted Veterinary Medicines (RVM) which require
+        an authorising veterinarian under a current bona fide vet–client–
+        animal relationship (VCPR); and Class B / Class C controlled drugs
+        scheduled under the Misuse of Drugs Act 1975. Authorisation by the
+        veterinarian must be documented in the patient record and on the
+        prescription / RVM authority.
+      AU: |
+        Australia uses the SUSMP / Poisons Standard scheduling: S2 (Pharmacy);
+        S3 (Pharmacist Only); S4 (Prescription Only — most veterinary POMs);
+        S4 'D-restricted' in some states (e.g. Vic methadone); S8 (Controlled
+        Drug). Veterinarians prescribe within their state's veterinary
+        endorsement; AVA Prescribing Guidelines Oct 2023 set best practice.
+      UK: |
+        Veterinary medicines are categorised under VMR 2013 as: AVM-GSL;
+        NFA-VPS; POM-VPS; POM-V; and controlled drugs scheduled under the
+        Misuse of Drugs Regulations 2001. POM-V may only be prescribed by
+        a veterinary surgeon following clinical assessment and within a
+        bona fide VCPR (RCVS Code §4.6). RCVS PSS Module 3 audits adherence.
+      US: |
+        Federal classification: OTC; Rx (prescription, requiring valid VCPR);
+        and DEA-scheduled controlled substances II–V. State Veterinary
+        Practice Acts add further restrictions (e.g. CA Bus & Prof Code
+        §4826.6 VCPR definition; FL Stat §474.214). FDA CVM enforces the
+        Rx label and the VCPR requirement; AMDUCA 21 CFR Part 530 governs
+        extra-label use in food-producing animals.
+
+  - id: vcpr
+    title: "Bona fide veterinarian-client-patient relationship (VCPR)"
+    body: |
+      No veterinary medicine may be prescribed, dispensed or supplied
+      outside a bona fide VCPR. The relationship is established by the
+      veterinarian assuming responsibility for clinical judgement on the
+      animal's care, the client agreeing to follow the veterinarian's
+      instructions, and the veterinarian having sufficient knowledge of the
+      patient through recent clinical examination or timely visits to the
+      premises where the patient is kept. The VCPR is reviewed at each
+      consultation. Telemedicine-only VCPR establishment is not accepted
+      for new POM-V / Rx prescriptions in any of the four jurisdictions
+      without a matched in-person review (per RCVS 2024 update; per most
+      US state board updates 2023–2025; per VCNZ 2024 guidance; per AVA
+      Telemedicine Guideline).
+
+  - id: cascade_decision
+    title: "Cascade / extra-label decision tree"
+    body_per_country:
+      UK: |
+        Where there is no UK-authorised veterinary medicinal product to treat
+        the condition in the species, the cascade under VMR 2013 reg 8 is
+        applied in order:
+          1) a UK-authorised veterinary medicine for use in another animal
+             species, or for another condition in the same species;
+          2) a UK-authorised human medicine, OR a veterinary medicine
+             authorised in another EU/EEA country (under SVE);
+          3) a medicine prepared extemporaneously by a pharmacist, a vet,
+             or a person authorised under reg 24.
+        The decision and reason for invoking the cascade are recorded in
+        the patient record. Written informed consent is obtained from the
+        client before use and retained with the patient record.
+      AU: |
+        Off-label use is permitted under state veterinary acts where in the
+        professional judgement of the veterinarian, no registered product
+        is available for the species/condition and the off-label product
+        is reasonable. AVA Prescribing Guidelines Oct 2023 set the
+        decision criteria including alternatives considered, evidence base,
+        residue and safety considerations. Written client consent is
+        recorded for off-label products. State-specific rules apply (e.g.
+        Vic veterinary registration on off-label use; NSW DPI guidance for
+        food animals).
+      NZ: |
+        Where no authorised product is available for the species/condition,
+        ACVM Act s.10 permits a veterinarian to use an unauthorised compound
+        (or to compound) on professional judgement. The veterinarian must
+        record the decision, alternatives considered, withdrawal period set
+        by the vet (food animal), and obtain client consent. RVM authorities
+        may not be substituted by an unauthorised compound where an RVM is
+        available.
+      US: |
+        Companion animal: federal law allows extra-label use of human-labelled
+        or other-species-labelled drugs in companion animals on the
+        veterinarian's clinical judgement; state rules apply. Food-producing
+        animals: AMDUCA + 21 CFR Part 530 mandates a documented decision
+        meeting all of: (i) need for the drug; (ii) no animal drug approved
+        for the indication is available or it has not been effective; (iii)
+        the use is by or on the order of a licensed veterinarian within a
+        valid VCPR; (iv) extended withdrawal time is established to ensure
+        no illegal residue; (v) records retained 2 years; (vi) labelling
+        meets §530.12. Use of any drug listed at §530.41 is prohibited
+        regardless of cascade rationale.
+
+  - id: written_client_consent
+    title: "Written client consent for off-label / cascade / extra-label"
+    body: |
+      Where the cascade, off-label, or extra-label pathway is invoked, the
+      veterinarian explains the reason, the alternatives considered, the
+      evidence base, the increased uncertainty, the withdrawal period (food
+      animal), and any specific risks. Written client consent is obtained
+      via the practice's anaesthesia & surgery consent (where pertinent) or
+      via a dedicated cascade consent record, retained with the patient
+      record. Consent is documented before the medicine is administered or
+      dispensed. UK: VMR reg 8 explicitly requires informed client consent
+      for cascade. AU: AVA guidelines require written client consent.
+      US: AMDUCA requires the prescription to be made within VCPR; client
+      consent is best practice and is mandatory in some states for extra-
+      label use in food animals.
+
+  - id: antimicrobial_stewardship
+    title: "Antimicrobial stewardship"
+    body: |
+      Every antimicrobial prescription documents the indication, the choice
+      of agent against current resistance patterns, the dose, the duration,
+      and whether prophylactic / metaphylactic / therapeutic. Critically
+      important antimicrobials (CIAs — fluoroquinolones, third- and fourth-
+      generation cephalosporins, macrolides) are reserved for cases where
+      culture and sensitivity supports their use or where life-threatening
+      infection cannot await sensitivity results.
+    body_per_country:
+      NZ: |
+        VCNZ guidance: practice antibiogram; restraint on red-band CIAs;
+        veterinary input on stewardship plan. MPI Antimicrobial Stewardship
+        Strategy.
+      AU: |
+        AVA Antimicrobial Prescribing Guidelines: green/amber/red category
+        framework. Use of red category requires documented justification.
+      UK: |
+        RCVS Code §4.5 + Reduce Refine Replace approach. PROTECT ME
+        framework for first-opinion practice (BSAVA). Use of HPCIA
+        (highest priority CIAs — fluoroquinolones, 3rd/4th-gen cephs, colistin)
+        requires culture and sensitivity result or documented life-threatening
+        clinical justification.
+      US: |
+        AVMA Judicious Therapeutic Use of Antimicrobials in Animals; FDA
+        Guidance for Industry #213 (medically important antimicrobials in
+        food animals must be used under VCPR). State stewardship programs
+        (e.g. CDPH) add reporting where applicable.
+
+  - id: prescription_records
+    title: "Prescription records and dispensing"
+    body: |
+      Every prescription (the practice's veterinary prescription form) and
+      every dispensing event is recorded with: prescriber identity and
+      registration number, animal/herd identity, owner, product, dose, route,
+      frequency, duration, indication, withdrawal period (food animals), and
+      any cascade / off-label statement. Records retained per the country
+      retention rule (NZ ACVM 3 years; AU state 2–7 years; UK VMR 5 years;
+      US AMDUCA 2 years; longer where state law requires).
+
+  - id: medicine_storage
+    title: "Storage and stock control"
+    body: |
+      Veterinary medicines are stored per the manufacturer's labelled
+      conditions (temperature, light, humidity). Refrigerated lines are
+      monitored daily with a min/max thermometer or continuous logger; out-
+      of-range events trigger a cold-chain breach review (see linked policy).
+      Stock is rotated FEFO (first-expiry-first-out). Expired stock is
+      segregated and disposed via licensed clinical-waste contractor or
+      returned to the wholesaler. Controlled drugs are stored per the
+      Controlled Drugs SOP — separate clause on safe-custody.
+
+  - id: cold_chain
+    title: "Cold chain for refrigerated products"
+    body: |
+      Refrigerated medicines (vaccines, insulin, biologicals) are stored at
+      2–8 °C. Refrigerator temperature is monitored at start and end of each
+      working day with a calibrated min/max thermometer or continuous
+      logger. Excursions outside 2–8 °C trigger a cold-chain breach review:
+      manufacturer is consulted on stability of the affected stock; affected
+      product is quarantined pending decision; decision is recorded with
+      batch references in the medicines register.
+
+  - id: review
+    title: "SOP review"
+    body: |
+      This SOP is reviewed annually by the practice clinical lead, and after
+      any regulator-published change, formulary change, or significant
+      incident. Currency date is updated on review.
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      Linked to: salvia.veterinary.veterinary_prescription;
+      salvia.veterinary.controlled_drugs_sop; salvia.veterinary.cd_register_entry;
+      salvia.veterinary.adverse_drug_reaction_report;
+      salvia.shared.records_retention_policy.

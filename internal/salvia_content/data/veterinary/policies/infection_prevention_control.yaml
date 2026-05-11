@@ -1,0 +1,191 @@
+id: salvia.veterinary.infection_prevention_control
+name: "Infection Prevention & Control"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  The practice's infection prevention and control (IPC) programme: hand
+  hygiene, PPE, isolation and biosecurity for cases with suspected or
+  confirmed transmissible disease, response to occupational zoonotic
+  exposure, antimicrobial resistance stewardship, and environmental and
+  equipment cleaning standards. Aligned to the relevant national IPC
+  framework for each country.
+purpose_per_regulator:
+  NZ: "Health Quality & Safety Commission (HQSC) Infection Prevention and Control programme; Health and Safety at Work Act 2015 (biological hazards); WorkSafe NZ guidance on zoonotic-disease workplace exposure; VCNZ Code of Professional Conduct §16."
+  AU: "AVA Personal Biosecurity Guidelines for Veterinarians 2017 (current updated edition 2025); AVA Infection Prevention and Control Policy; ICVA / national IPC standards; Work Health and Safety Acts (state) on biological hazards; AHPRA / state Vet Board codes."
+  UK: "RCVS Practice Standards Scheme small-animal modules v3.4 (October 2025) IPC standards (risk-based deep-cleaning cadence, PPE provision, isolation provision); Health and Safety at Work etc. Act 1974; Control of Substances Hazardous to Health Regulations 2002 (COSHH) — biological agents."
+  US: "OSHA 29 CFR 1910.1030 Bloodborne Pathogens Standard (where employees can reasonably be exposed to human blood — applies to vet practices treating animals as the human exposure pathway is via shared instruments and zoonoses); NIOSH guidance on occupational hazardous-drug exposure (incl. cytotoxic agents); CDC guidance on zoonotic disease prevention in clinical settings; AVMA Compendium of Veterinary Standard Precautions for Zoonotic Disease Prevention 2024."
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This policy applies at every practice premises and to every member of
+      staff, contractor, work-experience attendee, owner and visitor while
+      on the premises. It applies to every patient encounter (consult,
+      hospital, surgery, treatment, dental, imaging, laboratory). It also
+      applies to off-site work: ambulatory production / equine; mobile
+      clinics; on-farm visits.
+
+  - id: hand_hygiene
+    title: "Hand hygiene"
+    body: |
+      Hand hygiene is the single most effective IPC intervention. Staff
+      perform hand hygiene per the WHO Five Moments adapted to veterinary
+      practice:
+        1) before touching a patient;
+        2) before clean / aseptic procedures;
+        3) after body fluid exposure risk;
+        4) after touching a patient;
+        5) after touching the patient's environment.
+      Method: alcohol-based hand rub (≥60% alcohol) for visibly clean hands;
+      handwash with soap and running water for at least 20 seconds where
+      hands are visibly soiled, or after contact with a patient with
+      suspected enteric pathogen, dermatophyte, or sporulating organism
+      (e.g. Clostridioides). Long sleeves rolled to elbows. No rings other
+      than plain band; no nail polish; nails short and clean; no false
+      nails or wraps.
+
+  - id: ppe
+    title: "Personal protective equipment"
+    body: |
+      PPE is selected based on risk assessment of the task. Minimum:
+      gloves for any contact with body fluids, contaminated surfaces or
+      sharps; eye protection and impermeable apron / gown for any task
+      where splash is foreseeable; surgical mask or N95/P2 respirator
+      where airborne or droplet-borne pathogen is suspected (e.g. equine
+      Hendra in AU, suspected avian influenza, suspected zoonotic
+      tuberculosis). PPE removed in the prescribed order to minimise
+      self-contamination, and disposed in clinical waste. PPE stocks are
+      maintained to a buffer of at least one month's typical use.
+
+  - id: isolation_biosecurity
+    title: "Isolation and biosecurity"
+    body: |
+      The practice has a designated isolation area or pathway used for any
+      patient with suspected or confirmed transmissible infectious disease
+      (e.g. parvovirus, kennel cough cluster, MRSP, leptospirosis, suspected
+      notifiable disease). The isolation area has dedicated equipment;
+      signage at the entry; a documented entry/exit checklist for staff
+      including dedicated PPE put on at the entry and removed before exit;
+      cleaning protocols using disinfectants validated for the suspected
+      pathogen (e.g. potassium peroxymonosulfate for parvovirus). On-farm
+      and equine work follows AVA / RCVS biosecurity guidance: separate
+      coveralls, disinfectant footbath, stratified visit order
+      (uninfected first, infected last), vehicle-cleaning between
+      premises.
+
+  - id: zoonosis_response
+    title: "Occupational zoonosis exposure response"
+    body_per_country:
+      NZ: |
+        Any needlestick, bite, scratch, or significant mucosal / wound
+        exposure to an animal's body fluid is recorded immediately in the
+        incident register and managed per the practice's Health & Safety
+        policy. The exposed person is offered immediate first aid (wound
+        wash with soap and running water for ≥15 minutes); referred for
+        medical assessment where the animal source is unknown / wild /
+        suspected of zoonotic disease (e.g. leptospirosis, Q-fever, MRSA);
+        notifiable to WorkSafe NZ where injury results in lost time or
+        notifiable disease is involved.
+      AU: |
+        Per AVA Personal Biosecurity Guidelines 2017 (updated 2025): same
+        immediate care; referral for medical assessment particularly where
+        Q-fever, leptospirosis, hendra, brucellosis, or psittacosis are
+        suspected. Q-fever vaccination status reviewed for staff exposed
+        to ruminants. Notifiable to state SafeWork as a workplace incident.
+      UK: |
+        First aid as above; referral to occupational health where bite,
+        scratch, or significant exposure has occurred. RIDDOR-reportable
+        where it results in occupational disease (Reporting of Injuries,
+        Diseases and Dangerous Occurrences Regulations 2013 reg 8 / 9 —
+        diseases and exposure to a biological agent). Bites involving wild
+        carnivores trigger rabies risk assessment per UKHSA guidance.
+      US: |
+        Per OSHA Bloodborne Pathogens Standard 29 CFR 1910.1030, any
+        exposure incident is recorded; the source animal is identified
+        where possible; the exposed worker is offered post-exposure
+        medical evaluation at no cost. CDC and state public-health follow-
+        up where reportable zoonosis (e.g. rabies — every animal bite
+        triggers rabies risk assessment per state law).
+
+  - id: amr_stewardship
+    title: "Antimicrobial resistance stewardship"
+    body: |
+      Antimicrobial use is documented and reviewed. Staff follow the
+      practice's antimicrobial decision aid (per the Veterinary Medicines &
+      Cascade SOP). Surveillance of resistant organisms is maintained:
+      MRSA, MRSP, ESBL-producing Enterobacteriaceae, multidrug-resistant
+      Pseudomonas. Any case with isolation of a resistant organism prompts
+      a contact-tracing and decolonisation plan. The practice antibiogram
+      is reviewed at least annually.
+
+  - id: equipment_cleaning
+    title: "Equipment cleaning, decontamination, and sterilisation"
+    body: |
+      Reusable instruments are cleaned, disinfected and sterilised between
+      every use per the manufacturer's instructions for use (IFU). The
+      sterilisation log records load contents, indicator strip / Bowie-Dick /
+      spore-test results, cycle parameters, and operator. Steam autoclaves
+      receive routine validation including biological indicator (spore)
+      testing per manufacturer recommendation; failure of a spore test
+      removes the autoclave from service until passed. Single-use items are
+      not reprocessed. Endotracheal tubes, anaesthesia circuits, oxygen
+      delivery components are cleaned, disinfected, and dried between
+      patients.
+
+  - id: environmental_cleaning
+    title: "Environmental cleaning and laundry"
+    body: |
+      Cleaning standards and frequencies are defined for: consult rooms
+      (between every patient — minimum surface wipe with disinfectant);
+      surgery (terminal clean after every procedure including walls and
+      floor; deep clean weekly); hospital wards (daily, with deep clean
+      between patients); isolation (terminal clean after each patient and
+      between every shift change). Disinfectants are selected against the
+      pathogen risk (e.g. enveloped vs non-enveloped virus, sporulating
+      bacteria); contact times observed. Laundry: contaminated linens
+      bagged at point of use, washed at ≥60 °C with detergent or
+      contracted to a healthcare-grade laundry. RCVS PSS Modules v3.4
+      (Oct 2025) introduced a risk-based deep-cleaning cadence — UK
+      practices follow that frequency framework.
+
+  - id: vaccination_immunisation
+    title: "Staff vaccination and immunisation"
+    body: |
+      Staff are recommended to be up to date with immunisations relevant
+      to veterinary work: tetanus (every 10 years); rabies pre-exposure
+      (where rabies-risk species handled — UK / US imports, AU bat-handling,
+      US wildlife); Q-fever (AU staff handling ruminants — Q-vax screening
+      then vaccination per AVA guidelines); influenza annually; hepatitis
+      B where bloodborne-pathogen exposure (US OSHA 1910.1030(f) requires
+      employer-funded HBV offer to at-risk employees). Records held with
+      consent on the staff file.
+
+  - id: visitor_owner_management
+    title: "Owners and visitors"
+    body: |
+      Owners and visitors are screened at reception for self-reported
+      illness in their animal that may be transmissible. Owners with
+      symptomatic patients suspected of canine infectious respiratory
+      disease, parvovirus, leptospirosis, or other isolation-risk pathogen
+      are routed via a separate entry / outdoor wait. Owners do not enter
+      surgical or isolation areas other than under controlled circumstances
+      (e.g. owner-present euthanasia, NICU bonding). Hand sanitiser
+      provided at reception.
+
+  - id: review
+    title: "Programme review"
+    body: |
+      This policy is reviewed at least annually by the practice IPC lead,
+      and after any IPC incident, regulator publication, or local outbreak.
+      The IPC lead reviews the practice antibiogram and the audit findings
+      with the team at the annual clinical governance meeting.
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      Linked to: salvia.veterinary.notifiable_disease_report;
+      salvia.veterinary.veterinary_medicines_cascade_sop;
+      salvia.shared.health_safety_policy;
+      salvia.shared.records_retention_policy.

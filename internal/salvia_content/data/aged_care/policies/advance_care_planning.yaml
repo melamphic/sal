@@ -1,0 +1,142 @@
+id: salvia.aged_care.advance_care_planning
+name: "Advance Care Planning Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service offers, conducts, stores, accesses and reviews advance
+  care planning conversations and documents. Sets the cadence (admission
+  + annual + at change of condition), the storage standard (accessible
+  at point of care 24/7), and the link to country-specific statutory
+  instruments (NZ EPOA + Advance Directive; AU state ACDs; UK ADRT under
+  MCA s.24 + ReSPECT; US POLST/MOLST + Living Will + DPA-HC).
+
+purpose_per_regulator:
+  NZ: "Health and Disability Commissioner Code Right 7 (informed choice / consent — including future consent); HQSC Advance Care Planning programme; Ngā Paerewa NZS 8134:2021 Section 3 (planning) and Section 1 (Pae ora rights including end-of-life tikanga)."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 (Clinical Care — including end of life) and Standard 1 (The person — supported decision-making); state Advance Care Directive legislation (varies); Australian Government Advance Care Planning Australia (current)."
+  UK: "NICE NG142 End of life care for adults: service delivery; Mental Capacity Act 2005 s.24 (Advance Decision to Refuse Treatment); ReSPECT (Recommended Summary Plan for Emergency Care and Treatment) widely used; CQC Reg 9."
+  US: "Patient Self-Determination Act 1990; 42 CFR 483.10(c)(6) right to refuse treatment; state Advance Directive law; POLST / MOLST forms (Portable Medical Orders) in 46 states; HIPAA NPP."
+
+clauses:
+  - id: scope_principles
+    title: Scope and principles
+    body: |
+      Every resident is offered advance care planning conversations as a
+      routine part of person-centred care. Conversations are
+      resident-led, unhurried, and respectful of cultural and spiritual
+      practice. The aim is that the resident's voice guides care if
+      they later cannot speak for themselves.
+
+  - id: cadence
+    title: Cadence — when to offer
+    body: |
+      ACP conversations are offered: (a) within the first 30 days of
+      admission as part of orientation; (b) annually as part of the
+      comprehensive care plan review; (c) at any significant change of
+      condition; (d) on transfer back from hospital; (e) at resident or
+      family request. Conversation is documented on the Salvia Advance
+      Care Plan form whether or not a decision is reached.
+
+  - id: who_leads_conversation
+    title: Who leads the conversation
+    body: |
+      A trained clinician (typically the resident's keyworker RN, the
+      treating GP, or a dedicated ACP-trained clinician) leads the
+      conversation. Family / whānau / NoK are invited per resident
+      preference. Where the resident lacks capacity, the conversation is
+      with the substitute decision-maker.
+
+  - id: cultural_safety
+    title: Cultural and spiritual safety
+    body_per_country:
+      NZ: |
+        Tikanga around dying, talking about death, and substitute
+        decision-making varies between iwi, hapū and whānau. Engage
+        Māori cultural support staff where requested. Pasifika
+        practices honoured. Allow time; avoid forcing the conversation.
+      AU: |
+        Aboriginal and Torres Strait Islander Sorry Business protocols
+        — discuss with cultural liaison; CALD faith and language
+        considerations.
+      UK: |
+        Faith leader contact; interpreter (BSL, community languages);
+        accessible-information format (SCCI 1605).
+      US: |
+        Faith leader; LEP language access (ACA §1557); cultural
+        practice respected.
+
+  - id: storage_access
+    title: Storage and access at point of care
+    body: |
+      The completed ACP and any country-specific statutory instrument
+      (POLST/MOLST, ReSPECT, ADRT, EPOA, ACD) are stored in the
+      resident's clinical record, accessible to all staff providing
+      care 24/7. Originals scanned; the location of the original
+      recorded. A summary travels with the resident on hospital
+      transfer (in a clear envelope or e-record).
+
+  - id: document_types
+    title: Document types recognised
+    body_per_country:
+      NZ: |
+        HQSC Advance Care Plan template; activated EPOA (Personal Care
+        and Welfare) — activation via certificate of mental incapacity;
+        Welfare Guardian order under PPPR Act 1988; Advance Directive
+        recorded in clinical notes.
+      AU: |
+        State-specific Advance Care Directives (e.g. Vic Advance Care
+        Directive under MTPDA 2016; NSW common law advance care
+        directive; Qld Advance Health Directive); state guardianship
+        orders.
+      UK: |
+        ADRT (Advance Decision to Refuse Treatment) under MCA s.24
+        — must be in writing, signed, and witnessed AND specify
+        life-sustaining-treatment refusal in writing for that refusal
+        to be legally binding (s.25); Lasting Power of Attorney
+        (Health & Welfare); ReSPECT process and form.
+      US: |
+        Living Will, Durable Power of Attorney for Health Care, Health
+        Care Proxy, POLST / MOLST (Portable Medical Order) signed by
+        clinician.
+
+  - id: dnacpr_link
+    title: Link to DNACPR / AND
+    body: |
+      Where the conversation reaches a DNACPR / Allow Natural Death
+      decision, the separate DNACPR Policy and the relevant country
+      form (UK DNACPR / ReSPECT; AU NFR / state-equivalent;
+      NZ HQSC ACP; US POLST/MOLST DNR section) are completed.
+
+  - id: review
+    title: Review
+    body: |
+      The ACP is reviewed at any significant change of condition, on
+      return from hospital, and at the annual care plan review. The
+      resident may change their mind at any time and the change is
+      respected.
+
+  - id: training
+    title: Staff training
+    body: |
+      Clinicians leading ACP conversations have completed structured
+      ACP training (e.g. HQSC ACP foundation course NZ; Advance Care
+      Planning Australia Decision Assist; Macmillan ACP / SAGE & THYME
+      UK; Respecting Choices / Honoring Choices US).
+
+  - id: family_communication
+    title: Family communication
+    body: |
+      Where the resident wishes (with capacity) to share the ACP with
+      family, copies are provided. Where the resident wishes the ACP
+      kept confidential from particular family, that wish is respected.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Director of Nursing / ACP Lead.

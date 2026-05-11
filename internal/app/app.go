@@ -56,6 +56,7 @@ import (
 	"github.com/melamphic/sal/internal/platform/pdf"
 	"github.com/melamphic/sal/internal/platform/storage"
 	"github.com/melamphic/sal/internal/policy"
+	salvia_content "github.com/melamphic/sal/internal/salvia_content"
 	reportsv2 "github.com/melamphic/sal/internal/reports/v2"
 	"github.com/melamphic/sal/internal/reports"
 	"github.com/melamphic/sal/internal/staff"
@@ -521,6 +522,17 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// ── Policy module ─────────────────────────────────────────────────────────
 	policySvc := policy.NewService(policyRepo, &policyFormLinkerAdapter{repo: formsRepo})
 	policyHandler := policy.NewHandler(policySvc)
+
+	// ── Salvia v1 prebuilt content ────────────────────────────────────────────
+	// Loads the embedded YAML library at startup and installs the
+	// per-(vertical, country) subset into a freshly-onboarded clinic when
+	// SubmitCompliance fires. Boot fails if the library is malformed —
+	// silently shipping a broken catalogue is the wrong failure mode.
+	salviaContentMat, err := salvia_content.NewMaterialiser(formsSvc, policySvc, log)
+	if err != nil {
+		return nil, fmt.Errorf("app.Build: salvia_content materialiser: %w", err)
+	}
+	clinicSvc.SetSalviaContentMaterialiser(&clinicSalviaContentAdapter{m: salviaContentMat})
 
 	// ── Drugs module ──────────────────────────────────────────────────────────
 	// System catalog ships as embedded JSON files (one per vertical × country).
@@ -1196,6 +1208,25 @@ func (a *adminBootstrapAdapter) Bootstrap(ctx context.Context, clinicID uuid.UUI
 		return fmt.Errorf("app.adminBootstrapAdapter: send magic link: %w", err)
 	}
 	return nil
+}
+
+// clinicSalviaContentAdapter implements clinic.SalviaContentMaterialiser
+// by bridging into the salvia_content.Materialiser. The clinic package
+// never imports salvia_content directly — the dependency edge runs the
+// other way (salvia_content imports forms + policy services that the
+// adapter constructed earlier).
+type clinicSalviaContentAdapter struct {
+	m *salvia_content.Materialiser
+}
+
+func (a *clinicSalviaContentAdapter) MaterialiseFor(
+	ctx context.Context,
+	clinicID uuid.UUID,
+	vertical domain.Vertical,
+	country string,
+	staffID uuid.UUID,
+) {
+	_ = a.m.MaterialiseFor(ctx, clinicID, vertical, country, staffID)
 }
 
 // billingClinicAdapter implements billing.ClinicUpdater by bridging to

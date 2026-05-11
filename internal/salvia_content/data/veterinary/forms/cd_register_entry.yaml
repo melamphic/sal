@@ -1,0 +1,132 @@
+id: salvia.veterinary.cd_register_entry
+name: "Controlled Drug Register Entry"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  A single line entry to the practice's controlled-drug register, recording an
+  administration, dispensing, receipt, transfer, destruction or stock adjustment
+  of a controlled drug. The form binds to the system.drug_op ledger so that the
+  register entry is the canonical compliance event — running balance, witness
+  signatures, batch and expiry are captured here. One register per CD per
+  premises (UK CDR-bound book; NZ, AU, US per-substance register).
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Regulations 1977 reg 41 (controlled-drug register requirements); VCNZ Code §15 + VCNZ Position Statement on Controlled Drugs which overrides reg 41 with stricter veterinary requirements (contemporaneous entry, witness for administration of pentobarbitone for euthanasia and Class B injectables, monthly reconciliation). Records retained 3 years from last entry."
+  AU: "State Drugs & Poisons / Health (Drugs and Poisons) Acts and Regulations: Vic Drugs, Poisons and Controlled Substances Reg 2017 cl.65 (DPCS register); NSW Poisons and Therapeutic Goods Reg 2008 cl.103-110 (drug register, biannual physical inventory in March and September); Qld Health (Drugs and Poisons) Reg 2021; WA Medicines and Poisons Reg 2016. Records retained 2 years (NSW) to permanent (Vic, Qld); 6-monthly reconciliation typical."
+  UK: "Misuse of Drugs Regulations 2001 reg 19 + Misuse of Drugs (Safe Custody) Regs 1973; bound CDR (or compliant electronic system) with one register per CD; entry within 24 hours; running balance maintained; retained for 2 years from last entry. RCVS Code of Professional Conduct §4.53–4.57. Schedule 2 + Schedule 3 buprenorphine/temazepam CDs in scope; Schedule 3 not all CDs require register entry but practice CDR entry strongly expected by RCVS PSS."
+  US: "DEA 21 CFR 1304 — separate inventory for Schedule II vs Schedules III–V; biennial physical inventory mandatory; transactions logged at receipt, administration, dispensing, distribution, destruction; retained 2 years on-premises (longer in some states); state veterinary acts add additional record requirements. Schedule II requires DEA Form 222 (or CSOS) for inter-DEA-registrant transfer."
+linked_policy_defaults:
+  - salvia.veterinary.controlled_drugs_sop
+  - salvia.shared.records_retention_policy
+tags: [controlled_drug, register, ledger]
+overall_prompt: |
+  Extract the operation type, drug name, schedule, batch, expiry, quantity in
+  / out, the recipient or animal, and witness identity. Do not populate the
+  running balance — that is computed by the ledger. Do not populate witness or
+  operator signatures — those are captured at the system widget.
+fields:
+  - key: drug_op
+    label: Controlled drug operation
+    type: system.drug_op
+    required: true
+    ai_extract: false
+    config:
+      operation: administer
+      controlled_only: true
+      confirm_required: true
+    help_text: "Operation, drug, schedule, batch, expiry, quantity, witness signature and running-balance update are recorded here. Operation type can be changed (administer / dispense / discard / receive / transfer / adjust). For administer and dispense operations, second-person witness confirmation is required by the ledger."
+
+  - key: subject_ref
+    label: Patient / animal
+    type: system_field
+    source: patient_record
+    help_text: "Required for administer and dispense; not used for receive, transfer, or stock adjust."
+
+  - key: subject_species_breed
+    label: Species & breed
+    type: system_field
+    source: patient_record.species_breed
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: owner_ref
+    label: Owner / recipient (dispense)
+    type: system_field
+    source: patient_record.owner
+
+  - key: clinical_indication
+    label: Clinical indication
+    type: long_text
+    ai_extract: true
+    help_text: "Brief reason for administration / dispensing. For euthanasia entries, link to the euthanasia consent form; for analgesia, link to the surgery / pain assessment."
+
+  - key: prescriber_name
+    label: Prescribing / authorising veterinarian
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: prescriber_registration
+    label: Veterinary registration number
+    type: system_field
+    source: practitioner_record.registration_number
+    required: true
+
+  - key: location
+    label: Premises / location
+    type: system_field
+    source: clinic_record.location
+    required: true
+    help_text: "UK CDR is per-premises; this records which CDR receives this entry."
+
+  - key: receipt_invoice_reference
+    label: Supplier invoice / receipt reference (receive operation)
+    type: text
+    ai_extract: true
+    help_text: "Supplier name + invoice number for stock receipt entries."
+
+  - key: dea_form_222_number
+    label: DEA Form 222 / CSOS reference (Schedule II receipt or transfer)
+    type: text
+    ai_extract: true
+    countries: [US]
+    help_text: "Required for any Schedule II inter-DEA-registrant transfer. Form 222 retained 2 years."
+
+  - key: destruction_method
+    label: Destruction method (discard operation)
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Denatured (CD denaturing kit) and disposed via licensed waste contractor", value: "denatured_waste_contractor"}
+        - {label: "Returned to supplier / wholesaler", value: "returned_supplier"}
+        - {label: "Destroyed in presence of authorised witness (UK reg 27 CDR)", value: "uk_reg27_witness"}
+        - {label: "DEA Form 41 destruction (US registered reverse distributor)", value: "us_dea_form_41"}
+        - {label: "On-site destruction with witness (NZ / AU per state authority)", value: "on_site_witness"}
+
+  - key: discrepancy_flag
+    label: Discrepancy / loss flag
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "No discrepancy", value: "none"}
+        - {label: "Wastage during administration (broken vial, partial dose)", value: "wastage"}
+        - {label: "Loss / theft / unaccounted — escalate per CD SOP", value: "loss"}
+        - {label: "Recount adjustment", value: "recount"}
+
+  - key: discrepancy_notes
+    label: Discrepancy notes
+    type: long_text
+    ai_extract: true
+    help_text: "If 'loss / theft' selected, the controlled drugs SOP escalation path is triggered. UK: notify Police + RCVS + Home Office Accountable Officer. US: DEA Form 106. NZ: notify Medicines Control + VCNZ. AU: notify state Drugs & Poisons unit."
+
+  - key: country_retention_note
+    label: Retention statement (for clinic awareness — system applies retention automatically)
+    type: long_text
+    ai_extract: false
+    help_text: "Register entries are retained per the country-specific rule: NZ 3 years from last entry; AU 2 years (NSW) to permanent (Vic / Qld); UK 2 years from last entry of the bound CDR; US 2 years on-premises (DEA), longer where state law requires. The records retention policy applies these automatically."

@@ -1,0 +1,136 @@
+id: salvia.shared.complaints_policy
+name: "Complaints Handling"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How patients (and their families, advocates, or representatives) raise
+  concerns about the clinic's care or service, and how the clinic responds.
+  A core regulator-mandated process; weak complaints handling is the most
+  common audit finding across all four markets.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 10 (right to complain — written acknowledgement within 5 working days); HDC Act 1994"
+  AU: "AHPRA notifiable conduct + Code of Conduct §3.5; ACQSC complaints framework (aged care); state Health Complaints Acts"
+  UK: "CQC Reg 16 (receiving and acting on complaints); NHS Complaints Regulations 2009; PHSO escalation route"
+  US: "HIPAA §164.530(d) (privacy complaints); state board complaint processes; CMS conditions where applicable; Joint Commission requirements where accredited"
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Any expression of dissatisfaction with the clinic's services — clinical
+      care, administrative process, billing, communication, conduct of staff,
+      privacy, or accessibility — is a complaint. The complainant may be the
+      patient, a family member or representative, or a third party affected by
+      the clinic.
+
+  - id: how_to_complain
+    title: "How to complain"
+    body: |
+      Complaints may be made in person, by phone, by email, in writing, or
+      via the patient portal. The clinic does not require a specific form.
+      The clinic offers assistance to anyone who needs help to make a
+      complaint, including translation, advocacy, or scribe support.
+
+  - id: acknowledgement
+    title: "Acknowledgement"
+    body: |
+      The clinic acknowledges every complaint promptly.
+    body_per_country:
+      NZ: "Written acknowledgement within 5 working days (HDC Code Right 10(2)). Mandatory."
+      AU: "Acknowledgement within 5 working days as best practice."
+      UK: "Acknowledgement within 3 working days (NHS Complaints Regulations 2009 reg 13)."
+      US: "Acknowledgement within 7 days as best practice; HIPAA-related complaints actioned within 60 days."
+
+  - id: investigation
+    title: "Investigation"
+    body: |
+      A named investigator (the clinic owner, manager, or a senior clinician
+      independent of the matter) reviews the records, interviews relevant
+      staff, and where possible discusses the matter with the complainant.
+      Where the complaint involves clinical practice, a clinician of the
+      same discipline is involved.
+
+  - id: response
+    title: "Response and resolution"
+    body: |
+      The clinic provides a written response covering: what happened, what
+      went well, what did not, what the clinic will change, and any
+      remedies offered (apology, refund, follow-up appointment with a
+      different clinician, system change). Where the complainant has asked
+      for specific outcomes, the response addresses each.
+    body_per_country:
+      NZ: "Within 10 working days (HDC Code Right 10(3))."
+      AU: "Within 30 days as common practice; longer matters with periodic updates."
+      UK: "Within 6 months (NHS Complaints Regulations 2009)."
+      US: "HIPAA privacy complaints within 60 days; other complaints per state / accreditor."
+
+  - id: apology_no_admission
+    title: "Apology"
+    body: |
+      The clinic offers an apology where appropriate. Apology legislation
+      (NZ Sentencing Act / common law; AU state-by-state apology laws; UK
+      Compensation Act 2006 s 2; US most states have statutory apology
+      protection) protects an expression of regret from being treated as
+      an admission of liability.
+
+  - id: open_disclosure
+    title: "Link to open disclosure / duty of candour"
+    body: |
+      Where the complaint relates to a patient-safety event (or surfaces
+      one), open disclosure / duty-of-candour processes apply in addition
+      to the complaints process. See the relevant vertical's Open
+      Disclosure policy (UK Reg 20 strongest writing requirement).
+
+  - id: external_escalation
+    title: "External escalation route"
+    body: |
+      The complainant is informed in every response of their right to
+      escalate to:
+    body_per_country:
+      NZ: "Health and Disability Commissioner (HDC); Privacy Commissioner for privacy matters; the relevant professional regulator (MCNZ / DCNZ / VCNZ etc.)."
+      AU: "AHPRA / national board for the relevant profession; state Health Complaints Commissioner (e.g. HCSCC SA, HCC NSW, OHO Qld); OAIC for privacy matters."
+      UK: "Parliamentary and Health Service Ombudsman (PHSO) / Local Government and Social Care Ombudsman; relevant professional regulator (GMC, GDC, NMC, RCVS); ICO for data-protection complaints."
+      US: "State medical / dental / veterinary board; HHS OCR for HIPAA privacy complaints; state attorney-general consumer-protection division; Joint Commission for accredited entities."
+
+  - id: anti_retaliation
+    title: "No retaliation"
+    body: |
+      No patient, family member, advocate, or staff member is disadvantaged
+      for raising a complaint. The clinic does not delay or refuse care to
+      a complainant. Staff who raise concerns internally are protected
+      under the whistleblowing / Speak Up route.
+
+  - id: confidentiality
+    title: "Confidentiality"
+    body: |
+      Complaint information is kept confidential and shared only with those
+      who need to know to investigate and resolve the complaint. Records of
+      complaints are not stored in the patient's clinical file unless the
+      complainant requests it.
+
+  - id: register
+    title: "Complaints register"
+    body: |
+      The clinic maintains a complaints register: date, complainant (or
+      anonymous flag), summary, investigator, outcome, learning, action
+      taken. The register is reviewed quarterly to identify themes and
+      trigger system improvements. The register is provided to the
+      regulator on request.
+
+  - id: learning_qi
+    title: "Learning and quality improvement"
+    body: |
+      Themes from complaints are tabled at the clinic's quality-improvement
+      meeting (or significant-event analysis meeting) at least quarterly.
+      System changes arising from complaints are documented and tracked
+      to closure.
+
+  - id: review
+    title: "Review"
+    body: "Reviewed every two years; immediately on regulator-process change."

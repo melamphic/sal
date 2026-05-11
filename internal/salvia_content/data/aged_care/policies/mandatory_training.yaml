@@ -1,0 +1,138 @@
+id: salvia.aged_care.mandatory_training
+name: "Mandatory Training Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Sets out the induction and ongoing training all staff must complete to
+  work safely and competently in aged care. Includes country-specific
+  mandates: UK Care Certificate + Oliver McGowan Mandatory Training
+  (legal Apr–Jun 2026 quarter) for learning disability and autism;
+  US 12 hours/year in-service for nurse aides under 42 CFR 483.95; NZ
+  ARRC training expectations; AU Strengthened Standard 2 and Aged Care
+  Act 2024 worker training.
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 2 (governance — workforce competence); ARRC service agreement training requirements; Health Practitioners Competence Assurance Act 2003 CPD obligations; HQSC; Te Kaiāwhina Ahumahi (Careerforce) qualifications framework."
+  AU: "Strengthened Aged Care Quality Standards Standard 2 (Governance — workforce capability); Aged Care Act 2024 worker training and registration; Aged Care Rules 2025 worker requirements; Aged Care Quality and Safety Commission training expectations."
+  UK: "Care Certificate (15 standards) — induction standard for new health and social care workers (England); Oliver McGowan Mandatory Training in Learning Disability and Autism — under Health and Care Act 2022, regulated providers must ensure staff receive training appropriate to their role (legal requirement enforcement quarter Apr–Jun 2026 as part of CQC registration changes 9 Feb 2026); Skills for Care Knowledge Set; CQC Reg 18 (staffing) and Reg 19 (fit and proper persons)."
+  US: "42 CFR 483.95 (training requirements) — F940 (training overall); F941 (communication training); F942 (resident's rights training); F943 (abuse, neglect and exploitation training); F944 (QAPI training); F945 (infection control training); F946 (compliance and ethics training); F947 (required in-service training for nurse aides — 12 hours/year minimum); F949 (training and competency for behavioural health staff)."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to all staff (including agency, contracted,
+      and volunteer where appropriate to role). Training is role-
+      appropriate; clinicians have additional clinical training,
+      kitchen staff have food safety, etc.
+
+  - id: induction
+    title: Induction
+    body: |
+      All new staff complete induction before independent practice
+      covering at minimum:
+      (1) Service philosophy, person-centred care, dignity.
+      (2) Resident rights including the country instrument (HDC Code /
+          AU Statement of Rights / CQC fundamental standards / 42 CFR
+          483.10).
+      (3) Safeguarding adults at risk and recognising abuse / neglect.
+      (4) Mandatory reporting.
+      (5) Restraint minimisation and Positive Behaviour Support.
+      (6) Infection prevention and control (5 moments hand hygiene, PPE).
+      (7) Manual handling and safe transfer technique.
+      (8) Fire safety and emergency evacuation.
+      (9) First aid / BLS to role-appropriate level.
+      (10) Documentation and confidentiality.
+      (11) Capacity, consent and supported decision-making.
+      (12) Complaints and Open Disclosure / Duty of Candour.
+
+  - id: country_specific_induction
+    title: Country-specific induction
+    body_per_country:
+      NZ: |
+        Te Tiriti o Waitangi training; cultural safety (Māori,
+        Pasifika); HDC Code of Rights; ARRC obligations; HPCAA where
+        clinical.
+      AU: |
+        Aboriginal and Torres Strait Islander cultural safety; CALD
+        and LGBTI+ inclusion; Aged Care Act 2024 worker obligations;
+        SIRS reportable categories.
+      UK: |
+        Care Certificate (15 standards) for non-registered care
+        workers; Mental Capacity Act + DoLS; safeguarding adults
+        Level 2/3; Oliver McGowan Mandatory Training in Learning
+        Disability and Autism — Tier 1 (all staff) or Tier 2 (closer
+        clinical contact) per role; Equality Act 2010.
+      US: |
+        OBRA-required nurse aide training (75 hours minimum federal;
+        state may require more) including 16 hours supervised; abuse,
+        neglect, exploitation training (F943); HIPAA training; civil
+        rights / cultural competence (Title VI / ACA §1557); state-
+        mandated topics.
+
+  - id: clinical_competencies
+    title: Role-specific clinical competencies
+    body: |
+      Registered nurses, enrolled / licenced practical nurses and
+      assistants in nursing complete observed competencies before
+      independent practice in: medication administration, wound
+      assessment and dressing, catheter care, bowel care, end-of-life
+      care, PainAD scoring, neurological observations, anaphylaxis
+      response, controlled-drug witnessing.
+
+  - id: ongoing_training
+    title: Ongoing training and minimum hours
+    body_per_country:
+      NZ: |
+        Annual refresher of mandatory induction topics; CPD
+        obligations per HPCAA registration (clinicians); aged-care
+        sector qualifications via Careerforce.
+      AU: |
+        Annual refresher; AHPRA CPD for registered clinicians; Aged
+        Care Act 2024 worker training expectations. Training
+        completion tracked.
+      UK: |
+        Annual refresher of mandatory topics including safeguarding;
+        Oliver McGowan refresher per programme guidance; NMC revalidation
+        for nurses; Skills for Care Knowledge Set updates.
+      US: |
+        Federal minimum: 12 hours/year in-service for nurse aides
+        (42 CFR 483.95(g) — F947), including required topics. Annual
+        refresher of abuse / neglect / exploitation, infection control,
+        and resident rights. State-specific minimums often higher.
+
+  - id: training_records
+    title: Training records
+    body: |
+      A training record is maintained for every staff member. Records
+      include topic, date, hours, mode (face-to-face, e-learning, observed
+      competency), trainer, and assessment outcome. Records retained per
+      Salvia shared records_retention_policy.
+
+  - id: training_needs_analysis
+    title: Training needs analysis
+    body: |
+      An annual training-needs analysis identifies gaps based on
+      incidents, complaints, audit findings, regulator updates, and
+      individual development plans. Findings feed the training calendar.
+
+  - id: leadership_training
+    title: Leadership and clinical leadership training
+    body: |
+      Senior clinical staff (DON, Care Manager, Clinical Lead) complete
+      additional training in clinical governance, investigation,
+      Open Disclosure leadership, regulator reporting, and workforce
+      management.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually and on any change to
+      regulator training mandates. Operational responsibility: Service
+      Manager / DON.

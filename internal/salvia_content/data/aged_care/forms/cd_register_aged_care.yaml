@@ -1,0 +1,155 @@
+id: salvia.aged_care.cd_register_aged_care
+name: "Controlled Drug Register Entry (Aged Care)"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Controlled-drug register entry for an aged care service. Captures a single
+  CD operation — receipt from pharmacy, administration to a resident,
+  destruction (loss/spoil/expiry), or transfer between locked storage.
+  Resident-keyed where the operation is administration. Witness required for
+  CDs per country: NZ Class B/C; AU S8; UK Schedule 2 (Schedule 3 by
+  practice policy); US Schedule II–V (DEA 21 CFR 1304). The form writes the
+  CD register row; running balances are computed from the row sequence.
+
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975 + Misuse of Drugs Regulations 1977 reg 41 (controlled-drug records — receipt, administration, destruction, transfer); Medicines Act 1981; Pharmacy Council NZ Standards for Medicines Management; HQSC ARC Medication Chart guidance."
+  AU: "State Drugs and Poisons Acts (e.g. NSW Poisons and Therapeutic Goods Reg 2008; Vic Drugs, Poisons and Controlled Substances Reg 2017; Qld Medicines and Poisons Act 2019) — S8 register requirements; Strengthened Aged Care Quality Standards Standard 5; ACQSC guidance on medication management."
+  UK: "Misuse of Drugs Regulations 2001 reg 19, 20, 23 (Schedule 2 register entries — drug, date, name + address of recipient, quantity received/supplied, signature; Schedule 3 storage); Misuse of Drugs (Safe Custody) Regulations 1973; CQC Reg 12; NICE SC1 controlled drug section."
+  US: "Controlled Substances Act 1970; DEA 21 CFR 1304 (recordkeeping — biennial inventory; receipt records on DEA Form 222 for Schedule II; destruction on DEA Form 41); 42 CFR 483.45(b)(3) (controlled drug accountability); state Pharmacy Boards."
+
+linked_policy_defaults:
+  - salvia.aged_care.controlled_drugs
+  - salvia.aged_care.medication_management
+  - salvia.shared.records_retention_policy
+
+tags: [controlled_drug, ledger, medication]
+
+overall_prompt: |
+  This form writes a single row to the controlled-drug ledger. Resident
+  identity (where applicable) is from the resident record. Drug, strength
+  and form are from the CD product master. The clinician completes the
+  operation type, quantity, witness, and any narrative. AI extraction is
+  PERMITTED ONLY for the narrative comment field — the ledger numerics and
+  witness must be explicit clinician entry.
+
+fields:
+  - key: subject_ref
+    label: Resident (administration only)
+    type: system_field
+    source: patient_record
+    help_text: "Required when operation is 'administer'. For receipt/destruction/transfer this field is blank."
+
+  - key: operation_datetime
+    label: Date and time of operation
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: drug
+    label: Controlled drug
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: strength_form
+    label: Strength and form
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: schedule_class
+    label: Schedule / class
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "NZ Class B (Schedule 2)", value: "nz_b"}
+        - {label: "NZ Class C (Schedule 3)", value: "nz_c"}
+        - {label: "AU Schedule 4 — recordable per state policy", value: "au_s4"}
+        - {label: "AU Schedule 8 (S8)", value: "au_s8"}
+        - {label: "UK Schedule 2 CD", value: "uk_sch2"}
+        - {label: "UK Schedule 3 CD", value: "uk_sch3"}
+        - {label: "UK Schedule 4 CD", value: "uk_sch4"}
+        - {label: "UK Schedule 5 CD", value: "uk_sch5"}
+        - {label: "US DEA Schedule II", value: "us_2"}
+        - {label: "US DEA Schedule III", value: "us_3"}
+        - {label: "US DEA Schedule IV", value: "us_4"}
+        - {label: "US DEA Schedule V", value: "us_5"}
+
+  - key: operation_type
+    label: Operation type
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Receive (from pharmacy / supplier)", value: "receive"}
+        - {label: "Administer to resident", value: "administer"}
+        - {label: "Destroy / discard (expired, spoiled, returned, refused)", value: "destroy"}
+        - {label: "Transfer (between locked storage / between sites)", value: "transfer"}
+        - {label: "Adjust (correction with audit reason)", value: "adjust"}
+
+  - key: quantity
+    label: Quantity (with unit)
+    type: text
+    required: true
+    ai_extract: false
+    help_text: "e.g. '10 mg', '0.5 mL', '1 tablet'. UK Schedule 2 register: words AND figures recommended (best practice)."
+
+  - key: balance_after
+    label: Balance after this operation
+    type: text
+    required: true
+    ai_extract: false
+    help_text: "The running balance shown in the register. Where computed automatically by the ledger, this is the value displayed."
+
+  - key: source_or_recipient
+    label: Source / recipient
+    type: text
+    ai_extract: false
+    help_text: "Receive: supplier name + invoice/PO. Administer: resident (from system field). Destroy: reason and any external attendance. Transfer: from-location → to-location."
+
+  - key: prescription_link
+    label: Prescription / chart reference
+    type: text
+    ai_extract: false
+    help_text: "Where the operation derives from a prescription, link the prescription ID. Where the medication chart is the basis (eMAR), link the chart entry."
+
+  - key: drug_op
+    label: CD ledger entry capture
+    type: system.drug_op
+    required: true
+    ai_extract: false
+    config:
+      operation: administer
+      controlled_only: true
+      confirm_required: true
+    help_text: "Required widget — writes the row to the controlled-drug ledger. operation enum is bound by the operation_type field above (administer / dispense → confirm_required=true). Witness is enforced by this widget."
+
+  - key: witness_name
+    label: Witness (second clinician)
+    type: text
+    required: true
+    ai_extract: false
+
+  - key: comment
+    label: Narrative / comment
+    type: long_text
+    ai_extract: true
+
+  - key: country_specific_notes
+    label: Country-specific compliance notes
+    type: long_text
+    ai_extract: false
+    label_per_country:
+      NZ: "MoDR 1977 reg 41 — register kept for at least 10 years from date of last entry; entries indelible; no erasures; corrections by drawing a line through and signing."
+      AU: "State register requirements: typically a bound register or approved electronic system; daily/shift balance check; discrepancy reporting to state Drugs and Poisons Office; storage in S8 safe; CCTV / locked room as per state."
+      UK: "MoDR 2001 reg 20: separate register for each Schedule 2 drug + form/strength; entries within 24 hours of the transaction; chronological; date, name + address of person to/from whom drug supplied/received, quantity, form, signature; preserve for 2 years from date of last entry."
+      US: "DEA 21 CFR 1304: biennial inventory of controlled substances; perpetual inventory good practice; records preserved 2 years (federal) — many states require longer; loss/theft reported to DEA on Form 106 within one business day; destruction witnessed and DEA Form 41 (or DEA-authorised reverse distributor)."

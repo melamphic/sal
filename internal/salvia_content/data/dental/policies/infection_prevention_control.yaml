@@ -1,0 +1,199 @@
+id: salvia.dental.infection_prevention_control
+name: "Infection Prevention & Control Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Standard precautions, hand hygiene, PPE selection by task, surface
+  cleaning, aerosol-generating procedure (AGP) controls, blood-borne
+  virus management, dental unit waterline (DUWL) management, and
+  staff immunisation. The country-aware sections cite the regulator
+  framework that governs at clinic boot.
+
+purpose_per_regulator:
+  NZ: "DCNZ Infection Prevention & Control Practice Standard Dec 2024 (effective 4 Dec 2024); HSWA 2015; HQSC Standard 5; Te Whatu Ora IPC guidance."
+  AU: "ADA Australia Guidelines for Infection Prevention and Control 5th Edition 2024 (replaces 4th Ed); state Public Health Acts; AS/NZS 4815:2006 + AS/NZS 4187:2014."
+  UK: "HTM 01-05 Decontamination in Primary Care Dental Practices; HSE Sharps Regs 2013; CQC Reg 12; PHE Standard Infection Control Precautions."
+  US: "CDC Summary of Infection Prevention Practices in Dental Settings 2024; OSHA 29 CFR 1910.1030 Bloodborne Pathogens; OSHA 29 CFR 1910.1200 HazCom; state dental board."
+
+clauses:
+  - id: scope
+    title: "Scope and responsibilities"
+    body: |
+      This policy applies to every staff member, contractor, locum, and
+      visitor who provides clinical care or is present in clinical areas.
+      The Practice Principal is the IPC Lead unless a named alternate is
+      designated in writing. The IPC Lead reviews this policy at least
+      annually, after any IPC incident, and within 30 days of a regulator
+      framework update.
+
+  - id: standard_precautions
+    title: "Standard precautions"
+    body: |
+      Standard precautions apply to every patient, every contact, every
+      time, regardless of presumed infection status. They cover:
+      - hand hygiene at the WHO 5 Moments
+      - PPE selection by task (gloves, mask, eye protection, gown)
+      - safe handling of sharps and reusable instruments
+      - surface decontamination between patients
+      - respiratory and cough etiquette
+      - safe injection technique (single-patient single-use)
+      - aseptic technique for invasive procedures
+      Transmission-based precautions (contact, droplet, airborne) layer on
+      top of standard precautions when a specific pathogen risk is
+      identified.
+
+  - id: hand_hygiene
+    title: "Hand hygiene"
+    body_per_country:
+      NZ: |
+        Alcohol-based hand rub (ABHR) at point of care for routinely soiled
+        hands; soap and water when visibly soiled or after toilet use.
+        Bare-below-the-elbows, no wristwatches or rings other than plain
+        bands. Per DCNZ IPC Practice Standard Dec 2024 §3 and HQSC Hand
+        Hygiene NZ programme.
+      AU: |
+        Hand hygiene per ADA Australia IPC Guidelines 5th Ed 2024 §4 and
+        the National Hand Hygiene Initiative (Hand Hygiene Australia).
+        ABHR ≥60% ethanol/IPA at point of care; soap and water when
+        visibly soiled or post-toilet. Bare-below-the-elbows.
+      UK: |
+        Hand hygiene per WHO 5 Moments and PHE Standard Infection Control
+        Precautions (NIPCM). HTM 01-05 §2.20: clinical hand-wash basins
+        sensor or elbow-operated, hands-free dispensers, paper towels.
+        Bare-below-the-elbows mandated by NHS dress code.
+      US: |
+        Hand hygiene per CDC Summary of IPC Practices in Dental Settings
+        2024 §III.A and Boyce/Pittet 2002 guideline. ABHR with ≥60%
+        ethanol/IPA preferred at point of care; soap and water when
+        visibly soiled or after suspected C. difficile contact. Artificial
+        nails / extenders prohibited for staff with direct patient
+        contact.
+
+  - id: ppe
+    title: "Personal protective equipment by task"
+    body: |
+      PPE selection is risk-based and per-task:
+      - Examination / non-AGP: surgical mask, eye protection, single-use
+        gloves, clinical gown or tunic.
+      - Aerosol-generating procedures (AGP — high-speed handpiece,
+        ultrasonic scaler, air-water syringe): FFP3 / N95 / P2
+        respirator, fluid-resistant gown, eye protection or face shield.
+      - Patient with suspected airborne infection (TB, measles, COVID-19
+        per local definition): FFP3 / N95, eye protection, gown, gloves;
+        consider treatment deferral.
+      Don and doff in the order published by the local regulator. PPE
+      stock and fit-test records retained per the country's training
+      record schedule.
+
+  - id: surface_cleaning
+    title: "Surface decontamination between patients"
+    body: |
+      Clinical contact surfaces (chair controls, bracket table, lights,
+      handles, computer interfaces) cleaned and disinfected between every
+      patient with a regulator-listed disinfectant. Use barrier covers
+      where the surface cannot be reliably cleaned. Whole-room clean (low
+      surfaces, floor, sinks) at least daily and when visibly soiled.
+
+  - id: agp_controls
+    title: "Aerosol-generating procedure controls"
+    body_per_country:
+      NZ: |
+        DCNZ IPC Practice Standard Dec 2024 §4 requires high-volume
+        evacuation (HVE) for AGPs, four-handed dentistry where practical,
+        and pre-procedural rinse where evidence-based. Ventilation
+        ≥6 ACH for treatment rooms; allow fallow time per local risk
+        assessment when treating high-risk patients.
+      AU: |
+        ADA AU IPC Guidelines 5th Ed 2024 §6 — HVE mandatory for AGPs;
+        rubber dam where clinically feasible; ventilation per AS 1668.2.
+      UK: |
+        HTM 01-05 §3 and SDCEP Mitigation of Aerosol Generating
+        Procedures (2021): use HVE plus rubber dam where possible;
+        ventilation ≥10 ACH for new/refurbished treatment rooms (HBN 00-09).
+      US: |
+        CDC Summary IPC in Dental Settings 2024 §III.E and ADA Interim
+        Guidance: HVE, four-handed dentistry, rubber dam where feasible,
+        pre-procedural mouth rinse where evidence supports; ASHRAE
+        Standard 170 ventilation.
+
+  - id: bbv_management
+    title: "Bloodborne virus management"
+    body: |
+      Standard precautions apply regardless of known BBV status. Sharps
+      use safety-engineered devices wherever a viable alternative exists.
+      Recapping needles is prohibited except where no alternative is
+      feasible, and then only by single-handed scoop or device. Sharps
+      bins compliant with BS 7320 / UN 3291 / state law, replaced when
+      ≤2/3 full. Post-exposure: refer to the Sharps & BBV Exposure
+      policy. BBV-positive clinicians follow occupational health
+      restrictions per country guidance (UK GDC 2008; CDC 2010 update;
+      Worksafe NZ).
+
+  - id: duwl
+    title: "Dental unit waterline management"
+    body: |
+      Dental unit water at the point of patient delivery must meet
+      potable / heterotrophic plate count standards: ≤500 CFU/ml
+      heterotrophic bacteria (CDC US, ADA AU, HTM 01-05 UK, DCNZ IPC
+      Std 2024).
+
+      Daily routine:
+      - 2 minutes flush at start of day
+      - 30 seconds flush between patients on every line that entered the
+        oral cavity
+      - dedicated water source with manufacturer-approved treatment
+        product
+      - shock-disinfect per manufacturer schedule
+
+      Test waterline microbiology at least quarterly (more often after
+      any failure). Investigate any reading >500 CFU/ml; quarantine and
+      resterilise per failure protocol.
+
+  - id: immunisations
+    title: "Staff immunisation programme"
+    body: |
+      Required: Hep B (3-dose course + post-vaccine anti-HBs check;
+      revaccinate non-responders). Recommended: MMR, varicella, Tdap,
+      seasonal influenza, COVID-19 per current local schedule.
+      Declination must be recorded in writing (US: OSHA 29 CFR
+      1910.1030(f)(2)(iv) Appendix A wording mandatory).
+
+  - id: instrument_decontamination_link
+    title: "Instrument reprocessing"
+    body: |
+      Reusable instruments are reprocessed per the Decontamination &
+      Sterilisation Policy (`salvia.dental.decontamination_sterilisation`).
+      Single-use instruments are not reprocessed under any circumstance.
+
+  - id: training_records
+    title: "Training and records"
+    body_per_country:
+      NZ: |
+        IPC induction at hire; annual refresher; competency-based hand-
+        hygiene observation per HQSC programme. Records retained ≥10
+        years per HDIP / Health (Retention of Health Information)
+        Regulations 1996.
+      AU: |
+        IPC induction at hire and at least annually thereafter per ADA
+        AU 5th Ed §3. Records retained per state Health Records Acts
+        (typically 7 years adults, age-25 minors).
+      UK: |
+        IPC training induction + annual update per CQC Reg 18. Records
+        retained ≥6 years (CQC) or longer per practice retention schedule.
+        Practice Quality Compliance score documented per HTM 01-05.
+      US: |
+        IPC training at hire, annually, and on procedural change per
+        OSHA 29 CFR 1910.1030(g)(2). Records retained ≥3 years (OSHA);
+        practice retains ≥6 years if HIPAA-covered (45 CFR §164.530(j)).
+
+  - id: audit
+    title: "Audit and continuous improvement"
+    body: |
+      The IPC Lead conducts a documented IPC audit at least annually
+      using the country-appropriate tool (HTM 01-05 IPC audit, CDC IPC
+      Checklist for Dental Settings, ADA AU 5th Ed self-assessment, or
+      DCNZ Practice Standard checklist). Findings drive a written
+      corrective-action plan with named owners and review dates.

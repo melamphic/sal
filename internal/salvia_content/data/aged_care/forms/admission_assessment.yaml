@@ -1,0 +1,281 @@
+id: salvia.aged_care.admission_assessment
+name: "Admission Nursing Assessment"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Initial nursing assessment performed within 24 hours of admission to a
+  residential aged care service, capturing baseline vitals, mobility,
+  cognition, continence, nutrition, skin, pain and risk flags. The data
+  here seeds the Comprehensive Care Plan (US: F656 within 7 days of MDS;
+  AU: Care and Services Plan; UK: NICE NG97 person-centred care plan; NZ:
+  Ngā Paerewa Section 3 care planning) and triggers the relevant risk
+  assessments (falls, pressure injury, nutrition).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 3 (Pae ora — health needs assessment, care planning); HDC Code Right 4 (provider standards). interRAI long-term care assessment is the mandated NZ instrument and should be referenced — not recreated."
+  AU: "Strengthened Aged Care Quality Standards Standard 3 (Care and Services) and Standard 5 (Clinical Care) — initial assessment within 14 days; Aged Care Rules 2025 Part 7. AN-ACC assessment is the funding instrument, separate."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 9 (person-centred care); NICE NG97 (Dementia: assessment, management) and NG108 (Decision-making and mental capacity); CQC fundamental standards."
+  US: "42 CFR 483.20 (Resident assessment) — admission MDS 3.0 v1.20.1 (effective 1 Oct 2025) within 14 days; 42 CFR 483.21(a) F655 baseline care plan within 48 hours."
+
+linked_policy_defaults:
+  - salvia.aged_care.care_planning
+  - salvia.aged_care.falls_prevention
+  - salvia.aged_care.pressure_injury_prevention
+  - salvia.aged_care.medication_management
+  - salvia.aged_care.pain_management
+  - salvia.shared.consent_policy
+
+tags: [admission, assessment, baseline]
+
+overall_prompt: |
+  Capture the registered nurse's baseline assessment within 24 hours of admission.
+  Demographics and medication list pulled from the resident record. The voice
+  capture should focus on what the RN observed and the resident reported:
+  vital signs, mobility status, cognition (orientation), continence pattern,
+  skin condition, pain, and immediate concerns. interRAI (NZ) and MDS 3.0 (US)
+  are external instruments — do not recreate; record the assessment ID
+  reference where used.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_sex
+    label: Sex / gender
+    type: system_field
+    source: patient_record.sex_at_birth
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: subject_height
+    label: Height (cm)
+    type: system_field
+    source: patient_record.height_cm
+
+  - key: subject_allergies
+    label: Allergies on record
+    type: system_field
+    source: patient_record.allergies
+    help_text: "Drug, food and environmental allergies. Pulled from record; if updated during admission interview, push the change to the resident record (not captured here)."
+
+  - key: subject_medications
+    label: Current medications on record
+    type: system_field
+    source: patient_record.medications
+
+  - key: assessment_date
+    label: Assessment date and time
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: assessing_rn
+    label: Assessing registered nurse
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: assessing_rn_registration
+    label: RN registration / licence
+    type: system_field
+    source: practitioner_record.registration_number
+    label_per_country:
+      NZ: "NCNZ APC number"
+      AU: "AHPRA registration"
+      UK: "NMC PIN"
+      US: "State RN licence number"
+
+  - key: source_of_admission
+    label: Source of admission
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Home", value: "home"}
+        - {label: "Hospital (acute)", value: "hospital"}
+        - {label: "Other residential aged care", value: "other_aged_care"}
+        - {label: "Hospice", value: "hospice"}
+        - {label: "Independent living / retirement village", value: "ilu"}
+
+  - key: temperature
+    label: Temperature (°C)
+    type: decimal
+    ai_extract: true
+
+  - key: heart_rate
+    label: Heart rate (bpm)
+    type: number
+    ai_extract: true
+
+  - key: blood_pressure
+    label: Blood pressure (mmHg)
+    type: text
+    ai_extract: true
+    help_text: "Format: 'systolic/diastolic'. Note posture if relevant."
+
+  - key: respiratory_rate
+    label: Respiratory rate (per min)
+    type: number
+    ai_extract: true
+
+  - key: spo2
+    label: SpO2 (%)
+    type: number
+    ai_extract: true
+
+  - key: bgl
+    label: BGL (mmol/L) where indicated
+    type: decimal
+    ai_extract: true
+
+  - key: mobility_status
+    label: Mobility status
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Independent — walks unaided", value: "independent"}
+        - {label: "Independent with walking aid (stick / frame / walker)", value: "aided"}
+        - {label: "Supervision required", value: "supervised"}
+        - {label: "One-person assist", value: "one_assist"}
+        - {label: "Two-person assist / hoist transfer", value: "two_assist_or_hoist"}
+        - {label: "Bed-bound", value: "bed_bound"}
+        - {label: "Wheelchair-bound", value: "wheelchair"}
+
+  - key: transfer_pattern
+    label: Transfer pattern
+    type: long_text
+    ai_extract: true
+    help_text: "Describe transfers (bed↔chair, chair↔toilet, sit-to-stand). Note any observed unsteadiness, freezing, or near-falls."
+
+  - key: cognition_orientation
+    label: Cognition / orientation at admission
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Alert and oriented to person, place, time", value: "ax3"}
+        - {label: "Oriented to person and place; confused on time", value: "ax2"}
+        - {label: "Oriented to person only", value: "ax1"}
+        - {label: "Disoriented / confused", value: "disoriented"}
+        - {label: "Drowsy / responding to voice only", value: "drowsy"}
+        - {label: "Unresponsive / responding only to pain", value: "unresponsive"}
+
+  - key: cognition_notes
+    label: Cognition notes
+    type: long_text
+    ai_extract: true
+    help_text: "Existing dementia diagnosis, observed delirium, hearing/vision sensory impairment, communication preferences."
+
+  - key: continence_baseline_bladder
+    label: Bladder continence baseline
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Continent", value: "continent"}
+        - {label: "Occasional urgency / stress incontinence", value: "occasional"}
+        - {label: "Regular incontinence — uses pads", value: "regular_pads"}
+        - {label: "Incontinent — full management plan needed", value: "incontinent"}
+        - {label: "Catheterised (record type)", value: "catheter"}
+
+  - key: continence_baseline_bowel
+    label: Bowel continence baseline
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Continent — regular pattern", value: "continent"}
+        - {label: "Constipation tendency — manages with diet/laxatives", value: "constipation"}
+        - {label: "Occasional incontinence", value: "occasional"}
+        - {label: "Regular incontinence", value: "regular"}
+        - {label: "Stoma (record type)", value: "stoma"}
+
+  - key: skin_inspection
+    label: Skin inspection on admission
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Head-to-toe inspection. Note any pressure injury (record stage and site — Salvia separate Pressure Injury form), bruises, skin tears, rashes, surgical wounds, leg ulcers. Body-map photographs strongly recommended; capture against the photography consent on the resident record."
+
+  - key: pressure_injury_present_on_admission
+    label: Pressure injury present on admission?
+    type: select
+    required: true
+    ai_extract: true
+    help_text: "Critical for US F686 (POA vs facility-acquired) and AU NQI Pressure Injury reporting. Where yes, complete the Pressure Injury form."
+    config:
+      options:
+        - {label: "No — skin intact", value: "no"}
+        - {label: "Yes — present on admission (POA) — complete Pressure Injury form", value: "yes_poa"}
+        - {label: "Suspected — pending senior review", value: "suspected"}
+
+  - key: pain_present
+    label: Pain present at admission
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "No pain reported / observed", value: "none"}
+        - {label: "Pain reported (verbal — use NRS)", value: "verbal"}
+        - {label: "Pain suspected non-verbal — complete PainAD assessment", value: "non_verbal"}
+
+  - key: nutrition_concerns
+    label: Nutrition / weight concerns at admission
+    type: long_text
+    ai_extract: true
+    help_text: "Recent unintentional weight loss, swallowing difficulty, modified-texture diet, dentures, food preferences. Where flagged, complete Nutrition Screen form."
+
+  - key: falls_history_12mo
+    label: Falls history (last 12 months)
+    type: long_text
+    ai_extract: true
+    help_text: "Number, circumstances, injuries. Where any fall in last 12 months OR any concern, complete Falls Risk form."
+
+  - key: warnings_alerts
+    label: Warnings / alerts
+    type: long_text
+    ai_extract: true
+    help_text: "Wandering risk, exit-seeking, aggression history, infection isolation, allergy, latex, falls, swallowing, choking, pacemaker/ICD, alert wristband requirements."
+
+  - key: external_assessment_id
+    label: External assessment instrument reference
+    type: text
+    ai_extract: true
+    help_text: "interRAI (NZ — Long-Term Care Facility assessment ID), MDS 3.0 (US — Federal OBRA assessment ID), AN-ACC (AU — funding assessment ID). Salvia does NOT replace these — record the reference here so the comprehensive care plan can link to them."
+
+  - key: immediate_concerns_actions
+    label: Immediate concerns and actions
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Any issue requiring intervention before the comprehensive care plan is completed: pressure injury, fall risk, severe pain, undernutrition, missed/late medications, behavioural distress, family request."
+
+  - key: gp_notification
+    label: GP / primary medical practitioner notified of admission
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — notified today", value: "yes_today"}
+        - {label: "Yes — already aware (referral admission)", value: "yes_aware"}
+        - {label: "No — to be notified within 24 hours", value: "pending"}

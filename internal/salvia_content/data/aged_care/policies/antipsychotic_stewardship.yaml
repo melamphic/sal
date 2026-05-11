@@ -1,0 +1,132 @@
+id: salvia.aged_care.antipsychotic_stewardship
+name: "Antipsychotic and Psychotropic Stewardship Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Reduces inappropriate use of antipsychotics, benzodiazepines and other
+  psychotropics in older people, particularly those with dementia. Sets the
+  indication test, the consent rules, the dose-reduction expectation
+  (gradual dose reduction — GDR), the monitoring schedule, and the
+  reporting indicators. Aligned with STOMP (UK), F758 GDR (US), AU NQI
+  Antipsychotic, and HQSC stewardship in NZ.
+
+purpose_per_regulator:
+  NZ: "HQSC Atlas of Healthcare Variation antipsychotic in dementia; Ministry of Health Medicines Care Guides for Residential Aged Care; Ngā Paerewa NZS 8134:2021 Section 5; HDC Code Right 7."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (clinical safety); Aged Care Quality Indicators (NQI) Antipsychotic — quarterly reporting of psychotropic prescribing; Aged Care Rules 2025 Part 7 Division 162 chemical restraint consent rules; Therapeutic Guidelines: Psychotropic; Royal Australian and New Zealand College of Psychiatrists guidance."
+  UK: "STOMP — Stopping Over-Medication of People with a learning disability, autism or both (NHS England programme), extended in spirit to dementia; NICE NG97 Dementia: assessment, management — antipsychotic only for severe distress or risk of harm to self/others, lowest effective dose, time-limited; CQC Reg 12 + Reg 13."
+  US: "42 CFR 483.45(c) F758 (unnecessary drugs / gradual dose reduction) — psychotropics requiring documented indication, monitoring, and GDR attempts at least annually unless clinically contraindicated; F605 chemical restraint; F761; CMS National Partnership to Improve Dementia Care in Nursing Homes."
+
+clauses:
+  - id: scope
+    title: Scope
+    body: |
+      This policy applies to all antipsychotic, benzodiazepine, hypnotic,
+      antidepressant, and mood-stabiliser prescriptions for residents,
+      particularly where they are prescribed for behavioural and
+      psychological symptoms of dementia (BPSD).
+
+  - id: indication_test
+    title: Indication test
+    body: |
+      Antipsychotics in dementia are reserved for severe distress causing
+      risk of harm to self or others, after non-pharmacological
+      strategies have been tried and failed. They are not first-line for
+      agitation, sleep disturbance, calling out, wandering, or normal
+      adjustment behaviour. The diagnosis or behaviour being treated is
+      documented at prescribing.
+
+  - id: non_pharm_first
+    title: Non-pharmacological strategies first
+    body: |
+      Before any antipsychotic is initiated, the multidisciplinary team
+      identifies and addresses contributing factors: pain, infection,
+      constipation, sensory deprivation (hearing/vision aids), boredom,
+      isolation, environmental triggers, sleep, medication side effects.
+      A behaviour support plan is in place. The Restraint Authorisation
+      pathway is engaged where the antipsychotic functions as a chemical
+      restraint.
+
+  - id: consent_rules
+    title: Consent rules
+    body_per_country:
+      NZ: |
+        Resident with capacity consents. Welfare Guardian (PPPR Act 1988)
+        or activated EPOA-PCW where capacity lacking. Where the
+        antipsychotic functions as chemical restraint, also follow Ngā
+        Paerewa Part 6 restraint-approval workflow.
+      AU: |
+        Resident with capacity consents. Where the antipsychotic
+        functions as chemical restraint, RPSDM consent under Aged Care
+        Rules 2025 Div 162 — RPSDM hierarchy applies. AU NQI
+        Antipsychotic captures all psychotropic prescriptions.
+      UK: |
+        Resident with capacity consents (assessed under MCA 2005). Where
+        capacity lacks: best-interests decision under MCA s.4 with IMCA
+        where no family / friend (s.39A); Lasting Power of Attorney
+        (Health & Welfare) where appointed.
+      US: |
+        Resident or legal representative consents. F758 + F605 require
+        documented physician order with indication, duration, and
+        circumstances of use.
+
+  - id: monitoring
+    title: Monitoring
+    body: |
+      Vital signs, falls risk, sedation, EPS (extrapyramidal symptoms),
+      QTc (in cardiac risk), metabolic (weight, lipids, glucose) per
+      drug profile. Daytime drowsiness and quality-of-life indicators
+      reviewed monthly minimum.
+
+  - id: gradual_dose_reduction
+    title: Gradual dose reduction (GDR)
+    body: |
+      For every psychotropic prescribed for behaviour, a GDR plan is in
+      place from initiation. Review at minimum 3 months for
+      consideration of reduction. Reduction attempts at least annually
+      unless clinically contraindicated (F758 US lens; UK NICE NG97
+      review at least every 6 weeks initially then 6-monthly). Where
+      clinically contraindicated to reduce, the rationale is documented
+      and re-reviewed at the next interval.
+
+  - id: deprescribing_pathway
+    title: Deprescribing pathway
+    body: |
+      Where a psychotropic is no longer indicated, deprescribing follows
+      a stepped-down regimen agreed with the prescriber and pharmacist.
+      Withdrawal effects monitored. Reduction documented in the eMAR
+      and in the resident's care plan.
+
+  - id: indicators
+    title: Indicators
+    body_per_country:
+      NZ: |
+        HQSC Atlas indicator for antipsychotic in dementia. Reviewed at
+        clinical governance.
+      AU: |
+        NQI Antipsychotic — quarterly reporting. Reviewed at clinical
+        governance under Standard 2.
+      UK: |
+        STOMP-aligned reporting where commissioned. Reg 17 governance
+        review.
+      US: |
+        CMS National Partnership reporting on long-stay antipsychotic
+        prevalence. F758 surveyor lens. QAPI / F865 review.
+
+  - id: training
+    title: Staff training
+    body: |
+      Clinical staff are trained in BPSD non-pharmacological approaches,
+      psychotropic side effects and risks, capacity assessment, and the
+      consent framework for chemical restraint. Refresher annually.
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least annually. Operational
+      responsibility: Director of Nursing / Pharmacy Lead.

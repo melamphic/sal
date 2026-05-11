@@ -1,0 +1,186 @@
+id: salvia.general_clinic.controlled_drug_prescription
+name: "Controlled drug prescription"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Prescription record for a controlled drug issued from primary care. Country
+  variants are large because the underlying statutes diverge: NZ Misuse of
+  Drugs Regulations 1977 + e-Rx; AU state Drugs and Poisons Acts + RTPM
+  (SafeScript / Monitored Medicines / DORA); UK Misuse of Drugs Regulations
+  2001 with Schedule 2 / 3 prescription writing requirements (FP10MDA / FP10PCD);
+  US DEA 21 CFR 1306 + EPCS + state PDMP.
+
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975 + MoDR 1977 r.41A; Medicines Act 1981; HDC R7. e-Rx via NZePS."
+  AU: "State / territory Drugs and Poisons Act + Schedule 8 register; RTPM mandatory check by jurisdiction (SafeScript VIC, ScriptCheck QLD, DORA SA, MM NSW, etc.)."
+  UK: "Misuse of Drugs Regulations 2001 Sch 2/3 prescription requirements; 28-day validity; CD2 + CD3 quantities in words and figures; ink signature; FP10MDA / FP10PCD; CQC GP Mythbuster 60."
+  US: "DEA 21 CFR 1306 (Sch II–V); EPCS where state allows; state PDMP query mandate (40+ states); MATE Act 8-hour DEA training (effective 2023); CDC Opioid Prescribing 2022."
+
+linked_policy_defaults:
+  - salvia.general_clinic.controlled_drugs
+  - salvia.general_clinic.repeat_prescribing
+  - salvia.shared.privacy_policy
+
+tags: [prescription, controlled_drug, opioid]
+
+overall_prompt: |
+  This form crosses the drug ledger. The system.drug_op widget records the
+  dispense / administer event; the form captures prescribing context. Patient
+  identity is from record. Refuse to populate quantity/strength/duration unless
+  the clinician explicitly stated them.
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_address
+    label: "Patient address"
+    type: system_field
+    source: patient_record.address
+    required: true
+    pii: true
+
+  - key: subject_id_number
+    label: "Patient health identifier"
+    type: system_field
+    source: patient_record.health_identifier
+    pii: true
+    help_text: "NHI (NZ) / Medicare + IHI (AU) / NHS no (UK) / MBI (US). Surface from record; do not retype."
+
+  - key: pdmp_query_result
+    label: "PDMP / RTPM query"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text_per_country:
+    help_text: "AU: SafeScript / RTPM check is mandatory in VIC / TAS / QLD / SA / WA / NSW / ACT before Sch 8 + monitored Sch 4 prescribing. US: state PDMP check mandatory in 40+ states for Sch II–V prescribing (frequency varies). UK: SCR / CD register cross-check. NZ: Front-of-record CD review and prior-prescription history."
+
+  - key: indication
+    label: "Clinical indication"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: prior_treatment_tried
+    label: "Non-CD alternatives tried / why CD is justified"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "CDC 2022: opioids should be considered only after non-pharmacological / non-opioid options. Document trial outcomes and rationale."
+
+  - key: drug_name
+    label: "Drug (proprietary and generic) and form"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: drug_strength
+    label: "Strength"
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: total_quantity
+    label: "Total quantity"
+    type: text
+    required: true
+    ai_extract: true
+    help_text_per_country:
+    help_text: "UK Sch 2/3: total quantity must be stated in BOTH words AND figures (MoDR 2001 r.15). Capture as 'thirty (30) tablets'. US: state-specific (FL 7-day, NY 7-day, ME 7-day acute) limits. NZ: max 30-day supply for many CDs (MoDR 1977 r.30). AU: state-specific limits, e.g. WA notification > 60mg morphine equivalent /day."
+
+  - key: directions
+    label: "Sig (directions for use)"
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Plain English. Avoid 'as directed' for CDs (UK MoDR 2001 r.15(1)(d) requires dose / frequency stated)."
+
+  - key: duration_days
+    label: "Duration (days)"
+    type: number
+    required: true
+    ai_extract: true
+
+  - key: max_daily_morphine_equivalent
+    label: "Maximum daily morphine equivalent (MME / OME)"
+    type: decimal
+    ai_extract: true
+    help_text: "CDC 2022: justify >50 MME/day; reassess at any escalation. UK: 120mg OME/day reassessment threshold. AU TGA opioid reform: 100 OME/day prompts review."
+
+  - key: prescription_format
+    label: "Prescription format"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "NZePS electronic (NZ)", value: "nzeps"}
+        - {label: "Paper script with controlled-drug field (NZ H572)", value: "nz_paper"}
+        - {label: "PBS / private paper script (AU)", value: "au_paper"}
+        - {label: "RTPM-validated electronic (AU)", value: "au_eprx"}
+        - {label: "FP10MDA (UK CD instalment)", value: "uk_fp10mda"}
+        - {label: "FP10PCD / FP10 (UK CD)", value: "uk_fp10"}
+        - {label: "EPCS (US electronic prescription for controlled substances)", value: "us_epcs"}
+        - {label: "DEA-form / paper (US)", value: "us_paper"}
+
+  - key: validity_period
+    label: "Validity period stated on script"
+    type: text
+    required: true
+    help_text: "UK Sch 2/3: 28 days from appropriate date (MoDR 2001 r.15(2)). NZ: prescriber-defined ≤6 months but CDs typically ≤30 days. AU: 6 months default; state-specific for Sch 8. US Sch II: no refills, 6 months for some states."
+
+  - key: instalment_dispensing
+    label: "Instalment dispensing arrangement"
+    type: long_text
+    ai_extract: true
+    help_text: "FP10MDA UK: max 14 days unless Home Office approval; intervals stated. AU: staged supply requires patient agreement. US: split-dispensing per state."
+
+  - key: addiction_treatment_plan_link
+    label: "Linked treatment plan / agreement"
+    type: text
+    help_text: "If long-term opioid: documented opioid agreement (US CDC 2022, UK GMC), buprenorphine programme (NZ DAMS, US X-waiver replaced by MATE Act all-DEA), or specialist pain plan."
+
+  - key: prescriber_signature_method
+    label: "Prescriber signature method"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Wet ink signature", value: "ink"}
+        - {label: "Advanced electronic signature (digital cert)", value: "digital_cert"}
+        - {label: "Smartcard / EPCS two-factor (US)", value: "epcs_2fa"}
+        - {label: "NZePS digital signature", value: "nzeps_sig"}
+    help_text: "UK Sch 2/3: handwritten OR computer-generated with hand signature in indelible ink, except where prescriber registered to issue Sch 2/3 electronically."
+
+  - key: drug_op_record
+    label: "Drug ledger entry"
+    type: system.drug_op
+    required: true
+    config:
+      operation: dispense
+      controlled_only: true
+      confirm_required: true
+
+  - key: signature_prescriber
+    label: "Prescriber name, registration number, DEA / VMD / EPCS / state"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Prescription date (appropriate date)"
+    type: date
+    required: true

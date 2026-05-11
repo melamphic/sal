@@ -1,0 +1,289 @@
+id: salvia.aged_care.falls_incident
+name: "Falls Incident Report"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Structured report of a fall event in residential aged care. Captures the
+  circumstances, witness status, the resident's immediate condition (vitals,
+  GCS, pain, injuries on body map), the post-fall observation schedule
+  (especially neuro obs after head strike), the GP / family notification, the
+  contributing factors and the post-fall care-plan changes. Feeds AU NQI Falls
+  and Major Injury reporting and US MDS J1900 coding. Major-injury falls are
+  separately reportable (UK CQC Reg 18 Notification of Other Incidents; AU SIRS
+  category where suspected mistreatment; US F689 supervisory review trigger).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 2 (Manaaki — adverse events) and HQSC adverse-events reporting; HealthCERT s.31 HDS Safety Act 2001 notifiable where the fall meets serious-event threshold."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (clinical safety — falls); Aged Care Quality Indicators (NQI) Falls and Major Injury — quarterly Q-NQI reporting; SIRS where the fall is consequent on neglect, inappropriate restrictive practice use, or unreasonable use of force."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 12 (safe care and treatment) and reg 18 (notification of other incidents) — fall resulting in fracture / serious injury / death is CQC notifiable; CQC Reg 20 Duty of Candour engaged for moderate harm or above."
+  US: "42 CFR 483.25(d) F689 (accidents and supervision); MDS 3.0 v1.20.1 Section J1700–J1900 falls coding (J1900 falls since admission/prior assessment); F600 if abuse/neglect indicated; State Survey Agency notification ≤24h where serious injury suspected from neglect."
+
+linked_policy_defaults:
+  - salvia.aged_care.falls_prevention
+  - salvia.aged_care.open_disclosure_duty_of_candour
+  - salvia.aged_care.restraint_minimisation
+  - salvia.aged_care.clinical_governance_qapi
+
+tags: [incident, fall, ledger]
+
+overall_prompt: |
+  Capture the post-fall clinical record. The voice clinician is typically the
+  RN performing the post-fall huddle / assessment. Extract circumstances,
+  observed condition, vitals, neuro obs, family/GP notification status, and
+  the corrective actions identified. Demographics from resident record.
+  This form writes a row to the Incidents ledger on Submit; the AI must NOT
+  classify severity — that is for the clinician (and supervisor for major
+  injury / F689).
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_age
+    label: Age
+    type: system_field
+    source: patient_record.age
+
+  - key: subject_anticoagulation
+    label: Anticoagulation status (warfarin / DOAC / antiplatelet)
+    type: system_field
+    source: patient_record.anticoagulation
+    help_text: "Critical for head-strike management and SDH risk."
+
+  - key: incident_datetime
+    label: Date and time of fall
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: location
+    label: Location
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resident's room — bedside", value: "bedside"}
+        - {label: "Resident's room — bathroom", value: "bathroom_own"}
+        - {label: "Communal lounge / dining", value: "communal"}
+        - {label: "Communal bathroom", value: "communal_bathroom"}
+        - {label: "Hallway / corridor", value: "hallway"}
+        - {label: "Garden / outdoor", value: "outdoor"}
+        - {label: "Other (record below)", value: "other"}
+
+  - key: witnessed
+    label: Witness status
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Witnessed by staff", value: "staff"}
+        - {label: "Witnessed by another resident", value: "resident"}
+        - {label: "Witnessed by family / visitor", value: "visitor"}
+        - {label: "Unwitnessed — found on floor", value: "unwitnessed"}
+        - {label: "Resident reported the fall after the fact", value: "reported"}
+
+  - key: activity_at_fall
+    label: Activity at the time of the fall
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Walking unaided / with aid", value: "walking"}
+        - {label: "Transferring (sit-to-stand, bed-to-chair, chair-to-toilet)", value: "transfer"}
+        - {label: "Toileting", value: "toileting"}
+        - {label: "Dressing / undressing", value: "dressing"}
+        - {label: "Showering / bathing", value: "showering"}
+        - {label: "Reaching / bending", value: "reaching"}
+        - {label: "Standing", value: "standing"}
+        - {label: "Sitting / chair", value: "sitting"}
+        - {label: "Bed (rolling out / climbing out)", value: "bed"}
+        - {label: "Unknown — unwitnessed", value: "unknown"}
+
+  - key: fall_type
+    label: Fall type / mechanism
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Slip", value: "slip"}
+        - {label: "Trip", value: "trip"}
+        - {label: "Loss of balance / unsteady", value: "balance"}
+        - {label: "Loss of consciousness / collapse / syncope", value: "syncope"}
+        - {label: "Mechanical (chair tip, brake failure, etc)", value: "mechanical"}
+        - {label: "Lowered to floor by staff (controlled lowering)", value: "lowered"}
+        - {label: "Unknown", value: "unknown"}
+
+  - key: footwear_at_fall
+    label: Footwear at fall
+    type: text
+    ai_extract: true
+
+  - key: aid_at_fall
+    label: Mobility aid in use / available at fall
+    type: text
+    ai_extract: true
+
+  - key: head_strike
+    label: Head strike?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — observed / reported", value: "yes"}
+        - {label: "Suspected — unwitnessed", value: "suspected"}
+        - {label: "No", value: "no"}
+    help_text: "Triggers neurological observation schedule. With anticoagulation (see system field), threshold for transfer is lower."
+
+  - key: neuro_obs_schedule
+    label: Neurological observation schedule (head strike or suspected)
+    type: long_text
+    ai_extract: true
+    help_text: |
+      Standard schedule for residential setting: every 15 minutes for 2 hours,
+      then every 30 minutes for 2 hours, then hourly for 4 hours, then 4-hourly
+      for 24 hours. Document GCS, pupil response, limb power. Lower the
+      transfer threshold significantly for residents on anticoagulation.
+
+  - key: injuries_observed
+    label: Injuries observed
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Body-map description: laceration, abrasion, bruising, swelling, deformity, suspected fracture, head injury, dental injury. Photograph as per skin/wound photography consent."
+
+  - key: bp_lying
+    label: BP lying (mmHg)
+    type: text
+    ai_extract: true
+
+  - key: bp_standing
+    label: BP standing (mmHg)
+    type: text
+    ai_extract: true
+    help_text: "Where safe to perform — postural drop is a key contributing factor."
+
+  - key: heart_rate
+    label: Heart rate
+    type: number
+    ai_extract: true
+
+  - key: spo2
+    label: SpO2 (%)
+    type: number
+    ai_extract: true
+
+  - key: bgl
+    label: BGL (mmol/L)
+    type: decimal
+    ai_extract: true
+    help_text: "Especially in diabetics, exclude hypoglycaemia as cause."
+
+  - key: gcs
+    label: Glasgow Coma Scale (E + V + M = total)
+    type: text
+    ai_extract: true
+
+  - key: pain_score
+    label: Pain assessment post-fall
+    type: system.pain_score
+    ai_extract: true
+    config:
+      scale_id: nrs
+    help_text: "Use NRS for verbal residents. For non-verbal residents, complete the separate PainAD form (link to the PainAD system widget). Reassess after analgesia."
+
+  - key: gp_notified
+    label: GP / treating clinician notified
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — verbally + record", value: "verbal_record"}
+        - {label: "Yes — electronic notification", value: "electronic"}
+        - {label: "Pending — within 24 hours", value: "pending_24h"}
+        - {label: "Not required (minor fall, no injury, low risk)", value: "not_required"}
+
+  - key: family_notified
+    label: Family / NoK notified
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — by phone (record time)", value: "yes_phone"}
+        - {label: "Yes — by email / app", value: "yes_email"}
+        - {label: "Resident requested family not be notified (with capacity)", value: "declined"}
+        - {label: "Pending", value: "pending"}
+
+  - key: hospital_transfer
+    label: Hospital transfer
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not transferred", value: "no"}
+        - {label: "Transferred for assessment (record reason)", value: "yes"}
+        - {label: "Transfer declined per ACP", value: "declined_acp"}
+
+  - key: contributing_factors
+    label: Contributing factors / root cause prelim
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Categorise: intrinsic (medication, dizziness, weakness, dementia, pain),
+      extrinsic (lighting, footwear, environment, equipment), task (toileting
+      pattern, transfer technique), staffing (supervision adequacy), system
+      (call bell response, handover gap). Honest contributing-factor analysis
+      is required for QAPI / Std 2 / Reg 17 / Section 2.
+
+  - key: care_plan_changes
+    label: Post-fall care-plan changes
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Specific changes to the resident's individual care plan: bed/chair sensor, low-low bed, scheduled toileting, footwear change, medication review request, additional staff supervision."
+
+  - key: au_nqi_classification
+    label: NQI classification (AU)
+    type: select
+    ai_extract: false
+    countries: [AU]
+    config:
+      options:
+        - {label: "Fall — no major injury", value: "fall_no_major"}
+        - {label: "Fall — major injury (fracture, joint dislocation, closed head injury with altered consciousness, subdural haematoma)", value: "fall_major"}
+
+  - key: us_mds_j1900
+    label: MDS J1900 coding (US)
+    type: select
+    ai_extract: false
+    countries: [US]
+    config:
+      options:
+        - {label: "J1900A — Injury (no documented injury)", value: "j1900a"}
+        - {label: "J1900B — Injury (except major)", value: "j1900b"}
+        - {label: "J1900C — Major injury (bone fracture, joint dislocation, closed head injury with altered consciousness, subdural haematoma)", value: "j1900c"}
+
+  - key: incident
+    label: Incidents-ledger entry
+    type: system.incident
+    required: true
+    ai_extract: false
+    config:
+      incident_type: fall
+      min_severity: low
+    help_text: "Submitting this form writes the Incidents ledger row. Severity is set by the clinician based on injury and contributing factors. F689 supervisory review (US) and SIRS (AU) decisions are made on this row."

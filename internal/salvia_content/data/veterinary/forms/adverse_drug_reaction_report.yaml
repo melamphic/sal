@@ -1,0 +1,285 @@
+id: salvia.veterinary.adverse_drug_reaction_report
+name: "Adverse Drug Reaction Report"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Report of a suspected adverse drug reaction (ADR) in an animal — including
+  lack of expected efficacy, off-target effects, suspected reaction to a
+  vaccine, ADRs in humans handling the product, and environmental incidents.
+  This is the practice's record of submission to the national pharmacovigilance
+  scheme. Causality is documented at the time of suspicion using a
+  Naranjo-style score; this is regulator-reportable regardless of certainty.
+purpose_per_regulator:
+  NZ: "ACVM Act 1997 + ACVM Notice — Adverse Event Reporting; report to MPI ACVM Adverse Reaction Reporting Service via online form or email acvm.adverse@mpi.govt.nz. Reportable: any suspected adverse event in target animal, lack of efficacy, human exposure, environmental impact. VCNZ Code §15 also requires the prescribing vet to report."
+  AU: "Agvet Code (Agricultural and Veterinary Chemicals Code Act 1994) + APVMA Adverse Experience Reporting Programme (AERP). Report online via APVMA AERP portal; data submitted to Veterinary Adverse Experience Reporting Programme (VAERP). Reportable: target animal, human, environment, lack of efficacy."
+  UK: "Veterinary Medicines Regulations 2013 reg 30 — pharmacovigilance. Report to VMD (Veterinary Medicines Directorate) via SARSS (Suspect Adverse Reaction Surveillance Scheme) — online form, MLA-style. Reportable: animal, human handling, environment, residue, off-label cascade incidents. RCVS Code §4.6."
+  US: "FDA CVM 21 CFR 514.80 — adverse drug experience reporting for veterinary products (manufacturer obligation; vets report to manufacturer or directly to FDA on Form FDA 1932a — voluntary). USDA CVB for veterinary biologics (vaccines) — Adverse Event Reporting System. Vet-prescribed human-labelled product ADRs reported to FDA MedWatch. AVMA strongly recommends voluntary submission."
+linked_policy_defaults:
+  - salvia.veterinary.veterinary_medicines_cascade_sop
+  - salvia.shared.records_retention_policy
+tags: [adverse_drug_reaction, pharmacovigilance, incident]
+overall_prompt: |
+  Extract the drug, dose given, the reaction (timing, signs, severity,
+  duration, outcome), and a brief Naranjo-style causality assessment. Do not
+  populate the patient demographics or the practice / prescriber identity.
+fields:
+  - key: incident
+    label: Adverse drug reaction incident
+    type: system.incident
+    required: true
+    ai_extract: false
+    config:
+      incident_type: adverse_drug_reaction
+      min_severity: low
+    help_text: "Captures the incident in the practice's incident ledger. Severity should reflect the clinical outcome (low = transient mild signs; medium = required additional treatment; high = hospitalisation; critical = death or permanent injury)."
+
+  - key: report_datetime
+    label: Date & time of report
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: reporting_vet
+    label: Reporting veterinarian
+    type: system_field
+    source: practitioner_record.full_name
+    required: true
+
+  - key: reporting_vet_registration
+    label: Veterinary registration number
+    type: system_field
+    source: practitioner_record.registration_number
+    required: true
+
+  - key: regulator_target
+    label: Submitted to (regulator)
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "MPI ACVM Adverse Reaction Reporting Service (NZ)", value: "nz_mpi_acvm"}
+        - {label: "APVMA Adverse Experience Reporting Programme (AERP) (AU)", value: "au_apvma_aerp"}
+        - {label: "VMD SARSS (UK)", value: "uk_vmd_sarss"}
+        - {label: "FDA Form 1932a (vet medicinal product) (US)", value: "us_fda_1932a"}
+        - {label: "USDA CVB Adverse Event Reporting (US biologic / vaccine)", value: "us_usda_cvb"}
+        - {label: "Direct to product manufacturer (forwarded to regulator)", value: "manufacturer"}
+
+  - key: report_reference_number
+    label: Regulator report reference number
+    type: text
+    ai_extract: true
+
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_species_breed
+    label: Species & breed
+    type: system_field
+    source: patient_record.species_breed
+
+  - key: subject_sex_neuter
+    label: Sex / neuter status
+    type: system_field
+    source: patient_record.sex_neuter_status
+
+  - key: subject_age
+    label: Age
+    type: system_field
+    source: patient_record.age
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: subject_concurrent_conditions
+    label: Concurrent conditions / prior history
+    type: long_text
+    ai_extract: true
+
+  - key: concurrent_medications
+    label: Concurrent medications
+    type: long_text
+    ai_extract: true
+
+  - key: suspect_product_name
+    label: Suspect product (proprietary)
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: suspect_active_ingredient
+    label: Active ingredient
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: suspect_batch_number
+    label: Batch / lot number
+    type: text
+    required: true
+    ai_extract: true
+    help_text: "Mandatory for any ADR report so the regulator can correlate with other reports against the same batch."
+
+  - key: suspect_expiry
+    label: Expiry date
+    type: date
+    ai_extract: true
+
+  - key: dose_given
+    label: Dose administered (mg / mL / units)
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: dose_per_kg
+    label: Dose per kg
+    type: text
+    ai_extract: true
+
+  - key: route
+    label: Route
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "PO", value: "po"}
+        - {label: "SC", value: "sc"}
+        - {label: "IM", value: "im"}
+        - {label: "IV", value: "iv"}
+        - {label: "Topical", value: "topical"}
+        - {label: "Ophthalmic", value: "ophthalmic"}
+        - {label: "Otic", value: "otic"}
+        - {label: "Inhaled", value: "inhaled"}
+        - {label: "Intramammary", value: "intramammary"}
+        - {label: "Other", value: "other"}
+
+  - key: indication
+    label: Indication for which the drug was given
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: offlabel_use
+    label: Off-label / extra-label / cascade use?
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "No — used per label", value: "no"}
+        - {label: "Yes — off-label / cascade / extra-label", value: "yes"}
+
+  - key: reaction_onset
+    label: Time from administration to first sign of reaction
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: reaction_signs
+    label: Reaction — clinical signs
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: reaction_severity
+    label: Reaction severity
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Mild — transient, self-resolved", value: "mild"}
+        - {label: "Moderate — required additional treatment", value: "moderate"}
+        - {label: "Severe — hospitalisation required", value: "severe"}
+        - {label: "Life-threatening / fatal", value: "fatal"}
+
+  - key: reaction_duration
+    label: Duration of reaction
+    type: text
+    ai_extract: true
+
+  - key: outcome
+    label: Outcome
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Full recovery", value: "recovered"}
+        - {label: "Recovering / under treatment", value: "recovering"}
+        - {label: "Persistent / residual signs", value: "persistent"}
+        - {label: "Died — related to reaction", value: "died_related"}
+        - {label: "Euthanised — related to reaction", value: "euthanised_related"}
+        - {label: "Died / euthanised — unrelated", value: "died_unrelated"}
+        - {label: "Unknown / lost to follow-up", value: "unknown"}
+
+  - key: treatment_of_reaction
+    label: Treatment given for the reaction
+    type: long_text
+    ai_extract: true
+
+  - key: rechallenge_dechallenge
+    label: Rechallenge / dechallenge
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Drug stopped — reaction resolved (positive dechallenge)", value: "dechallenge_positive"}
+        - {label: "Drug stopped — reaction did not resolve", value: "dechallenge_negative"}
+        - {label: "Drug continued at same / lower dose — reaction resolved", value: "continued_resolved"}
+        - {label: "Drug re-given later — reaction recurred (positive rechallenge)", value: "rechallenge_positive"}
+        - {label: "Drug re-given later — no reaction (negative rechallenge)", value: "rechallenge_negative"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: causality_naranjo
+    label: Causality assessment (Naranjo-style)
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Definite (≥9)", value: "definite"}
+        - {label: "Probable (5–8)", value: "probable"}
+        - {label: "Possible (1–4)", value: "possible"}
+        - {label: "Doubtful (≤0)", value: "doubtful"}
+    help_text: "Naranjo Adverse Drug Reaction Probability Scale, adapted for veterinary use. Items: prior reports of this reaction; reaction appeared after drug; dechallenge / rechallenge; alternative cause; placebo response; drug found in toxic concentration; dose-response; previous reaction in patient; objective evidence."
+
+  - key: causality_notes
+    label: Causality notes
+    type: long_text
+    ai_extract: true
+
+  - key: human_exposure
+    label: Human exposure / handler reaction
+    type: long_text
+    ai_extract: true
+    help_text: "Where a person handling the product was affected (needlestick, splash, accidental ingestion, allergic reaction). VMD UK and APVMA AU specifically require human-handler ADR reporting."
+
+  - key: environmental_impact
+    label: Environmental impact
+    type: long_text
+    ai_extract: true
+    help_text: "Where suspect product affected non-target species, water, or environment (e.g. avermectin runoff, accidental wildlife exposure to pentobarbitone-contaminated carcass)."
+
+  - key: lack_of_efficacy
+    label: Lack of expected efficacy?
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "No — efficacy was as expected", value: "no"}
+        - {label: "Yes — primary reason for report", value: "yes_primary"}
+        - {label: "Yes — alongside an adverse reaction", value: "yes_alongside"}
+
+  - key: regulator_followup
+    label: Regulator follow-up requested
+    type: long_text
+    ai_extract: true

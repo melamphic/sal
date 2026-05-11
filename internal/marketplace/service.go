@@ -235,6 +235,8 @@ type ListingResponse struct {
 	Publisher         PublisherResponse `json:"publisher"`
 	PublishedAt       *string           `json:"published_at,omitempty"`
 	CreatedAt         string            `json:"created_at"`
+	// SourcePolicyID is set only for bundle_type='policy_only' listings.
+	SourcePolicyID *string `json:"source_policy_id,omitempty"`
 }
 
 // ListingListResponse is a paginated list of listings.
@@ -318,11 +320,19 @@ type CreateListingInput struct {
 	ShortDescription   string
 	LongDescription    *string
 	Tags               []string
-	BundleType         string // 'bundled' | 'form_only'
+	BundleType         string // 'bundled' | 'form_only' | 'pack' | 'policy_only'
 	PricingType        string
 	PriceCents         *int
 	Currency           string
 	PreviewFieldCount  int
+	// SourceFormIDs is the set of tenant forms composing a `pack` listing.
+	// Required when BundleType='pack', ignored otherwise. The forms must
+	// belong to the caller's clinic.
+	SourceFormIDs []uuid.UUID
+	// SourcePolicyID is the tenant policy whose latest published version
+	// becomes the package content for `policy_only` listings. Required when
+	// BundleType='policy_only', ignored otherwise.
+	SourcePolicyID *uuid.UUID
 }
 
 // PublishVersionInput is the input for publishing a new listing version by
@@ -457,11 +467,42 @@ type ReviewListResponse struct {
 
 // Package is the canonical portable form package stored on marketplace_versions.
 // Matches the envelope documented in docs/marketplace.md §2.
+//
+// Schema differs by bundle_type:
+//
+//   - bundled / form_only — `Fields` populated with the source form's fields,
+//     `Policies` populated when bundle_type='bundled'. `Forms` empty.
+//   - pack — `Forms` populated with one entry per source form (each with its
+//     own fields + optional bundled policies). `Fields` empty (use Forms[i].Fields
+//     when iterating). `Policies` empty at the top level.
+//   - policy_only — `Policy` populated with the snapshot of the source policy.
+//     `Fields`, `Forms`, `Policies` all empty.
+//
+// Old single-form payloads in production stay readable: their `Forms` field
+// is just absent in the JSON.
 type Package struct {
 	Meta     PackageMeta     `json:"meta"`
 	Listing  PackageListing  `json:"listing"`
 	Fields   []PackageField  `json:"fields"`
 	Policies []PackagePolicy `json:"policies,omitempty"`
+	// Forms is populated only for bundle_type='pack'.
+	Forms []PackageForm `json:"forms,omitempty"`
+	// Policy is populated only for bundle_type='policy_only' (a single
+	// snapshot becomes the listing's primary content).
+	Policy *PackagePolicy `json:"policy,omitempty"`
+}
+
+// PackageForm carries one form inside a pack listing's payload — the
+// equivalent of the `Listing` + `Fields` pair for non-pack listings.
+// Per-form linked policies ride alongside via Policies.
+type PackageForm struct {
+	Position      int             `json:"position"`
+	Name          string          `json:"name"`
+	Description   *string         `json:"description,omitempty"`
+	OverallPrompt *string         `json:"overall_prompt,omitempty"`
+	Tags          []string        `json:"tags"`
+	Fields        []PackageField  `json:"fields"`
+	Policies      []PackagePolicy `json:"policies,omitempty"`
 }
 
 // PackageMeta is the envelope metadata.
@@ -555,6 +596,13 @@ type repo interface {
 	ListPublisherListings(ctx context.Context, publisherID uuid.UUID, limit, offset int) ([]*ListingRecord, int, error)
 	PublishListing(ctx context.Context, id uuid.UUID, now time.Time) (*ListingRecord, error)
 	UpdateListingStatus(ctx context.Context, id uuid.UUID, status string) (*ListingRecord, error)
+	UpdateListingMetadata(ctx context.Context, p UpdateListingMetadataParams) (*ListingRecord, error)
+	ArchiveListing(ctx context.Context, id uuid.UUID) (*ListingRecord, error)
+	DeleteListingDraft(ctx context.Context, id uuid.UUID) error
+	ListPackForms(ctx context.Context, listingID uuid.UUID) ([]*PackForm, error)
+	SetPackForms(ctx context.Context, listingID uuid.UUID, formIDs []uuid.UUID) error
+	ListPublisherEarnings(ctx context.Context, publisherID uuid.UUID, limit, offset int) ([]*EarningsRow, int, error)
+	PublisherEarningsSummary(ctx context.Context, publisherID uuid.UUID, monthsBack int) ([]*EarningsMonthly, error)
 	IncrementDownloadCount(ctx context.Context, id uuid.UUID) error
 	// Versions
 	CreateVersion(ctx context.Context, p CreateVersionParams) (*VersionRecord, []*VersionFieldRecord, error)
@@ -683,6 +731,18 @@ func (s *Service) CreateListing(ctx context.Context, input CreateListingInput) (
 		bundleType = "bundled"
 	}
 
+	// Per-bundle-type input rules.
+	switch bundleType {
+	case "pack":
+		if len(input.SourceFormIDs) < 2 {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: pack listings need at least 2 source forms: %w", domain.ErrValidation)
+		}
+	case "policy_only":
+		if input.SourcePolicyID == nil {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: policy_only listings need source_policy_id: %w", domain.ErrValidation)
+		}
+	}
+
 	rec, err := s.repo.CreateListing(ctx, CreateListingParams{
 		ID:                 domain.NewID(),
 		PublisherAccountID: input.PublisherAccountID,
@@ -698,11 +758,72 @@ func (s *Service) CreateListing(ctx context.Context, input CreateListingInput) (
 		Currency:           firstNonEmpty(input.Currency, "NZD"),
 		PreviewFieldCount:  defaultIntIfZero(input.PreviewFieldCount, 3),
 		Status:             "draft",
+		SourcePolicyID:     input.SourcePolicyID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marketplace.service.CreateListing: %w", err)
 	}
+
+	// Pack listings: persist the source-form composition.
+	if bundleType == "pack" && len(input.SourceFormIDs) > 0 {
+		if err := s.repo.SetPackForms(ctx, rec.ID, input.SourceFormIDs); err != nil {
+			return nil, fmt.Errorf("marketplace.service.CreateListing: pack forms: %w", err)
+		}
+	}
+
 	return toListingResponse(rec), nil
+}
+
+// SetPackFormsByOwner replaces the source-form composition for a pack
+// listing. Idempotent. Caller's clinic must own the publisher; the listing
+// must be a draft (composition changes after publish would invalidate the
+// already-shipped package payloads).
+func (s *Service) SetPackFormsByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID, formIDs []uuid.UUID) error {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	if listing.BundleType != "pack" {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: not a pack listing: %w", domain.ErrConflict)
+	}
+	if listing.Status != "draft" {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: composition locked once published: %w", domain.ErrConflict)
+	}
+	if len(formIDs) < 2 {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: pack needs at least 2 forms: %w", domain.ErrValidation)
+	}
+	if err := s.repo.SetPackForms(ctx, listingID, formIDs); err != nil {
+		return fmt.Errorf("marketplace.service.SetPackFormsByOwner: %w", err)
+	}
+	return nil
+}
+
+// ListPackFormsByOwner returns the current pack composition. Ownership
+// enforced — only the publisher (or Salvia) can read.
+func (s *Service) ListPackFormsByOwner(ctx context.Context, callerClinicID, listingID uuid.UUID) ([]*PackForm, error) {
+	listing, err := s.repo.GetListingByID(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: %w", err)
+	}
+	publisher, err := s.repo.GetPublisherByID(ctx, listing.PublisherAccountID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: publisher: %w", err)
+	}
+	if !s.callerOwnsPublisher(ctx, callerClinicID, publisher) {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: not owner: %w", domain.ErrForbidden)
+	}
+	rows, err := s.repo.ListPackForms(ctx, listingID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.ListPackFormsByOwner: %w", err)
+	}
+	return rows, nil
 }
 
 // PublishListing transitions a listing from draft → published.
@@ -750,6 +871,16 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 	// Trial/suspended gate.
 	if err := s.checkCanPublish(ctx, input.ClinicID); err != nil {
 		return nil, fmt.Errorf("marketplace.service.PublishVersion: %w", err)
+	}
+
+	// Dispatch by bundle type. Pack and policy_only have their own snapshot
+	// shapes and don't accept input.SourceFormID — pack pulls forms from the
+	// listing_forms join table; policy_only pulls from listing.source_policy_id.
+	switch listing.BundleType {
+	case "pack":
+		return s.publishPackVersion(ctx, listing, input)
+	case "policy_only":
+		return s.publishPolicyVersion(ctx, listing, input)
 	}
 
 	snapshot, err := s.snapshot.SnapshotForm(ctx, input.SourceFormID, input.ClinicID)
@@ -872,6 +1003,295 @@ func (s *Service) PublishVersion(ctx context.Context, input PublishVersionInput)
 	}
 
 	return toVersionResponse(version, nil, 0, false), nil
+}
+
+// publishPackVersion snapshots all source forms composing a pack listing
+// into a single marketplace version. Each form's fields land in the
+// version-field mirror tagged with the form's pack position; the package
+// payload carries the Forms array. Linked policies bundle per-form when
+// they exist (analogous to the single-form bundled flow).
+func (s *Service) publishPackVersion(ctx context.Context, listing *ListingRecord, input PublishVersionInput) (*VersionResponse, error) {
+	if s.snapshot == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: form snapshotter not configured: %w", domain.ErrConflict)
+	}
+
+	pack, err := s.repo.ListPackForms(ctx, listing.ID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: pack: %w", err)
+	}
+	if len(pack) < 2 {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: pack needs >=2 forms: %w", domain.ErrConflict)
+	}
+
+	// Snapshot each source form. We collect per-form linked policy IDs in
+	// the same pass so bundled-policy snapshots batch into a single repo
+	// call below — no N+1.
+	type packEntry struct {
+		PackForm  *PackForm
+		Snapshot  *FormSnapshot
+		PolicyIDs []uuid.UUID
+	}
+	entries := make([]packEntry, 0, len(pack))
+	allPolicyIDs := []uuid.UUID{}
+	for _, pf := range pack {
+		snap, err := s.snapshot.SnapshotForm(ctx, pf.SourceFormID, input.ClinicID)
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: snapshot pos=%d: %w", pf.Position, err)
+		}
+		var policyIDs []uuid.UUID
+		if listing.BundleType == "pack" {
+			// Per-form linked policies: still useful so each form lands in
+			// the buyer's clinic with its policy companions intact.
+			policyIDs, err = s.snapshot.LinkedPolicyIDs(ctx, pf.SourceFormID, input.ClinicID)
+			if err != nil {
+				return nil, fmt.Errorf("marketplace.service.publishPackVersion: linked policies pos=%d: %w", pf.Position, err)
+			}
+			allPolicyIDs = append(allPolicyIDs, policyIDs...)
+		}
+		entries = append(entries, packEntry{PackForm: pf, Snapshot: snap, PolicyIDs: policyIDs})
+	}
+
+	// One batched call across all per-form policy IDs (deduped) — keeps the
+	// snapshotter's batched query path active.
+	policyByID := map[uuid.UUID]PackagePolicy{}
+	if len(allPolicyIDs) > 0 {
+		if s.policySnap == nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: policy snapshotter not configured: %w", domain.ErrConflict)
+		}
+		dedup := dedupUUIDs(allPolicyIDs)
+		snaps, err := s.policySnap.SnapshotPolicies(ctx, dedup, input.ClinicID)
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.publishPackVersion: policy snapshots: %w", err)
+		}
+		for _, ps := range snaps {
+			clauses := make([]PackagePolicyClause, len(ps.Clauses))
+			for i, c := range ps.Clauses {
+				clauses[i] = PackagePolicyClause(c)
+			}
+			policyByID[ps.PolicyID] = PackagePolicy{
+				Name:        ps.Name,
+				Description: ps.Description,
+				Content:     ps.Content,
+				Clauses:     clauses,
+			}
+		}
+	}
+
+	major, minor := nextMarketplaceVersion(ctx, s.repo, input.ListingID, input.ChangeType)
+	publishedAt := domain.TimeNow()
+
+	pkgForms := make([]PackageForm, len(entries))
+	totalFields := 0
+	mirrorFields := []CreateVersionFieldParams{}
+	for i, e := range entries {
+		pos := e.PackForm.Position
+		var perFormPolicies []PackagePolicy
+		for _, pid := range e.PolicyIDs {
+			if pp, ok := policyByID[pid]; ok {
+				perFormPolicies = append(perFormPolicies, pp)
+			}
+		}
+		pkgForms[i] = PackageForm{
+			Position:      pos,
+			Name:          e.Snapshot.Name,
+			Description:   e.Snapshot.Description,
+			OverallPrompt: e.Snapshot.OverallPrompt,
+			Tags:          e.Snapshot.Tags,
+			Fields:        toPackageFields(e.Snapshot.Fields),
+			Policies:      perFormPolicies,
+		}
+		totalFields += len(e.Snapshot.Fields)
+		// Mirror per-form fields with source_form_position so the listing
+		// detail / preview can reconstruct each pack-form's field list
+		// without parsing JSONB.
+		for _, f := range e.Snapshot.Fields {
+			cfg := f.Config
+			if cfg == nil {
+				cfg = json.RawMessage(`{}`)
+			}
+			packPos := pos
+			mirrorFields = append(mirrorFields, CreateVersionFieldParams{
+				ID:                 domain.NewID(),
+				Position:           f.Position,
+				Title:              f.Title,
+				Type:               f.Type,
+				Config:             cfg,
+				AIPrompt:           f.AIPrompt,
+				Required:           f.Required,
+				Skippable:          f.Skippable,
+				AllowInference:     f.AllowInference,
+				MinConfidence:      f.MinConfidence,
+				SourceFormPosition: &packPos,
+			})
+		}
+	}
+
+	pkg := Package{
+		Meta: PackageMeta{
+			SchemaVersion:        "2",
+			FormVersion:          fmt.Sprintf("%d.%d", major, minor),
+			SalviaCompatibleFrom: "1.0",
+			Vertical:             listing.Vertical,
+			BundleType:           listing.BundleType,
+			PolicyAttribution:    s.policyAttribution,
+			PublishedAt:          publishedAt,
+		},
+		Listing: PackageListing{
+			Name:                  listing.Name,
+			Description:           listing.LongDescription,
+			Tags:                  listing.Tags,
+			PolicyDependencyCount: len(allPolicyIDs),
+		},
+		Forms: pkgForms,
+	}
+
+	checksum, err := checksumPackage(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: checksum: %w", err)
+	}
+	pkg.Meta.Checksum = checksum
+
+	payload, err := json.Marshal(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: marshal: %w", err)
+	}
+
+	version, _, err := s.repo.CreateVersion(ctx, CreateVersionParams{
+		ID:              domain.NewID(),
+		ListingID:       input.ListingID,
+		VersionMajor:    major,
+		VersionMinor:    minor,
+		ChangeType:      input.ChangeType,
+		ChangeSummary:   input.ChangeSummary,
+		PackagePayload:  payload,
+		PayloadChecksum: checksum,
+		FieldCount:      totalFields,
+		// SourceFormVersionID is single-form. For packs we leave it nil; the
+		// payload's Forms array carries the per-form lineage.
+		SourceFormVersionID: nil,
+		PublishedBy:         input.StaffID,
+		PublishedAt:         publishedAt,
+		Fields:              mirrorFields,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: %w", err)
+	}
+
+	notificationType := "minor_update"
+	if input.ChangeType == "major" {
+		notificationType = "major_upgrade"
+	}
+	if _, err := s.repo.CreateUpgradeNotificationsForVersion(ctx, input.ListingID, version.ID, notificationType); err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPackVersion: notify: %w", err)
+	}
+
+	return toVersionResponse(version, nil, 0, false), nil
+}
+
+// publishPolicyVersion snapshots the listing's source policy into a
+// marketplace version. Zero field-mirror rows; the package's Policy field
+// carries the entire content. The buyer's import flow materialises this
+// straight into a tenant policy without creating a form.
+func (s *Service) publishPolicyVersion(ctx context.Context, listing *ListingRecord, input PublishVersionInput) (*VersionResponse, error) {
+	if listing.SourcePolicyID == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: listing has no source_policy_id: %w", domain.ErrConflict)
+	}
+	if s.policySnap == nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: policy snapshotter not configured: %w", domain.ErrConflict)
+	}
+
+	snap, err := s.policySnap.SnapshotPolicy(ctx, *listing.SourcePolicyID, input.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: snapshot: %w", err)
+	}
+
+	clauses := make([]PackagePolicyClause, len(snap.Clauses))
+	for i, c := range snap.Clauses {
+		clauses[i] = PackagePolicyClause(c)
+	}
+	policy := &PackagePolicy{
+		Name:        snap.Name,
+		Description: snap.Description,
+		Content:     snap.Content,
+		Clauses:     clauses,
+	}
+
+	major, minor := nextMarketplaceVersion(ctx, s.repo, input.ListingID, input.ChangeType)
+	publishedAt := domain.TimeNow()
+
+	pkg := Package{
+		Meta: PackageMeta{
+			SchemaVersion:        "2",
+			FormVersion:          fmt.Sprintf("%d.%d", major, minor),
+			SalviaCompatibleFrom: "1.0",
+			Vertical:             listing.Vertical,
+			BundleType:           listing.BundleType,
+			PolicyAttribution:    s.policyAttribution,
+			PublishedAt:          publishedAt,
+		},
+		Listing: PackageListing{
+			Name:                  listing.Name,
+			Description:           listing.LongDescription,
+			Tags:                  listing.Tags,
+			PolicyDependencyCount: 1,
+		},
+		Policy: policy,
+	}
+
+	checksum, err := checksumPackage(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: checksum: %w", err)
+	}
+	pkg.Meta.Checksum = checksum
+
+	payload, err := json.Marshal(pkg)
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: marshal: %w", err)
+	}
+
+	version, _, err := s.repo.CreateVersion(ctx, CreateVersionParams{
+		ID:                  domain.NewID(),
+		ListingID:           input.ListingID,
+		VersionMajor:        major,
+		VersionMinor:        minor,
+		ChangeType:          input.ChangeType,
+		ChangeSummary:       input.ChangeSummary,
+		PackagePayload:      payload,
+		PayloadChecksum:     checksum,
+		FieldCount:          0,
+		SourceFormVersionID: nil,
+		PublishedBy:         input.StaffID,
+		PublishedAt:         publishedAt,
+		Fields:              nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: %w", err)
+	}
+
+	notificationType := "minor_update"
+	if input.ChangeType == "major" {
+		notificationType = "major_upgrade"
+	}
+	if _, err := s.repo.CreateUpgradeNotificationsForVersion(ctx, input.ListingID, version.ID, notificationType); err != nil {
+		return nil, fmt.Errorf("marketplace.service.publishPolicyVersion: notify: %w", err)
+	}
+
+	return toVersionResponse(version, nil, 0, false), nil
+}
+
+// dedupUUIDs returns the input slice with duplicates removed, preserving
+// first-seen order.
+func dedupUUIDs(in []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(in))
+	out := make([]uuid.UUID, 0, len(in))
+	for _, id := range in {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // ── Public read ───────────────────────────────────────────────────────────────
@@ -1056,6 +1476,16 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 		return nil, fmt.Errorf("marketplace.service.Import: decode payload: %w", err)
 	}
 
+	// Pack and policy_only listings have entirely different import shapes —
+	// dispatch to dedicated helpers and short-circuit. The single-form path
+	// below stays unchanged to preserve the existing flow.
+	switch listing.BundleType {
+	case "pack":
+		return s.importPack(ctx, listing, version, acq, pkg, input)
+	case "policy_only":
+		return s.importPolicyOnly(ctx, listing, version, acq, pkg, input)
+	}
+
 	// Policy attribution gate when bundled and consumer opts in.
 	if input.IncludePolicies {
 		if len(pkg.Policies) == 0 {
@@ -1184,6 +1614,246 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*AcquisitionRe
 	acq.PolicyImportChoice = &policyChoice
 	acq.PolicyAttributionAcceptedAt = acceptedAt
 	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// importPack materialises a pack-listing acquisition: each PackageForm
+// becomes a separate tenant form, all stamped with the SAME
+// source_marketplace_acquisition_id so the upgrade UX (sibling-finding,
+// re-import on new version) can scope to the pack as a unit.
+//
+// IncludePolicies imports each per-form policy bundle when true; the
+// RelinkExistingPolicyIDs map is single-form-only and ignored here.
+//
+// Acquisition.imported_form_id points at the FIRST tenant form created
+// (lowest pack position) — gives a single navigation target for the UI's
+// "open imported form" affordance. The full set is queryable via
+// forms.source_marketplace_acquisition_id.
+func (s *Service) importPack(
+	ctx context.Context,
+	listing *ListingRecord,
+	version *VersionRecord,
+	acq *AcquisitionRecord,
+	pkg Package,
+	input ImportInput,
+) (*AcquisitionResponse, error) {
+	if len(pkg.Forms) == 0 {
+		return nil, fmt.Errorf("marketplace.service.importPack: payload has no forms: %w", domain.ErrConflict)
+	}
+
+	// Aggregate policy attribution gate: any per-form bundled policies
+	// require attribution acknowledgement before import.
+	hasAnyPolicy := false
+	for _, f := range pkg.Forms {
+		if len(f.Policies) > 0 {
+			hasAnyPolicy = true
+			break
+		}
+	}
+	if input.IncludePolicies {
+		if !hasAnyPolicy {
+			return nil, fmt.Errorf("marketplace.service.importPack: pack has no bundled policies: %w", domain.ErrConflict)
+		}
+		if !input.AcceptedPolicyAttribution {
+			return nil, fmt.Errorf("marketplace.service.importPack: must accept policy attribution: %w", domain.ErrForbidden)
+		}
+		if s.policyImporter == nil {
+			return nil, fmt.Errorf("marketplace.service.importPack: policy importer not configured: %w", domain.ErrConflict)
+		}
+	}
+
+	// Iterate forms in stable position order so the buyer sees the same
+	// arrangement the publisher curated.
+	formsByPos := append([]PackageForm(nil), pkg.Forms...)
+	sortByPosition(formsByPos)
+
+	var firstFormID *uuid.UUID
+	policyChoice := "skipped"
+	var acceptedAt *time.Time
+
+	for _, pf := range formsByPos {
+		snapshotFields := make([]FormSnapshotField, len(pf.Fields))
+		for i, f := range pf.Fields {
+			cfg := f.Config
+			if cfg == nil {
+				cfg = json.RawMessage(`{}`)
+			}
+			snapshotFields[i] = FormSnapshotField{
+				Position:       f.Position,
+				Title:          f.Title,
+				Type:           f.Type,
+				Config:         cfg,
+				AIPrompt:       f.AIPrompt,
+				Required:       f.Required,
+				Skippable:      f.Skippable,
+				AllowInference: f.AllowInference,
+				MinConfidence:  f.MinConfidence,
+			}
+		}
+
+		importTags := append([]string{}, pf.Tags...)
+		if !containsString(importTags, "marketplace") {
+			importTags = append(importTags, "marketplace")
+		}
+		if !containsString(importTags, "pack") {
+			importTags = append(importTags, "pack")
+		}
+		changeSummary := fmt.Sprintf(
+			"Imported from marketplace pack %s v%d.%d (form %d/%d: %s)",
+			listing.Slug, version.VersionMajor, version.VersionMinor,
+			pf.Position, len(formsByPos), pf.Name,
+		)
+
+		formID, err := s.importer.ImportForm(ctx, FormImportInput{
+			ClinicID:                       input.ClinicID,
+			StaffID:                        input.StaffID,
+			Name:                           pf.Name,
+			Description:                    pf.Description,
+			OverallPrompt:                  pf.OverallPrompt,
+			Tags:                           importTags,
+			ChangeSummary:                  changeSummary,
+			Fields:                         snapshotFields,
+			SourceMarketplaceListingID:     listing.ID,
+			SourceMarketplaceVersionID:     version.ID,
+			SourceMarketplaceAcquisitionID: acq.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marketplace.service.importPack: importer pos=%d: %w", pf.Position, err)
+		}
+		if firstFormID == nil {
+			id := formID
+			firstFormID = &id
+		}
+
+		// Per-form bundled policies — import each, then link to the form.
+		if input.IncludePolicies && len(pf.Policies) > 0 {
+			for j, pp := range pf.Policies {
+				clauses := make([]PolicySnapshotClause, len(pp.Clauses))
+				for k, c := range pp.Clauses {
+					clauses[k] = PolicySnapshotClause(c)
+				}
+				content := pp.Content
+				if content == nil {
+					content = json.RawMessage(`[]`)
+				}
+				newPolicyID, err := s.policyImporter.ImportPolicy(ctx, PolicyImportInput{
+					ClinicID:                   input.ClinicID,
+					StaffID:                    input.StaffID,
+					SourceMarketplaceVersionID: version.ID,
+					Name:                       pp.Name,
+					Description:                pp.Description,
+					Content:                    content,
+					Clauses:                    clauses,
+					ChangeSummary:              changeSummary,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("marketplace.service.importPack: policy import pos=%d/%d: %w", pf.Position, j, err)
+				}
+				if err := s.importer.LinkFormToPolicy(ctx, formID, input.ClinicID, newPolicyID, input.StaffID); err != nil {
+					return nil, fmt.Errorf("marketplace.service.importPack: link pos=%d/%d: %w", pf.Position, j, err)
+				}
+			}
+			policyChoice = "imported"
+			t := domain.TimeNow()
+			acceptedAt = &t
+		}
+	}
+
+	if firstFormID == nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: no forms materialised: %w", domain.ErrConflict)
+	}
+
+	if err := s.repo.SetAcquisitionImportedForm(ctx, acq.ID, input.ClinicID, *firstFormID); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: mark imported: %w", err)
+	}
+	if err := s.repo.SetAcquisitionPolicyChoice(ctx, acq.ID, input.ClinicID, policyChoice, acceptedAt); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: set choice: %w", err)
+	}
+	if err := s.repo.MarkNotificationsSeenForAcquisitionVersion(ctx, acq.ID, input.ClinicID, version.ID, domain.TimeNow()); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPack: dismiss notifications: %w", err)
+	}
+
+	acq.ImportedFormID = firstFormID
+	acq.PolicyImportChoice = &policyChoice
+	acq.PolicyAttributionAcceptedAt = acceptedAt
+	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// importPolicyOnly materialises a policy-only listing acquisition: a single
+// tenant policy is created, no tenant form is created. The acquisition's
+// imported_form_id stays nil — there is no form. Buyers see the new policy
+// in their Policies list with the marketplace lineage stamped via
+// `policies.source_marketplace_version_id`.
+//
+// IncludePolicies / RelinkExistingPolicyIDs are irrelevant here — the
+// policy IS the listing's content. Attribution is implicitly required and
+// must be acknowledged by passing AcceptedPolicyAttribution=true.
+func (s *Service) importPolicyOnly(
+	ctx context.Context,
+	listing *ListingRecord,
+	version *VersionRecord,
+	acq *AcquisitionRecord,
+	pkg Package,
+	input ImportInput,
+) (*AcquisitionResponse, error) {
+	if pkg.Policy == nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: payload has no policy: %w", domain.ErrConflict)
+	}
+	if !input.AcceptedPolicyAttribution {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: must accept policy attribution: %w", domain.ErrForbidden)
+	}
+	if s.policyImporter == nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: policy importer not configured: %w", domain.ErrConflict)
+	}
+
+	clauses := make([]PolicySnapshotClause, len(pkg.Policy.Clauses))
+	for i, c := range pkg.Policy.Clauses {
+		clauses[i] = PolicySnapshotClause(c)
+	}
+	content := pkg.Policy.Content
+	if content == nil {
+		content = json.RawMessage(`[]`)
+	}
+	changeSummary := fmt.Sprintf(
+		"Imported from marketplace policy %s v%d.%d",
+		listing.Slug, version.VersionMajor, version.VersionMinor,
+	)
+
+	if _, err := s.policyImporter.ImportPolicy(ctx, PolicyImportInput{
+		ClinicID:                   input.ClinicID,
+		StaffID:                    input.StaffID,
+		SourceMarketplaceVersionID: version.ID,
+		Name:                       pkg.Policy.Name,
+		Description:                pkg.Policy.Description,
+		Content:                    content,
+		Clauses:                    clauses,
+		ChangeSummary:              changeSummary,
+	}); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: policy import: %w", err)
+	}
+
+	t := domain.TimeNow()
+	if err := s.repo.SetAcquisitionPolicyChoice(ctx, acq.ID, input.ClinicID, "imported", &t); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: set choice: %w", err)
+	}
+	if err := s.repo.MarkNotificationsSeenForAcquisitionVersion(ctx, acq.ID, input.ClinicID, version.ID, domain.TimeNow()); err != nil {
+		return nil, fmt.Errorf("marketplace.service.importPolicyOnly: dismiss notifications: %w", err)
+	}
+
+	choice := "imported"
+	acq.PolicyImportChoice = &choice
+	acq.PolicyAttributionAcceptedAt = &t
+	return toAcquisitionResponse(acq, listing.Name), nil
+}
+
+// sortByPosition orders pack-form package entries by their declared
+// position so the import flow materialises the buyer's tenant forms in the
+// publisher-curated order.
+func sortByPosition(forms []PackageForm) {
+	for i := 1; i < len(forms); i++ {
+		for j := i; j > 0 && forms[j-1].Position > forms[j].Position; j-- {
+			forms[j-1], forms[j] = forms[j], forms[j-1]
+		}
+	}
 }
 
 // ListMyAcquisitions returns acquisitions for the caller's clinic.
@@ -1334,6 +2004,13 @@ func validateListingInput(input CreateListingInput) error {
 	default:
 		return fmt.Errorf("invalid vertical: %w", domain.ErrValidation)
 	}
+	if input.BundleType != "" {
+		switch input.BundleType {
+		case "bundled", "form_only", "pack", "policy_only":
+		default:
+			return fmt.Errorf("invalid bundle_type: %w", domain.ErrValidation)
+		}
+	}
 	switch input.PricingType {
 	case "free":
 		if input.PriceCents != nil {
@@ -1478,6 +2155,10 @@ func toListingResponse(l *ListingRecord) *ListingResponse {
 	if l.PublishedAt != nil {
 		s := l.PublishedAt.Format(time.RFC3339)
 		r.PublishedAt = &s
+	}
+	if l.SourcePolicyID != nil {
+		s := l.SourcePolicyID.String()
+		r.SourcePolicyID = &s
 	}
 	return r
 }

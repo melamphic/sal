@@ -1,0 +1,287 @@
+id: salvia.veterinary.controlled_drugs_sop
+name: "Controlled Drugs SOP"
+version: 1
+currency_date: 2026-05-08
+vertical: veterinary
+countries: [NZ, AU, UK, US]
+description: >
+  Standard operating procedure for the storage, ordering, administration,
+  dispensing, destruction, reconciliation and incident handling of controlled
+  drugs in the veterinary practice. Country-specific anchors apply to legal
+  retention, witness rules, audit cadence, and loss-reporting; the operational
+  spine is shared.
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975 + Misuse of Drugs Regulations 1977 (incl. reg 28 storage; reg 41 register); VCNZ Code of Professional Conduct §15 + VCNZ Position Statement on Controlled Drugs (overrides reg 41 with stricter contemporaneous-entry, witness, reconciliation requirements). Medsafe / Medicines Control oversight; Police Drug Enforcement notification on loss."
+  AU: "State Drugs & Poisons / Health (Drugs and Poisons) Acts and Regulations: Vic Drugs, Poisons and Controlled Substances Act 1981 + Reg 2017; NSW Poisons and Therapeutic Goods Act 1966 + Reg 2008 (cl.103-110, biannual physical inventory March + September); Qld Health (Drugs and Poisons) Reg 2021; WA Medicines and Poisons Act 2014; SA Controlled Substances Act 1984. AVA Prescribing Guidelines Oct 2023."
+  UK: "Misuse of Drugs Act 1971; Misuse of Drugs Regulations 2001; Misuse of Drugs (Safe Custody) Regulations 1973 (storage cabinet specification); Controlled Drugs (Supervision of Management and Use) Regulations 2013 (the 'CDR' — Accountable Officer regime); RCVS Code of Professional Conduct §4.53–4.57 + RCVS Practice Standards Scheme small-animal modules v3.4 (Oct 2025) module 3 (Medicines)."
+  US: "Controlled Substances Act (21 USC §801 et seq.); DEA regulations 21 CFR Parts 1300–1316 (storage 1301.75; recordkeeping 1304; biennial inventory 1304.11; theft/loss 1301.76 and DEA Form 106; destruction 1304.21 and DEA Form 41); state Veterinary Practice Acts; state Boards of Pharmacy where applicable; AVMA PVME §VII.D."
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This SOP applies to all controlled drugs (CDs) handled at any practice
+      premises: ordering, receipt, storage, administration to patients,
+      dispensing for take-home, transfer between premises, return to supplier,
+      destruction, and the recordkeeping that supports each operation.
+      Every member of clinical staff who handles CDs must read and acknowledge
+      this SOP at induction and at every annual review.
+
+  - id: storage
+    title: "Storage and access control"
+    body_per_country:
+      NZ: |
+        CDs (Class A, B and C controlled drugs as scheduled under the Misuse
+        of Drugs Act 1975) are stored in a locked cabinet that meets the Misuse
+        of Drugs Regulations 1977 reg 28 specification (steel construction,
+        locked at all times when not in use, fixed to the building structure).
+        Access is by named individuals only, listed on the access register
+        held by the Designated Controlled Drug Lead. Keys are not left in
+        locks; key transfer between staff is logged. The cabinet must be
+        located out of sight of clients and away from any window or external wall
+        where practical.
+      AU: |
+        CDs (S8 controlled drugs and applicable S4 D-restricted) are stored in
+        a drug safe meeting the relevant state requirement (e.g. Vic DPCS Reg
+        2017 cl.71 specifying steel construction and fixing; NSW Poisons and
+        Therapeutic Goods Reg 2008 cl.97; WA Medicines and Poisons Reg 2016
+        Sched 7). Access is by named individuals only on the access register.
+        Keys are not duplicated without the approval of the Designated
+        Controlled Drug Lead. The safe is fixed to the building structure
+        and located in a non-public area. Keys held by named staff only.
+      UK: |
+        CDs (Schedule 2 and Schedule 3 buprenorphine, temazepam, midazolam,
+        diethylpropion, flunitrazepam) are stored in a cabinet that meets
+        the Misuse of Drugs (Safe Custody) Regulations 1973 specification:
+        steel-bodied, anti-pick lock, fixed to the building structure with
+        cleared visibility for staff access. Access is restricted to a named
+        list of authorised staff held by the Designated Controlled Drug
+        Lead. Keys must be carried by a named keyholder during working hours
+        and locked in a secure place out-of-hours. Key change every 6 months
+        per RCVS Practice Standards Scheme guidance.
+      US: |
+        CDs (Schedules II–V) are stored in a securely locked, substantially
+        constructed cabinet meeting DEA 21 CFR §1301.75. Access is restricted
+        to authorised personnel on the practice access register. The DEA-
+        registrant veterinarian (or registered Mid-Level Practitioner) holds
+        ultimate accountability for the cabinet. Schedule II is segregated
+        within the cabinet from Schedules III–V to support biennial inventory
+        cadence. Cabinet must be fixed to the building structure.
+
+  - id: access_register
+    title: "Access list and key control"
+    body: |
+      The Designated Controlled Drug Lead maintains a written access register
+      naming every staff member authorised to access the CD cabinet. The
+      register records: full name, role, registration number (where
+      applicable), date of authorisation, and date of withdrawal. The register
+      is reviewed at staff change, at each clinical lead change, and at least
+      annually. Keys are not loaned to non-authorised staff under any
+      circumstance; emergency access by the on-call veterinarian is logged
+      contemporaneously.
+    body_per_country:
+      UK: |
+        The Designated Controlled Drug Lead maintains a written access
+        register naming every staff member authorised to access the CD
+        cabinet (RCVS PSS Module 3 + RCVS Code §4.55). Keys are changed at
+        least every 6 months and on any staff departure who held the key.
+        The register is reviewed at staff change, at each clinical lead
+        change, and at minimum annually.
+      US: |
+        Access is restricted to authorised personnel under DEA 21 CFR
+        §1301.76(a). The DEA-registrant practitioner is responsible for
+        ensuring that staff with access have not been convicted of a
+        controlled-substance felony or had a state license action regarding
+        controlled substances; this attestation is recorded at hire and at
+        annual review.
+
+  - id: ordering_receipt
+    title: "Ordering and receipt"
+    body_per_country:
+      NZ: |
+        CDs are ordered by a registered veterinarian with current Annual
+        Practising Certificate. Order is placed against the practice's
+        wholesaler account; on receipt, the receiving veterinarian (or
+        delegated staff with witness) checks the delivery against the
+        invoice for substance, strength, quantity, batch and expiry, then
+        creates a 'receive' register entry within 24 hours. Discrepancies
+        are escalated immediately to the Designated CD Lead.
+      AU: |
+        S8 / S4-D CDs are ordered by a vet with current AVBC / state
+        registration. State-specific authority requirements (e.g. Vic
+        treatment permit; NSW authority for prescribing >2 months) apply
+        to onward prescribing but not to wholesale order. Receipt is
+        checked against the supplier invoice; receive entry made same day.
+        State-specific NSW: physical inventory is biannual in March and
+        September; ordering must align with that inventory cadence.
+      UK: |
+        CDs are ordered on a written order or electronic equivalent signed
+        by a veterinary surgeon. On receipt, the order is checked against
+        invoice and the goods inspected for tamper, then receive entry made
+        in the bound CDR within 24 hours. RCVS PSS Module 3 requires
+        documented receipt checks. Schedule 2 Form FP10CDF requisition is
+        not used in practice ordering (vet wholesale model differs from
+        community pharmacy).
+      US: |
+        Schedule II controlled substances may only be received via a DEA
+        Form 222 (paper) or the DEA Controlled Substance Ordering System
+        (CSOS, electronic). The Form 222 is signed by the DEA-registrant.
+        On receipt, the date received and quantities received are recorded
+        on the Form 222 (Copy 1 retained by registrant). Schedules III–V
+        may be ordered on routine commercial invoice; receive entry recorded
+        within 24 hours per 21 CFR §1304.21.
+
+  - id: administration_witness
+    title: "Administration and witness rules"
+    body: |
+      Every administration of a controlled drug to a patient is recorded
+      contemporaneously to the practice's controlled-drug register entry
+      (system.drug_op widget — operation 'administer'). The register entry
+      records: drug, schedule, batch, expiry, quantity drawn, quantity
+      administered, quantity wasted, running balance, the responsible
+      veterinarian, and the witness.
+    body_per_country:
+      NZ: |
+        Witness is required for: any administration of pentobarbitone for
+        euthanasia; any IV Class B injectable; any wastage event. Witness
+        must be a registered veterinarian, registered veterinary nurse, or
+        senior practice staff named on the access register. The VCNZ Position
+        Statement on Controlled Drugs requires contemporaneous entry — at
+        the point of administration, not the end of shift.
+      AU: |
+        Witness is required for any S8 administration and for any wastage
+        event, per state DPCS regulations. Witness must be a registered
+        veterinarian or registered veterinary nurse (where state recognises
+        AVNAT registration). NSW: witness is mandatory and the witness's
+        signature is recorded in the drug register at the time of
+        administration.
+      UK: |
+        Witness is strongly recommended for every Schedule 2 administration
+        and is required by RCVS PSS Module 3 for Schedule 2 wastage. The
+        witness must be a member of staff competent to verify the
+        administration; ideally a registered veterinary surgeon or
+        registered veterinary nurse. Entries to the bound CDR (or compliant
+        electronic CDR) within 24 hours.
+      US: |
+        Witness is strongly recommended for all Schedule II administration
+        and required by AVMA PVME for any wastage. Wastage of Schedule II
+        is recorded with both the administering DEA-registrant and witness
+        signature. The witness must be a member of staff (need not be
+        DEA-registered themselves).
+
+  - id: dispensing
+    title: "Dispensing for take-home"
+    body: |
+      A controlled drug may be dispensed for take-home only on the basis of
+      a current valid prescription written by the prescribing veterinarian
+      (the practice's veterinary prescription form). Dispensing is recorded
+      contemporaneously as a 'dispense' register entry, capturing the recipient
+      (owner), patient, drug, batch, expiry, quantity, and the prescription
+      reference. Take-home labelling complies with country-specific
+      requirements: NZ Medicines Act labelling; AU APVMA labelling; UK VMR
+      Sched 3 §6 labelling; US 21 CFR §1306.24 (vet) and state board labelling.
+
+  - id: destruction
+    title: "Destruction and wastage"
+    body_per_country:
+      NZ: |
+        Routine wastage at administration is recorded by the administering
+        vet and a witness on the register entry. Bulk destruction of expired
+        or returned CDs is by an approved CD destruction service or by
+        denaturing-kit method in the presence of a second registered staff
+        member; Medicines Control / Police Drug Enforcement may attend
+        depending on quantity. A destruction record is retained for at least
+        3 years.
+      AU: |
+        State-specific. Wastage at administration is witnessed and recorded.
+        Bulk destruction generally requires a state-authorised witness
+        (Health Department officer in Vic; nominated supervisor + witness in
+        NSW; pharmacist or police officer in WA). Each state has a prescribed
+        form / register annotation; refer to state Drugs & Poisons Unit.
+      UK: |
+        Wastage at administration is witnessed and recorded. Bulk destruction
+        of stock CDs Schedule 2 must be carried out in the presence of an
+        Authorised Witness appointed under the Controlled Drugs (Supervision
+        of Management and Use) Regulations 2013 reg 27 — typically a CDLO
+        (Controlled Drugs Liaison Officer from police), or Home Office
+        Accountable Officer authorised person. Destruction by denaturing kit
+        rendering the drug irrecoverable. Schedule 3, 4 part 2, 5 may be
+        destroyed without an Authorised Witness but the destruction is still
+        recorded.
+      US: |
+        Wastage at administration is recorded and witnessed. Bulk destruction
+        of stock CDs is via DEA Form 41 destruction by a registered
+        reverse distributor, OR on-site destruction in the presence of two
+        DEA-authorised witnesses with Form 41 retained 2 years. CDs may not
+        be flushed or placed in routine waste. State-specific rules may add
+        further requirements.
+
+  - id: reconciliation
+    title: "Reconciliation cadence"
+    body_per_country:
+      NZ: |
+        Monthly physical reconciliation of every CD against the register
+        running balance, by the Designated CD Lead with one witness. Any
+        discrepancy escalated within 24 hours per the discrepancy clause.
+      AU: |
+        State-specific. NSW: biannual physical inventory in March and
+        September (Poisons and Therapeutic Goods Reg 2008 cl.110). Vic, Qld,
+        WA, SA: monthly recommended; quarterly minimum. The Designated CD
+        Lead conducts the count with one witness.
+      UK: |
+        Monthly physical reconciliation of every CD against the running
+        balance in the bound CDR, by the Designated CD Lead with witness.
+        RCVS PSS Module 3 Performance criterion on reconciliation cadence.
+        Annual stock audit additional to monthly reconciliation.
+      US: |
+        Biennial physical inventory of every CD per DEA 21 CFR §1304.11(c),
+        with separate inventory for Schedule II and Schedules III–V. Many
+        practices conduct quarterly internal reconciliation as best practice;
+        state Boards may prescribe additional intervals.
+
+  - id: discrepancy_escalation
+    title: "Discrepancy and loss escalation"
+    body: |
+      Any unexplained discrepancy at reconciliation is investigated within 24
+      hours by the Designated CD Lead. If the discrepancy cannot be resolved
+      to a recordkeeping error or wastage, the loss is treated as a suspected
+      theft / diversion and escalated.
+    body_per_country:
+      NZ: |
+        Loss reported to: Police Drug Enforcement; Medicines Control / MoH;
+        VCNZ (where the loss involves a registered veterinarian as a person
+        of concern). Internal review and any disciplinary action taken per
+        practice HR policy.
+      AU: |
+        Loss reported to: state Drugs & Poisons Unit (and, in NSW, NSW
+        Pharmaceutical Services); state Police where theft suspected;
+        AHPRA / state Vet Board where a registrant is a person of concern.
+      UK: |
+        Loss reported to: CDLO (police Controlled Drugs Liaison Officer)
+        within 24 hours (CDR Regs 2013); Home Office Accountable Officer for
+        the practice's geographic area; RCVS where a member is a person of
+        concern. Reports made on the standard CDLO loss form.
+      US: |
+        Loss reported on DEA Form 106 (Report of Theft or Loss) within one
+        business day of discovery, per 21 CFR §1301.76(b). Local police
+        notified for any suspected theft. State Veterinary Board informed
+        where a licensee is a person of concern.
+
+  - id: training_and_review
+    title: "Training and SOP review"
+    body: |
+      Every member of staff with CD access is trained on this SOP at
+      induction and at every annual review, with sign-off retained on the
+      training record. The Designated CD Lead reviews this SOP at least
+      annually, and after any incident, regulator-published change, or
+      practice structural change. The current version with currency date is
+      available to all staff.
+
+  - id: linked_records
+    title: "Linked policies and forms"
+    body: |
+      This SOP is linked to: the Controlled Drug Register Entry form
+      (salvia.veterinary.cd_register_entry), the Veterinary Written
+      Prescription form (salvia.veterinary.veterinary_prescription), the
+      Veterinary Medicines Cascade SOP (salvia.veterinary.veterinary_medicines_cascade_sop),
+      the practice Records Retention Policy (salvia.shared.records_retention_policy),
+      and the Information Security Policy (salvia.shared.info_security_policy).

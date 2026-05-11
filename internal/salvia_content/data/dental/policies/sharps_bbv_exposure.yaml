@@ -1,0 +1,176 @@
+id: salvia.dental.sharps_bbv_exposure
+name: "Sharps & Bloodborne-Virus Exposure Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Prevention of sharps injuries and management of any percutaneous,
+  mucocutaneous, or non-intact-skin exposure to blood or body fluid.
+  Covers engineering controls, administrative controls, PPE, post-
+  exposure management, and the country-specific reporting and PEP
+  pathways.
+
+purpose_per_regulator:
+  NZ: "HSWA 2015; WorkSafe NZ Notifiable Events; HQSC Standard 5; DCNZ IPC Practice Standard Dec 2024 §4.6."
+  AU: "State WHS Acts (NSW WHS Act 2011 ss 35-37; Vic OHS Act 2004); ADA AU IPC 5th Ed §5; Safe Work Australia."
+  UK: "Health and Safety (Sharp Instruments in Healthcare) Regulations 2013; RIDDOR 2013; HSE INDG453 (rev 1); UK PHE/UKHSA Eye of the Needle / EPINet."
+  US: "OSHA 29 CFR 1910.1030 Bloodborne Pathogens Standard; Needlestick Safety and Prevention Act 2000; CDC USPHS Updated Guidelines for the Management of Occupational Exposure 2018; 29 CFR 1904.8 sharps injury log."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every staff member, contractor, locum, student, and
+      visitor who may be exposed to sharps or potentially infectious
+      blood / body fluid in the practice.
+
+  - id: hierarchy_of_controls
+    title: "Hierarchy of controls"
+    body: |
+      Controls are applied in priority order:
+      1. Elimination — remove unnecessary sharps from the workflow.
+      2. Substitution — replace conventional needles/scalpels with
+         safety-engineered alternatives wherever a viable option exists.
+      3. Engineering controls — needle-resheath devices, blunt suture
+         needles where clinically appropriate, retractable scalpels,
+         neutral / hands-free zone for instrument passing.
+      4. Administrative controls — single-use, single-handed scoop where
+         recapping is unavoidable, dedicated sharps disposal at point of
+         use, no-recap protocol.
+      5. PPE — gloves (double for surgical), eye/face protection, fluid-
+         resistant gowns.
+
+  - id: sharps_disposal
+    title: "Sharps disposal"
+    body: |
+      Sharps bins compliant with BS 7320 / UN 3291 (UK), AS 4031:1992
+      (AU/NZ), or 29 CFR 1910.1030(d)(4)(iii) (US). Located within arm's
+      reach at the point of use. Filled to ≤2/3 (the manufacturer fill
+      line). Sealed by the user when filled; tagged with date and
+      location; disposed of as clinical waste through a contracted
+      carrier.
+
+  - id: vaccination
+    title: "Hep B vaccination programme"
+    body_per_country:
+      NZ: |
+        Hep B vaccination available free of charge to all clinical staff
+        per the National Immunisation Schedule. Anti-HBs ≥10 mIU/ml
+        documented post-course; non-responders booster + retest.
+      AU: |
+        Hep B vaccination required pre-employment per ADA AU 5th Ed §3
+        and state Public Health requirements. Anti-HBs documented;
+        non-responders managed per CDNA guidance.
+      UK: |
+        Hep B vaccination per Green Book Chapter 18 — required for all
+        clinical staff. Anti-HBs ≥10 mIU/ml within 1–4 months of
+        course; non-responders to be reviewed by occupational health.
+      US: |
+        Hep B vaccination offered free of charge within 10 working days
+        of clinical assignment per 29 CFR 1910.1030(f)(1)(ii)(A). If
+        declined, the OSHA Appendix A declination form (verbatim wording)
+        must be signed and retained:
+
+        "I understand that due to my occupational exposure to blood or
+        other potentially infectious materials I may be at risk of
+        acquiring hepatitis B virus (HBV) infection. I have been given
+        the opportunity to be vaccinated with hepatitis B vaccine, at no
+        charge to myself. However, I decline hepatitis B vaccination at
+        this time. I understand that by declining this vaccine, I
+        continue to be at risk of acquiring hepatitis B, a serious
+        disease. If in the future I continue to have occupational
+        exposure to blood or other potentially infectious materials and
+        I want to be vaccinated with hepatitis B vaccine, I can receive
+        the vaccination series at no charge to me."
+
+  - id: immediate_first_aid
+    title: "Immediate first aid following exposure"
+    body: |
+      Step 1 — Encourage gentle bleeding. Do NOT suck the wound.
+      Step 2 — Wash with soap and running water for at least 1 minute;
+      do not scrub.
+      Step 3 — Mucous-membrane / eye splash: irrigate with copious
+      water or saline for at least 5 minutes (remove contact lenses).
+      Step 4 — Cover the wound with a waterproof dressing.
+      Step 5 — Notify the clinical lead and start the Sharps Injury Log.
+
+  - id: risk_assessment_pep
+    title: "Risk assessment and post-exposure prophylaxis"
+    body: |
+      Same-day risk assessment by occupational health, ED, or designated
+      lead clinician:
+      - Source patient identified — request informed consent for HBsAg /
+        anti-HCV / HIV Ag-Ab testing.
+      - Injured person — baseline anti-HBs / anti-HCV / HIV testing.
+      - HIV PEP (if indicated) within 1–2 hours, ideally <24h, never
+        beyond 72h. Standard regimen 28 days TDF/FTC + raltegravir or
+        dolutegravir per CDC USPHS 2018.
+      - Hep B PEP per anti-HBs status (HBIG ± vaccine accelerated).
+      - Hep C — no PEP; serology follow-up; treat acute infection if
+        seroconversion occurs (DAA regimen).
+      Counselling on safer sex / needle hygiene during the window period.
+
+  - id: source_consent
+    title: "Source patient consent for testing"
+    body: |
+      The source patient is approached by a clinician other than the
+      injured person where possible. Consent is required for
+      blood-borne-virus testing in all four jurisdictions. If the source
+      declines, this is documented and PEP decisions proceed on
+      precautionary basis. UK: Public Health (Control of Disease) Act 1984
+      does not permit forced testing.
+
+  - id: reporting
+    title: "Statutory reporting"
+    body_per_country:
+      NZ: |
+        WorkSafe NZ notifiable injury (HSWA s23) where the injury results
+        in serious illness or hospitalisation. Sharps exposure to
+        BBV-positive source: notify WorkSafe within reasonable timeframe.
+        Internal HQSC Standard 5 incident reporting in all cases.
+      AU: |
+        State WHS regulator notifiable incident threshold (e.g. NSW WHS
+        Act 2011 s37: serious injury requiring hospital admission =
+        immediate notification + ≤48h written report). All sharps events
+        recorded in the practice IPC log irrespective of notifiability.
+      UK: |
+        RIDDOR 2013 reg 9: percutaneous injury where the source is known
+        BBV-positive = "dangerous occurrence" reportable to HSE without
+        delay (Form F2508). Report within 10 days of the event in
+        writing. Sharps Injury Regs 2013 reg 7 also requires investigation
+        and recording in the practice's accident book.
+      US: |
+        OSHA Sharps Injury Log per 29 CFR 1910.1030(h)(5): record device,
+        type/brand, work area, description; retain ≥5 years; protect
+        confidentiality of injured worker per (h)(5)(ii). OSHA 300 log
+        entry where the case results in lost time, restricted duty, or
+        medical treatment beyond first aid (29 CFR 1904.8). OSHA 301
+        Incident Report retained 5 years.
+
+  - id: follow_up_serology
+    title: "Follow-up serology"
+    body: |
+      Baseline; 6 weeks; 12 weeks; 6 months. CDC USPHS 2018 allows 4-month
+      cessation if the injured person used 4th-gen HIV Ag-Ab assay and
+      results negative. Document refusal of follow-up testing in writing.
+
+  - id: training
+    title: "Training and competence"
+    body: |
+      All clinical staff receive sharps and BBV training at induction
+      and at least annually (29 CFR 1910.1030(g)(2) US; UK Sharps Regs
+      2013 reg 5; ADA AU 5th Ed §3). Training records retained ≥3 years
+      OSHA / per local schedule.
+
+  - id: device_review
+    title: "Annual safety-device review"
+    body: |
+      Annually, the IPC Lead reviews:
+      - Sharps inventory: are safety-engineered alternatives now
+        available where they previously were not?
+      - Injury log analysis: is any device, procedure, or location
+        over-represented in incidents?
+      - Action plan with named owners.
+      Required by UK Sharps Regs 2013 reg 5 and OSHA 1910.1030(c)(1)(iv).

@@ -1,0 +1,237 @@
+id: salvia.dental.medical_emergency_form
+name: "Medical Emergency Event Record"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Single record for a medical emergency at the dental practice (anaphylaxis,
+  syncope, hypoglycaemia, MI, asthma, seizure, aspiration, other). Captures
+  the clinical sequence, drugs and equipment used, BLS / AED response, and
+  emergency-services escalation. Triggers the incident pipeline.
+
+purpose_per_regulator:
+  NZ: "DCNZ Medical Emergencies in Dental Practice Standard §1–8 (drug kit + AED if sedating); HDC Code Right 4."
+  AU: "Dental Board AU Code of Conduct §3 (clinical governance); ADA AU emergency drug list; ANZCOR ALS guidelines; state WHS."
+  UK: "RCUK Quality Standards for CPR Practice and Training: Primary Dental Care 2022; CQC Reg 12; GDC Standards 7."
+  US: "ADA Office Emergency Manual; AHA BLS/ACLS; state board sedation rules; OSHA 1910.151 (medical emergency response)."
+
+linked_policy_defaults:
+  - salvia.dental.medical_emergencies_resuscitation
+  - salvia.dental.sedation_governance
+
+tags: [emergency, incident, clinical_event]
+
+overall_prompt: |
+  Extract the emergency type, time of recognition, drugs/equipment used,
+  whether BLS / AED were activated, escalation (999/111/000/911), and
+  outcome. Do NOT auto-classify severity — set min_severity high so the
+  incident floor is at least high, and let clinician adjust.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: Date of birth
+    type: system_field
+    source: patient_record.date_of_birth
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: event_datetime
+    label: Time of event onset
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: event_recognised_by
+    label: Recognised by
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: emergency_type
+    label: Emergency type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Anaphylaxis", value: "anaphylaxis"}
+        - {label: "Syncope / vasovagal", value: "syncope"}
+        - {label: "Hypoglycaemia", value: "hypoglycaemia"}
+        - {label: "Suspected acute coronary syndrome / MI", value: "mi"}
+        - {label: "Asthma exacerbation", value: "asthma"}
+        - {label: "Seizure", value: "seizure"}
+        - {label: "Aspiration / airway obstruction", value: "aspiration"}
+        - {label: "Cardiac arrest", value: "cardiac_arrest"}
+        - {label: "Stroke / TIA", value: "stroke"}
+        - {label: "Other (specify)", value: "other"}
+
+  - key: clinical_summary
+    label: Clinical summary (sequence of events)
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: vital_signs_during
+    label: Vital signs during event
+    type: long_text
+    ai_extract: true
+    help_text: "Time-indexed: HR, BP, SpO₂, RR, GCS / AVPU, blood glucose if measured."
+
+  - key: bls_started
+    label: BLS started
+    type: button_group
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not required", value: "not_required"}
+        - {label: "Yes", value: "yes"}
+        - {label: "No — clinically inappropriate", value: "no_clinical"}
+
+  - key: aed_used
+    label: AED applied
+    type: button_group
+    ai_extract: true
+    help_text: "DCNZ Sedation Standard March 2026 mandates AED on premises if sedating; RCUK QS Primary Dental Care 2022 §3.2 strongly recommends; ADA US recommends."
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — shock not advised", value: "yes_no_shock"}
+        - {label: "Yes — shock delivered", value: "yes_shock"}
+        - {label: "Not available on premises", value: "not_available"}
+
+  - key: drugs_administered
+    label: Emergency drugs administered
+    type: long_text
+    ai_extract: true
+    help_text: |
+      Capture drug, dose, route, time. Common: adrenaline 1:1000 IM
+      0.5 mg adult / 0.3 mg child 6-12 / 0.15 mg <6; glucagon 1 mg IM;
+      glucose oral / IV; GTN 400 mcg SL; aspirin 300 mg PO;
+      salbutamol 4–10 puffs via spacer; midazolam 10 mg buccal;
+      hydrocortisone 200 mg IV; chlorphenamine 10 mg IV;
+      O₂ 15 L/min via reservoir mask.
+
+  - key: equipment_used
+    label: Equipment used
+    type: long_text
+    ai_extract: true
+
+  - key: oxygen_used
+    label: Oxygen administered
+    type: button_group
+    ai_extract: true
+    config:
+      options:
+        - {label: "No", value: "no"}
+        - {label: "Yes — via non-rebreather mask", value: "yes_nrb"}
+        - {label: "Yes — via nasal cannula", value: "yes_cannula"}
+        - {label: "Yes — bag-valve-mask ventilation", value: "yes_bvm"}
+
+  - key: emergency_services_called
+    label: Emergency services activated
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Not required", value: "no"}
+        - {label: "NZ — 111", value: "nz_111"}
+        - {label: "AU — 000", value: "au_000"}
+        - {label: "UK — 999", value: "uk_999"}
+        - {label: "US — 911", value: "us_911"}
+        - {label: "Other / regional number", value: "other"}
+
+  - key: time_to_ambulance_arrival
+    label: Time to ambulance arrival (minutes)
+    type: number
+    ai_extract: true
+
+  - key: handover_summary
+    label: Ambulance handover (SBAR)
+    type: long_text
+    ai_extract: true
+
+  - key: outcome
+    label: Outcome
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Resolved in clinic — discharged with advice", value: "resolved_clinic"}
+        - {label: "Resolved in clinic — referred to GP / urgent care", value: "resolved_referred"}
+        - {label: "Transferred to hospital by ambulance", value: "transferred_ambulance"}
+        - {label: "Transferred by private vehicle (escort)", value: "transferred_private"}
+        - {label: "Cardiac arrest — ROSC achieved", value: "rosc"}
+        - {label: "Death", value: "death"}
+        - {label: "Other", value: "other"}
+
+  - key: post_event_review_planned
+    label: Post-event review (significant event analysis)
+    type: button_group
+    config:
+      options:
+        - {label: "Scheduled", value: "scheduled"}
+        - {label: "Completed", value: "completed"}
+        - {label: "Not applicable", value: "na"}
+
+  - key: notifications_made
+    label: Notifications made
+    type: long_text
+    ai_extract: true
+    help_text: "Drug kit replenishment order, AED check, manufacturer reporting (Yellow Card MHRA / TGA / Medsafe / FDA MedWatch), regulator notification if triggered."
+
+  - key: nz_notes
+    label: NZ-specific notes
+    type: text
+    countries: [NZ]
+    help_text: "DCNZ Med Emergencies Practice Standard §6 incident review within 7 days; CARM ADR notification if drug-related; HealthCERT if applicable."
+
+  - key: au_notes
+    label: AU-specific notes
+    type: text
+    countries: [AU]
+    help_text: "TGA Database of Adverse Event Notifications for medication-related; state WHS notifiable incident threshold."
+
+  - key: uk_notes
+    label: UK-specific notes
+    type: text
+    countries: [UK]
+    help_text: "MHRA Yellow Card for ADRs; CQC notification under Reg 18 (notification of other incidents) if patient hospitalised; RIDDOR if work-related staff harm."
+
+  - key: us_notes
+    label: US-specific notes
+    type: text
+    countries: [US]
+    help_text: "FDA MedWatch for ADRs; OSHA log if work-related staff exposure; state board incident notification thresholds."
+
+  - key: emergency_incident
+    label: Medical emergency incident record
+    type: system.incident
+    required: true
+    config:
+      incident_type: other
+      min_severity: high
+
+  - key: emergency_drug_admin
+    label: Emergency drug administration ledger
+    type: system.drug_op
+    config:
+      operation: administer
+      controlled_only: false
+      confirm_required: true
+
+  - key: clinician_notes
+    label: Additional clinician notes
+    type: long_text
+    ai_extract: true

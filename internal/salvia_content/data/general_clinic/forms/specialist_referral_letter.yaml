@@ -1,0 +1,177 @@
+id: salvia.general_clinic.specialist_referral_letter
+name: "Specialist referral letter"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Letter referring a patient to a specialist or hospital service. Includes
+  patient context, history, exam findings, current medications and allergies,
+  reason for referral, urgency, and attachments. Country anchors include NZ
+  e-Referrals (HealthLink / ERMS), AU MBS items 132/137 + state e-referral,
+  UK NHS e-Referral Service (e-RS) two-week-wait pathways, US CMS / Medicare
+  Advantage prior authorisation.
+
+purpose_per_regulator:
+  NZ: "RNZCGP Foundation Standard; HISO 10068:2022 e-Referral data set; HDC Code R4."
+  AU: "RACGP Standards 5th ed Criterion C5.2; MBS specialist-referral validity (12 months default, indefinite for chronic disease — referrer's discretion)."
+  UK: "NHS e-Referral Service; NICE NG12 suspected cancer (2WW pathway); GMC Good Medical Practice 2024 paragraph 33."
+  US: "CMS Quality Payment Program; Medicare Advantage prior authorisation (CMS 2024 final rule); state network rules; HIPAA TPO disclosure 164.506."
+
+linked_policy_defaults:
+  - salvia.shared.privacy_policy
+  - salvia.shared.records_retention_policy
+  - salvia.general_clinic.results_safety_netting
+
+tags: [referral, communication]
+
+fields:
+  - key: subject_ref
+    label: "Patient"
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_dob
+    label: "Date of birth"
+    type: system_field
+    source: patient_record.date_of_birth
+    required: true
+
+  - key: subject_id_number
+    label: "Health identifier (NHI / Medicare / NHS no / MBI)"
+    type: system_field
+    source: patient_record.health_identifier
+    pii: true
+
+  - key: subject_address
+    label: "Patient address"
+    type: system_field
+    source: patient_record.address
+    pii: true
+
+  - key: subject_phone
+    label: "Patient phone"
+    type: system_field
+    source: patient_record.phone
+    pii: true
+
+  - key: recipient_specialist
+    label: "Specialist / service referred to"
+    type: text
+    required: true
+    help_text: "Named individual or named service (e.g. 'Dr X, ENT' or 'Auckland City ENT clinic')."
+
+  - key: recipient_address
+    label: "Specialist address / e-Referral target"
+    type: text
+    required: true
+
+  - key: referral_urgency
+    label: "Urgency"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Routine", value: "routine"}
+        - {label: "Soon (4–6 weeks)", value: "soon"}
+        - {label: "Urgent (within 2 weeks)", value: "urgent"}
+        - {label: "Two-week-wait suspected cancer (UK NICE NG12)", value: "uk_2ww"}
+        - {label: "Acute — same day / hospital admission", value: "acute"}
+
+  - key: reason_for_referral
+    label: "Reason for referral"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Specific clinical question and what is being asked of the specialist (opinion / co-management / procedure / takeover)."
+
+  - key: history_of_presenting_problem
+    label: "History of presenting problem"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: relevant_past_medical_history
+    label: "Relevant past medical history"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: examination_findings
+    label: "Examination findings"
+    type: long_text
+    ai_extract: true
+
+  - key: investigations_to_date
+    label: "Investigations to date and results"
+    type: long_text
+    ai_extract: true
+
+  - key: current_medications
+    label: "Current medications (incl. PRN / OTC / herbal)"
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Reconcile with patient's medication list. Include doses and indication where helpful."
+
+  - key: allergies
+    label: "Allergies and adverse reactions"
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: social_history
+    label: "Social history (occupation, smoking, alcohol, supports)"
+    type: long_text
+    ai_extract: true
+
+  - key: language_interpreter
+    label: "Language / interpreter required"
+    type: text
+
+  - key: accessibility_needs
+    label: "Accessibility needs"
+    type: long_text
+    help_text: "UK Accessible Information Standard (DCB1605) requires this to be transmitted with referrals."
+
+  - key: patient_aware_of_referral
+    label: "Patient aware and consents to referral?"
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "Yes — discussed and agreed", value: "yes"}
+        - {label: "Yes — emergency / mental-health (consent overridden / deferred)", value: "emergency"}
+        - {label: "No — best interests for incapacity", value: "best_interests"}
+
+  - key: attachments
+    label: "Attachments"
+    type: long_text
+    help_text: "Imaging links, lab PDFs, ECG, prior letters. Each attachment timestamped."
+
+  - key: safety_netting
+    label: "Safety-netting advice given to patient pending appointment"
+    type: long_text
+    ai_extract: true
+    help_text: "What to watch for, when to re-present in the meantime, who to call after-hours."
+
+  - key: follow_up_responsibility
+    label: "Follow-up — who is responsible if specialist appointment delayed?"
+    type: long_text
+    required: true
+    help_text: "Named clinician at this practice. CQC GP Mythbuster 57 (failure-safe results / appointment chasing)."
+
+  - key: signature_referrer
+    label: "Referrer name and registration"
+    type: text
+    required: true
+
+  - key: signature_date
+    label: "Letter date"
+    type: date
+    required: true

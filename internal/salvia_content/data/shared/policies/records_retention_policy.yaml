@@ -1,0 +1,134 @@
+id: salvia.shared.records_retention_policy
+name: "Records Retention & Destruction"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How long the clinic keeps records, when and how it destroys them, and the
+  legal basis for the chosen periods. Periods vary substantially by
+  jurisdiction; the table below is the per-country floor — the clinic may
+  retain longer where indicated.
+
+purpose_per_regulator:
+  NZ: "Health (Retention of Health Information) Regulations 1996; Privacy Act 2020 IPP 9"
+  AU: "State Health Records Acts (Vic 2001 reg 12; NSW HRIPA 2002 sch 1 cl 5; ACT 1997); RACGP Standards 5th ed C7.1; APP 11 (destroy/de-identify when no longer needed)"
+  UK: "NHS Records Management Code of Practice 2021; UK GDPR Art 5(1)(e) (storage limitation); BMA Retention of Health Records guide"
+  US: "HIPAA §164.530(j) (6-year retention of policies/documentation); state medical-records statutes; state board rules; CMS conditions"
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      This policy covers clinical records, audio recordings, AI-extracted
+      drafts, prescriptions, controlled-drug registers, financial records,
+      consent forms, complaints, and significant-event records. It does not
+      cover staff employment records (governed separately).
+
+  - id: clinical_record_retention
+    title: "Clinical record retention"
+    body_per_country:
+      NZ: |
+        Adult: minimum 10 years from the date of the last treatment or
+        contact (Health (Retention of Health Information) Regulations 1996
+        reg 6). Minor: until age 26 (10 years after the patient turns 16).
+        Records may be transferred to the patient on request — Salvia
+        recommends retention beyond the minimum where clinically or
+        medico-legally relevant.
+      AU: |
+        Adult: minimum 7 years from the date of last contact (RACGP C7.1;
+        Vic Health Records Act reg 12). Minor: until the age of 25 (or 7
+        years from last contact, whichever is later). Some states require
+        longer for diagnostic imaging or specific procedures — verify state
+        law.
+      UK: |
+        Adult: minimum 10 years after last contact for GP records
+        (NHS Records Management Code of Practice 2021); 11 years for NHS
+        dental FP17/FP17O. Minor: until age 25 OR 11 years after last
+        entry, whichever is longer. Salvia recommends 15 years as a
+        defensible default.
+      US: |
+        State-by-state. Common ranges 5–10 years from last visit for
+        adults; minor: state age of majority + 5–10 years (e.g. TX 7 years
+        / age 18 + 1; CA 7 years; NY 6 years / age 22 minor; FL 4 years).
+        HIPAA §164.530(j) sets 6 years for the clinic's privacy
+        policies/documentation themselves.
+
+  - id: audio_recordings
+    title: "Audio recordings (Salvia recordings)"
+    body: |
+      Encounter audio captured for AI extraction is retained until the note
+      is submitted, then deleted by default. Audio is retained longer only
+      where: (a) the encounter is the subject of a complaint or incident
+      review; (b) the patient has separately consented to retention for
+      clinic training or quality improvement; (c) the encounter is
+      regulator-relevant (e.g. controlled-drug administration, child
+      safeguarding). Where retained beyond submission, audio is held to the
+      same retention schedule as the corresponding clinical record.
+
+  - id: ai_drafts
+    title: "AI-extracted drafts"
+    body: |
+      The AI-extracted draft (pre-clinician review) is retained for as long
+      as the audio is retained. Once audio is deleted, the draft is also
+      deleted; the clinician-signed final note becomes the authoritative
+      record.
+
+  - id: controlled_drug_records
+    title: "Controlled-drug records"
+    body_per_country:
+      NZ: "Held while the practitioner is practising; minimum 7 years on cessation. Misuse of Drugs Regulations 1977 reg 31."
+      AU: "Per state Drugs and Poisons / Controlled Substances Acts. NSW: register chronologically maintained, retain 5 years post-last-entry. Vic: 3 years."
+      UK: "Controlled Drugs Register: 2 years from the last entry (Misuse of Drugs Regulations 2001 reg 19). Veterinary Medicines Regulations 2013 Sch 3 §15: 5 years for POM-V/POM-VPS / Reg 18 / Reg 24 records."
+      US: "DEA: 2 years (21 CFR §1304.04). State boards may require longer (5 years common)."
+
+  - id: financial_records
+    title: "Financial and billing records"
+    body: |
+      Retained for the period required by tax and revenue law in the
+      jurisdiction (typically 7 years).
+
+  - id: consent_forms
+    title: "Consent forms"
+    body: |
+      Consent forms are part of the clinical record and follow the same
+      retention period as the clinical record. AI-scribe consent records are
+      retained for as long as any audio captured under that consent is
+      retained.
+
+  - id: destruction
+    title: "Secure destruction"
+    body: |
+      Records due for destruction are destroyed securely:
+      paper records — shredded with a cross-cut shredder (DIN 66399 P-4 or
+      higher) or commercial confidential-waste service with certificate of
+      destruction; electronic records — securely deleted with audit log
+      entry; audio — cryptographic deletion (key destroyed). Destruction
+      records (date, what destroyed, who destroyed, method, witness)
+      retained for 7 years.
+
+  - id: hold_for_litigation_or_complaint
+    title: "Holds for litigation, complaint, or regulator investigation"
+    body: |
+      Where a record is the subject of an active complaint, regulator
+      enquiry, criminal investigation, or civil claim — the record is held
+      indefinitely until the matter is resolved, regardless of the routine
+      retention period.
+
+  - id: practice_closure
+    title: "Practice closure / change of ownership"
+    body: |
+      On closure or sale, records are transferred to a successor practice
+      where consent allows, or to a regulator-approved repository, or
+      retained by the registered practitioner. Patients are notified and
+      offered a copy of their record.
+
+  - id: review
+    title: "Review"
+    body: |
+      Reviewed at least every two years, and immediately on any change to
+      retention statute or the clinic's vertical regulator's records
+      guidance.

@@ -26,6 +26,24 @@ type AdminBootstrapper interface {
 	Bootstrap(ctx context.Context, clinicID uuid.UUID, email, name string) error
 }
 
+// SalviaContentMaterialiser installs the per-(vertical, country) Salvia v1
+// content library into a freshly-onboarded clinic. Called once after
+// SubmitCompliance succeeds — at which point vertical (clinic-create),
+// country (Update), and an authenticated staffID (the submitter) are all
+// available. Best-effort: the materialiser logs per-template failures and
+// returns; clinic onboarding does not abort if a single template fails to
+// install. Implemented by an adapter in app.go bridging to
+// salvia_content.Materialiser.
+type SalviaContentMaterialiser interface {
+	MaterialiseFor(
+		ctx context.Context,
+		clinicID uuid.UUID,
+		vertical domain.Vertical,
+		country string,
+		staffID uuid.UUID,
+	)
+}
+
 // LogoSigner produces a short-lived signed GET URL for a logo object key.
 // Implemented by platform/storage in app.go.
 type LogoSigner interface {
@@ -40,16 +58,25 @@ type LogoUploader interface {
 
 // Service handles all clinic business logic.
 type Service struct {
-	repo         repo // interface — see repo.go
-	cipher       *crypto.Cipher
-	bootstrapper AdminBootstrapper // nil = skip (for tests that don't need the full flow)
-	logoSigner   LogoSigner        // nil = skip URL signing (logo_url omitted)
-	logoUploader LogoUploader      // nil = logo upload disabled
+	repo                repo // interface — see repo.go
+	cipher              *crypto.Cipher
+	bootstrapper        AdminBootstrapper         // nil = skip (for tests that don't need the full flow)
+	logoSigner          LogoSigner                // nil = skip URL signing (logo_url omitted)
+	logoUploader        LogoUploader              // nil = logo upload disabled
+	salviaMaterialiser  SalviaContentMaterialiser // nil = skip (e.g. tests, dev with content disabled)
 }
 
 // NewService creates a new clinic Service.
 func NewService(repo repo, cipher *crypto.Cipher, bootstrapper AdminBootstrapper, signer LogoSigner, uploader LogoUploader) *Service {
 	return &Service{repo: repo, cipher: cipher, bootstrapper: bootstrapper, logoSigner: signer, logoUploader: uploader}
+}
+
+// SetSalviaContentMaterialiser wires the post-onboarding content installer.
+// Optional — if absent, SubmitCompliance succeeds without installing any
+// Salvia v1 templates. Called from app.go after both clinic and
+// salvia_content services are constructed.
+func (s *Service) SetSalviaContentMaterialiser(m SalviaContentMaterialiser) {
+	s.salviaMaterialiser = m
 }
 
 // ClinicResponse is the decrypted, service-layer representation of a clinic.
@@ -620,6 +647,18 @@ func (s *Service) SubmitCompliance(ctx context.Context, clinicID uuid.UUID, in S
 	if err != nil {
 		return nil, fmt.Errorf("clinic.service.SubmitCompliance: %w", err)
 	}
+
+	// Compliance just completed — fire the Salvia content materialiser to
+	// install the per-(vertical, country) library. Best-effort: the
+	// materialiser handles per-template errors internally and logs;
+	// failures here must not abort compliance submission. Idempotent
+	// thanks to the unique index `idx_forms_salvia_template_per_clinic` /
+	// `idx_policies_salvia_template_per_clinic` — re-submission re-runs
+	// safely.
+	if s.salviaMaterialiser != nil && row.Country != "" && row.Vertical != "" {
+		s.salviaMaterialiser.MaterialiseFor(ctx, clinicID, row.Vertical, row.Country, in.StaffID)
+	}
+
 	return s.decryptAndBuild(ctx, row)
 }
 

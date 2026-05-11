@@ -1,0 +1,216 @@
+id: salvia.general_clinic.safeguarding
+name: "Safeguarding policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Safeguarding for children, vulnerable adults, elder abuse, and family /
+  intimate-partner violence. Sets out the practice's recognition, routine
+  enquiry, response, referral, and information-sharing rules. Country
+  anchors include NZ Oranga Tamariki + Children's Act 2014 + Te Whatu Ora
+  6-step VIP, AU state child-protection + state elder abuse units, UK
+  Children Act 1989/2004 + Working Together 2023 + Care Act 2014 s.42 + LADO,
+  US state CPS + APS + mandated-reporter statutes.
+
+purpose_per_regulator:
+  NZ: "Children's Act 2014 (Vulnerable Children Act) + Oranga Tamariki Act 1989; Te Whatu Ora Family Violence Intervention Programme (6-step VIP); Family Violence Act 2018."
+  AU: "State child protection Acts (Children & Young Persons Care & Protection Act NSW 1998; CYFA Vic 2005; etc.); Aged Care Act 2024 SIRS; National Plan to Reduce Violence Against Women and Children; state elder-abuse helpline."
+  UK: "Children Act 1989 + 2004; Working Together to Safeguard Children 2023; Care Act 2014 s.42 (adult safeguarding); LADO referral; CQC Reg 13 (safeguarding service users from abuse); Domestic Abuse Act 2021."
+  US: "State Mandatory Reporter Acts (every state for child abuse; majority for elder abuse); Title IV-E (CAPTA); state Adult Protective Services; Joint Commission RC.02.01.07; HIPAA 164.512(c) abuse / neglect disclosure."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every patient, every staff member, and every visitor at
+      this practice. It covers: child abuse and neglect; family / intimate-
+      partner violence; elder abuse (physical, psychological, financial,
+      sexual, neglect); abuse of disabled adults; abuse of adults at
+      risk by reason of mental-health condition. It applies to disclosures
+      made directly to a clinician, to any concern arising from clinical
+      examination, history, or observation, and to information shared by
+      a third party.
+
+  - id: principles
+    title: "Principles"
+    body: |
+      We act on the principle that safeguarding is everyone's business.
+      The patient's safety is paramount; for children, the welfare of
+      the child is paramount. We make decisions in partnership with the
+      patient where capable and willing; we share information with
+      statutory partners proportionately and lawfully when required.
+      We document everything, refer when threshold is met, and follow
+      up. We do NOT promise confidentiality we cannot keep — we explain
+      the limits at first disclosure.
+
+  - id: recognition
+    title: "Recognition — children"
+    body: |
+      Indicators include: physical signs (bruises in non-mobile infants;
+      patterned injuries; injuries inconsistent with history); neglect
+      (poor hygiene, growth faltering, missed appointments / immunisations);
+      emotional indicators; sexualised behaviour beyond development; FGM
+      concern; CSE / CCE indicators; missing-from-home; parental factors
+      (mental illness, substance misuse, family violence, learning
+      disability — the "Toxic Trio"). Read alongside Working Together 2023
+      (UK) / NICE NG76 / RACGP White Book / NZ Family Violence
+      Intervention Programme child indicators.
+
+  - id: recognition_adults
+    title: "Recognition — adults at risk and elder abuse"
+    body: |
+      Indicators of abuse / neglect of an adult at risk: unexplained
+      injury; medication mismanaged or withheld; financial exploitation
+      (sudden change in finances, unpaid bills despite income, missing
+      possessions); coercive / controlling relationship; self-neglect;
+      inappropriate sexual contact; carer stress; institutional
+      neglect (in a care setting); modern-slavery indicators. Read
+      alongside Care Act 2014 (UK) / RACGP / state elder-abuse hotline
+      criteria (NZ EARS / AU Elder Abuse Helpline 1800 ELDERHelp /
+      US APS).
+
+  - id: routine_enquiry_family_violence
+    title: "Routine enquiry — family / intimate-partner violence"
+    body_per_country:
+      NZ: |
+        Te Whatu Ora 6-step VIP (Family Violence Intervention Programme):
+        identify, ask, listen, validate, document, refer. Routine enquiry
+        offered to all women aged ≥16 at antenatal, postnatal, well-women
+        / cervical screening, mental-health, and at clinician discretion
+        elsewhere. Phrasing per VIP training. Refer to Women's Refuge,
+        Shine 0508 744 633, Police if immediate danger.
+      AU: |
+        RACGP White Book on Abuse and Violence Ch 3: ask in private,
+        in patient's preferred language, when alone. Use clinical
+        prompts at antenatal, mental-health, chronic-pain visits. Refer
+        to 1800 RESPECT (1800 737 732), state-specific service, Police
+        000 if immediate danger.
+      UK: |
+        NICE PH50 / NICE QS116. Routine enquiry not universal but
+        encouraged at antenatal, mental health, sexual-health, chronic
+        pain. Use the HARK / DASH risk-assessment where appropriate.
+        Refer to local IDVA service, Refuge 0808 2000 247, MARAC
+        for high-risk; Police 999 if immediate danger; Operation
+        Encompass for child-witnesses.
+      US: |
+        USPSTF Grade B recommendation: routine screening for
+        intimate-partner violence in women of reproductive age. Use
+        WAST / HITS / OAS-CTS. Offer warm-handoff to NDVH 1-800-799-7233
+        and state DV agencies. Mandatory reporting of injury from IPV
+        varies by state.
+
+  - id: response_to_disclosure
+    title: "Response to disclosure"
+    body: |
+      When a patient discloses abuse or violence: (1) believe and
+      validate; (2) ensure immediate safety — is the abuser in the
+      building? is anyone else at risk? (3) assess injury and treat;
+      (4) offer time and space; (5) explain the limits of confidentiality;
+      (6) document verbatim where possible, in the patient's words,
+      with clear separation of fact and clinical opinion; (7) photograph
+      injuries with consent and chain-of-custody if forensic; (8)
+      consider sexual-assault referral pathway (SARC UK / DSAC NZ /
+      state forensic-medical service) and avoid disturbing forensic
+      evidence; (9) plan next steps with the patient; (10) refer per
+      threshold.
+
+  - id: referral_thresholds
+    title: "Referral thresholds and pathways"
+    body_per_country:
+      NZ: |
+        Children: any concern that a child has been or may be harmed —
+        refer to Oranga Tamariki National Contact Centre 0508 326 459.
+        Police 111 if immediate danger. Concerns in a setting of
+        potential family violence: cross-refer to Police Family Harm
+        Service. Adults: HDC Code R7 + capacity assessment; refer to
+        local needs-assessment service. Elder abuse: EARS national
+        hotline 0800 32 668 65.
+      AU: |
+        Children: state CPS hotline (NSW DCJ 132 111; VIC Child
+        Protection 13 12 78; QLD CSSC; etc.) — mandatory report for
+        registered medical practitioners. Adults: state vulnerable-
+        adult hotline; police if immediate danger 000. Elder abuse:
+        1800 ELDERHelp 1800 353 374.
+      UK: |
+        Children: refer to Local Authority Children's Social Care via
+        the local MASH (multi-agency safeguarding hub). LADO referral
+        if concern about a person in position of trust. Where a child
+        is at imminent harm, contact Police 999. Adults: Section 42
+        enquiry to Local Authority Adult Social Care. Domestic abuse:
+        local IDVA service / MARAC for high-risk. CQC notification
+        where a notifiable event occurs.
+      US: |
+        Children: state CPS hotline — mandatory report for licensed
+        clinicians in all 50 states (failure-to-report is a criminal
+        offence in most). Adults: state APS. Domestic violence:
+        NDVH 1-800-799-7233. Mandatory reporting of injury from
+        firearms / criminal assault per state (varies).
+
+  - id: information_sharing
+    title: "Information-sharing principles"
+    body: |
+      Share with statutory safeguarding partners on a need-to-know basis
+      where there is a real and significant risk OR where the law
+      requires. Information-sharing is lawful even without consent
+      where: the patient is a child at risk (UK Children Act 2004 s.10–11;
+      NZ s.66 OT Act); the patient is an adult at risk and lacks
+      capacity; the disclosure is necessary to protect the vital
+      interests of the patient or another person (UK GDPR Art 6(1)(d) /
+      Art 9(2)(c); NZ HIPC Rule 11; AU APP 6.2(b); US HIPAA 164.512(c)).
+      Document the legal basis for any disclosure made without consent.
+
+  - id: documentation
+    title: "Documentation"
+    body: |
+      Use exact words spoken by the patient where possible. Record:
+      who, what, when, where, who else present, observations, action
+      taken, who informed, when, by what method, outcome. Diagram or
+      photograph injuries with consent. Avoid abusive person's name
+      in the same record where it could compromise patient safety
+      (consider partner-abuser hidden-record protocol). Documentation
+      is admissible evidence — write as if it will be read in court.
+
+  - id: dna_and_disengagement
+    title: "Did-not-attend (DNA) and disengagement of vulnerable patients"
+    body: |
+      A child's DNA is recorded as "was-not-brought" and reviewed for
+      safeguarding implications at the weekly safeguarding huddle
+      (UK Working Together; AU State CP frameworks). Vulnerable adults
+      who disengage from a known abusive context are followed up
+      proactively; failure to follow up is a recognised case-review
+      finding.
+
+  - id: training_and_supervision
+    title: "Training and safeguarding supervision"
+    body: |
+      All clinical staff complete safeguarding-children Level 3 training
+      (UK; equivalent NZ + AU + US) at induction and triennially. All
+      reception / non-clinical staff complete Level 1 / Level 2 at
+      induction and biennially. Safeguarding lead in the practice
+      receives Level 4 training and quarterly external safeguarding
+      supervision. UK practices: Oliver McGowan training mandatory for
+      learning-disability / autism awareness from 2026.
+
+  - id: police_screening
+    title: "Police vetting and staff screening"
+    body: |
+      Every member of staff has current police-vetting / DBS / NDIS
+      Worker Screening / state criminal-history check appropriate to
+      their role: UK enhanced DBS for clinical staff with patient
+      contact (incl. children's barred list); NZ Children's Worker
+      Safety Check (Children's Act 2014) for children-facing roles;
+      AU state Working with Children Check + NDIS Worker Screening; US
+      state nurse-aide registry + criminal background per state.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on regulator refresh — Working
+      Together (UK) refresh, NZ Children's Act amendments, state
+      Mandatory Reporter Act amendments, Aged Care Act 2024 + Rules
+      2025 (AU) for elder-abuse impact. Currency date at the top.

@@ -1,0 +1,195 @@
+id: salvia.dental.treatment_plan_financial_consent
+name: "Treatment Plan & Financial Consent"
+version: 1
+currency_date: 2026-05-08
+vertical: dental
+countries: [NZ, AU, UK, US]
+
+description: >
+  Sequenced treatment plan with options, alternatives, and risks of no
+  treatment, plus itemised cost estimate and the patient's financial
+  consent. Drives the informed-consent record for the overall plan; per-
+  procedure consent is captured separately.
+
+purpose_per_regulator:
+  NZ: "DCNZ Practice Standard – Informed Consent §3 (must include cost estimate); HDC Code Right 7(2); Consumer Guarantees Act."
+  AU: "Dental Board AU Code of Conduct §3.5 (informed financial consent); ADA Australia Policy 5.16; ACL ss.18-22."
+  UK: "GDC Standards 3.1, 3.2 (costs in writing before treatment); CMA Compliance Principles for Dental Pricing 2018."
+  US: "ADA Principles of Ethics §5.A.1; state truth-in-lending where financing offered; CMS No Surprises Act good-faith estimate."
+
+linked_policy_defaults:
+  - salvia.dental.controlled_drugs_opioid_prescribing
+
+tags: [consent, treatment_plan, financial]
+
+overall_prompt: |
+  Extract the treatment plan items into plan_items as a list. Each item
+  should have phase (e.g. emergency, stabilisation, definitive,
+  maintenance), tooth/region, procedure, alternative, fee. Capture the
+  total separately. The system.consent widget covers the overall plan
+  consent; do not duplicate procedure-level consent here.
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_full_name
+    label: Patient name
+    type: system_field
+    source: patient_record.full_name
+
+  - key: plan_date
+    label: Plan date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: planning_clinician
+    label: Planning clinician
+    type: text
+    required: true
+
+  - key: presenting_problems
+    label: Presenting concerns and diagnostic findings
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: plan_summary
+    label: Treatment plan summary (one paragraph for the patient)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Plain-English summary the patient can re-read. Detail goes in plan_items."
+
+  - key: plan_items
+    label: Plan items (sequenced)
+    type: blocks
+    ai_extract: true
+    help_text: |
+      Repeated block. Per item: phase (emergency / stabilisation /
+      definitive / maintenance), tooth_or_region, procedure (e.g.
+      extraction, RCT, crown, scaling, hygiene), recommended_option,
+      alternative_option, no_treatment_implication, fee_amount,
+      currency, sequencing_note.
+
+  - key: alternatives_overview
+    label: Alternatives discussed (high-level)
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Reasonable alternatives the patient declined or is considering."
+
+  - key: no_treatment_implication
+    label: Implications of no treatment
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: estimated_total
+    label: Estimated total fee
+    type: decimal
+    required: true
+    ai_extract: true
+
+  - key: estimate_currency
+    label: Currency
+    type: select
+    required: true
+    config:
+      options:
+        - {label: "NZD", value: "NZD"}
+        - {label: "AUD", value: "AUD"}
+        - {label: "GBP", value: "GBP"}
+        - {label: "USD", value: "USD"}
+
+  - key: estimate_validity
+    label: Estimate validity period
+    type: text
+    help_text: "How long the quote stands (e.g. 90 days). Required content under CMA dental pricing principles in UK."
+
+  - key: payment_arrangement
+    label: Payment arrangement
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Full payment at each visit", value: "per_visit"}
+        - {label: "Deposit then balance", value: "deposit"}
+        - {label: "Insurance billed direct", value: "insurance_direct"}
+        - {label: "Patient pays then claims", value: "patient_claim"}
+        - {label: "Third-party finance / payment plan", value: "finance"}
+        - {label: "Hardship / sliding scale", value: "hardship"}
+
+  - key: insurance_payer
+    label: Insurer / scheme details
+    type: text
+    ai_extract: true
+    pii: true
+
+  - key: us_good_faith_estimate
+    label: Good-faith estimate provided (No Surprises Act)
+    type: button_group
+    countries: [US]
+    required_per_country:
+      US: true
+    help_text: "CMS Final Rule, 45 CFR §149.610. Required for self-pay patients ≥$400."
+    config:
+      options:
+        - {label: "Yes — written GFE issued", value: "yes_written"}
+        - {label: "Not applicable (insured, in-network)", value: "na"}
+        - {label: "Declined by patient", value: "declined"}
+
+  - key: nz_acc_treatment_injury
+    label: ACC treatment-injury context
+    type: long_text
+    countries: [NZ]
+    help_text: "If treatment relates to an existing ACC dental claim (e.g. trauma), note ACC claim number and approved schedule."
+
+  - key: uk_nhs_private_mix
+    label: NHS / private mix declared
+    type: select
+    countries: [UK]
+    help_text: "GDC Standards 3.1.1 — patient must understand whether each item is NHS, private, or mixed."
+    config:
+      options:
+        - {label: "All NHS", value: "all_nhs"}
+        - {label: "All private", value: "all_private"}
+        - {label: "Mixed — itemised in plan", value: "mixed"}
+
+  - key: au_dental_board_costs_disclosed
+    label: Costs disclosed in writing before treatment
+    type: button_group
+    countries: [AU]
+    required_per_country:
+      AU: true
+    help_text: "Dental Board of Australia Code of Conduct §3.5: informed financial consent required."
+    config:
+      options:
+        - {label: "Yes — written quote signed", value: "yes"}
+        - {label: "Verbal — to be confirmed", value: "verbal"}
+
+  - key: plan_consent
+    label: Patient consent to overall treatment plan
+    type: system.consent
+    required: true
+    config:
+      consent_type: treatment_plan
+
+  - key: questions_addressed
+    label: Patient questions and clinician responses
+    type: long_text
+    ai_extract: true
+
+  - key: review_review_date
+    label: Plan review date
+    type: date
+    help_text: "When to revisit the plan if not commenced (e.g. 6 months)."
+
+  - key: plan_notes
+    label: Clinician notes
+    type: long_text
+    ai_extract: true

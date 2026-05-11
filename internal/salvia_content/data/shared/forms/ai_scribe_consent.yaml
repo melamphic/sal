@@ -1,0 +1,115 @@
+id: salvia.shared.ai_scribe_consent
+name: "AI scribe & audio recording consent"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  Disclosure and consent for the use of AI-assisted transcription and clinical
+  documentation (the Salvia recording-extract-document loop). Captures the
+  patient's informed agreement to having the encounter audio recorded,
+  processed by an AI model, and used to draft clinical documentation that
+  the clinician then reviews and signs. Required for every patient before
+  audio capture begins. Re-consent if material processing terms change.
+
+purpose_per_regulator:
+  NZ: "HIPC 2020 Rule 3 (notification at collection); MCNZ Statement on informed consent; Privacy Act 2020 IPP 3"
+  AU: "APP 1 (open and transparent management); APP 5 (notification of collection); RACGP factsheet on AI; AHPRA Telehealth/Technology guidance"
+  UK: "UK GDPR Art 13/14 (information at collection); UK GDPR Art 22 (automated decision-making); CQC GP Mythbuster 109 + NHS England Ambient Voice Technology guidance; ICO guidance on AI"
+  US: "HIPAA 45 CFR §164.508 (authorisations for use beyond TPO where applicable); state two-party recording laws (CA / FL / IL / MA / MD / MT / NH / PA / WA require all-party consent); HHS guidance on AI in healthcare 2026"
+
+linked_policy_defaults:
+  - salvia.shared.ai_governance_policy
+  - salvia.shared.privacy_policy
+  - salvia.shared.info_security_policy
+
+tags: [consent, ai, audio, intake]
+
+fields:
+  - key: subject_ref
+    label: Patient
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: consent_widget
+    label: "Consent capture"
+    type: system.consent
+    required: true
+    config:
+      consent_type: ai_processing
+    help_text: "Captures consenter identity and capacity into the consent ledger on submit. Linked to the audio session id."
+
+  - key: scope_acknowledged
+    label: "Scope acknowledged"
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Audio recording only", value: audio_only}
+        - {label: "Audio + AI transcription + AI extraction", value: full_loop}
+    help_text: "Default is full_loop — the Salvia product does all three. The audio_only option exists for clinics in jurisdictions or contexts where AI processing is declined but audio note-taking is still desired."
+
+  - key: clinician_in_loop_explained
+    label: "Clinician-in-loop explained"
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Yes", value: yes}
+        - {label: "No / not understood", value: no}
+    help_text: "The patient was told that AI drafts documentation but the clinician reviews and remains responsible for every clinical decision."
+
+  - key: data_retention_explained
+    label: "Audio retention explained"
+    type: button_group
+    config:
+      options:
+        - {label: "Yes", value: yes}
+        - {label: "Patient declined explanation", value: declined}
+    help_text: "Audio is retained per the clinic's records-retention policy. Default: deleted after note submission unless flagged for incident or training review."
+
+  - key: third_party_processor_disclosed
+    label: "Third-party AI processor disclosed"
+    type: button_group
+    config:
+      options:
+        - {label: "Yes — Salvia uses Deepgram (transcription) + Google Gemini (extraction)", value: yes}
+        - {label: "Patient declined details", value: declined}
+    help_text: "UK GDPR Art 14 + APP 5 + HIPC Rule 3 require disclosure of named processors."
+
+  - key: opt_out_explained
+    label: "Right to withdraw explained"
+    type: button_group
+    required: true
+    config:
+      options:
+        - {label: "Yes", value: yes}
+        - {label: "No", value: no}
+    help_text: "Patient can withdraw consent at any time without affecting their care. The clinic falls back to manual note-taking."
+
+  - key: data_subject_rights_explained
+    label: "Data-subject rights explained"
+    type: button_group
+    config:
+      options:
+        - {label: "Yes — including access / correction / deletion", value: yes}
+        - {label: "Provided in writing only", value: written_only}
+    help_text: "HIPC Rules 6 & 7 (NZ); APP 12 & 13 (AU); UK GDPR Art 15-22; HIPAA §164.524-§164.526 (US)."
+
+  - key: state_specific_consent
+    label: "Two-party recording consent (US states)"
+    type: button_group
+    config:
+      options:
+        - {label: "Not applicable / single-party state", value: na}
+        - {label: "Captured — all parties consented (CA / FL / IL / MA / MD / MT / NH / PA / WA)", value: all_party}
+    help_text: "US-only field. In all-party-consent states, every speaker on the recording must consent — including any companion / family member present."
+
+  - key: pediatric_consent_authority
+    label: "Paediatric / capacity-lacking authority"
+    type: text
+    help_text: "Where the patient cannot consent themselves: name and authority of the consenter (parent / guardian / EPOA / SDM)."

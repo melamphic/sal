@@ -47,6 +47,14 @@ type FormRecord struct {
 	SourceMarketplaceListingID     *uuid.UUID
 	SourceMarketplaceVersionID     *uuid.UUID
 	SourceMarketplaceAcquisitionID *uuid.UUID
+	// Salvia-provided-content lineage — populated only when the materialiser
+	// installs a template into a fresh clinic. Mutually exclusive with the
+	// marketplace lineage above. When non-nil, the form participates in the
+	// "Made by Salvia v1" UX (badge, upgrade banner, library panel).
+	SalviaTemplateID       *string
+	SalviaTemplateVersion  *int
+	SalviaTemplateState    *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate  *time.Time
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
@@ -163,6 +171,13 @@ type CreateFormParams struct {
 	SourceMarketplaceListingID     *uuid.UUID
 	SourceMarketplaceVersionID     *uuid.UUID
 	SourceMarketplaceAcquisitionID *uuid.UUID
+	// Salvia-provided-content lineage — populated only when the materialiser
+	// installs a Salvia v1 template into a clinic at signup. Mutually
+	// exclusive with marketplace lineage.
+	SalviaTemplateID       *string
+	SalviaTemplateVersion  *int
+	SalviaTemplateState    *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate  *time.Time
 }
 
 // UpdateFormMetaParams holds values needed to update form metadata.
@@ -370,20 +385,23 @@ func (r *Repository) UpdateGroup(ctx context.Context, p UpdateGroupParams) (*Gro
 // single constant prevents drift across the dozen+ queries that touch this row.
 const formCols = `id, clinic_id, group_id, name, description, overall_prompt, tags,
 		          created_by, created_at, updated_at, archived_at, retire_reason, retired_by,
-		          source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id`
+		          source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 // CreateForm inserts a new form row.
 func (r *Repository) CreateForm(ctx context.Context, p CreateFormParams) (*FormRecord, error) {
 	const q = `
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
-		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		                   salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + formCols
 
 	row := r.db.QueryRow(ctx, q,
 		p.ID, p.ClinicID, p.GroupID, p.Name, p.Description,
 		p.OverallPrompt, p.Tags, p.CreatedBy,
 		p.SourceMarketplaceListingID, p.SourceMarketplaceVersionID, p.SourceMarketplaceAcquisitionID,
+		p.SalviaTemplateID, p.SalviaTemplateVersion, p.SalviaTemplateState, p.FrameworkCurrencyDate,
 	)
 	rec, err := scanForm(row)
 	if err != nil {
@@ -413,8 +431,9 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 
 	const formQ = `
 		INSERT INTO forms (id, clinic_id, group_id, name, description, overall_prompt, tags, created_by,
-		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		                   source_marketplace_listing_id, source_marketplace_version_id, source_marketplace_acquisition_id,
+		                   salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING ` + formCols
 
 	fp := p.Form
@@ -422,6 +441,7 @@ func (r *Repository) CreateFormWithDraft(ctx context.Context, p CreateFormWithDr
 		fp.ID, fp.ClinicID, fp.GroupID, fp.Name, fp.Description,
 		fp.OverallPrompt, fp.Tags, fp.CreatedBy,
 		fp.SourceMarketplaceListingID, fp.SourceMarketplaceVersionID, fp.SourceMarketplaceAcquisitionID,
+		fp.SalviaTemplateID, fp.SalviaTemplateVersion, fp.SalviaTemplateState, fp.FrameworkCurrencyDate,
 	)
 	formRec, err := scanForm(formRow)
 	if err != nil {
@@ -1284,6 +1304,7 @@ func scanForm(row scannable) (*FormRecord, error) {
 		&f.OverallPrompt, &f.Tags, &f.CreatedBy,
 		&f.CreatedAt, &f.UpdatedAt, &f.ArchivedAt, &f.RetireReason, &f.RetiredBy,
 		&f.SourceMarketplaceListingID, &f.SourceMarketplaceVersionID, &f.SourceMarketplaceAcquisitionID,
+		&f.SalviaTemplateID, &f.SalviaTemplateVersion, &f.SalviaTemplateState, &f.FrameworkCurrencyDate,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

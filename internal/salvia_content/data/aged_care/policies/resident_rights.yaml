@@ -1,0 +1,148 @@
+id: salvia.aged_care.resident_rights
+name: "Resident Rights Policy"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  How the service upholds residents' rights — to dignity, choice,
+  participation in decisions, freedom from abuse and restraint, privacy,
+  cultural identity, complaints, advocacy, and the explicit rights set
+  out in country instruments. Includes the AU Statement of Rights (Aged
+  Care Act 2024 — replaced the Charter from 1 Nov 2025), the NZ HDC Code
+  of Rights, the UK CQC fundamental standards (esp. Reg 9, 10, 11), and
+  US 42 CFR 483.10.
+
+purpose_per_regulator:
+  NZ: "Health and Disability Commissioner (Code of Health and Disability Services Consumers' Rights) Regulations 1996 — 10 rights including respect, dignity, fair treatment, services of an appropriate standard, effective communication, fully informed, informed choice and consent, support, teaching/research, complaints; HDC Code Rights 1–10; Ngā Paerewa NZS 8134:2021 Section 1 (Pae ora rights)."
+  AU: "Aged Care Act 2024 — new Statement of Rights replacing the Charter of Aged Care Rights from 1 November 2025; Strengthened Aged Care Quality Standards Standard 1 (The person — dignity, respect, individuality, supported decision-making) and Standard 7 (Inclusion and diversity)."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 9 (person-centred care), reg 10 (dignity and respect), reg 11 (need for consent), reg 13 (safeguarding), reg 14 (nutrition); Equality Act 2010; Human Rights Act 1998; Mental Capacity Act 2005; Care Act 2014."
+  US: "42 CFR 483.10 Resident Rights — quality of life and care; rights including: dignified existence; self-determination; to be informed; participate in plan of care; refuse treatment; access to records; privacy and confidentiality; freedom from restraint; voice grievances; access to long-term care ombudsman; protection of property; visitation."
+
+clauses:
+  - id: statement
+    title: Statement of rights
+    body: |
+      Every resident has the right to be treated with respect and
+      dignity, to make their own decisions, to receive safe and
+      competent care, to be free from abuse and restraint, to maintain
+      their identity and culture, to access advocacy and complaints
+      services, and to live in a place that feels like home.
+
+  - id: country_instruments
+    title: Country instruments
+    body_per_country:
+      NZ: |
+        The HDC Code of Health and Disability Services Consumers'
+        Rights 1996 applies. The Code is provided in writing to every
+        resident at admission in their preferred language and format
+        (te reo Māori, NZSL, plain English, large print, easy read on
+        request). The 10 rights are visibly displayed.
+      AU: |
+        The Statement of Rights under the Aged Care Act 2024 applies
+        from 1 November 2025 (replacing the Charter of Aged Care
+        Rights). The Statement is provided to every resident at entry
+        and visibly displayed.
+      UK: |
+        The CQC fundamental standards apply. Information about rights
+        is provided in accessible format per the Accessible Information
+        Standard (SCCI 1605). The Equality Act 2010 protects against
+        discrimination on protected characteristics.
+      US: |
+        Resident Rights under 42 CFR 483.10 are provided in writing in
+        a language and format the resident can understand at admission
+        and on request. Rights are visibly displayed.
+
+  - id: dignity_respect
+    title: Dignity and respect
+    body: |
+      Every interaction respects the resident's dignity. Personal care
+      is private. The resident's preferred name is used. Conversations
+      about the resident are not held in their hearing without
+      involving them. Modesty, gender-of-carer preferences and
+      cultural practice are respected.
+
+  - id: choice_self_determination
+    title: Choice and self-determination
+    body: |
+      Residents make their own choices about daily life — when to get
+      up, what to eat (within plan), what to wear, how to spend their
+      time. Choice is not contingent on capacity for major decisions.
+
+  - id: participation_in_care
+    title: Participation in care planning
+    body: |
+      The resident participates in their care plan from admission. The
+      plan is reviewed with the resident at the planned cadence and at
+      change of condition. The resident's voice is recorded verbatim
+      where possible.
+
+  - id: information_and_records
+    title: Information and access to records
+    body: |
+      The resident has the right to see their records, to a copy on
+      request (subject to country law on third-party information), and
+      to know who has accessed their record. The Subject Access
+      pathway is the Salvia shared subject_access_policy.
+
+  - id: privacy_confidentiality
+    title: Privacy and confidentiality
+    body: |
+      Personal information is protected per the Salvia shared
+      privacy_policy. The resident may receive visitors, mail, calls
+      and electronic communications privately. Photography and audio
+      recording require explicit consent.
+
+  - id: freedom_from_abuse_restraint
+    title: Freedom from abuse and restraint
+    body: |
+      The resident is free from abuse, neglect, exploitation, and
+      restraint imposed for staff convenience. Restrictive practices
+      apply only as last resort under the Restraint Minimisation
+      Policy.
+
+  - id: cultural_identity
+    title: Cultural and spiritual identity
+    body: |
+      Cultural identity, spiritual practice, language, food, dress, and
+      community / family / whānau relationships are upheld. See the
+      Cultural Safety Policy.
+
+  - id: visitation_relationships
+    title: Visitation and relationships
+    body: |
+      Residents have the right to receive visitors of their choosing,
+      to maintain relationships including intimate relationships, and
+      to leave the service for outings or holidays consistent with
+      safety and care plan.
+
+  - id: complaints_advocacy
+    title: Complaints and advocacy
+    body: |
+      Residents and families may raise concerns through the service's
+      complaints process (Salvia shared complaints_policy) and have
+      access to external advocacy:
+      - NZ: Nationwide Health and Disability Advocacy Service.
+      - AU: Older Persons Advocacy Network (OPAN); Aged Care Quality
+        and Safety Commission complaints line.
+      - UK: Local Authority adult safeguarding; Local Government and
+        Social Care Ombudsman; Care Act 2014 s.67 advocacy.
+      - US: Long-Term Care Ombudsman; State Survey Agency; CMS
+        hotline.
+
+  - id: financial_protection
+    title: Financial and personal property protection
+    body: |
+      Residents' property is protected. Misappropriation is
+      investigated and reported (AU SIRS; UK CQC + safeguarding;
+      US F602; NZ HDC).
+
+  - id: review_of_policy
+    title: Review of this policy
+    body: |
+      This policy is reviewed at least every two years. Operational
+      responsibility: Service Manager.

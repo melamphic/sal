@@ -36,6 +36,14 @@ type PolicyRecord struct {
 	UpdatedAt    time.Time
 	ArchivedAt   *time.Time
 	RetireReason *string
+	// Salvia-provided-content lineage — populated only when the materialiser
+	// installs a Salvia v1 template into a clinic at signup. When non-nil,
+	// the policy participates in the "Made by Salvia v1" UX (badge,
+	// upgrade banner, library panel).
+	SalviaTemplateID      *string
+	SalviaTemplateVersion *int
+	SalviaTemplateState   *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate *time.Time
 }
 
 // PolicyVersionRecord is the raw database representation of a policy_versions row.
@@ -106,6 +114,13 @@ type CreatePolicyParams struct {
 	Description                *string
 	CreatedBy                  uuid.UUID
 	SourceMarketplaceVersionID *uuid.UUID
+	// Salvia-provided-content lineage — set only by the salvia_content
+	// materialiser at clinic-create. Mutually exclusive with marketplace
+	// lineage.
+	SalviaTemplateID       *string
+	SalviaTemplateVersion  *int
+	SalviaTemplateState    *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate  *time.Time
 }
 
 // UpdatePolicyMetaParams holds values needed to update policy metadata.
@@ -263,13 +278,20 @@ func (r *Repository) CreatePolicyWithDraft(ctx context.Context, p CreatePolicyWi
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const polQ = `
-		INSERT INTO policies (id, clinic_id, folder_id, name, description, created_by, source_marketplace_version_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO policies (id, clinic_id, folder_id, name, description, created_by,
+		                     source_marketplace_version_id,
+		                     salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, clinic_id, folder_id, name, description,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 	pp := p.Policy
-	polRow := tx.QueryRow(ctx, polQ, pp.ID, pp.ClinicID, pp.FolderID, pp.Name, pp.Description, pp.CreatedBy, pp.SourceMarketplaceVersionID)
+	polRow := tx.QueryRow(ctx, polQ,
+		pp.ID, pp.ClinicID, pp.FolderID, pp.Name, pp.Description, pp.CreatedBy,
+		pp.SourceMarketplaceVersionID,
+		pp.SalviaTemplateID, pp.SalviaTemplateVersion, pp.SalviaTemplateState, pp.FrameworkCurrencyDate,
+	)
 	polRec, err := scanPolicy(polRow)
 	if err != nil {
 		return nil, nil, fmt.Errorf("policy.repo.CreatePolicyWithDraft: policy: %w", err)
@@ -307,7 +329,8 @@ func (r *Repository) GetPoliciesByIDs(ctx context.Context, ids []uuid.UUID, clin
 	}
 	const q = `
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE id = ANY($1) AND clinic_id = $2`
 
@@ -335,7 +358,8 @@ func (r *Repository) GetPoliciesByIDs(ctx context.Context, ids []uuid.UUID, clin
 func (r *Repository) GetPolicyByID(ctx context.Context, id, clinicID uuid.UUID) (*PolicyRecord, error) {
 	const q = `
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE id = $1 AND clinic_id = $2`
 
@@ -369,7 +393,8 @@ func (r *Repository) ListPolicies(ctx context.Context, clinicID uuid.UUID, p Lis
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
 		SELECT id, clinic_id, folder_id, name, description,
-		       created_by, created_at, updated_at, archived_at, retire_reason
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
 		FROM policies
 		WHERE %s
 		ORDER BY created_at DESC
@@ -402,7 +427,8 @@ func (r *Repository) UpdatePolicyMeta(ctx context.Context, p UpdatePolicyMetaPar
 		SET folder_id = $3, name = $4, description = $5
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, folder_id, name, description,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.FolderID, p.Name, p.Description)
 	rec, err := scanPolicy(row)
@@ -419,7 +445,8 @@ func (r *Repository) RetirePolicy(ctx context.Context, p RetirePolicyParams) (*P
 		SET archived_at = $3, retire_reason = $4
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
 		RETURNING id, clinic_id, folder_id, name, description,
-		          created_by, created_at, updated_at, archived_at, retire_reason`
+		          created_by, created_at, updated_at, archived_at, retire_reason,
+		          salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date`
 
 	row := r.db.QueryRow(ctx, q, p.ID, p.ClinicID, p.ArchivedAt, p.RetireReason)
 	rec, err := scanPolicy(row)
@@ -811,6 +838,7 @@ func scanPolicy(row scannable) (*PolicyRecord, error) {
 	err := row.Scan(
 		&r.ID, &r.ClinicID, &r.FolderID, &r.Name, &r.Description,
 		&r.CreatedBy, &r.CreatedAt, &r.UpdatedAt, &r.ArchivedAt, &r.RetireReason,
+		&r.SalviaTemplateID, &r.SalviaTemplateVersion, &r.SalviaTemplateState, &r.FrameworkCurrencyDate,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {

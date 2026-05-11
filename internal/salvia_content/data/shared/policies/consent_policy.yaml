@@ -1,0 +1,153 @@
+id: salvia.shared.consent_policy
+name: "Informed Consent"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How the clinic obtains, documents, and reviews patient consent for
+  examination, treatment, procedures, recordings, photography, AI
+  processing, data sharing, and research participation. The umbrella
+  policy that procedure-specific consent forms operationalise.
+
+purpose_per_regulator:
+  NZ: "HDC Code Right 7 (right to make an informed choice and give informed consent); MCNZ Statement on informed consent; PPPR Act 1988 (capacity / welfare guardian)"
+  AU: "Common law (Rogers v Whitaker); RACGP C1.3; AHPRA / Medical Board Code of Conduct §3.5; state guardianship Acts"
+  UK: "GMC Decision-making and consent 2020; Montgomery v Lanarkshire 2015; Mental Capacity Act 2005 + Code of Practice; CQC Reg 11"
+  US: "State informed-consent statutes; Canterbury v Spence; AMA Code of Medical Ethics §2.1.1; state guardianship law"
+
+clauses:
+  - id: principle
+    title: "Principle"
+    body: |
+      Every patient (or their authorised representative) has the right to
+      make an informed choice about their care. Consent must be given
+      voluntarily, by a person with capacity, with adequate information,
+      and may be withdrawn at any time. Implied consent is sufficient only
+      for routine, low-risk care.
+
+  - id: information_to_provide
+    title: "Information to provide"
+    body: |
+      The clinician explains, in language the patient understands:
+      what is proposed; why; the expected benefits; the material risks
+      (including those a reasonable patient in this patient's position
+      would attach significance to — Montgomery / Rogers v Whitaker);
+      reasonable alternatives, including the option to decline; likely
+      consequences of declining; the cost; who will perform it; what to
+      expect during recovery / aftercare. Information is given in writing
+      where helpful.
+
+  - id: capacity
+    title: "Capacity to consent"
+    body_per_country:
+      NZ: |
+        Adults are presumed capable. Where capacity is in doubt, assess in
+        relation to the specific decision (PPPR Act). Where the patient
+        lacks capacity, consent is given by a welfare guardian or attorney
+        under EPOA. Right 7(4) HDC Code allows treatment in a patient's
+        best interests where no representative is reasonably available.
+      AU: |
+        Adults presumed capable. State guardianship Acts govern substitute
+        decision-making (e.g. Vic Medical Treatment Planning and
+        Decisions Act 2016; NSW Guardianship Act 1987). "Person responsible"
+        hierarchy applies for adults without an enduring document.
+      UK: |
+        Mental Capacity Act 2005: capacity is decision-specific and
+        presumed unless on assessment the patient is unable to understand,
+        retain, weigh, or communicate the decision (s.2-3). For incapable
+        adults, decisions made in best interests under s.4 with attention
+        to past wishes, beliefs, and consultation with relatives / IMCA.
+      US: |
+        State law. Capacity assessed for the specific decision; surrogate
+        decision-makers per state hierarchy (healthcare proxy → guardian →
+        spouse → adult children → parents → siblings, varying by state).
+        Advance directives honoured.
+
+  - id: minors
+    title: "Children and young people"
+    body_per_country:
+      NZ: "Children under 16 — Care of Children Act 2004. Mature/Gillick-competent minors may consent. Right of refusal more limited than right of consent."
+      AU: "Mature minor / Gillick-competent minor doctrine. State variations on age thresholds for specific procedures."
+      UK: "Gillick competence (Gillick v West Norfolk 1985). 16- and 17-year-olds have presumed capacity (Family Law Reform Act 1969)."
+      US: "State-by-state. Emancipated minors, mature minor doctrine where adopted, sensitive-services exceptions (mental health, contraception, STI)."
+
+  - id: written_vs_verbal
+    title: "Written vs verbal consent"
+    body: |
+      Verbal consent (recorded in the clinical note) is sufficient for
+      most low-risk routine care. Written, signed consent is obtained for:
+      surgery and invasive procedures; sedation and anaesthesia; treatments
+      with significant risk or irreversible consequences; participation in
+      research; off-label or unauthorised medicine use; recording or
+      photography for purposes beyond the immediate care.
+      Vertical-specific procedure-consent forms operationalise this.
+
+  - id: voluntariness
+    title: "Voluntariness"
+    body: |
+      Consent must be free of coercion, undue influence, or pressure.
+      Particular care for: vulnerable adults; people from cultures where
+      family decision-making predominates (consent must still rest with
+      the patient where capacity exists); people accessing care in
+      institutional settings (custody, aged care). Patients are given
+      adequate time to consider and ask questions.
+
+  - id: withdrawal
+    title: "Withdrawal of consent"
+    body: |
+      A patient may withdraw consent at any time before or during a
+      procedure. The clinician stops at the point safely possible and
+      explains any consequences. Withdrawal recorded.
+
+  - id: emergency
+    title: "Emergency"
+    body: |
+      Where consent cannot be obtained and treatment is necessary to
+      preserve life or prevent serious harm, treatment proceeds in the
+      patient's best interests under the doctrine of necessity (UK MCA
+      s.4 / NZ Right 7(4) / AU common law / US state law). The
+      circumstances and rationale documented.
+
+  - id: language_and_disability
+    title: "Language and accessibility"
+    body: |
+      Where the patient does not speak the clinician's language fluently,
+      a qualified interpreter is used (not a family member where avoidable).
+      Where the patient has a sensory or cognitive disability, the clinic
+      provides accessible information formats and assistance from advocates
+      where requested.
+
+  - id: cultural_safety
+    title: "Cultural safety in consent"
+    body_per_country:
+      NZ: "Te Tiriti / cultural safety obligations apply: Māori patients may wish to involve whānau; the clinician facilitates this where the patient consents. MCNZ Statement on cultural safety."
+      AU: "Aboriginal and Torres Strait Islander cultural safety; CALD patient considerations. AHPRA Cultural Safety Strategy 2020-25."
+      UK: "Equality Act 2010. CQC Reg 9 (person-centred care)."
+      US: "Section 1557 ACA non-discrimination; Office of Minority Health CLAS standards."
+
+  - id: documentation
+    title: "Documentation"
+    body: |
+      Consent is documented in the clinical record (verbal) or on a
+      signed form (written). The record captures: what was proposed;
+      what alternatives, risks, benefits were discussed; questions raised
+      and answered; capacity status (and best-interests rationale where
+      lacking); name of consenter and authority where not the patient;
+      date and time. Salvia's `system.consent` widget creates this
+      ledger entry on form submit.
+
+  - id: ai_recording_consent
+    title: "AI scribe and recording consent"
+    body: |
+      Where audio is recorded for AI-assisted documentation, separate
+      consent is captured on the AI scribe consent form
+      (`salvia.shared.ai_scribe_consent`). Recording does not begin until
+      consent is on file.
+
+  - id: review
+    title: "Review"
+    body: "Reviewed every two years and on any material change in case-law or regulator guidance."

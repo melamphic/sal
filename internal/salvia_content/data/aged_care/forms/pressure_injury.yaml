@@ -1,0 +1,257 @@
+id: salvia.aged_care.pressure_injury
+name: "Pressure Injury / Skin Wound Assessment"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Pressure injury risk score plus structured wound assessment. Risk tool varies
+  by country: Braden (US default — MDS-aligned), Waterlow (UK common), interRAI
+  flag (NZ default), AN-ACC + facility tool (AU). Wound assessment captures
+  stage (NPIAP/EPUAP 2019 classification), site (body map), dimensions, wound
+  bed, exudate, peri-wound, dressing, photograph reference (against the
+  resident's photography consent), and pain. Critically, the Acquired Status
+  (Present on Admission vs Facility-Acquired) drives F686 surveyor review (US)
+  and quality-indicator counts (AU NQI Pressure Injury Stage 2+).
+
+purpose_per_regulator:
+  NZ: "Ngā Paerewa NZS 8134:2021 Section 3 (assessment, planning) and Section 5 (Manaakitia — clinical care, wound management); ACC pressure injury prevention guidance; HQSC pressure injury programme (current)."
+  AU: "Strengthened Aged Care Quality Standards Standard 5 Outcome 5.3 (Clinical safety — skin integrity and pressure injuries); Aged Care Quality Indicators (NQI) Pressure Injuries — quarterly reporting of new and existing PI by stage; ACSQHC Preventing Pressure Injuries and Wound Management standard; Wounds Australia Pan Pacific Clinical Practice Guideline (current)."
+  UK: "NICE CG179 Pressure ulcers: prevention and management; CQC Reg 12 (safe care); NHS Patient Safety Strategy pressure ulcer reporting; Stop the Pressure / aSSKINg framework."
+  US: "42 CFR 483.25(b)(1) F686 Treatment/services to prevent/heal pressure ulcers; MDS 3.0 v1.20.1 Section M (Skin Conditions) — M0150 risk, M0210 unhealed PI present, M0300 stage of unhealed PI (M0300A Stage 1, M0300B Stage 2, M0300C Stage 3, M0300D Stage 4, M0300E Unstageable due to non-removable dressing/device, M0300F Unstageable slough/eschar, M0300G Unstageable suspected deep-tissue injury); MDS effective 1 Oct 2025."
+
+linked_policy_defaults:
+  - salvia.aged_care.pressure_injury_prevention
+  - salvia.aged_care.nutrition_hydration
+  - salvia.aged_care.continence_care
+  - salvia.aged_care.pain_management
+  - salvia.aged_care.open_disclosure_duty_of_candour
+
+tags: [skin, wound, pressure_injury, ledger]
+
+overall_prompt: |
+  Capture the wound assessment as recorded by the assessing nurse. Voice
+  extraction can populate site, stage description, dimensions, exudate, pain,
+  and dressing. The Acquired Status field (POA vs facility-acquired) and the
+  staging confirmation must be set explicitly by the clinician — these drive
+  regulator counts. Photograph reference recorded against the resident's
+  photography consent on file.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: subject_weight
+    label: Weight (kg)
+    type: system_field
+    source: patient_record.weight_kg
+
+  - key: assessment_date
+    label: Assessment date
+    type: date
+    required: true
+    ai_extract: true
+
+  - key: assessment_type
+    label: Assessment type
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Initial — first identification of the wound", value: "initial"}
+        - {label: "Routine review (weekly minimum where active wound)", value: "routine"}
+        - {label: "Change of condition / worsening", value: "soc_worsening"}
+        - {label: "Healing review / closure", value: "healing"}
+
+  - key: risk_tool_used
+    label: Risk-screening tool used
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Braden Scale (US default; MDS-aligned)", value: "braden"}
+        - {label: "Waterlow Score (UK common)", value: "waterlow"}
+        - {label: "Norton Scale", value: "norton"}
+        - {label: "interRAI Pressure Ulcer Risk Scale (NZ)", value: "interrai"}
+        - {label: "Facility tool aligned to ACSQHC / Wounds Australia (AU)", value: "facility_au"}
+
+  - key: risk_score
+    label: Risk score (per chosen tool)
+    type: text
+    ai_extract: true
+    help_text: "Braden ≤18 = at risk; ≤12 = high risk. Waterlow ≥10 = at risk; ≥15 = high; ≥20 = very high."
+
+  - key: acquired_status
+    label: Acquired status
+    type: select
+    required: true
+    ai_extract: false
+    help_text: "CRITICAL — drives F686 review (US) and NQI quality indicator counts (AU). Once set, do not change without a senior nurse review."
+    config:
+      options:
+        - {label: "Present on Admission (POA) — documented within 24h of admission/return from hospital", value: "poa"}
+        - {label: "Facility-Acquired — developed during this admission", value: "facility"}
+        - {label: "Worsened — POA at lower stage; deteriorated since admission", value: "worsened_poa"}
+
+  - key: site
+    label: Site
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Sacrum / coccyx", value: "sacrum"}
+        - {label: "Ischium (sit bone)", value: "ischium"}
+        - {label: "Trochanter (hip side)", value: "trochanter"}
+        - {label: "Heel (left/right — record below)", value: "heel"}
+        - {label: "Malleolus (ankle bone)", value: "malleolus"}
+        - {label: "Elbow", value: "elbow"}
+        - {label: "Occiput (back of head)", value: "occiput"}
+        - {label: "Ear", value: "ear"}
+        - {label: "Shoulder", value: "shoulder"}
+        - {label: "Scapula", value: "scapula"}
+        - {label: "Knee", value: "knee"}
+        - {label: "Toe", value: "toe"}
+        - {label: "Mucosal (device-related — NG tube, oxygen tubing)", value: "mucosal"}
+        - {label: "Other (record below — body map preferred)", value: "other"}
+
+  - key: site_specifics
+    label: Site specifics (laterality, body-map description)
+    type: long_text
+    ai_extract: true
+
+  - key: stage
+    label: Stage / classification (NPIAP / EPUAP 2019)
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "Stage 1 — non-blanchable erythema, intact skin", value: "1"}
+        - {label: "Stage 2 — partial-thickness loss with exposed dermis (or intact/ruptured serum-filled blister)", value: "2"}
+        - {label: "Stage 3 — full-thickness loss; subcutaneous fat may be visible", value: "3"}
+        - {label: "Stage 4 — full-thickness loss with exposed bone/tendon/muscle", value: "4"}
+        - {label: "Unstageable — slough/eschar obscuring depth", value: "unstageable"}
+        - {label: "Deep Tissue Injury (DTI) — persistent non-blanchable deep red/maroon/purple discolouration", value: "dti"}
+        - {label: "Medical-device-related pressure injury (MDR-PI)", value: "mdrpi"}
+        - {label: "MASD (Moisture-Associated Skin Damage) — NOT a pressure injury (record but classify separately)", value: "masd"}
+        - {label: "IAD (Incontinence-Associated Dermatitis) — link to continence plan", value: "iad"}
+
+  - key: differential_documented
+    label: Differential considered (PI vs MASD vs arterial vs venous vs skin tear)
+    type: long_text
+    ai_extract: true
+    help_text: "MASD/IAD differential is critical — distinguish from a true Stage 1/2 PI to avoid false F686 / NQI counts. Document peri-wound (moist, dry, intact, eroded), causation pattern, and any incontinence link."
+
+  - key: dimensions
+    label: Dimensions (length × width × depth, cm)
+    type: text
+    ai_extract: true
+    help_text: "Length head-to-toe; width perpendicular; depth at deepest point. Use a measuring tape or wound ruler."
+
+  - key: wound_bed
+    label: Wound bed composition (% granulation / slough / eschar / epithelial)
+    type: text
+    ai_extract: true
+    help_text: "Total to 100%."
+
+  - key: exudate
+    label: Exudate (amount + type)
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "None", value: "none"}
+        - {label: "Scant — serous", value: "scant"}
+        - {label: "Moderate — serous", value: "moderate_serous"}
+        - {label: "Moderate — sanguineous / serosanguineous", value: "moderate_sang"}
+        - {label: "Heavy — purulent / cloudy", value: "heavy_purulent"}
+
+  - key: peri_wound
+    label: Peri-wound skin
+    type: long_text
+    ai_extract: true
+    help_text: "Intact, dry, macerated, erythematous, indurated, denuded."
+
+  - key: signs_of_infection
+    label: Signs of infection
+    type: long_text
+    ai_extract: true
+    help_text: "Increased pain, erythema, warmth, swelling, purulent exudate, malodour, friable granulation, delayed healing. Consider systemic signs (fever, elevated WCC). Refer to GP/wound clinician."
+
+  - key: dressing_plan
+    label: Dressing / treatment plan
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: repositioning_schedule
+    label: Repositioning / off-loading schedule
+    type: long_text
+    ai_extract: true
+    help_text: "Frequency (e.g. 2-hourly), positions, off-loading device (heel boot, pressure-redistribution mattress, cushion)."
+
+  - key: photo_taken
+    label: Photograph taken
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — photography consent on file; photo attached to record", value: "yes"}
+        - {label: "Photo declined by resident / NoK", value: "declined"}
+        - {label: "Photography consent not on file — to be obtained", value: "pending"}
+    help_text: "Photography requires consent. Record on the resident profile (system.consent type=photography). The image is stored in the wound record, not in this form."
+
+  - key: pain_at_dressing_change
+    label: Pain at dressing change
+    type: system.pain_score
+    ai_extract: true
+    config:
+      scale_id: nrs
+    help_text: "Verbal residents — NRS 0–10. Non-verbal residents — switch to PainAD on the separate Pain form. Inform analgesic timing prior to next dressing change."
+
+  - key: au_nqi_stage_2_plus
+    label: AU NQI Pressure Injury indicator (Stage 2+)
+    type: select
+    ai_extract: false
+    countries: [AU]
+    config:
+      options:
+        - {label: "Yes — Stage 2 or worse — counted in NQI", value: "yes_stage2_plus"}
+        - {label: "No — Stage 1 / MASD / not counted in NQI", value: "no"}
+    help_text: "AU NQI counts pressure injuries Stage 2 and above (including unstageable and DTI), separated by acquisition (POA vs facility-acquired)."
+
+  - key: us_mds_m0300_code
+    label: US MDS 3.0 M0300 coding
+    type: select
+    ai_extract: false
+    countries: [US]
+    config:
+      options:
+        - {label: "M0300A Stage 1", value: "m0300a"}
+        - {label: "M0300B Stage 2", value: "m0300b"}
+        - {label: "M0300C Stage 3", value: "m0300c"}
+        - {label: "M0300D Stage 4", value: "m0300d"}
+        - {label: "M0300E Unstageable — non-removable dressing/device", value: "m0300e"}
+        - {label: "M0300F Unstageable — slough/eschar", value: "m0300f"}
+        - {label: "M0300G Unstageable — DTI", value: "m0300g"}
+
+  - key: incident
+    label: Incidents-ledger entry (facility-acquired or worsened only)
+    type: system.incident
+    required: false
+    ai_extract: false
+    config:
+      incident_type: pressure_injury
+      min_severity: medium
+    help_text: "POA pressure injuries are not Incidents. Facility-acquired Stage 2+ pressure injuries write a row to the Incidents ledger on Submit. Severity is clinician-set (low for resolving Stage 2; high/critical for Stage 4 or where suspected from neglect — F600 / SIRS / Reg 13 may then engage)."

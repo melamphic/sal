@@ -1,0 +1,162 @@
+id: salvia.aged_care.open_disclosure_meeting
+name: "Open Disclosure / Family Meeting Record"
+version: 1
+currency_date: 2026-05-08
+vertical: aged_care
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Record of an Open Disclosure / Duty of Candour conversation with the resident
+  and/or family following an adverse event. Captures attendees, the factual
+  account of what happened, the apology / expression of regret (with the words
+  used), what is being done in response, what is being learned, next steps and
+  owner, the planned review date, and the resident/NoK acknowledgement. The
+  conversation itself is the legal/ethical instrument; this form is the record.
+
+purpose_per_regulator:
+  NZ: "HDC Code of Health and Disability Services Consumers' Rights 1996 Right 6 (information about an adverse event); HQSC Open Disclosure framework (current); Coroners Act 2006 obligations where unexpected death."
+  AU: "Strengthened Aged Care Quality Standards Standard 1 (The person — open and honest communication); Aged Care Quality and Safety Commission Open Disclosure framework (current). Open Disclosure is a national standard, not a statutory duty in the AU sense, but is a registration expectation."
+  UK: "Health and Social Care Act 2008 (Regulated Activities) Regulations 2014 reg 20 — Duty of Candour (statutory). Engaged where a notifiable safety incident occurs (death, severe harm, moderate harm, prolonged psychological harm). Requires: (a) notify the relevant person as soon as reasonably practicable; (b) provide an account that is true to the best of the provider's knowledge; (c) advise of further enquiries; (d) include an apology; (e) keep a written record. Provider must also provide a written follow-up notification."
+  US: "42 CFR 483.10 (resident rights including right to be informed); ACA principles on transparency; state adverse-event-disclosure laws (varies); Joint Commission Speak Up programme; CMS Hospital Improvement Rule for non-LTC; many states have apology-laws (not legal admission)."
+
+linked_policy_defaults:
+  - salvia.aged_care.open_disclosure_duty_of_candour
+  - salvia.aged_care.resident_rights
+  - salvia.aged_care.cultural_safety
+  - salvia.shared.complaints_policy
+
+tags: [open_disclosure, duty_of_candour, communication]
+
+overall_prompt: |
+  Capture the meeting verbatim where possible. The apology / expression of
+  regret should be recorded with the actual words used (UK Reg 20 requires
+  an apology; many US states protect apology language from legal admission;
+  AU framework requires "expression of regret"). What is BEING DONE matters
+  more than what was DONE — leadership response, safety changes, support
+  offered. Avoid blame language.
+
+fields:
+  - key: subject_ref
+    label: Resident
+    type: system_field
+    source: patient_record
+    required: true
+
+  - key: meeting_datetime
+    label: Date and time of meeting
+    type: text
+    required: true
+    ai_extract: true
+
+  - key: meeting_format
+    label: Meeting format
+    type: select
+    required: true
+    ai_extract: true
+    config:
+      options:
+        - {label: "In person", value: "in_person"}
+        - {label: "By telephone", value: "phone"}
+        - {label: "By video", value: "video"}
+        - {label: "Combination — initial phone, follow-up in person", value: "combination"}
+
+  - key: attendees
+    label: Attendees (resident, NoK, staff, GP, advocate)
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: triggering_incident_ref
+    label: Triggering incident — Incidents ledger reference
+    type: text
+    ai_extract: false
+    help_text: "Reference to the source incident row (Fall / Pressure Injury / Medication Error / Reportable Incident)."
+
+  - key: factual_account
+    label: Factual account — what happened
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "What is known to be true at the time of the meeting. Distinguish facts from theories under investigation. UK Reg 20: must be true to the best of the provider's knowledge."
+
+  - key: apology_words_used
+    label: Apology / expression of regret — actual words used
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: |
+      Record the apology language verbatim. UK Reg 20(3)(a) — provider MUST
+      include an apology. AU framework — expression of regret is core.
+      Many US state apology-laws protect this language from being treated as
+      a legal admission. NZ HDC Code Right 6 expects sincere acknowledgement
+      of harm and apology where appropriate.
+
+  - key: what_is_being_done
+    label: What is being done in response
+    type: long_text
+    required: true
+    ai_extract: true
+    help_text: "Resident clinical care change, family support, internal investigation status, immediate safety changes."
+
+  - key: what_is_being_learned
+    label: What is being learned (if known at this meeting)
+    type: long_text
+    ai_extract: true
+    help_text: "Preliminary contributing factors. May not be fully known yet — say so honestly. Promise the next conversation."
+
+  - key: next_steps
+    label: Next steps with owners and timeframes
+    type: long_text
+    required: true
+    ai_extract: true
+
+  - key: review_meeting_planned
+    label: Review meeting / follow-up planned
+    type: select
+    ai_extract: true
+    config:
+      options:
+        - {label: "Yes — date set (record below)", value: "yes_dated"}
+        - {label: "Yes — date to be confirmed", value: "yes_tbc"}
+        - {label: "Written follow-up only — no further meeting requested", value: "written_only"}
+        - {label: "Resident/NoK declined further contact (record reason)", value: "declined"}
+
+  - key: review_meeting_date
+    label: Review meeting / follow-up date
+    type: date
+    ai_extract: true
+
+  - key: written_follow_up_provided
+    label: Written follow-up provided to resident / NoK
+    type: select
+    required: true
+    ai_extract: false
+    config:
+      options:
+        - {label: "Yes — provided in writing within 10 working days", value: "yes_written"}
+        - {label: "Pending — within Reg 20 timeframe (UK)", value: "pending"}
+        - {label: "Not applicable — resident with capacity declined", value: "declined"}
+    help_text: "UK Reg 20(4) requires a written notification with the same content as the verbal notification, within a reasonable timeframe. AU/NZ/US best practice."
+
+  - key: cultural_considerations
+    label: Cultural / spiritual considerations
+    type: long_text
+    ai_extract: true
+    label_per_country:
+      NZ: "Tikanga Māori around adverse-event conversations — kanohi ki te kanohi (face-to-face), with whānau, including kaumātua/kuia where appropriate; karakia opening; allow time."
+      AU: "Aboriginal and Torres Strait Islander Sorry Business protocols where applicable; CALD interpreter; family/community involvement in decision-making."
+      UK: "Faith leader presence, language interpreter (BSL, community languages); accessible-information format (CQC Reg 9, Accessible Information Standard SCCI 1605)."
+      US: "Language access (LEP per ACA §1557); faith leader; family involvement per resident preference."
+
+  - key: acknowledgement
+    label: Acknowledgement of the conversation
+    type: system.consent
+    required: true
+    ai_extract: false
+    config:
+      consent_type: other
+      require_witness: false
+    help_text: "Captures the resident's (or NoK's) acknowledgement that the conversation took place. This is not consent to treatment or to use of information — it records that the Open Disclosure / Duty of Candour conversation occurred and that the written follow-up has been (or will be) sent."

@@ -1,0 +1,156 @@
+id: salvia.general_clinic.repeat_prescribing
+name: "Repeat prescribing policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Defines which medications may be prescribed as repeats, who can authorise,
+  the maximum number and duration, the review cadence, and how the practice
+  handles a switch of prescriber, escalation, and discontinuation.
+
+purpose_per_regulator:
+  NZ: "Standing Order Guidelines (Health (Standing Orders) Regulations 2002); RNZCGP Foundation Standard; PHO Annual Quality Audit; Medicines Act 1981."
+  AU: "RACGP Standards 5th ed Criterion QI2.2 (Medication safety); RACGP Repeat Prescribing position; PBS streamlined / authority items; state Drugs & Poisons rules."
+  UK: "CQC GP Mythbuster 52 (Repeat prescribing); RCGP Repeat Prescribing Toolkit; NICE Patient Safety Update; National Patient Safety Agency 2009 guidance."
+  US: "CMS Conditions for Coverage; state Pharmacy Practice Acts; AMA Code 2.1.5; ONC HTI-1 e-prescribing rules."
+
+clauses:
+  - id: scope
+    title: "Scope"
+    body: |
+      Applies to every medication issued without an in-person consultation
+      ("repeat" / "refill" / "continuation"). It does NOT apply to:
+      controlled drugs (covered by the controlled-drugs policy), high-risk
+      medicines requiring monitoring (warfarin, lithium, methotrexate,
+      DMARDs, isotretinoin), or medicines newly initiated (must have
+      face-to-face or video review at first repeat).
+
+  - id: eligible_medications
+    title: "Eligible medications and exclusions"
+    body: |
+      Medicines eligible for repeat: stable chronic medications where (a)
+      the patient is established (≥3 months on the medication), (b) no
+      dose change since last review, (c) no relevant adverse effects, (d)
+      no missing monitoring (bloods up to date for the medication's class),
+      (e) the medication is not on the practice exclusion list.
+      Excluded: any controlled drug (managed via the CD prescription form);
+      any "yellow card" / Black Triangle medicine; any medicine requiring
+      eGFR / liver / level / TFT monitoring not yet completed; any
+      medicine where dose changed in the last 4 weeks.
+
+  - id: max_quantity_and_duration
+    title: "Maximum quantity and duration"
+    body_per_country:
+      NZ: |
+        Standard repeat: up to 3 months' supply per dispensing,
+        prescriber-defined. Patient may receive up to 12 months on a
+        single prescription if each dispensing is ≤3 months and review
+        cadence allows. Maximum ANY repeat: 6 months for routine, 3
+        months for medicines requiring more frequent review.
+      AU: |
+        PBS standard quantity is one month plus up to five repeats (six
+        total months). Practice repeat policy: max 6 months between
+        face-to-face review for stable chronic disease; max 3 months
+        for monitoring-required medicines; max 1 month for high-risk
+        medicines pending stabilisation.
+      UK: |
+        Standard repeat: up to 28-day supply at a time (NHS England
+        norm). Patient may have up to 12 months between medication
+        review for stable medicines (RCGP). High-risk medicines require
+        monitoring before each issue. Practice e-RD (electronic Repeat
+        Dispensing) preferred over slip-paper repeats for stable
+        long-term medicines.
+      US: |
+        Maximum 90-day supply via mail-order is common for stable
+        chronic medications; 30-day for newly initiated. Most state
+        Pharmacy Practice Acts allow refills for one year from
+        prescription date for non-controlled, two years for some
+        states. Practice review cadence ≤12 months.
+
+  - id: authorisation_workflow
+    title: "Authorisation workflow"
+    body: |
+      Patient request received via portal / phone / fax / pharmacy
+      request. Reception triage: patient identity verified (name + DOB
+      + one identifier); the request matched to active prescription on
+      the record; medication review date checked. Authorising clinician
+      (GP or named Nurse Prescriber / Pharmacist Prescriber) reviews:
+      (a) any new diagnoses; (b) monitoring up to date; (c) latest
+      results; (d) interactions if other meds added; (e) patient
+      adherence (any over-/under-use). Authorised in patient record;
+      prescription generated electronically. Turnaround: ≤2 working days.
+
+  - id: review_cadence
+    title: "Review cadence and prompts"
+    body: |
+      Each repeat medication has a review date set in the record. The
+      patient's medication-review prompt fires at the next-due review.
+      Long-term-condition reviews (annual / biannual) include a
+      structured medication review (RCGP MR / RACGP comprehensive
+      medication review). NZ: PHO annual Quality Audit drives review
+      cycles. AU: MBS Home Medicines Review (HMR / RMMR) for high-risk
+      patients. UK: SMR (Structured Medication Review) under PCN
+      contract. US: CMS MTM (Medication Therapy Management) for Part D
+      eligibles.
+
+  - id: switch_prescriber
+    title: "Switch of prescriber and locum issuing"
+    body: |
+      A new prescriber issuing for the first time MUST review the
+      record before signing. Locums and trainees do NOT sign repeats
+      on patients they do not know unless they have completed a
+      record review documented in a one-line note. The named usual
+      GP retains overall accountability for medication review even
+      when another clinician issues an interim repeat.
+
+  - id: escalation_and_decline
+    title: "Escalation and refusal to repeat"
+    body: |
+      The authorising clinician declines a repeat where: monitoring is
+      overdue; new red-flag symptoms reported; safer alternative is
+      indicated; the patient is non-responsive to outreach. Decline
+      is communicated to the patient (via reception / portal / phone)
+      with: the reason; the action required (book review / blood
+      test / face-to-face); a safety-net plan if symptoms worsen
+      pending review.
+
+  - id: high_risk_register
+    title: "High-risk medicines register"
+    body: |
+      The practice maintains a register of patients on high-risk
+      medicines (warfarin, lithium, methotrexate, DMARDs, isotretinoin,
+      amiodarone, opioids ≥50 MME/d, benzodiazepines >2 weeks). Each
+      register row carries the next-due monitoring blood / level /
+      review and the named clinician. The register is reviewed at
+      monthly clinical-governance meeting.
+
+  - id: documentation_and_audit
+    title: "Documentation and audit"
+    body: |
+      Every repeat issuing produces a record entry: date, prescribing
+      clinician, medications issued, monitoring confirmed, review
+      next-due. Quarterly audit checks: (a) % of repeats authorised
+      within 2 working days; (b) % with overdue monitoring; (c) % of
+      controlled / high-risk medicines correctly excluded from the
+      repeat pathway; (d) % of patients with up-to-date medication
+      review. Findings tabled at clinical-governance meeting.
+
+  - id: training
+    title: "Training"
+    body: |
+      Reception staff complete annual training on the repeat workflow:
+      identity check, exclusion criteria, escalation, urgent flags
+      (e.g. patient says they have stopped taking it). Authorising
+      clinicians review the policy at induction and attend the annual
+      practice update.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months. Currency date at the top of this
+      policy reflects the last review.

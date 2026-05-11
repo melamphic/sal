@@ -1,0 +1,141 @@
+id: salvia.shared.health_safety_policy
+name: "Health & Safety / Hazard Register"
+version: 1
+currency_date: 2026-05-08
+vertical: shared
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+
+description: >
+  How the clinic identifies, controls, and reviews hazards to staff,
+  patients, and visitors. Statutory under workplace H&S law in every
+  market.
+
+purpose_per_regulator:
+  NZ: "Health and Safety at Work Act 2015 (HSWA); WorkSafe NZ guidance"
+  AU: "Work Health and Safety Acts (harmonised model in most states); Safe Work Australia"
+  UK: "Health and Safety at Work etc. Act 1974; Management of Health and Safety at Work Regulations 1999; HSE / RIDDOR 2013"
+  US: "Occupational Safety and Health Act 1970; OSHA general duty clause 5(a)(1); state plan equivalents"
+
+clauses:
+  - id: scope
+    title: "Scope and policy statement"
+    body: |
+      The clinic is committed to providing and maintaining a safe and
+      healthy environment for staff, patients, contractors, and visitors.
+      This commitment binds the directors / partners / owners as the
+      Person Conducting the Business or Undertaking (PCBU — NZ/AU) /
+      employer (UK/US) and is reviewed annually with staff input.
+
+  - id: roles
+    title: "Roles and responsibilities"
+    body: |
+      The clinic principal or designated H&S Officer is accountable for:
+      maintaining the hazard register; chairing H&S meetings; investigating
+      incidents; coordinating drills; staff training currency. Every staff
+      member is responsible for following this policy and reporting hazards
+      and incidents.
+
+  - id: hazard_register
+    title: "Hazard register"
+    body: |
+      A hazard register is maintained covering at minimum: biological
+      (BBV, zoonosis, infection); chemical (disinfectants, anaesthetic
+      gases, cytotoxics, processing agents); physical (sharps, radiation,
+      noise, manual handling, slips/trips); psychosocial (workload,
+      bullying, lone working, aggression from patients/clients);
+      ergonomic (workstation, repetitive strain). Each entry: hazard,
+      who is exposed, controls in place, residual risk, review date.
+
+  - id: risk_assessment
+    title: "Risk assessment"
+    body: |
+      Each hazard is risk-rated (likelihood × consequence) and controlled
+      using the hierarchy of control: eliminate → substitute → engineer →
+      administer → PPE. Assessments documented and reviewed at least
+      annually and after any incident or change of process.
+
+  - id: incident_reporting
+    title: "Incident and near-miss reporting"
+    body: |
+      All work-related incidents and near-misses are reported via the
+      clinic's incident channel. Notifiable incidents are escalated to the
+      regulator within statutory timeframes.
+    body_per_country:
+      NZ: "WorkSafe NZ — notifiable events (death, notifiable injury/illness, notifiable incident) under HSWA s.23 — notify immediately + preserve site."
+      AU: "Safe Work / state regulator — notifiable incidents (death, serious injury/illness, dangerous incidents) under WHS Act s.38–39."
+      UK: "HSE / RIDDOR 2013 — death, specified injuries, occupational diseases, dangerous occurrences."
+      US: "OSHA 29 CFR 1904 — fatality within 8 hours; in-patient hospitalisation, amputation, eye loss within 24 hours; OSHA 300 log."
+
+  - id: training
+    title: "Training and competency"
+    body: |
+      All staff receive H&S induction at hire. Topic-specific training
+      (BLS/CPR, manual handling, sharps, infection control, emergency
+      response, fire safety, anaphylaxis where applicable) is refreshed
+      per the mandatory training matrix. Training records held with HR
+      and reviewed at appraisal.
+
+  - id: emergency_preparedness
+    title: "Emergency preparedness"
+    body: |
+      The clinic maintains evacuation plans, fire-extinguisher servicing,
+      first-aid kits, AED (where appropriate), spill kits, and emergency
+      contact lists. Drills are run at the cadence required by local fire
+      and emergency law (typically annual minimum).
+
+  - id: workplace_violence
+    title: "Workplace violence and aggression"
+    body: |
+      The clinic recognises that healthcare workers are at elevated risk
+      of patient/client aggression. Risk assessment covers triggers, lone
+      working, escalation procedures, panic alarms, and post-incident
+      support. Staff are encouraged to report all incidents.
+
+  - id: lone_working
+    title: "Lone working / after hours"
+    body: |
+      Staff working alone or after hours have a check-in protocol, an
+      easily-reached panic / emergency contact, and a documented
+      escalation pathway. Home visits or off-site work specifically
+      risk-assessed.
+
+  - id: vaccinations
+    title: "Staff vaccinations"
+    body: |
+      The clinic offers (or facilitates) vaccinations relevant to the
+      vertical: hepatitis B (BBV-exposed staff), seasonal influenza,
+      MMR, varicella, COVID, pertussis (where exposed to infants),
+      rabies (vet emergency-care staff). Declination recorded with
+      informed acknowledgement.
+
+  - id: ppe
+    title: "Personal protective equipment"
+    body: |
+      The clinic provides PPE appropriate to each task, free to staff,
+      and trains in correct selection, fit, and disposal. Re-usable PPE
+      cleaned and stored per manufacturer instructions.
+
+  - id: equipment_maintenance
+    title: "Equipment maintenance"
+    body: |
+      Clinical and safety equipment (autoclaves, suction, AED, oxygen,
+      lift hoists, lighting, ventilation, anaesthetic machines, x-ray
+      sources) is serviced per manufacturer schedule. Service records
+      retained per the records-retention policy.
+
+  - id: hazardous_substances
+    title: "Hazardous substances and waste"
+    body: |
+      All hazardous substances inventoried with safety data sheets (SDS).
+      Spill response trained and equipped. Waste disposed via licensed
+      contractors with documented chain of custody. Sharps disposed in
+      compliant containers and tracked.
+
+  - id: review
+    title: "Review and consultation"
+    body: |
+      This policy is reviewed annually with worker consultation
+      (HSWA NZ s 60; WHS AU s 47–49; UK HSE Code; US OSHA general duty)
+      and immediately after any notifiable incident or significant change.

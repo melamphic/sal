@@ -1,0 +1,207 @@
+id: salvia.general_clinic.controlled_drugs
+name: "Controlled drugs policy"
+version: 1
+currency_date: 2026-05-08
+vertical: general_clinic
+countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
+
+description: >
+  Governance of controlled drugs in primary care: register, storage,
+  destruction, discrepancy escalation, and the link to opioid prescribing
+  and PDMP / RTPM systems. Adapts the Salvia controlled-drug scaffolding
+  to GP workflow: opioid prescribing limits, repeat-CD rules, and
+  buprenorphine programmes.
+
+purpose_per_regulator:
+  NZ: "Misuse of Drugs Act 1975 + MoDR 1977; Medicines Act 1981; Pharmacy Council CD storage guidance; 7-day-rule for new opioid prescriptions s.24."
+  AU: "State / territory Drugs and Poisons Act + Schedule 8 register; RTPM check (SafeScript / ScriptCheck / DORA / MM); biennial physical inventory in some states."
+  UK: "Misuse of Drugs Regulations 2001 + Misuse of Drugs (Safe Custody) Regulations 1973; Schedule 2 register (bound book or approved electronic); CQC GP Mythbuster 60; Accountable Officer (Controlled Drugs) Regulations 2013."
+  US: "DEA 21 CFR 1304 (recordkeeping) + 1305 (orders) + 1306 (prescriptions); biennial inventory; state PDMP; MATE Act 8-hour DEA training; CDC Opioid Prescribing 2022."
+
+clauses:
+  - id: scope
+    title: "Scope and definitions"
+    body: |
+      This policy applies to every controlled drug held, ordered, prescribed,
+      administered, dispensed, or destroyed at this practice. Country
+      definitions of "controlled drug" / "Schedule 2/3" / "Schedule 8" /
+      "Schedule II–V" are in scope. The policy covers in-clinic stock
+      (e.g. midazolam, naloxone, opioids in the doctor's bag), patient
+      supplies under instalment dispensing, and prescriber's stock for
+      home visits.
+
+  - id: register
+    title: "Register"
+    body_per_country:
+      NZ: |
+        A controlled-drug register is held for every CD on stock. Register
+        entries: date, time, drug, strength, batch, quantity in / out,
+        patient identifier, prescriber, signature, running balance. Entries
+        in indelible ink, no overwriting, errors single-line struck-through
+        and initialled. Audit of the running balance against physical stock
+        weekly. Register retained 5 years (MoDR 1977 r.41).
+      AU: |
+        A Schedule 8 register (state-prescribed format — "Drugs of Dependence
+        Register" most jurisdictions) is held. State law requires running
+        balance. Biannual physical reconciliation in NSW; comparable cycles
+        in VIC, QLD, WA. Discrepancies reported per state Medicines &
+        Poisons authority (typically within 7 days; immediate if loss /
+        theft).
+      UK: |
+        A Schedule 2 controlled-drug register held in a bound book or in
+        an MHRA-approved electronic register. Register entries follow MoDR
+        2001 r.20: date, name + form + strength, quantity, person to whom
+        supplied, person who collected, prescriber. Stock balance written
+        in pencil and reconciled at every entry; weekly running-balance
+        check signed by a second person. Register retained 2 years from
+        last entry. Schedule 3 has no register requirement but practice
+        may keep one for buprenorphine, midazolam, temazepam.
+      US: |
+        DEA recordkeeping: separate inventory for Schedule II from
+        Schedules III–V. Initial inventory on becoming registered; biennial
+        inventory thereafter. Each transaction logged with date, drug, NDC,
+        strength, quantity, patient (DEA) or invoice (vendor). DEA Form
+        222 used to receive Schedule II. Records kept ≥2 years federal,
+        ≥5 years some states. Lost / stolen reported on DEA Form 106
+        within one business day.
+
+  - id: storage
+    title: "Storage and access"
+    body: |
+      Controlled drugs are stored in a fixed cabinet meeting the country
+      standard (UK: Misuse of Drugs (Safe Custody) Regulations 1973 — bolted
+      steel cabinet; AU: state-equivalent; NZ: locked, fixed, restricted
+      access; US: securely locked, substantially constructed cabinet per DEA
+      21 CFR 1301.75). UK practices follow BS 8418 / BS 2881 / equivalent
+      where required. Keys held by named designated authorised keyholders
+      only; key register maintained; no master key with reception. Access
+      out-of-hours by named on-call clinician. Cabinet siting away from
+      public view and ground-floor windows.
+
+  - id: ordering_and_receipt
+    title: "Ordering and receipt"
+    body: |
+      Orders placed only by an authorised prescriber / pharmacist. On
+      receipt the cabinet keyholder counts the stock, matches to the order
+      and invoice, signs in the register, and updates the running balance.
+      Two-person receipt for any stock above defined threshold (e.g. 100
+      morphine 10 mg). Discrepancy at receipt is recorded same day and
+      escalated per Section 7.
+
+  - id: prescribing_and_administration
+    title: "Prescribing, administration, and dispensing"
+    body: |
+      Every CD prescription is written via the practice's controlled-drug
+      prescription form, with mandatory fields completed (see related
+      form salvia.general_clinic.controlled_drug_prescription). PDMP / RTPM
+      query is completed BEFORE prescribing where the country mandates
+      (AU all S8 + monitored S4; US state-by-state but >40 states; UK +
+      NZ informal but expected for repeat opioid). Administration is
+      double-checked: prescriber-administered events recorded via the
+      system.drug_op widget with confirm_required=true. Patient
+      identification verified to the country standard before dose.
+
+  - id: opioid_prescribing
+    title: "Opioid prescribing limits and review"
+    body: |
+      First-line management of pain follows non-opioid / non-pharmacological
+      options (CDC 2022; FPM ANZCA Position Statement; FPM RCoA). When
+      opioids are prescribed: (a) start low — paracetamol-codeine 8/500 or
+      tramadol — and titrate; (b) reassess at 5 days, 14 days, and 90 days;
+      (c) document maximum daily morphine equivalent (MME / OME); (d)
+      prescribe naloxone alongside any opioid >50 MME/day or with
+      benzodiazepine co-prescription; (e) avoid co-prescription with
+      benzodiazepines or Z-drugs without specialist input; (f) screen
+      for use disorder (PEG / OUDQ / DUDIT) at any escalation. NZ: 7-day
+      rule for new opioid courses (MoDR s.24). UK: 28-day Sch 2/3
+      validity. AU: state RTPM mandatory. US: PDMP query each new
+      prescription + every state-defined refill.
+
+  - id: discrepancy_and_loss
+    title: "Discrepancy, theft, loss, and waste"
+    body: |
+      Any discrepancy between physical stock and register is investigated
+      same shift by two clinicians. If unresolved within 24 hours:
+      escalate per country authority — UK Accountable Officer (CDAO);
+      AU state Medicines & Poisons; NZ Medsafe + police if loss / theft;
+      US DEA Form 106 within one business day. Wastage (e.g. discarded
+      partial vial after dose) is witnessed and signed by two staff in
+      the register. Patient-returned stock destroyed via reverse-courier
+      or via approved destruction kit (CD destruction kit denatures the
+      drug per country regulator method).
+
+  - id: destruction
+    title: "Destruction of expired stock"
+    body_per_country:
+      NZ: |
+        Expired CDs destroyed by an Authorised Person (pharmacist) in
+        the presence of a witness. Recorded in destruction register with
+        date, drug, strength, quantity, batch, method (denaturing kit),
+        names of both parties.
+      AU: |
+        Expired S8 destroyed by an authorised destruction officer (state
+        rules — typically pharmacist or police officer). Witnessed,
+        recorded in S8 register, notified to state Medicines & Poisons
+        authority where required (e.g. NSW Public Health Unit notification).
+      UK: |
+        Schedule 2 (and Schedule 3 phenobarbital, buprenorphine,
+        diazepam, flunitrazepam, midazolam, temazepam where the practice
+        chooses to register them) destroyed in the presence of an
+        Authorised Witness — typically the local CDAO or designated CCG
+        pharmacist. Use a denaturing kit (CD Destruction Kit). Record in
+        destruction register and the main CD register. Patient-returned
+        CDs destroyed in the same way and recorded separately.
+      US: |
+        DEA-registered reverse distributor used for destruction or returned
+        to manufacturer. On-site destruction follows DEA Final Rule 21 CFR
+        1317 (non-retrievable destruction). Two staff witness; record on
+        Form 41 or contemporaneous log. State board may require its own
+        notification.
+
+  - id: pdmp_rtpm_integration
+    title: "PDMP / RTPM integration"
+    body_per_country:
+      NZ: |
+        PDMP-equivalent: review patient's prescription history via
+        TestSafe / GP2GP / shared electronic-health-record before issuing
+        new opioid or benzodiazepine. Document the review in the
+        prescription record.
+      AU: |
+        RTPM check is mandatory: SafeScript (VIC), MM (NSW), DORA (SA),
+        ScriptCheck (QLD), ScriptCheck WA (WA), ScriptCheck ACT (ACT),
+        SafeScript TAS (TAS), TerritoryScript (NT). The practice ensures
+        prescribers have RTPM credentials and uses them at every Sch 8 +
+        monitored Sch 4 prescription.
+      UK: |
+        Cross-check via the NHS Summary Care Record and the patient's
+        electronic record before issuing repeat Sch 2/3. Use Controlled
+        Drugs Local Intelligence Network (CDLIN) reports as part of
+        practice clinical governance.
+      US: |
+        Each prescriber queries the state PDMP at every initial Sch II–V
+        prescription and at least every 90 days for chronic therapy
+        (state requirements vary). Result documented in the patient
+        record. Buprenorphine-for-OUD: previously X-waivered; under
+        MATE Act 2023 any DEA-registered prescriber may prescribe
+        buprenorphine; 8-hour MATE training required at next renewal.
+
+  - id: training_and_governance
+    title: "Training and governance"
+    body: |
+      All clinicians complete CD-handling training at induction and
+      annually. The Accountable Officer / clinical lead audits CD records
+      monthly and tables findings at the clinical-governance meeting.
+      External annual audit (UK CDAO; AU state MPS visit; NZ Medsafe
+      schedule; US DEA cyclic inspection) is supported. Whistleblowing
+      / Speak Up arrangements protect staff who flag CD concerns.
+
+  - id: review
+    title: "Policy review"
+    body: |
+      Reviewed every 12 months and on the publication of new national
+      guidance (CDC Opioid Prescribing revision; UKHSA / RCGP CD
+      revisions; AU Schedule 8 changes; NZ MoDR amendments). Currency
+      date at the top of this policy.
