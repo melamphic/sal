@@ -77,5 +77,6 @@ nav:
       - AI Drafts (audio → AI fill): ai_drafts.md
       - Admin Dashboard & Alerts: admin.md
       - Compliance Reports: reports.md
+      - Salvia-Provided Content (v1): salvia-content.md
   - Backlog: backlog.md
   - Compliance: compliance.md
