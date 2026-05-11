@@ -209,6 +209,13 @@ type FormResponse struct {
 	SourceMarketplaceListingID     *string `json:"source_marketplace_listing_id,omitempty"`
 	SourceMarketplaceVersionID     *string `json:"source_marketplace_version_id,omitempty"`
 	SourceMarketplaceAcquisitionID *string `json:"source_marketplace_acquisition_id,omitempty"`
+	// Salvia v1 prebuilt content lineage — non-empty only when the form was
+	// installed by the salvia_content materialiser. Powers the "Made by
+	// Salvia v1" badge and the Library panel.
+	SalviaTemplateID      *string `json:"salvia_template_id,omitempty"`
+	SalviaTemplateVersion *int    `json:"salvia_template_version,omitempty"`
+	SalviaTemplateState   *string `json:"salvia_template_state,omitempty" enum:"default,forked,deleted"`
+	FrameworkCurrencyDate *string `json:"framework_currency_date,omitempty"`
 }
 
 // FormListResponse is a paginated list of forms.
@@ -1593,6 +1600,13 @@ func toFormResponse(f *FormRecord) *FormResponse {
 	if f.SourceMarketplaceAcquisitionID != nil {
 		s := f.SourceMarketplaceAcquisitionID.String()
 		r.SourceMarketplaceAcquisitionID = &s
+	}
+	r.SalviaTemplateID = f.SalviaTemplateID
+	r.SalviaTemplateVersion = f.SalviaTemplateVersion
+	r.SalviaTemplateState = f.SalviaTemplateState
+	if f.FrameworkCurrencyDate != nil {
+		s := f.FrameworkCurrencyDate.Format("2006-01-02")
+		r.FrameworkCurrencyDate = &s
 	}
 	return r
 }
