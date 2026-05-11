@@ -1,15 +1,20 @@
 # Salvia Content — Prebuilt Forms & Policies (v1)
 
-This directory holds the canonical Salvia-authored forms and policies that ship
-with every clinic. The Go backend reads from this tree at clinic-create time
-and instantiates the templates as tenant-owned forms / policies, branded
-**"Made by Salvia · v1"** with a removable acknowledgement banner.
+This package is the source of truth for Salvia-authored forms and policies
+that ship into every clinic at onboarding. The YAML library under `data/` is
+embedded at build time; `loader.go` parses and validates it; `materialiser.go`
+installs the per-(vertical, country) subset into a tenant from the hook in
+`clinic.Service.SubmitCompliance`. Templates surface as **"Made by Salvia v1"**
+in-app and in PDF footers.
 
-> **Status:** Spec-grade content. Not yet wired into `sal/internal/forms` or
-> `sal/internal/policy`. Loader implementation tracked separately. See
-> `SALVIA_PROVIDED_CONTENT.md` (repo root) for the master spec, and
-> `MARKETPLACE_BACKLOG.md` for why the marketplace track was shelved in favour
-> of this one.
+> **Status:** Shipped (2026-05-11). Lineage migration `00091`, loader,
+> materialiser, API surface (`FormResponse` / `PolicyResponse`), Flutter
+> models, and the **Settings → Salvia Library** panel are all in place.
+> The remaining launch gate is paid external clinical-compliance review
+> per vertical — see `data/_terms.md`. For the engineering reference, see
+> `/sal/docs/salvia-content.md`; for the product spec see
+> `/SALVIA_PROVIDED_CONTENT.md`; for why the marketplace was shelved in
+> favour of this track see `/MARKETPLACE_BACKLOG.md`.
 
 ---
 
