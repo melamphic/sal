@@ -1,6 +1,21 @@
 # Marketplace — Architecture Reference
 
-Status: **Phase 1 + 1.5 + 2 + 3 implemented.** Migrations `00019`, `00020` land the schema; `internal/marketplace/` carries repository + service + handlers + Stripe client.
+!!! warning "Status: shelved 2026-05-08"
+    The marketplace UI is currently gated behind `kMarketplaceEnabled = false`
+    at `salvia/apps/lib/core/feature_flags.dart`. The activity-bar entry,
+    AppBar action, watchcard, and all six `/marketplace/*` routes are
+    hidden / redirect to home. Backend routes (`/api/v1/marketplace/*`),
+    permissions, migrations, and tables remain in place — flipping the flag
+    restores the UI without redeployment.
+    
+    Marketplace was paused mid-flight to refocus on **Salvia-provided
+    prebuilt content** (forms + policies seeded into every clinic at
+    signup; see `salvia-content.md`). Restart triggers are documented in
+    `MARKETPLACE_BACKLOG.md` at the repo root.
+    
+    The architecture reference below describes the shipped state.
+
+Status: **Phase 1 + 1.5 + 2 + 3 implemented.** Migrations `00019`, `00020`, plus marketplace-track lineage in `00088`–`00090`, land the schema; `internal/marketplace/` carries repository + service + handlers + Stripe client.
 
 Marketplace lives entirely **behind the post-login UI**. No public / unauthenticated marketplace routes. Stripe webhook is the only endpoint without JWT, verified by signature.
 
