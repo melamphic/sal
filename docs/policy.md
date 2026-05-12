@@ -58,6 +58,22 @@ Archives the policy (`archived_at` + optional `retire_reason`) and **automatical
 
 ---
 
+## Provenance — where a policy came from
+
+A policy is created in one of three ways:
+
+| Origin | Lineage columns | Migration | Notes |
+|---|---|---|---|
+| **Clinic-authored** | all NULL | — | Default. Created via the in-app policy editor. |
+| **Imported from marketplace** | `source_marketplace_version_id` set | 00033 | Created by the marketplace import service. Marketplace UI is currently shelved (see `marketplace.md`). |
+| **Installed by Salvia** | `salvia_template_id` / `_version` / `_state` / `framework_currency_date` set | 00091 | Created by the `salvia_content` materialiser at clinic onboarding. Powers the "Made by Salvia v1" badge and the Settings → Salvia Library panel. See `salvia-content.md`. |
+
+The two provenance kinds are mutually exclusive — a policy carries marketplace OR Salvia lineage, not both. `policy.repository.scanPolicy` reads all five lineage columns; `PolicyResponse` exposes them via JSON. The Salvia state lifecycle (`default` / `forked` / `deleted`) is identical to the forms side — see `salvia-content.md` for the full description.
+
+The unique index `idx_policies_salvia_template_per_clinic (clinic_id, salvia_template_id)` enforces materialiser idempotency.
+
+---
+
 ## Block-based content
 
 Policy content is stored as a JSONB array of editor blocks. The backend treats this as entirely opaque — no parsing, no validation of block structure. The Flutter client (using the AppFlowy OSS package) handles rendering and editing. This means new block types (headings, callouts, tables, checklists) are supported without any backend changes.

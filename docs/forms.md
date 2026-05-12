@@ -73,6 +73,30 @@ Sets `archived_at` on the form and records an optional `retire_reason`. In-fligh
 
 ---
 
+## Provenance — where a form came from
+
+A form is created in one of three ways:
+
+| Origin | Lineage columns | Migration | Notes |
+|---|---|---|---|
+| **Clinic-authored** | all NULL | — | Default. Created via the in-app form builder. |
+| **Imported from marketplace** | `source_marketplace_listing_id` / `_version_id` / `_acquisition_id` set | 00088 | Created by the marketplace import service. Powers the `marketplace_lineage_banner` and sibling-form lookup. Marketplace itself is currently shelved (see `marketplace.md`). |
+| **Installed by Salvia** | `salvia_template_id` / `_version` / `_state` / `framework_currency_date` set | 00091 | Created by the `salvia_content` materialiser at clinic onboarding. Powers the "Made by Salvia v1" badge and the Settings → Salvia Library panel. See `salvia-content.md`. |
+
+The two provenance kinds are mutually exclusive — a form carries marketplace OR Salvia lineage, not both. `forms.repository.scanForm` reads all eight columns; `FormResponse` exposes them via JSON.
+
+### Salvia template lifecycle
+
+For Salvia-installed forms, `salvia_template_state` tracks per-clinic lifecycle:
+
+- `default` — clinic on unmodified Salvia content; receives upgrade banners when v2 ships.
+- `forked` — clinician edited the form. Badge clears; clinic owns the content; lineage retained for audit.
+- `deleted` — clinician explicitly removed. Row stays; the materialiser will not re-create. Clinic can re-add from the Library panel to get a fresh `default` copy.
+
+The unique index `idx_forms_salvia_template_per_clinic (clinic_id, salvia_template_id)` enforces idempotency — re-running the materialiser cannot double-install.
+
+---
+
 ## Field types
 
 `type` is a free-form string — the Flutter builder and renderer interpret it. The backend stores whatever the client sends. `config` is type-specific JSONB. Common examples:

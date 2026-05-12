@@ -24,6 +24,7 @@
 | **notifications** | SSE broker backed by PostgreSQL LISTEN/NOTIFY for real-time updates |
 | **policy** | Policy engine with block-based content, semver versioning, clause enforcement levels |
 | **reports** | Compliance report queries + async CSV export via River job and S3 |
+| **salvia_content** | Prebuilt forms + policies (100 templates) installed at onboarding; loader + materialiser + lineage migration; see [Salvia-Provided Content](salvia-content.md) |
 
 ---
 
