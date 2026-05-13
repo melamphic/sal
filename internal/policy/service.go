@@ -430,6 +430,14 @@ func (s *Service) ListPolicies(ctx context.Context, clinicID uuid.UUID, input Li
 	if err != nil {
 		return nil, fmt.Errorf("policy.service.ListPolicies: latest published: %w", err)
 	}
+	// Draft versions are attached here so the FE status pill can
+	// distinguish "Draft", "Draft edits", and "Published" — without
+	// this, a row with no published version (e.g. Salvia-default content
+	// that nobody has touched yet) silently fell through to "Published".
+	draftByPolicy, err := s.repo.GetDraftVersions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("policy.service.ListPolicies: drafts: %w", err)
+	}
 
 	// Single round-trip for clause counts across every published version
 	// in the page so the card pill ("N clauses") doesn't fan out into N
@@ -449,6 +457,9 @@ func (s *Service) ListPolicies(ctx context.Context, clinicID uuid.UUID, input Li
 		if v, ok := latestByPolicy[r.ID]; ok {
 			resp.LatestPublished = toVersionResponse(v)
 			resp.ClauseCount = counts[v.ID]
+		}
+		if v, ok := draftByPolicy[r.ID]; ok {
+			resp.Draft = toVersionResponse(v)
 		}
 		// Salvia default-state rows have no DB clauses yet — fall back to
 		// the YAML overlay so the card matches what the preview shows.
