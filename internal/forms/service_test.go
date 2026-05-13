@@ -708,6 +708,149 @@ func TestCanonicalStyleLogoType(t *testing.T) {
 	}
 }
 
+// ── Template overlay ──────────────────────────────────────────────────────────
+
+// fakeTemplateOverlay is a hand-rolled fake for TemplateOverlaySource so the
+// tests can assert overlay behaviour without compiling the salvia_content
+// package into the unit-test target.
+type fakeTemplateOverlay struct {
+	byID map[string][]TemplateField
+}
+
+func (f *fakeTemplateOverlay) FieldsForTemplate(_ context.Context, templateID string, _ uuid.UUID) ([]TemplateField, bool) {
+	v, ok := f.byID[templateID]
+	return v, ok
+}
+
+func TestService_GetForm_OverlaysYAMLFieldsWhenStateDefault(t *testing.T) {
+	overlay := &fakeTemplateOverlay{
+		byID: map[string][]TemplateField{
+			"salvia.consultation_note": {
+				{Key: "presenting_concern", Label: "Presenting concern", Type: "long_text", Required: true},
+				{Key: "plan", Label: "Plan", Type: "long_text"},
+			},
+		},
+	}
+	svc := NewService(newFakeRepo(), nil, nil, nil, nil, nil, nil)
+	svc.SetTemplateOverlaySource(overlay)
+	ctx := context.Background()
+
+	tID := "salvia.consultation_note"
+	tVer := 1
+	tState := "default"
+	created, err := svc.CreateForm(ctx, CreateFormInput{
+		ClinicID:              testClinicID,
+		StaffID:               testStaffID,
+		Name:                  "Consultation note",
+		SalviaTemplateID:      &tID,
+		SalviaTemplateVersion: &tVer,
+		SalviaTemplateState:   &tState,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	resp, err := svc.GetForm(ctx, uuid.MustParse(created.ID), testClinicID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if resp.Draft == nil {
+		t.Fatal("draft missing")
+	}
+	if got := len(resp.Draft.Fields); got != 2 {
+		t.Fatalf("overlay field count: got %d, want 2", got)
+	}
+	if resp.Draft.Fields[0].Title != "Presenting concern" {
+		t.Errorf("field[0] title: %q", resp.Draft.Fields[0].Title)
+	}
+	if !resp.Draft.Fields[0].Required {
+		t.Error("field[0] should be required")
+	}
+}
+
+func TestService_GetForm_SkipsOverlayWhenForked(t *testing.T) {
+	overlay := &fakeTemplateOverlay{
+		byID: map[string][]TemplateField{
+			"salvia.consultation_note": {
+				{Key: "should_not_appear", Label: "Should not appear", Type: "text"},
+			},
+		},
+	}
+	svc := NewService(newFakeRepo(), nil, nil, nil, nil, nil, nil)
+	svc.SetTemplateOverlaySource(overlay)
+	ctx := context.Background()
+
+	tID := "salvia.consultation_note"
+	tVer := 1
+	tForked := "forked"
+	created, _ := svc.CreateForm(ctx, CreateFormInput{
+		ClinicID:              testClinicID,
+		StaffID:               testStaffID,
+		Name:                  "Consultation note",
+		SalviaTemplateID:      &tID,
+		SalviaTemplateVersion: &tVer,
+		SalviaTemplateState:   &tForked,
+	})
+
+	resp, err := svc.GetForm(ctx, uuid.MustParse(created.ID), testClinicID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if resp.Draft == nil {
+		t.Fatal("draft missing")
+	}
+	if len(resp.Draft.Fields) != 0 {
+		t.Errorf("forked form should not overlay; got %d fields", len(resp.Draft.Fields))
+	}
+}
+
+func TestService_GetForm_SkipsOverlayWhenDraftHasFields(t *testing.T) {
+	overlay := &fakeTemplateOverlay{
+		byID: map[string][]TemplateField{
+			"salvia.consultation_note": {
+				{Key: "overlay_field", Label: "Overlay field", Type: "text"},
+			},
+		},
+	}
+	svc := NewService(newFakeRepo(), nil, nil, nil, nil, nil, nil)
+	svc.SetTemplateOverlaySource(overlay)
+	ctx := context.Background()
+
+	tID := "salvia.consultation_note"
+	tVer := 1
+	tDefault := "default"
+	created, _ := svc.CreateForm(ctx, CreateFormInput{
+		ClinicID:              testClinicID,
+		StaffID:               testStaffID,
+		Name:                  "Consultation note",
+		SalviaTemplateID:      &tID,
+		SalviaTemplateVersion: &tVer,
+		SalviaTemplateState:   &tDefault,
+	})
+	formID := uuid.MustParse(created.ID)
+
+	// Persist real fields onto the draft — overlay must defer to the DB.
+	if _, err := svc.UpdateDraft(ctx, UpdateDraftInput{
+		FormID:   formID,
+		ClinicID: testClinicID,
+		StaffID:  testStaffID,
+		Name:     "Consultation note",
+		Fields: []FieldInput{
+			{Position: 1, Title: "Real field", Type: "text", Config: json.RawMessage(`{}`)},
+		},
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	resp, _ := svc.GetForm(ctx, formID, testClinicID)
+	if got := len(resp.Draft.Fields); got != 1 {
+		t.Fatalf("field count: got %d", got)
+	}
+	if resp.Draft.Fields[0].Title != "Real field" {
+		t.Errorf("overlay leaked over persisted draft: %q", resp.Draft.Fields[0].Title)
+	}
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func isNotFound(err error) bool {
