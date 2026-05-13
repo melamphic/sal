@@ -22,15 +22,46 @@ type FormLinker interface {
 	DetachPolicyFromForms(ctx context.Context, policyID uuid.UUID, policyName string, reason *string) error
 }
 
+// TemplateOverlaySource yields prebuilt clause specs for a Salvia-installed
+// policy whose lifecycle state is still "default". ListClauses overlays
+// these onto the empty draft so freshly-onboarded clinics see the
+// canonical YAML content without a heavy at-signup write. Once the clinic
+// edits the policy (state flips to "forked"), the DB clauses become
+// authoritative and this lookup is bypassed.
+//
+// Implemented by an adapter in app.go that bridges to salvia_content;
+// nil installations disable the overlay.
+type TemplateOverlaySource interface {
+	ClausesForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) ([]TemplateClause, bool)
+}
+
+// TemplateClause is the cross-domain clause shape the overlay source emits.
+// Mirrors the YAML ClauseSpec but lives in this package so the policy
+// service has no compile-time dependency on salvia_content.
+type TemplateClause struct {
+	ID    string
+	Title string
+	Body  string
+}
+
 // Service handles business logic for the policy module.
 type Service struct {
 	repo       *Repository
 	formLinker FormLinker
+	templates  TemplateOverlaySource
 }
 
 // NewService constructs a policy Service.
 func NewService(repo *Repository, formLinker FormLinker) *Service {
 	return &Service{repo: repo, formLinker: formLinker}
+}
+
+// SetTemplateOverlaySource wires the YAML template lookup so ListClauses
+// can overlay prebuilt clauses onto rows whose salvia_template_state is
+// still "default". Optional — without it, default-state Salvia policies
+// render with no clauses (the same behaviour they shipped with).
+func (s *Service) SetTemplateOverlaySource(t TemplateOverlaySource) {
+	s.templates = t
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -130,6 +161,12 @@ type PolicyResponse struct {
 	SalviaTemplateVersion *int    `json:"salvia_template_version,omitempty"`
 	SalviaTemplateState   *string `json:"salvia_template_state,omitempty" enum:"default,forked,deleted"`
 	FrameworkCurrencyDate *string `json:"framework_currency_date,omitempty"`
+	// ClauseCount is the renderable clause total for the policy card.
+	// Sourced from policy_clauses for forked/clinic-authored rows, from
+	// the YAML overlay for Salvia default-state rows. Surfaced as a
+	// separate field so the list endpoint doesn't have to ship full
+	// version content just to compute a card-level count.
+	ClauseCount int `json:"clause_count"`
 }
 
 // PolicyListResponse is a paginated list of policies.
@@ -334,7 +371,46 @@ func (s *Service) GetPolicy(ctx context.Context, policyID, clinicID uuid.UUID) (
 		resp.LatestPublished = toVersionResponse(latest)
 	}
 
+	resp.ClauseCount = s.computeClauseCount(ctx, pol, latest, draft)
+
 	return resp, nil
+}
+
+// computeClauseCount picks the right source for the policy card's "N clauses"
+// pill:
+//
+//   - Salvia default-state rows have no DB clauses yet — count the YAML
+//     overlay so the card matches what the preview drawer will render.
+//   - Every other row counts DB clauses on the latest published version,
+//     falling back to the draft when nothing has been published.
+//
+// Errors from the count query are swallowed: a card-level pill isn't worth
+// failing the whole GET for, and the FE already treats absent counts as zero.
+func (s *Service) computeClauseCount(ctx context.Context, pol *PolicyRecord, latest, draft *PolicyVersionRecord) int {
+	if pol == nil {
+		return 0
+	}
+	if s.templates != nil &&
+		pol.SalviaTemplateID != nil && *pol.SalviaTemplateID != "" &&
+		pol.SalviaTemplateState != nil && *pol.SalviaTemplateState == "default" {
+		if tcs, ok := s.templates.ClausesForTemplate(ctx, *pol.SalviaTemplateID, pol.ClinicID); ok {
+			return len(tcs)
+		}
+	}
+	var versionID uuid.UUID
+	switch {
+	case latest != nil:
+		versionID = latest.ID
+	case draft != nil:
+		versionID = draft.ID
+	default:
+		return 0
+	}
+	counts, err := s.repo.CountClausesByVersion(ctx, []uuid.UUID{versionID})
+	if err != nil {
+		return 0
+	}
+	return counts[versionID]
 }
 
 // ListPolicies returns a paginated list of policies for a clinic.
@@ -354,12 +430,46 @@ func (s *Service) ListPolicies(ctx context.Context, clinicID uuid.UUID, input Li
 	if err != nil {
 		return nil, fmt.Errorf("policy.service.ListPolicies: latest published: %w", err)
 	}
+	// Draft versions are attached here so the FE status pill can
+	// distinguish "Draft", "Draft edits", and "Published" — without
+	// this, a row with no published version (e.g. Salvia-default content
+	// that nobody has touched yet) silently fell through to "Published".
+	draftByPolicy, err := s.repo.GetDraftVersions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("policy.service.ListPolicies: drafts: %w", err)
+	}
+
+	// Single round-trip for clause counts across every published version
+	// in the page so the card pill ("N clauses") doesn't fan out into N
+	// per-row queries.
+	versionIDs := make([]uuid.UUID, 0, len(latestByPolicy))
+	for _, v := range latestByPolicy {
+		versionIDs = append(versionIDs, v.ID)
+	}
+	counts, err := s.repo.CountClausesByVersion(ctx, versionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.service.ListPolicies: clause counts: %w", err)
+	}
 
 	items := make([]*PolicyResponse, len(recs))
 	for i, r := range recs {
 		resp := toPolicyResponse(r)
 		if v, ok := latestByPolicy[r.ID]; ok {
 			resp.LatestPublished = toVersionResponse(v)
+			resp.ClauseCount = counts[v.ID]
+		}
+		if v, ok := draftByPolicy[r.ID]; ok {
+			resp.Draft = toVersionResponse(v)
+		}
+		// Salvia default-state rows have no DB clauses yet — fall back to
+		// the YAML overlay so the card matches what the preview shows.
+		if resp.ClauseCount == 0 &&
+			s.templates != nil &&
+			r.SalviaTemplateID != nil && *r.SalviaTemplateID != "" &&
+			r.SalviaTemplateState != nil && *r.SalviaTemplateState == "default" {
+			if tcs, ok := s.templates.ClausesForTemplate(ctx, *r.SalviaTemplateID, r.ClinicID); ok {
+				resp.ClauseCount = len(tcs)
+			}
 		}
 		items[i] = resp
 	}
@@ -634,7 +744,8 @@ func (s *Service) UpsertClauses(ctx context.Context, input UpsertClausesInput) (
 
 // ListClauses returns all clauses for a policy version.
 func (s *Service) ListClauses(ctx context.Context, policyID, clinicID, versionID uuid.UUID) (*PolicyClauseListResponse, error) {
-	if _, err := s.repo.GetPolicyByID(ctx, policyID, clinicID); err != nil {
+	pol, err := s.repo.GetPolicyByID(ctx, policyID, clinicID)
+	if err != nil {
 		return nil, fmt.Errorf("policy.service.ListClauses: %w", err)
 	}
 	ver, err := s.repo.GetVersionByID(ctx, versionID)
@@ -649,7 +760,9 @@ func (s *Service) ListClauses(ctx context.Context, policyID, clinicID, versionID
 	if err != nil {
 		return nil, fmt.Errorf("policy.service.ListClauses: %w", err)
 	}
-	return toClauseListResponse(recs), nil
+	resp := toClauseListResponse(recs)
+	s.overlayTemplateClauses(ctx, pol, resp)
+	return resp, nil
 }
 
 // ── Marketplace import ───────────────────────────────────────────────────────
@@ -805,6 +918,48 @@ func toVersionResponse(v *PolicyVersionRecord) *PolicyVersionResponse {
 		r.GenerationMetadata = v.GenerationMetadata
 	}
 	return r
+}
+
+// overlayTemplateClauses paints the YAML clause specs onto a Salvia-installed
+// policy's empty clause list. No-op when:
+//   - the overlay source is not wired (tests, local dev),
+//   - the policy isn't from Salvia (SalviaTemplateID nil), or
+//   - the policy has been edited (SalviaTemplateState != "default"), at which
+//     point the DB clauses are authoritative and the YAML view would lie.
+//
+// The overlay only fills in clauses when the persisted list is empty —
+// once the clinic forks and writes real clauses, we render those verbatim.
+func (s *Service) overlayTemplateClauses(ctx context.Context, pol *PolicyRecord, resp *PolicyClauseListResponse) {
+	if s.templates == nil || pol == nil || resp == nil {
+		return
+	}
+	if pol.SalviaTemplateID == nil || *pol.SalviaTemplateID == "" {
+		return
+	}
+	if pol.SalviaTemplateState == nil || *pol.SalviaTemplateState != "default" {
+		return
+	}
+	if len(resp.Items) > 0 {
+		return
+	}
+	tcs, ok := s.templates.ClausesForTemplate(ctx, *pol.SalviaTemplateID, pol.ClinicID)
+	if !ok || len(tcs) == 0 {
+		return
+	}
+	items := make([]*PolicyClauseResponse, 0, len(tcs))
+	for _, tc := range tcs {
+		items = append(items, &PolicyClauseResponse{
+			// Synthetic ID: deterministic per (template_id, clause_id) so
+			// the FE can use it as a list key without colliding across
+			// policies.
+			ID:      fmt.Sprintf("tpl:%s:%s", *pol.SalviaTemplateID, tc.ID),
+			BlockID: tc.ID,
+			Title:   tc.Title,
+			Body:    tc.Body,
+			Parity:  "high",
+		})
+	}
+	resp.Items = items
 }
 
 func toClauseListResponse(recs []*PolicyClauseRecord) *PolicyClauseListResponse {

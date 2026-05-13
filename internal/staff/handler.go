@@ -178,10 +178,9 @@ func (h *Handler) invite(ctx context.Context, input *inviteInput) (*inviteRespon
 		return nil, huma.Error500InternalServerError("internal server error")
 	}
 
-	// Use role defaults and merge with explicitly provided permissions.
-	defaults := domain.DefaultPermissions(input.Body.Role)
-	perms := mergePerms(defaults, input.Body.Permissions)
-
+	// Permissions are authored on the client off role defaults — the wire
+	// payload is the final desired state. OR-merging with defaults here used
+	// to silently re-grant capabilities the inviter explicitly switched off.
 	sendEmail := true
 	if input.Body.SendEmail != nil {
 		sendEmail = *input.Body.SendEmail
@@ -192,7 +191,7 @@ func (h *Handler) invite(ctx context.Context, input *inviteInput) (*inviteRespon
 		FullName:    input.Body.FullName,
 		Role:        input.Body.Role,
 		NoteTier:    input.Body.NoteTier,
-		Permissions: perms,
+		Permissions: input.Body.Permissions,
 		InviterName: caller.FullName,
 		SendEmail:   sendEmail,
 	})
@@ -403,25 +402,6 @@ func (h *Handler) deactivate(ctx context.Context, input *staffIDInput) (*staffRe
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-// mergePerms applies explicitly-set permissions on top of role defaults.
-// A permission is only overridden if the explicit value is true (i.e. granting extra access).
-func mergePerms(defaults, explicit domain.Permissions) domain.Permissions {
-	return domain.Permissions{
-		ManageStaff:         defaults.ManageStaff || explicit.ManageStaff,
-		ManageForms:         defaults.ManageForms || explicit.ManageForms,
-		ManagePolicies:      defaults.ManagePolicies || explicit.ManagePolicies,
-		ManageBilling:       defaults.ManageBilling || explicit.ManageBilling,
-		RollbackPolicies:    defaults.RollbackPolicies || explicit.RollbackPolicies,
-		RecordAudio:         defaults.RecordAudio || explicit.RecordAudio,
-		SubmitForms:         defaults.SubmitForms || explicit.SubmitForms,
-		ViewAllPatients:     defaults.ViewAllPatients || explicit.ViewAllPatients,
-		ViewOwnPatients:     defaults.ViewOwnPatients || explicit.ViewOwnPatients,
-		Dispense:            defaults.Dispense || explicit.Dispense,
-		GenerateAuditExport: defaults.GenerateAuditExport || explicit.GenerateAuditExport,
-		ManagePatients:      defaults.ManagePatients || explicit.ManagePatients,
-	}
-}
 
 func mapStaffError(err error) error {
 	switch {

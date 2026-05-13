@@ -512,6 +512,40 @@ func (r *Repository) ListPublishedVersions(ctx context.Context, policyID uuid.UU
 	return list, nil
 }
 
+// GetDraftVersions returns the draft version (if any) for each of the
+// given policy IDs in one round-trip. Used by ListPolicies so the card's
+// status pill ("Draft" / "Draft edits") doesn't need an N+1 fan-out and
+// doesn't silently fall through to "Published" when neither a draft nor
+// a published version was attached.
+func (r *Repository) GetDraftVersions(ctx context.Context, policyIDs []uuid.UUID) (map[uuid.UUID]*PolicyVersionRecord, error) {
+	out := make(map[uuid.UUID]*PolicyVersionRecord, len(policyIDs))
+	if len(policyIDs) == 0 {
+		return out, nil
+	}
+	q := fmt.Sprintf(`
+		SELECT %s
+		FROM policy_versions
+		WHERE policy_id = ANY($1) AND status = 'draft'`, versionCols)
+
+	rows, err := r.db.Query(ctx, q, policyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetDraftVersions: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		rec, err := scanVersion(rows)
+		if err != nil {
+			return nil, fmt.Errorf("policy.repo.GetDraftVersions: %w", err)
+		}
+		out[rec.PolicyID] = rec
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.GetDraftVersions: rows: %w", err)
+	}
+	return out, nil
+}
+
 // GetLatestPublishedVersions returns the latest published version (if any)
 // for each of the given policy IDs in a single query. Used to enrich list
 // responses without N+1 round-trips.
@@ -785,6 +819,40 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 		return nil, fmt.Errorf("policy.repo.GetLatestClausesForPolicies: rows: %w", err)
 	}
 	return list, nil
+}
+
+// CountClausesByVersion returns the clause count per supplied version ID
+// in a single round-trip. Used by ListPolicies to surface a card-level
+// "N clauses" pill without shipping the full clause text for every row.
+// Versions with no clauses are absent from the map (callers should treat
+// missing as zero).
+func (r *Repository) CountClausesByVersion(ctx context.Context, versionIDs []uuid.UUID) (map[uuid.UUID]int, error) {
+	out := make(map[uuid.UUID]int, len(versionIDs))
+	if len(versionIDs) == 0 {
+		return out, nil
+	}
+	const q = `
+		SELECT policy_version_id, COUNT(*)
+		FROM policy_clauses
+		WHERE policy_version_id = ANY($1)
+		GROUP BY policy_version_id`
+	rows, err := r.db.Query(ctx, q, versionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.CountClausesByVersion: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("policy.repo.CountClausesByVersion: scan: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.CountClausesByVersion: rows: %w", err)
+	}
+	return out, nil
 }
 
 // ListClauses returns all clauses for a policy version ordered by creation time.

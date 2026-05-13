@@ -70,6 +70,35 @@ type VerticalProvider interface {
 	GetClinicVertical(ctx context.Context, clinicID uuid.UUID) (string, error)
 }
 
+// TemplateOverlaySource yields prebuilt field specs for a Salvia-installed
+// form whose lifecycle state is still "default". GetForm overlays these
+// onto the empty draft so freshly-onboarded clinics see the canonical
+// YAML content without a heavy at-signup write. Once the clinic edits the
+// form (state flips to "forked"), the DB draft becomes authoritative and
+// this lookup is bypassed.
+//
+// Implemented by an adapter in app.go that bridges to salvia_content;
+// nil installations disable the overlay (the form simply renders empty).
+type TemplateOverlaySource interface {
+	FieldsForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) ([]TemplateField, bool)
+}
+
+// TemplateField is the cross-domain field shape the overlay source emits.
+// Mirrors the YAML FieldSpec but lives in this package so the forms
+// service has no compile-time dependency on salvia_content.
+type TemplateField struct {
+	Key       string
+	Label     string
+	Type      string
+	Required  bool
+	HelpText  string
+	AIExtract bool
+	PII       bool
+	PHI       bool
+	Source    string
+	Config    map[string]any
+}
+
 // Service handles business logic for the forms module.
 type Service struct {
 	repo           repo
@@ -80,6 +109,7 @@ type Service struct {
 	staffNames     StaffNameResolver
 	policyVerifier PolicyOwnershipVerifier
 	verticals      VerticalProvider
+	templates      TemplateOverlaySource
 }
 
 // NewService constructs a forms Service.
@@ -97,6 +127,14 @@ func NewService(r repo, clauses PolicyClauseFetcher, checker extraction.FormCove
 // the coverage check runs with a generic "clinic type not specified" preamble.
 func (s *Service) SetVerticalProvider(v VerticalProvider) {
 	s.verticals = v
+}
+
+// SetTemplateOverlaySource wires the YAML template lookup so GetForm can
+// overlay prebuilt fields onto rows whose salvia_template_state is still
+// "default". Optional — without it, default-state Salvia forms render with
+// no fields (the same behaviour they shipped with).
+func (s *Service) SetTemplateOverlaySource(t TemplateOverlaySource) {
+	s.templates = t
 }
 
 // ── Response types ────────────────────────────────────────────────────────────
@@ -521,6 +559,7 @@ func (s *Service) GetForm(ctx context.Context, formID, clinicID uuid.UUID) (*For
 			return nil, fmt.Errorf("forms.service.GetForm: draft fields: %w", err)
 		}
 		resp.Draft = toVersionResponse(draft, fields)
+		s.overlayTemplateFields(ctx, form, resp.Draft)
 	}
 
 	latest, err := s.repo.GetLatestPublishedVersion(ctx, formID)
@@ -1559,6 +1598,61 @@ func clampLimit(limit int) int {
 		return 20
 	}
 	return limit
+}
+
+// overlayTemplateFields paints the YAML field specs onto a Salvia-installed
+// form's empty draft. No-op when:
+//   - the overlay source is not wired (tests, local dev),
+//   - the form isn't from Salvia (SalviaTemplateID nil), or
+//   - the form has been edited (SalviaTemplateState != "default"), at which
+//     point the DB draft is authoritative and the YAML view would lie.
+//
+// The overlay only fills in fields when the persisted draft has none — once
+// the clinic forks and writes real fields, we render those verbatim.
+func (s *Service) overlayTemplateFields(ctx context.Context, form *FormRecord, draft *FormVersionResponse) {
+	if s.templates == nil || form == nil || draft == nil {
+		return
+	}
+	if form.SalviaTemplateID == nil || *form.SalviaTemplateID == "" {
+		return
+	}
+	if form.SalviaTemplateState == nil || *form.SalviaTemplateState != "default" {
+		return
+	}
+	if len(draft.Fields) > 0 {
+		return
+	}
+	tfs, ok := s.templates.FieldsForTemplate(ctx, *form.SalviaTemplateID, form.ClinicID)
+	if !ok || len(tfs) == 0 {
+		return
+	}
+	overlaid := make([]*FieldResponse, 0, len(tfs))
+	for i, tf := range tfs {
+		cfg := json.RawMessage(`{}`)
+		if len(tf.Config) > 0 {
+			if buf, err := json.Marshal(tf.Config); err == nil {
+				cfg = buf
+			}
+		}
+		var prompt *string
+		if tf.HelpText != "" {
+			h := tf.HelpText
+			prompt = &h
+		}
+		overlaid = append(overlaid, &FieldResponse{
+			// Synthetic ID: deterministic per (template_id, key) so the FE
+			// can use it as a React-style key without colliding across forms.
+			ID:             fmt.Sprintf("tpl:%s:%s", *form.SalviaTemplateID, tf.Key),
+			Position:       i,
+			Title:          tf.Label,
+			Type:           tf.Type,
+			Config:         cfg,
+			AIPrompt:       prompt,
+			Required:       tf.Required,
+			AllowInference: tf.AIExtract,
+		})
+	}
+	draft.Fields = overlaid
 }
 
 func toFormResponse(f *FormRecord) *FormResponse {
