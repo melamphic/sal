@@ -150,6 +150,10 @@ func (f *fakeRepo) CreateForm(_ context.Context, p CreateFormParams) (*FormRecor
 		SourceMarketplaceListingID:     p.SourceMarketplaceListingID,
 		SourceMarketplaceVersionID:     p.SourceMarketplaceVersionID,
 		SourceMarketplaceAcquisitionID: p.SourceMarketplaceAcquisitionID,
+		SalviaTemplateID:               p.SalviaTemplateID,
+		SalviaTemplateVersion:          p.SalviaTemplateVersion,
+		SalviaTemplateState:            p.SalviaTemplateState,
+		FrameworkCurrencyDate:          p.FrameworkCurrencyDate,
 	}
 	f.forms[form.ID] = form
 	return cloneForm(form), nil
