@@ -201,3 +201,34 @@ func TestFieldSpec_LabelFor_HonoursOverride(t *testing.T) {
 		t.Error("NZ fallback")
 	}
 }
+
+func TestMaterialiser_TemplateByID(t *testing.T) {
+	t.Parallel()
+	m, err := NewMaterialiser(nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewMaterialiser: %v", err)
+	}
+
+	// Sanity: lookup misses a non-existent ID.
+	if _, ok := m.TemplateByID("not.a.real.template"); ok {
+		t.Error("expected miss for unknown ID")
+	}
+
+	// Sanity: lookup hits at least one real loaded template — pick the
+	// first one off the catalogue so this stays decoupled from any single
+	// known ID, which could be renamed.
+	all, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if len(all) == 0 {
+		t.Fatal("no templates loaded")
+	}
+	got, ok := m.TemplateByID(all[0].ID)
+	if !ok {
+		t.Fatalf("expected hit for %q", all[0].ID)
+	}
+	if got.ID != all[0].ID {
+		t.Errorf("ID round-trip: got %q, want %q", got.ID, all[0].ID)
+	}
+}
