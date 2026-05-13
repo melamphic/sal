@@ -787,6 +787,40 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 	return list, nil
 }
 
+// CountClausesByVersion returns the clause count per supplied version ID
+// in a single round-trip. Used by ListPolicies to surface a card-level
+// "N clauses" pill without shipping the full clause text for every row.
+// Versions with no clauses are absent from the map (callers should treat
+// missing as zero).
+func (r *Repository) CountClausesByVersion(ctx context.Context, versionIDs []uuid.UUID) (map[uuid.UUID]int, error) {
+	out := make(map[uuid.UUID]int, len(versionIDs))
+	if len(versionIDs) == 0 {
+		return out, nil
+	}
+	const q = `
+		SELECT policy_version_id, COUNT(*)
+		FROM policy_clauses
+		WHERE policy_version_id = ANY($1)
+		GROUP BY policy_version_id`
+	rows, err := r.db.Query(ctx, q, versionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.CountClausesByVersion: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id uuid.UUID
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, fmt.Errorf("policy.repo.CountClausesByVersion: scan: %w", err)
+		}
+		out[id] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.CountClausesByVersion: rows: %w", err)
+	}
+	return out, nil
+}
+
 // ListClauses returns all clauses for a policy version ordered by creation time.
 func (r *Repository) ListClauses(ctx context.Context, versionID uuid.UUID) ([]*PolicyClauseRecord, error) {
 	const q = `
