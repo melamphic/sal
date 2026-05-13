@@ -34,9 +34,24 @@ import (
 // upstream).
 type Materialiser struct {
 	loaded   []Template
+	byID     map[string]Template
 	forms    FormsService
 	policies PolicyService
 	logger   *slog.Logger
+}
+
+// TemplateByID returns the loaded template with the given ID. The second
+// return value reports whether a match was found.
+//
+// Used by the forms and policy services at render-time: when a row's
+// `salvia_template_state` is still `default`, the service overlays the
+// embedded YAML fields/clauses onto the response so the clinic sees the
+// canonical content without a heavy at-signup write. Once the clinic
+// edits the row (state flips to `forked`), the DB draft becomes the
+// source of truth and this lookup is bypassed.
+func (m *Materialiser) TemplateByID(id string) (Template, bool) {
+	t, ok := m.byID[id]
+	return t, ok
 }
 
 // FormsService is the slice of forms.Service the materialiser consumes.
@@ -63,8 +78,13 @@ func NewMaterialiser(formsSvc FormsService, polSvc PolicyService, logger *slog.L
 	if logger == nil {
 		logger = slog.Default()
 	}
+	byID := make(map[string]Template, len(all))
+	for _, t := range all {
+		byID[t.ID] = t
+	}
 	return &Materialiser{
 		loaded:   all,
+		byID:     byID,
 		forms:    formsSvc,
 		policies: polSvc,
 		logger:   logger,
