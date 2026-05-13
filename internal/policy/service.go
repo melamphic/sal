@@ -161,6 +161,12 @@ type PolicyResponse struct {
 	SalviaTemplateVersion *int    `json:"salvia_template_version,omitempty"`
 	SalviaTemplateState   *string `json:"salvia_template_state,omitempty" enum:"default,forked,deleted"`
 	FrameworkCurrencyDate *string `json:"framework_currency_date,omitempty"`
+	// ClauseCount is the renderable clause total for the policy card.
+	// Sourced from policy_clauses for forked/clinic-authored rows, from
+	// the YAML overlay for Salvia default-state rows. Surfaced as a
+	// separate field so the list endpoint doesn't have to ship full
+	// version content just to compute a card-level count.
+	ClauseCount int `json:"clause_count"`
 }
 
 // PolicyListResponse is a paginated list of policies.
@@ -365,7 +371,46 @@ func (s *Service) GetPolicy(ctx context.Context, policyID, clinicID uuid.UUID) (
 		resp.LatestPublished = toVersionResponse(latest)
 	}
 
+	resp.ClauseCount = s.computeClauseCount(ctx, pol, latest, draft)
+
 	return resp, nil
+}
+
+// computeClauseCount picks the right source for the policy card's "N clauses"
+// pill:
+//
+//   - Salvia default-state rows have no DB clauses yet — count the YAML
+//     overlay so the card matches what the preview drawer will render.
+//   - Every other row counts DB clauses on the latest published version,
+//     falling back to the draft when nothing has been published.
+//
+// Errors from the count query are swallowed: a card-level pill isn't worth
+// failing the whole GET for, and the FE already treats absent counts as zero.
+func (s *Service) computeClauseCount(ctx context.Context, pol *PolicyRecord, latest, draft *PolicyVersionRecord) int {
+	if pol == nil {
+		return 0
+	}
+	if s.templates != nil &&
+		pol.SalviaTemplateID != nil && *pol.SalviaTemplateID != "" &&
+		pol.SalviaTemplateState != nil && *pol.SalviaTemplateState == "default" {
+		if tcs, ok := s.templates.ClausesForTemplate(ctx, *pol.SalviaTemplateID, pol.ClinicID); ok {
+			return len(tcs)
+		}
+	}
+	var versionID uuid.UUID
+	switch {
+	case latest != nil:
+		versionID = latest.ID
+	case draft != nil:
+		versionID = draft.ID
+	default:
+		return 0
+	}
+	counts, err := s.repo.CountClausesByVersion(ctx, []uuid.UUID{versionID})
+	if err != nil {
+		return 0
+	}
+	return counts[versionID]
 }
 
 // ListPolicies returns a paginated list of policies for a clinic.
@@ -386,11 +431,34 @@ func (s *Service) ListPolicies(ctx context.Context, clinicID uuid.UUID, input Li
 		return nil, fmt.Errorf("policy.service.ListPolicies: latest published: %w", err)
 	}
 
+	// Single round-trip for clause counts across every published version
+	// in the page so the card pill ("N clauses") doesn't fan out into N
+	// per-row queries.
+	versionIDs := make([]uuid.UUID, 0, len(latestByPolicy))
+	for _, v := range latestByPolicy {
+		versionIDs = append(versionIDs, v.ID)
+	}
+	counts, err := s.repo.CountClausesByVersion(ctx, versionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("policy.service.ListPolicies: clause counts: %w", err)
+	}
+
 	items := make([]*PolicyResponse, len(recs))
 	for i, r := range recs {
 		resp := toPolicyResponse(r)
 		if v, ok := latestByPolicy[r.ID]; ok {
 			resp.LatestPublished = toVersionResponse(v)
+			resp.ClauseCount = counts[v.ID]
+		}
+		// Salvia default-state rows have no DB clauses yet — fall back to
+		// the YAML overlay so the card matches what the preview shows.
+		if resp.ClauseCount == 0 &&
+			s.templates != nil &&
+			r.SalviaTemplateID != nil && *r.SalviaTemplateID != "" &&
+			r.SalviaTemplateState != nil && *r.SalviaTemplateState == "default" {
+			if tcs, ok := s.templates.ClausesForTemplate(ctx, *r.SalviaTemplateID, r.ClinicID); ok {
+				resp.ClauseCount = len(tcs)
+			}
 		}
 		items[i] = resp
 	}
