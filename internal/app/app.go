@@ -534,6 +534,16 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	}
 	clinicSvc.SetSalviaContentMaterialiser(&clinicSalviaContentAdapter{m: salviaContentMat})
 
+	// Render-time overlay: GetForm / ListClauses paint YAML fields and
+	// clauses onto rows still in "default" state so a freshly-onboarded
+	// clinic sees the canonical content even though the materialiser only
+	// persists name + description + lineage at signup. The overlay shuts
+	// off the moment the clinic forks (state → "forked"); after that the
+	// DB draft is authoritative.
+	salviaOverlay := &salviaTemplateOverlayAdapter{m: salviaContentMat, clinic: clinicSvc}
+	formsSvc.SetTemplateOverlaySource(salviaOverlay)
+	policySvc.SetTemplateOverlaySource(salviaOverlay)
+
 	// ── Drugs module ──────────────────────────────────────────────────────────
 	// System catalog ships as embedded JSON files (one per vertical × country).
 	// On startup we parse + validate every file; a malformed catalog fails
@@ -3456,6 +3466,75 @@ func (a *verticalStringAdapter) GetClinicVertical(ctx context.Context, clinicID 
 		return "", fmt.Errorf("app.verticalStringAdapter: %w", err)
 	}
 	return string(c.Vertical), nil
+}
+
+// salviaTemplateOverlayAdapter bridges the salvia_content YAML loader into
+// the forms and policy services. Both modules expose a parallel
+// TemplateOverlaySource shape; this adapter satisfies both so the same
+// instance can fan out into either service without duplicating the
+// clinic-country lookup.
+//
+// The country lookup is required because YAML FieldSpec.LabelFor and
+// ClauseSpec.BodyFor honour per-country overrides — without the country
+// we'd render the default-label/body even when a country-specific variant
+// exists for the clinic.
+type salviaTemplateOverlayAdapter struct {
+	m      *salvia_content.Materialiser
+	clinic *clinic.Service
+}
+
+func (a *salviaTemplateOverlayAdapter) lookup(ctx context.Context, templateID string, clinicID uuid.UUID) (salvia_content.Template, salvia_content.Country, bool) {
+	t, ok := a.m.TemplateByID(templateID)
+	if !ok {
+		return salvia_content.Template{}, "", false
+	}
+	c, err := a.clinic.GetByID(ctx, clinicID)
+	if err != nil {
+		return salvia_content.Template{}, "", false
+	}
+	return t, salvia_content.Country(strings.ToUpper(c.Country)), true
+}
+
+func (a *salviaTemplateOverlayAdapter) FieldsForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) ([]forms.TemplateField, bool) {
+	t, country, ok := a.lookup(ctx, templateID, clinicID)
+	if !ok || t.Kind != salvia_content.KindForm {
+		return nil, false
+	}
+	out := make([]forms.TemplateField, 0, len(t.Fields))
+	for _, f := range t.Fields {
+		if !f.AppliesToCountry(country) {
+			continue
+		}
+		out = append(out, forms.TemplateField{
+			Key:       f.Key,
+			Label:     f.LabelFor(country),
+			Type:      f.Type,
+			Required:  f.IsRequiredFor(country),
+			HelpText:  f.HelpText,
+			AIExtract: f.AIExtract,
+			PII:       f.PII,
+			PHI:       f.PHI,
+			Source:    f.Source,
+			Config:    f.Config,
+		})
+	}
+	return out, true
+}
+
+func (a *salviaTemplateOverlayAdapter) ClausesForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) ([]policy.TemplateClause, bool) {
+	t, country, ok := a.lookup(ctx, templateID, clinicID)
+	if !ok || t.Kind != salvia_content.KindPolicy {
+		return nil, false
+	}
+	out := make([]policy.TemplateClause, 0, len(t.Clauses))
+	for _, c := range t.Clauses {
+		out = append(out, policy.TemplateClause{
+			ID:    c.ID,
+			Title: c.Title,
+			Body:  c.BodyFor(country),
+		})
+	}
+	return out, true
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
