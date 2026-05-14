@@ -251,12 +251,16 @@ type UpdateContactInput struct {
 
 // CreateSubjectInput holds validated input for creating a subject.
 // Each vertical requires its own details struct to be populated.
+// PhotoKey is preferred over PhotoURL — new clients upload via
+// `POST /patients/upload-photo`, get back a durable key, and send the
+// key here. The service signs a URL on every read.
 type CreateSubjectInput struct {
 	ClinicID        uuid.UUID
 	CallerID        uuid.UUID
 	Vertical        domain.Vertical
 	DisplayName     string
-	PhotoURL        *string
+	PhotoURL        *string // legacy fallback
+	PhotoKey        *string // preferred
 	ContactID       *uuid.UUID // optional — can be linked later
 	VetDetails      *VetDetailsInput
 	DentalDetails   *DentalDetailsInput
