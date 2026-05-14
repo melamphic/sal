@@ -1295,10 +1295,10 @@ func (r *Repository) ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID)
 		UPDATE subjects
 		SET status = 'archived', archived_at = NOW(), updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
 	`, id, clinicID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -1317,10 +1317,10 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 		UPDATE subjects
 		SET contact_id = $3, updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
 	`, subjectID, clinicID, contactID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
