@@ -1008,8 +1008,17 @@ func pageSpec(t *DocTheme) (size, orientation string) {
 // don't load custom TTFs server-side yet, so anything outside Helvetica /
 // Times / Courier falls back to Helvetica.
 func mapFont(name string) string {
+	// Prefer the bundled UTF-8 font when the doc-theme picker chose
+	// one we ship (Inter, Plus Jakarta Sans, Newsreader, JetBrains
+	// Mono, Lora). These were registered at PDF construction time via
+	// registerBundledFonts, so SetFont(family, …) renders the real
+	// face instead of falling back to Helvetica.
+	if family, ok := hasBundledFont(name); ok {
+		return family
+	}
+	// Legacy synonyms that map onto the 14 built-in PDF fonts.
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "lora", "merriweather", "times":
+	case "merriweather", "times":
 		return "Times"
 	case "courier":
 		return "Courier"
