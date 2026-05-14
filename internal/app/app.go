@@ -417,6 +417,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&dashboardSeatsAdapter{staff: staffSvc},
 		&dashboardClinicStateAdapter{clinic: clinicSvc},
 	)
+	dashboardSvc.SetStaffNameResolver(&dashboardStaffNameAdapter{staff: staffSvc})
+	dashboardSvc.SetSubjectNameResolver(&dashboardSubjectNameAdapter{patient: patientSvc})
 	dashboardHandler := dashboard.NewHandler(dashboardSvc)
 
 	// Periodic jobs — declared at construction time so River drives them
@@ -1416,6 +1418,43 @@ func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, cl
 		TrialEndsAt:        st.TrialEndsAt,
 		OnboardingComplete: st.OnboardingComplete,
 	}, nil
+}
+
+// dashboardStaffNameAdapter implements dashboard.StaffNameResolver
+// over staff.Service.GetByID. Fans out one call per unique id (capped
+// at ≤10 in practice — the dashboard activity feed pulls at most 10
+// rows). Failures degrade gracefully: a missing id is omitted from the
+// returned map and the activity row falls back to its raw summary.
+type dashboardStaffNameAdapter struct{ staff *staff.Service }
+
+func (a *dashboardStaffNameAdapter) ResolveStaffNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(ids))
+	for _, id := range ids {
+		s, err := a.staff.GetByID(ctx, id, clinicID)
+		if err != nil {
+			continue
+		}
+		out[id] = s.FullName
+	}
+	return out, nil
+}
+
+// dashboardSubjectNameAdapter implements dashboard.SubjectNameResolver
+// over patient.Service.GetSubjectForRender. Same fan-out shape as the
+// staff resolver: per-id call, failures dropped silently so one
+// missing subject doesn't blank the whole feed.
+type dashboardSubjectNameAdapter struct{ patient *patient.Service }
+
+func (a *dashboardSubjectNameAdapter) ResolveSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(ids))
+	for _, id := range ids {
+		s, err := a.patient.GetSubjectForRender(ctx, id, clinicID)
+		if err != nil {
+			continue
+		}
+		out[id] = s.DisplayName
+	}
+	return out, nil
 }
 
 // staffSeatCapAdapter implements staff.AISeatCapResolver by reading
