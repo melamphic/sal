@@ -238,6 +238,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
+	patientSvc.SetPhotoUploader(&subjectPhotoAdapter{store: store})
 	patientHandler := patient.NewHandler(patientSvc, clinicSvc)
 
 	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
@@ -1585,6 +1586,35 @@ func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string
 		return "", fmt.Errorf("app.clinicLogoAdapter.SignLogoURL: %w", err)
 	}
 	return url, nil
+}
+
+// subjectPhotoAdapter implements patient.PhotoUploader against the
+// platform/storage S3 client. Subject photos live under
+// patient-photos/{clinic_id}/ so they stay distinct from clinic and
+// doc-theme logos.
+type subjectPhotoAdapter struct {
+	store *storage.Store
+}
+
+func (a *subjectPhotoAdapter) UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, string, error) {
+	ext := logoExtForContentType(contentType)
+	if ext == "" {
+		// HEIC isn't in the shared logo extension table — patch it
+		// here rather than widening the helper, since logos don't
+		// accept HEIC and we don't want to imply they do.
+		if contentType == "image/heic" {
+			ext = ".heic"
+		}
+	}
+	key := fmt.Sprintf("patient-photos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", "", fmt.Errorf("app.subjectPhotoAdapter.UploadSubjectPhoto: upload: %w", err)
+	}
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", "", fmt.Errorf("app.subjectPhotoAdapter.UploadSubjectPhoto: presign: %w", err)
+	}
+	return key, url, nil
 }
 
 // docThemeLogoAdapter implements forms.StyleLogoUploader and forms.StyleLogoSigner
