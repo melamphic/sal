@@ -350,7 +350,8 @@ type AgedCareDetailsInput struct {
 type UpdateSubjectInput struct {
 	DisplayName     *string
 	Status          *domain.SubjectStatus
-	PhotoURL        *string
+	PhotoURL        *string // legacy fallback
+	PhotoKey        *string // preferred
 	VetDetails      *UpdateVetDetailsInput
 	DentalDetails   *UpdateDentalDetailsInput
 	GeneralDetails  *UpdateGeneralDetailsInput
@@ -635,6 +636,7 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		Status:      domain.SubjectStatusActive,
 		Vertical:    input.Vertical,
 		PhotoURL:    input.PhotoURL,
+		PhotoKey:    input.PhotoKey,
 		CreatedBy:   input.CallerID,
 	})
 	if err != nil {
@@ -931,6 +933,7 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 		DisplayName: input.DisplayName,
 		Status:      input.Status,
 		PhotoURL:    input.PhotoURL,
+		PhotoKey:    input.PhotoKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: %w", err)
@@ -1283,14 +1286,18 @@ func (s *Service) decryptContact(rec *ContactRecord) (*ContactResponse, error) {
 	return dto, nil
 }
 
-func (s *Service) decryptSubject(row *SubjectRow) (*SubjectResponse, error) {
+func (s *Service) decryptSubject(ctx context.Context, row *SubjectRow) (*SubjectResponse, error) {
 	dto := &SubjectResponse{
 		ID:          row.Subject.ID.String(),
 		ClinicID:    row.Subject.ClinicID.String(),
 		DisplayName: row.Subject.DisplayName,
 		Status:      row.Subject.Status,
 		Vertical:    row.Subject.Vertical,
-		PhotoURL:    row.Subject.PhotoURL,
+		PhotoURL: s.resolveSubjectPhotoURL(
+			ctx,
+			row.Subject.PhotoKey,
+			row.Subject.PhotoURL,
+		),
 		CreatedBy:   row.Subject.CreatedBy.String(),
 		CreatedAt:   row.Subject.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   row.Subject.UpdatedAt.Format(time.RFC3339),
