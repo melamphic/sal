@@ -523,7 +523,7 @@ func (s *Service) GetContactWithSubjects(ctx context.Context, id, clinicID uuid.
 
 	subjects := make([]*SubjectResponse, 0, len(rows))
 	for _, row := range rows {
-		dto, err := s.decryptSubject(row)
+		dto, err := s.decryptSubject(ctx, row)
 		if err != nil {
 			return nil, fmt.Errorf("patient.service.GetContactWithSubjects: %w", err)
 		}
@@ -862,7 +862,7 @@ func (s *Service) GetSubjectByID(ctx context.Context, id, clinicID, callerID uui
 		return nil, fmt.Errorf("patient.service.GetSubjectByID: %w", err)
 	}
 
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // GetSubjectForRender fetches and decrypts a subject for system-driven
@@ -875,7 +875,7 @@ func (s *Service) GetSubjectForRender(ctx context.Context, id, clinicID uuid.UUI
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
 	}
-	dto, err := s.decryptSubject(row)
+	dto, err := s.decryptSubject(ctx, row)
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
 	}
@@ -912,7 +912,7 @@ func (s *Service) ListSubjects(ctx context.Context, clinicID uuid.UUID, input Li
 
 	items := make([]*SubjectResponse, 0, len(rows))
 	for _, row := range rows {
-		dto, err := s.decryptSubject(row)
+		dto, err := s.decryptSubject(ctx, row)
 		if err != nil {
 			return nil, fmt.Errorf("patient.service.ListSubjects: %w", err)
 		}
@@ -1118,7 +1118,7 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: refetch: %w", err)
 	}
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // LinkContact links a contact to a subject that was created without one.
@@ -1140,7 +1140,7 @@ func (s *Service) LinkContact(ctx context.Context, subjectID, clinicID, contactI
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.LinkContact: refetch: %w", err)
 	}
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // ArchiveSubject soft-deletes a subject.
@@ -1152,7 +1152,7 @@ func (s *Service) ArchiveSubject(ctx context.Context, id, clinicID, callerID uui
 	if err := s.logAccess(ctx, id, clinicID, callerID, domain.SubjectAccessActionArchive, nil); err != nil {
 		return nil, fmt.Errorf("patient.service.ArchiveSubject: %w", err)
 	}
-	return s.decryptSubject(&SubjectRow{Subject: *rec})
+	return s.decryptSubject(ctx, &SubjectRow{Subject: *rec})
 }
 
 // ── Subject ↔ contact link methods ────────────────────────────────────────────
