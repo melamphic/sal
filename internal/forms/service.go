@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -174,37 +175,37 @@ type SystemHeaderConfig struct {
 //
 //nolint:revive
 type FormVersionResponse struct {
-	ID                string                   `json:"id"`
-	FormID            string                   `json:"form_id"`
-	Status            domain.FormVersionStatus `json:"status"`
+	ID     string                   `json:"id"`
+	FormID string                   `json:"form_id"`
+	Status domain.FormVersionStatus `json:"status"`
 	// Kind distinguishes real version rows from synthetic timeline entries
 	// the service injects for compliance (e.g. "retire"). Empty/absent means
 	// a regular version row — front-ends should default to "version" in that
 	// case. Values: "version" (default) · "retire".
-	Kind              string                   `json:"kind,omitempty"`
-	VersionMajor      *int                     `json:"version_major,omitempty"`
-	VersionMinor      *int                     `json:"version_minor,omitempty"`
-	ChangeType        *domain.ChangeType       `json:"change_type,omitempty"`
-	ChangeSummary     *string                  `json:"change_summary,omitempty"`
+	Kind          string             `json:"kind,omitempty"`
+	VersionMajor  *int               `json:"version_major,omitempty"`
+	VersionMinor  *int               `json:"version_minor,omitempty"`
+	ChangeType    *domain.ChangeType `json:"change_type,omitempty"`
+	ChangeSummary *string            `json:"change_summary,omitempty"`
 	// Changes is a raw JSON array of typed ops ({op, ...}) computed by the editor
 	// at publish time. Shape evolves over time; consumers should tolerate unknown
 	// op kinds.
-	Changes           json.RawMessage          `json:"changes,omitempty"`
-	RollbackOf        *string                  `json:"rollback_of,omitempty"`
+	Changes    json.RawMessage `json:"changes,omitempty"`
+	RollbackOf *string         `json:"rollback_of,omitempty"`
 	// PolicyCheckResult is a JSON array of PolicyCheckResultEntry — one entry
 	// per linked policy at check time. Stored opaque so the shape can evolve
 	// without migrations; nil until a check has run on the draft.
-	PolicyCheckResult json.RawMessage          `json:"policy_check_result,omitempty"`
-	PolicyCheckAt     *string                  `json:"policy_check_at,omitempty"`
-	PublishedAt       *string                  `json:"published_at,omitempty"`
-	PublishedBy       *string                  `json:"published_by,omitempty"`
-	PublishedByName   *string                  `json:"published_by_name,omitempty"`
-	CreatedAt         string                   `json:"created_at"`
-	Fields            []*FieldResponse         `json:"fields,omitempty"`
+	PolicyCheckResult json.RawMessage  `json:"policy_check_result,omitempty"`
+	PolicyCheckAt     *string          `json:"policy_check_at,omitempty"`
+	PublishedAt       *string          `json:"published_at,omitempty"`
+	PublishedBy       *string          `json:"published_by,omitempty"`
+	PublishedByName   *string          `json:"published_by_name,omitempty"`
+	CreatedAt         string           `json:"created_at"`
+	Fields            []*FieldResponse `json:"fields,omitempty"`
 	// SystemHeader carries the patient-header card config. Always populated
 	// — the column has a non-null default — so clients can render the card
 	// without falling back to inferred state.
-	SystemHeader      *SystemHeaderConfig      `json:"system_header,omitempty"`
+	SystemHeader *SystemHeaderConfig `json:"system_header,omitempty"`
 	// GenerationMetadata is the AI-generation provenance JSONB
 	// (provider, model, prompt_hash, staff_id, timestamps, repair counts).
 	// NULL/absent for human-authored versions; present means the Flutter
@@ -292,15 +293,15 @@ type FormGroupListResponse struct {
 //
 //nolint:revive
 type FormStyleResponse struct {
-	Version          int             `json:"version"`
-	LogoKey          *string         `json:"logo_key,omitempty"`
-	HeaderLogoURL    *string         `json:"header_logo_url,omitempty"`
-	PrimaryColor     *string         `json:"primary_color,omitempty"`
-	FontFamily       *string         `json:"font_family,omitempty"`
-	HeaderExtra      *string         `json:"header_extra,omitempty"`
-	FooterText       *string         `json:"footer_text,omitempty"`
-	Config           json.RawMessage `json:"config,omitempty"`
-	PresetID         *string         `json:"preset_id,omitempty"`
+	Version       int             `json:"version"`
+	LogoKey       *string         `json:"logo_key,omitempty"`
+	HeaderLogoURL *string         `json:"header_logo_url,omitempty"`
+	PrimaryColor  *string         `json:"primary_color,omitempty"`
+	FontFamily    *string         `json:"font_family,omitempty"`
+	HeaderExtra   *string         `json:"header_extra,omitempty"`
+	FooterText    *string         `json:"footer_text,omitempty"`
+	Config        json.RawMessage `json:"config,omitempty"`
+	PresetID      *string         `json:"preset_id,omitempty"`
 	// PerDocOverrides is a JSON object keyed by doc-type slug
 	// (signed_note | cd_register | …) with partial DocTheme blobs
 	// the renderer merges over Config when rendering that doc-type.
@@ -413,7 +414,7 @@ type UpdateDraftInput struct {
 	// existing config alone" — UpdateDraft does NOT clobber the column when
 	// the input is absent. Clients that want to disable the card send
 	// `{enabled: false, fields: []}` explicitly.
-	SystemHeader  *SystemHeaderConfig
+	SystemHeader *SystemHeaderConfig
 }
 
 // FieldInput holds the values for a single field in a draft update.
@@ -483,17 +484,29 @@ type UpdateGroupInput struct {
 	Description *string
 }
 
+// DeleteGroupInput holds the IDs needed to delete a form group.
+type DeleteGroupInput struct {
+	GroupID  uuid.UUID
+	ClinicID uuid.UUID
+}
+
+// DeleteGroupResponse reports how many forms got moved out of the deleted
+// folder (their group_id was set to NULL so they appear in "All forms").
+type DeleteGroupResponse struct {
+	ReparentedForms int `json:"reparented_forms" doc:"Number of forms that were moved out of this folder before deletion."`
+}
+
 // UpdateStyleInput holds the desired style settings for the clinic.
 type UpdateStyleInput struct {
-	ClinicID        uuid.UUID
-	StaffID         uuid.UUID
-	LogoKey         *string
-	PrimaryColor    *string
-	FontFamily      *string
-	HeaderExtra     *string
-	FooterText      *string
-	Config          json.RawMessage
-	PresetID        *string
+	ClinicID     uuid.UUID
+	StaffID      uuid.UUID
+	LogoKey      *string
+	PrimaryColor *string
+	FontFamily   *string
+	HeaderExtra  *string
+	FooterText   *string
+	Config       json.RawMessage
+	PresetID     *string
 	// PerDocOverrides is the optional per-doc-type override map
 	// (slug → partial DocTheme JSON). nil leaves the existing
 	// column value untouched; '{}' clears it.
@@ -505,11 +518,18 @@ type UpdateStyleInput struct {
 // CreateForm creates a new form and an empty draft version.
 // Returns the created form with the draft attached.
 func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormResponse, error) {
-	formID := domain.NewID()
-	tags := input.Tags
-	if tags == nil {
-		tags = []string{}
+	// Verify the target folder belongs to the caller's clinic. Without this
+	// a caller could attach their form to another clinic's group_id (the
+	// forms↔form_groups FK only enforces "real row", not tenant). Mirrors
+	// the policy-ownership check in LinkPolicy.
+	if input.GroupID != nil {
+		if _, err := s.repo.GetGroupByID(ctx, *input.GroupID, input.ClinicID); err != nil {
+			return nil, fmt.Errorf("forms.service.CreateForm: verify group: %w", err)
+		}
 	}
+
+	formID := domain.NewID()
+	tags := normalizeTags(input.Tags)
 
 	form, draft, err := s.repo.CreateFormWithDraft(ctx, CreateFormWithDraftParams{
 		Form: CreateFormParams{
@@ -667,11 +687,18 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateDraft: form is retired: %w", domain.ErrConflict)
 	}
 
-	// Update form-level metadata.
-	tags := input.Tags
-	if tags == nil {
-		tags = []string{}
+	// Verify the target folder belongs to the caller's clinic before
+	// re-parenting the form. Without this a caller could move their form
+	// under another clinic's group_id (FK enforces real row only, not
+	// tenant). Mirrors the CreateForm guard.
+	if input.GroupID != nil {
+		if _, err := s.repo.GetGroupByID(ctx, *input.GroupID, input.ClinicID); err != nil {
+			return nil, fmt.Errorf("forms.service.UpdateDraft: verify group: %w", err)
+		}
 	}
+
+	// Update form-level metadata.
+	tags := normalizeTags(input.Tags)
 	form, err = s.repo.UpdateFormMeta(ctx, UpdateFormMetaParams{
 		ID:            input.FormID,
 		ClinicID:      input.ClinicID,
@@ -685,7 +712,14 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateDraft: meta: %w", err)
 	}
 
-	// Ensure a draft version exists.
+	// Ensure a draft version exists. After a publish, no draft is in the
+	// table, so the first save back into the editor needs to create one.
+	// Two concurrent saves can both observe NotFound and both try to
+	// INSERT — the partial unique index `idx_form_versions_one_draft`
+	// keeps only the first, and the loser comes back as ErrConflict. When
+	// that happens we re-read the winner's draft and continue: the
+	// caller's intent ("write these fields onto the current draft") is
+	// satisfied regardless of which transaction created it.
 	draft, err := s.repo.GetDraftVersion(ctx, input.FormID)
 	if errors.Is(err, domain.ErrNotFound) {
 		draft, err = s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
@@ -693,6 +727,9 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 			FormID:    input.FormID,
 			CreatedBy: input.StaffID,
 		})
+		if errors.Is(err, domain.ErrConflict) {
+			draft, err = s.repo.GetDraftVersion(ctx, input.FormID)
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.UpdateDraft: draft: %w", err)
@@ -1362,7 +1399,15 @@ func buildRetireEntry(f *FormRecord) *FormVersionResponse {
 // ── Groups ────────────────────────────────────────────────────────────────────
 
 // CreateGroup creates a new form group (folder) for a clinic.
+//
+// Pre-checks that no existing group in the clinic carries the same name
+// (case-insensitive) — the schema does not enforce this and duplicate
+// folder names cause confusing UI ("Post op" / "Post op" twice in the
+// sidebar). Returns domain.ErrConflict on collision.
 func (s *Service) CreateGroup(ctx context.Context, input CreateGroupInput) (*FormGroupResponse, error) {
+	if err := s.assertGroupNameAvailable(ctx, input.ClinicID, input.Name, uuid.Nil); err != nil {
+		return nil, fmt.Errorf("forms.service.CreateGroup: %w", err)
+	}
 	g, err := s.repo.CreateGroup(ctx, CreateGroupParams{
 		ID:          domain.NewID(),
 		ClinicID:    input.ClinicID,
@@ -1374,6 +1419,53 @@ func (s *Service) CreateGroup(ctx context.Context, input CreateGroupInput) (*For
 		return nil, fmt.Errorf("forms.service.CreateGroup: %w", err)
 	}
 	return toGroupResponse(g), nil
+}
+
+// normalizeTags trims surrounding whitespace, drops empty entries, and
+// deduplicates case-insensitively while preserving the first-seen case
+// + original ordering. Without this the tags column can accumulate noise
+// like ["urgent", "urgent", "Urgent", ""] from repeated saves, which
+// degrades search recall and clutters the chip row in the UI.
+//
+// Returns a non-nil empty slice (never nil) so the column always lands
+// as `'{}'` rather than NULL, matching the existing contract.
+func normalizeTags(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]struct{}, len(in))
+	for _, raw := range in {
+		t := strings.TrimSpace(raw)
+		if t == "" {
+			continue
+		}
+		key := strings.ToLower(t)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
+// assertGroupNameAvailable returns domain.ErrConflict if another group in
+// the same clinic already uses the given name (case-insensitive). Pass
+// uuid.Nil for `excludeID` on create; on rename pass the renaming group's
+// id so it doesn't collide with itself.
+func (s *Service) assertGroupNameAvailable(ctx context.Context, clinicID uuid.UUID, name string, excludeID uuid.UUID) error {
+	groups, err := s.repo.ListGroups(ctx, clinicID)
+	if err != nil {
+		return fmt.Errorf("forms.service.assertGroupNameAvailable: %w", err)
+	}
+	want := strings.ToLower(strings.TrimSpace(name))
+	for _, g := range groups {
+		if g.ID == excludeID {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(g.Name)) == want {
+			return fmt.Errorf("a folder named %q already exists: %w", g.Name, domain.ErrConflict)
+		}
+	}
+	return nil
 }
 
 // ListGroups returns all groups for a clinic.
@@ -1390,8 +1482,13 @@ func (s *Service) ListGroups(ctx context.Context, clinicID uuid.UUID) (*FormGrou
 	return &FormGroupListResponse{Items: items}, nil
 }
 
-// UpdateGroup updates a group's name and description.
+// UpdateGroup updates a group's name and description. Rejects renames
+// that would collide with another folder in the same clinic
+// (case-insensitive). Renaming a folder to its own current name is fine.
 func (s *Service) UpdateGroup(ctx context.Context, input UpdateGroupInput) (*FormGroupResponse, error) {
+	if err := s.assertGroupNameAvailable(ctx, input.ClinicID, input.Name, input.GroupID); err != nil {
+		return nil, fmt.Errorf("forms.service.UpdateGroup: %w", err)
+	}
 	g, err := s.repo.UpdateGroup(ctx, UpdateGroupParams{
 		ID:          input.GroupID,
 		ClinicID:    input.ClinicID,
@@ -1402,6 +1499,18 @@ func (s *Service) UpdateGroup(ctx context.Context, input UpdateGroupInput) (*For
 		return nil, fmt.Errorf("forms.service.UpdateGroup: %w", err)
 	}
 	return toGroupResponse(g), nil
+}
+
+// DeleteGroup removes a form group (folder) and reparents the forms that
+// lived inside it to "no folder" so they remain visible in the unsorted
+// "All forms" list. Reparent + delete happen atomically inside the
+// repository's transaction.
+func (s *Service) DeleteGroup(ctx context.Context, input DeleteGroupInput) (*DeleteGroupResponse, error) {
+	reparented, err := s.repo.DeleteGroup(ctx, input.GroupID, input.ClinicID)
+	if err != nil {
+		return nil, fmt.Errorf("forms.service.DeleteGroup: %w", err)
+	}
+	return &DeleteGroupResponse{ReparentedForms: reparented}, nil
 }
 
 // ── Policies ──────────────────────────────────────────────────────────────────
@@ -1473,63 +1582,76 @@ func (s *Service) GetCurrentStyle(ctx context.Context, clinicID uuid.UUID) (*For
 // UpdateStyle saves a new style version for the clinic, incrementing the version counter.
 // If Config is supplied, its top-level colour/font/header/footer are mirrored into the
 // flat columns so legacy renderers stay in sync.
+//
+// Concurrency: the (clinic_id, version) unique constraint can collide if two
+// staff hit save in the same instant — both reads of the current version land
+// on the same `nextVer` and one INSERT loses. The repo maps that to
+// domain.ErrConflict; this loop recomputes the next version and retries once
+// so the second save lands on the actual next-next version instead of bubbling
+// a 409 up to the UI. Mirrors the retry loop in PublishForm / RollbackForm.
 func (s *Service) UpdateStyle(ctx context.Context, input UpdateStyleInput) (*FormStyleResponse, error) {
-	nextVer := 1
-	current, err := s.repo.GetCurrentStyle(ctx, input.ClinicID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
-	}
-	if current != nil {
-		nextVer = current.Version + 1
-	}
+	for attempt := 0; attempt < 2; attempt++ {
+		nextVer := 1
+		current, err := s.repo.GetCurrentStyle(ctx, input.ClinicID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
+		}
+		if current != nil {
+			nextVer = current.Version + 1
+		}
 
-	logoKey, primary, font, header, footer := input.LogoKey, input.PrimaryColor, input.FontFamily, input.HeaderExtra, input.FooterText
-	if len(input.Config) > 0 {
-		if m := mirrorFromConfig(input.Config); m != nil {
-			if logoKey == nil && m.LogoKey != nil {
-				logoKey = m.LogoKey
-			}
-			if primary == nil && m.PrimaryColor != nil {
-				primary = m.PrimaryColor
-			}
-			if font == nil && m.FontFamily != nil {
-				font = m.FontFamily
-			}
-			if header == nil && m.HeaderExtra != nil {
-				header = m.HeaderExtra
-			}
-			if footer == nil && m.FooterText != nil {
-				footer = m.FooterText
+		logoKey, primary, font, header, footer := input.LogoKey, input.PrimaryColor, input.FontFamily, input.HeaderExtra, input.FooterText
+		if len(input.Config) > 0 {
+			if m := mirrorFromConfig(input.Config); m != nil {
+				if logoKey == nil && m.LogoKey != nil {
+					logoKey = m.LogoKey
+				}
+				if primary == nil && m.PrimaryColor != nil {
+					primary = m.PrimaryColor
+				}
+				if font == nil && m.FontFamily != nil {
+					font = m.FontFamily
+				}
+				if header == nil && m.HeaderExtra != nil {
+					header = m.HeaderExtra
+				}
+				if footer == nil && m.FooterText != nil {
+					footer = m.FooterText
+				}
 			}
 		}
-	}
 
-	// Per-doc overrides — when caller didn't supply, carry the
-	// existing column value forward so a save that only edits the
-	// base config doesn't clobber per-doc tweaks.
-	perDoc := input.PerDocOverrides
-	if perDoc == nil && current != nil {
-		perDoc = current.PerDocOverrides
-	}
+		// Per-doc overrides — when caller didn't supply, carry the
+		// existing column value forward so a save that only edits the
+		// base config doesn't clobber per-doc tweaks.
+		perDoc := input.PerDocOverrides
+		if perDoc == nil && current != nil {
+			perDoc = current.PerDocOverrides
+		}
 
-	style, err := s.repo.CreateStyleVersion(ctx, CreateStyleVersionParams{
-		ID:              domain.NewID(),
-		ClinicID:        input.ClinicID,
-		Version:         nextVer,
-		LogoKey:         logoKey,
-		PrimaryColor:    primary,
-		FontFamily:      font,
-		HeaderExtra:     header,
-		FooterText:      footer,
-		Config:          input.Config,
-		PresetID:        input.PresetID,
-		PerDocOverrides: perDoc,
-		CreatedBy:       input.StaffID,
-	})
-	if err != nil {
+		style, err := s.repo.CreateStyleVersion(ctx, CreateStyleVersionParams{
+			ID:              domain.NewID(),
+			ClinicID:        input.ClinicID,
+			Version:         nextVer,
+			LogoKey:         logoKey,
+			PrimaryColor:    primary,
+			FontFamily:      font,
+			HeaderExtra:     header,
+			FooterText:      footer,
+			Config:          input.Config,
+			PresetID:        input.PresetID,
+			PerDocOverrides: perDoc,
+			CreatedBy:       input.StaffID,
+		})
+		if err == nil {
+			return s.buildStyleResponse(ctx, style)
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
 		return nil, fmt.Errorf("forms.service.UpdateStyle: %w", err)
 	}
-	return s.buildStyleResponse(ctx, style)
+	return nil, fmt.Errorf("forms.service.UpdateStyle: could not assign version number: %w", domain.ErrConflict)
 }
 
 // ListStyleVersions returns the full version history for the clinic.
@@ -1931,18 +2053,18 @@ func mirrorFromConfig(cfg json.RawMessage) *flatMirror {
 //nolint:revive
 var SystemHeaderFieldAllowList = map[string]struct{}{
 	// Universal
-	"name":          {},
-	"photo":         {},
-	"id":            {},
-	"dob":           {},
-	"age":           {},
-	"sex":           {},
-	"visit_date":    {},
-	"clinician":     {},
+	"name":       {},
+	"photo":      {},
+	"id":         {},
+	"dob":        {},
+	"age":        {},
+	"sex":        {},
+	"visit_date": {},
+	"clinician":  {},
 	// General / dental
-	"medical_alerts":  {},
-	"medications":     {},
-	"allergies":       {},
+	"medical_alerts": {},
+	"medications":    {},
+	"allergies":      {},
 	// Vet
 	"species":   {},
 	"breed":     {},
