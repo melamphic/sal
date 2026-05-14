@@ -835,7 +835,7 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		return nil, fmt.Errorf("patient.service.CreateSubject: %w", err)
 	}
 
-	return s.decryptSubject(&SubjectRow{
+	return s.decryptSubject(ctx, &SubjectRow{
 		Subject:         *subjectRec,
 		Contact:         contactRec,
 		VetDetails:      vetDetails,
