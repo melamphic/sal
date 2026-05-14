@@ -52,6 +52,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, manageForms},
 	}, h.updateGroup)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-form-group",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/form-groups/{group_id}",
+		Summary:     "Delete a form group",
+		Description: "Deletes a folder (form group). Forms inside the folder are reparented to no folder — they remain visible in the unsorted forms list and are NOT deleted. Reparent + delete run inside a single transaction. Requires manage_forms permission.",
+		Tags:        []string{"Forms"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, manageForms},
+	}, h.deleteGroup)
+
 	// ── Forms ─────────────────────────────────────────────────────────────
 
 	huma.Register(api, huma.Operation{
