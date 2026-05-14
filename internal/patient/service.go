@@ -20,12 +20,21 @@ type PhotoUploader interface {
 	UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (key, url string, err error)
 }
 
+// PhotoSigner mints a short-lived signed download URL from a stored
+// photo key. Implemented in app.go via platform/storage; called every
+// time the service builds a SubjectResponse so photo URLs never expire
+// from the client's perspective.
+type PhotoSigner interface {
+	SignSubjectPhoto(ctx context.Context, key string) (string, error)
+}
+
 // Service handles all business logic for the patient module.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
 	repo          repo
 	cipher        *crypto.Cipher
 	photoUploader PhotoUploader // nil = photo upload disabled
+	photoSigner   PhotoSigner   // nil = serve raw stored URL (legacy rows)
 }
 
 // NewService creates a new patient Service.
@@ -39,6 +48,32 @@ func NewService(r repo, cipher *crypto.Cipher) *Service {
 // URL field.
 func (s *Service) SetPhotoUploader(u PhotoUploader) {
 	s.photoUploader = u
+}
+
+// SetPhotoSigner wires the read-side adapter that turns a stored
+// photo_key into a freshly signed URL on every subject read. Optional
+// in tests; required in prod for new photos to display.
+func (s *Service) SetPhotoSigner(p PhotoSigner) {
+	s.photoSigner = p
+}
+
+// resolveSubjectPhotoURL returns the URL the client should render for
+// a subject. Prefers a freshly signed URL from photo_key (durable);
+// falls back to the legacy photo_url column for any row that predates
+// the photo_key migration.
+func (s *Service) resolveSubjectPhotoURL(ctx context.Context, key, legacyURL *string) *string {
+	if key != nil && *key != "" && s.photoSigner != nil {
+		signed, err := s.photoSigner.SignSubjectPhoto(ctx, *key)
+		if err == nil && signed != "" {
+			return &signed
+		}
+		// Signer error: fall through to legacy URL so the row still
+		// renders something instead of going blank.
+	}
+	if legacyURL != nil && *legacyURL != "" {
+		return legacyURL
+	}
+	return nil
 }
 
 // UploadSubjectPhoto streams [body] (already size-validated by the
