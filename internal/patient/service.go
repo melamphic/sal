@@ -3,6 +3,7 @@ package patient
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,16 +11,52 @@ import (
 	"github.com/melamphic/sal/internal/platform/crypto"
 )
 
+// PhotoUploader stores subject avatar bytes in object storage and returns
+// both the persisted key (durable id, suitable for re-signing later) and
+// a short-lived URL the frontend can render immediately. Implemented by
+// platform/storage in app.go; nil during tests that don't exercise the
+// upload path.
+type PhotoUploader interface {
+	UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (key, url string, err error)
+}
+
 // Service handles all business logic for the patient module.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
-	repo   repo
-	cipher *crypto.Cipher
+	repo          repo
+	cipher        *crypto.Cipher
+	photoUploader PhotoUploader // nil = photo upload disabled
 }
 
 // NewService creates a new patient Service.
 func NewService(r repo, cipher *crypto.Cipher) *Service {
 	return &Service{repo: r, cipher: cipher}
+}
+
+// SetPhotoUploader wires the object-storage adapter that backs
+// `POST /api/v1/patients/upload-photo`. Optional — if absent, the
+// endpoint returns a 503 so the frontend can fall back to the legacy
+// URL field.
+func (s *Service) SetPhotoUploader(u PhotoUploader) {
+	s.photoUploader = u
+}
+
+// UploadSubjectPhoto streams [body] (already size-validated by the
+// handler) into object storage and returns the persisted key plus a
+// freshly-signed download URL. The caller is expected to write [url]
+// into `subjects.photo_url` via Create / Update — this method does not
+// touch the DB itself, mirroring the doc-theme logo upload pattern so
+// the same uploaded photo can be reused across multiple draft subjects
+// before commit.
+func (s *Service) UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (key, url string, err error) {
+	if s.photoUploader == nil {
+		return "", "", fmt.Errorf("patient.service.UploadSubjectPhoto: storage not configured")
+	}
+	k, u, err := s.photoUploader.UploadSubjectPhoto(ctx, clinicID, contentType, body, size)
+	if err != nil {
+		return "", "", fmt.Errorf("patient.service.UploadSubjectPhoto: %w", err)
+	}
+	return k, u, nil
 }
 
 // ── Response types ────────────────────────────────────────────────────────────

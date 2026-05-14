@@ -43,6 +43,21 @@ type ClinicSnapshotState struct {
 	OnboardingComplete bool
 }
 
+// StaffNameResolver maps a set of staff UUIDs to their display names.
+// Implemented in app.go via staff.Service; optional — when nil the
+// activity feed falls back to "Staff" so the page still works in tests
+// that don't wire staff.
+type StaffNameResolver interface {
+	ResolveStaffNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
+// SubjectNameResolver maps a set of subject UUIDs to their display
+// names. Implemented in app.go via patient.Service; optional — when nil
+// activity rows skip the subject suffix and still render correctly.
+type SubjectNameResolver interface {
+	ResolveSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
 // ── Service ──────────────────────────────────────────────────────────────
 
 // Service builds Snapshot payloads from cross-domain reads + the
@@ -55,17 +70,33 @@ type ClinicSnapshotState struct {
 // All errors are wrapped so observability shows the failing leaf — the
 // top-level handler maps them to 500/404 etc.
 type Service struct {
-	repo     *Repository
-	cache    *Cache
-	vert     VerticalProvider
-	seats    SeatUsageProvider
-	clinics  ClinicStateProvider
+	repo         *Repository
+	cache        *Cache
+	vert         VerticalProvider
+	seats        SeatUsageProvider
+	clinics      ClinicStateProvider
+	staffNames   StaffNameResolver  // optional
+	subjectNames SubjectNameResolver // optional
 }
 
 // NewService wires all the cross-domain readers + the cache. Pass the
 // shared *Cache so tests can introspect / clear it.
 func NewService(repo *Repository, cache *Cache, vert VerticalProvider, seats SeatUsageProvider, clinics ClinicStateProvider) *Service {
 	return &Service{repo: repo, cache: cache, vert: vert, seats: seats, clinics: clinics}
+}
+
+// SetStaffNameResolver wires the staff display-name lookup used to
+// enrich the activity feed with "{actor} did X" wording. Optional —
+// callers in tests that don't exercise the feed can leave it unset.
+func (s *Service) SetStaffNameResolver(r StaffNameResolver) {
+	s.staffNames = r
+}
+
+// SetSubjectNameResolver wires the subject display-name lookup used to
+// enrich the activity feed with "...to {subject}" wording. Optional —
+// when unset the subject suffix is omitted but the row still renders.
+func (s *Service) SetSubjectNameResolver(r SubjectNameResolver) {
+	s.subjectNames = r
 }
 
 // Invalidate is the public hook write paths call after any mutation
@@ -171,15 +202,60 @@ func (s *Service) build(ctx context.Context, clinicID uuid.UUID) (*Snapshot, err
 	// Vertical action card.
 	snap.VerticalCard = s.buildVerticalCard(ctx, clinicID, vert, startOfDay)
 
-	// Recent activity — universal.
+	// Recent activity — universal. Names get layered in here so the
+	// payload is "Sarah · administered 990 mL · for Buddy" instead of
+	// the raw SQL summary. Lookups are batched (one staff query + one
+	// subject query) so the cost is O(1) regardless of feed length.
 	if rows, err := s.repo.RecentActivity(ctx, clinicID, 10); err == nil {
+		actorIDs := make([]uuid.UUID, 0, len(rows))
+		subjectIDs := make([]uuid.UUID, 0, len(rows))
+		actorSeen := make(map[uuid.UUID]struct{})
+		subjectSeen := make(map[uuid.UUID]struct{})
+		for _, r := range rows {
+			if r.ActorStaffID != nil {
+				if _, ok := actorSeen[*r.ActorStaffID]; !ok {
+					actorSeen[*r.ActorStaffID] = struct{}{}
+					actorIDs = append(actorIDs, *r.ActorStaffID)
+				}
+			}
+			if r.SubjectID != nil {
+				if _, ok := subjectSeen[*r.SubjectID]; !ok {
+					subjectSeen[*r.SubjectID] = struct{}{}
+					subjectIDs = append(subjectIDs, *r.SubjectID)
+				}
+			}
+		}
+		actorNames := map[uuid.UUID]string{}
+		subjectNames := map[uuid.UUID]string{}
+		if s.staffNames != nil && len(actorIDs) > 0 {
+			if m, err := s.staffNames.ResolveStaffNames(ctx, clinicID, actorIDs); err == nil {
+				actorNames = m
+			}
+		}
+		if s.subjectNames != nil && len(subjectIDs) > 0 {
+			if m, err := s.subjectNames.ResolveSubjectNames(ctx, clinicID, subjectIDs); err == nil {
+				subjectNames = m
+			}
+		}
+
 		snap.Activity = make([]ActivityEvent, 0, len(rows))
 		for _, r := range rows {
+			var actorName, subjectName, subjectID string
+			if r.ActorStaffID != nil {
+				actorName = actorNames[*r.ActorStaffID]
+			}
+			if r.SubjectID != nil {
+				subjectName = subjectNames[*r.SubjectID]
+				subjectID = r.SubjectID.String()
+			}
 			snap.Activity = append(snap.Activity, ActivityEvent{
-				Kind:    r.Kind,
-				When:    r.When,
-				Summary: r.Summary,
-				Tone:    activityTone(r.Kind),
+				Kind:        r.Kind,
+				When:        r.When,
+				Summary:     r.Summary,
+				ActorName:   actorName,
+				SubjectName: subjectName,
+				SubjectID:   subjectID,
+				Tone:        activityTone(r.Kind),
 			})
 		}
 		// Already sorted desc by SQL but defensive in case of UNION quirks.

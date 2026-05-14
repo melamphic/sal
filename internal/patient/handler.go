@@ -3,6 +3,8 @@ package patient
 import (
 	"context"
 	"errors"
+	"fmt"
+	"mime/multipart"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -889,6 +891,75 @@ func parseAgedCareDetailsInput(a *agedCareDetailsInput) (*AgedCareDetailsInput, 
 		ad.AdmissionDate = &parsed
 	}
 	return ad, nil
+}
+
+// ── Subject photo upload ──────────────────────────────────────────────────────
+//
+// Mirrors POST /api/v1/clinic/logo: multipart/form-data, single "file"
+// field, 4 MiB cap, allowed image/* content-types only. Returns the
+// persisted storage key plus a freshly-signed download URL the caller
+// is expected to write into `subjects.photo_url` via Create / Update.
+// The decoupled upload + persist step lets the mobile create sheet pick
+// a photo before the subject row exists, then commit both in one POST.
+
+const maxSubjectPhotoBytes int64 = 4 << 20
+
+type uploadSubjectPhotoInput struct {
+	RawBody multipart.Form
+}
+
+type uploadSubjectPhotoResponse struct {
+	Body *UploadSubjectPhotoResponse
+}
+
+// UploadSubjectPhotoResponse is what the upload endpoint returns. Key
+// is the durable storage path; URL is short-lived (1h) and re-mintable
+// via the photo signer when needed.
+type UploadSubjectPhotoResponse struct {
+	PhotoKey string `json:"photo_key" doc:"Durable object-storage key for the photo."`
+	PhotoURL string `json:"photo_url" doc:"Short-lived signed download URL — write into the subject's photo_url on the next create/update."`
+}
+
+func isAllowedSubjectPhotoType(ct string) bool {
+	switch ct {
+	case "image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic":
+		return true
+	}
+	return false
+}
+
+// uploadSubjectPhoto handles POST /api/v1/patients/upload-photo.
+func (h *Handler) uploadSubjectPhoto(ctx context.Context, input *uploadSubjectPhotoInput) (*uploadSubjectPhotoResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("missing form field \"file\"")
+	}
+	hdr := files[0]
+	if hdr.Size > maxSubjectPhotoBytes {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("photo too large (max %d bytes)", maxSubjectPhotoBytes))
+	}
+
+	contentType := hdr.Header.Get("Content-Type")
+	if !isAllowedSubjectPhotoType(contentType) {
+		return nil, huma.Error415UnsupportedMediaType("photo must be png, jpeg, webp or heic")
+	}
+
+	f, err := hdr.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	defer func() { _ = f.Close() }()
+
+	key, url, err := h.svc.UploadSubjectPhoto(ctx, clinicID, contentType, f, hdr.Size)
+	if err != nil {
+		return nil, mapPatientError(err)
+	}
+	return &uploadSubjectPhotoResponse{Body: &UploadSubjectPhotoResponse{
+		PhotoKey: key,
+		PhotoURL: url,
+	}}, nil
 }
 
 func mapPatientError(err error) error {

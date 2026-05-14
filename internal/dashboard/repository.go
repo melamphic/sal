@@ -29,13 +29,16 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 }
 
 // ActivityRow is one row in the recent-activity feed. ActorStaffID
-// (when set) is the staff UUID the service needs to resolve to a
-// display name through staff.Service.
+// (when set) is the staff UUID the service resolves to a display name
+// through staff.Service; SubjectID is resolved through patient.Service.
+// Both names get folded into a richer ActivityEvent at the service
+// layer — the repo just returns IDs to keep cross-domain SQL out.
 type ActivityRow struct {
-	Kind          string    // "note_signed" | "drug_op" | "incident_logged" | "consent_captured"
-	When          time.Time
-	Summary       string    // pre-formatted, no PII
-	ActorStaffID  *uuid.UUID
+	Kind         string // "note_signed" | "drug_op" | "incident_logged" | "consent_captured"
+	When         time.Time
+	Summary      string // pre-formatted, no PII — names are layered in by the service
+	ActorStaffID *uuid.UUID
+	SubjectID    *uuid.UUID
 }
 
 // RecentActivity returns the most recent N events across notes (signed),
@@ -50,12 +53,13 @@ func (r *Repository) RecentActivity(ctx context.Context, clinicID uuid.UUID, lim
 		limit = 10
 	}
 	const q = `
-SELECT kind, occurred_at, summary, actor
+SELECT kind, occurred_at, summary, actor, subject
 FROM (
   SELECT 'note_signed'::text       AS kind,
          submitted_at                AS occurred_at,
          'Note signed'::text         AS summary,
-         submitted_by                AS actor
+         submitted_by                AS actor,
+         subject_id                  AS subject
   FROM notes
   WHERE clinic_id = $1
     AND status = 'submitted'
@@ -66,8 +70,9 @@ FROM (
 UNION ALL SELECT * FROM (
   SELECT 'drug_op'::text            AS kind,
          created_at                  AS occurred_at,
-         (operation || ' · ' || quantity::text || ' ' || unit) AS summary,
-         administered_by             AS actor
+         (operation || ' · ' || ROUND(quantity::numeric, 2)::text || ' ' || unit) AS summary,
+         administered_by             AS actor,
+         subject_id                  AS subject
   FROM drug_operations_log
   WHERE clinic_id = $1
   ORDER BY created_at DESC
@@ -77,7 +82,8 @@ UNION ALL SELECT * FROM (
   SELECT 'incident_logged'::text    AS kind,
          created_at                  AS occurred_at,
          (incident_type || ' · ' || severity) AS summary,
-         reported_by                 AS actor
+         reported_by                 AS actor,
+         subject_id                  AS subject
   FROM incident_events
   WHERE clinic_id = $1
   ORDER BY created_at DESC
@@ -87,7 +93,8 @@ UNION ALL SELECT * FROM (
   SELECT 'consent_captured'::text   AS kind,
          created_at                  AS occurred_at,
          consent_type                AS summary,
-         captured_by                 AS actor
+         captured_by                 AS actor,
+         subject_id                  AS subject
   FROM consent_records
   WHERE clinic_id = $1
   ORDER BY created_at DESC
@@ -105,11 +112,12 @@ LIMIT $2
 	var out []ActivityRow
 	for rows.Next() {
 		var ar ActivityRow
-		var actor *uuid.UUID
-		if err := rows.Scan(&ar.Kind, &ar.When, &ar.Summary, &actor); err != nil {
+		var actor, subject *uuid.UUID
+		if err := rows.Scan(&ar.Kind, &ar.When, &ar.Summary, &actor, &subject); err != nil {
 			return nil, fmt.Errorf("dashboard.repo.RecentActivity: scan: %w", err)
 		}
 		ar.ActorStaffID = actor
+		ar.SubjectID = subject
 		out = append(out, ar)
 	}
 	if err := rows.Err(); err != nil {

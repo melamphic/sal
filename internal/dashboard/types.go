@@ -161,10 +161,16 @@ type SeatUsage struct {
 
 // ActivityEvent is one row of the recent-clinic-activity feed. Generic
 // kind+summary pair — frontend renders a different icon per kind.
+// ActorName + SubjectName are resolved server-side from staff +
+// patient services so the client can render "{actor} did X to/for
+// {subject}" without N+1 lookups. SubjectID is surfaced (when known)
+// so the frontend can deep-link the row to the subject profile.
 type ActivityEvent struct {
-	Kind      string    `json:"kind"`              // "note_signed" | "drug_op" | "incident_logged" | "consent_captured"
-	When      time.Time `json:"when"`
-	Summary   string    `json:"summary"`
-	ActorName string    `json:"actor_name,omitempty"`
-	Tone      string    `json:"tone,omitempty"`
+	Kind        string    `json:"kind"` // "note_signed" | "drug_op" | "incident_logged" | "consent_captured"
+	When        time.Time `json:"when"`
+	Summary     string    `json:"summary"`
+	ActorName   string    `json:"actor_name,omitempty"`
+	SubjectName string    `json:"subject_name,omitempty"`
+	SubjectID   string    `json:"subject_id,omitempty"`
+	Tone        string    `json:"tone,omitempty"`
 }

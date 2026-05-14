@@ -238,6 +238,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
+	patientSvc.SetPhotoUploader(&subjectPhotoAdapter{store: store})
 	patientHandler := patient.NewHandler(patientSvc, clinicSvc)
 
 	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
@@ -416,6 +417,8 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 		&dashboardSeatsAdapter{staff: staffSvc},
 		&dashboardClinicStateAdapter{clinic: clinicSvc},
 	)
+	dashboardSvc.SetStaffNameResolver(&dashboardStaffNameAdapter{staff: staffSvc})
+	dashboardSvc.SetSubjectNameResolver(&dashboardSubjectNameAdapter{patient: patientSvc})
 	dashboardHandler := dashboard.NewHandler(dashboardSvc)
 
 	// Periodic jobs — declared at construction time so River drives them
@@ -1417,6 +1420,43 @@ func (a *dashboardClinicStateAdapter) LoadDashboardState(ctx context.Context, cl
 	}, nil
 }
 
+// dashboardStaffNameAdapter implements dashboard.StaffNameResolver
+// over staff.Service.GetByID. Fans out one call per unique id (capped
+// at ≤10 in practice — the dashboard activity feed pulls at most 10
+// rows). Failures degrade gracefully: a missing id is omitted from the
+// returned map and the activity row falls back to its raw summary.
+type dashboardStaffNameAdapter struct{ staff *staff.Service }
+
+func (a *dashboardStaffNameAdapter) ResolveStaffNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(ids))
+	for _, id := range ids {
+		s, err := a.staff.GetByID(ctx, id, clinicID)
+		if err != nil {
+			continue
+		}
+		out[id] = s.FullName
+	}
+	return out, nil
+}
+
+// dashboardSubjectNameAdapter implements dashboard.SubjectNameResolver
+// over patient.Service.GetSubjectForRender. Same fan-out shape as the
+// staff resolver: per-id call, failures dropped silently so one
+// missing subject doesn't blank the whole feed.
+type dashboardSubjectNameAdapter struct{ patient *patient.Service }
+
+func (a *dashboardSubjectNameAdapter) ResolveSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string, len(ids))
+	for _, id := range ids {
+		s, err := a.patient.GetSubjectForRender(ctx, id, clinicID)
+		if err != nil {
+			continue
+		}
+		out[id] = s.DisplayName
+	}
+	return out, nil
+}
+
 // staffSeatCapAdapter implements staff.AISeatCapResolver by reading
 // clinic.plan_code and consulting the domain.Plans registry. Trial
 // clinics (no plan_code yet) fall back to the Practice ceiling so the
@@ -1585,6 +1625,35 @@ func (a *clinicLogoAdapter) SignLogoURL(ctx context.Context, key string) (string
 		return "", fmt.Errorf("app.clinicLogoAdapter.SignLogoURL: %w", err)
 	}
 	return url, nil
+}
+
+// subjectPhotoAdapter implements patient.PhotoUploader against the
+// platform/storage S3 client. Subject photos live under
+// patient-photos/{clinic_id}/ so they stay distinct from clinic and
+// doc-theme logos.
+type subjectPhotoAdapter struct {
+	store *storage.Store
+}
+
+func (a *subjectPhotoAdapter) UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, string, error) {
+	ext := logoExtForContentType(contentType)
+	if ext == "" {
+		// HEIC isn't in the shared logo extension table — patch it
+		// here rather than widening the helper, since logos don't
+		// accept HEIC and we don't want to imply they do.
+		if contentType == "image/heic" {
+			ext = ".heic"
+		}
+	}
+	key := fmt.Sprintf("patient-photos/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", "", fmt.Errorf("app.subjectPhotoAdapter.UploadSubjectPhoto: upload: %w", err)
+	}
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", "", fmt.Errorf("app.subjectPhotoAdapter.UploadSubjectPhoto: presign: %w", err)
+	}
+	return key, url, nil
 }
 
 // docThemeLogoAdapter implements forms.StyleLogoUploader and forms.StyleLogoSigner
