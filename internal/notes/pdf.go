@@ -152,13 +152,21 @@ func BuildNotePDF(input PDFInput) (*bytes.Buffer, error) {
 	pdf.SetMargins(margin, margin, margin)
 	pdf.SetAutoPageBreak(true, margin+22)
 
+	// Register bundled TTFs (Inter, Plus Jakarta Sans, Newsreader,
+	// JetBrains Mono, Lora) so a clinic's doc-theme font picker
+	// produces a PDF that actually uses the chosen family. Bundled
+	// fonts are UTF-8 native — only the legacy Helvetica/Times/Courier
+	// path needs the cp1252 translator below.
+	registerBundledFonts(pdf)
+
 	// gofpdf's built-in fonts (helvetica, times, courier) encode text as
 	// Windows-1252. UTF-8 strings carrying non-Latin1 characters (em-dash
 	// U+2014, smart quotes, ellipsis) get rendered byte-by-byte, so an
 	// em-dash shows up as `â€"`. Install the cp1252 translator and wrap
 	// every dynamic text write with `tx(...)`. Static labels are ASCII
 	// and don't strictly need the wrapper, but it's idempotent so we
-	// apply it everywhere for safety.
+	// apply it everywhere for safety. Bundled UTF-8 fonts ignore the
+	// translator (their AddUTF8 path handles UTF-8 directly).
 	tx := pdf.UnicodeTranslatorFromDescriptor("")
 
 	pdf.SetFooterFunc(func() {
