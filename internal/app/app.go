@@ -238,7 +238,9 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 
 	patientRepo := patient.NewRepository(db)
 	patientSvc := patient.NewService(patientRepo, cipher)
-	patientSvc.SetPhotoUploader(&subjectPhotoAdapter{store: store})
+	patientPhotoAdapter := &subjectPhotoAdapter{store: store}
+	patientSvc.SetPhotoUploader(patientPhotoAdapter)
+	patientSvc.SetPhotoSigner(patientPhotoAdapter)
 	patientHandler := patient.NewHandler(patientSvc, clinicSvc)
 
 	verticalAdapter := &clinicVerticalProviderAdapter{clinic: clinicSvc}
