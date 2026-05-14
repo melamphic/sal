@@ -1637,6 +1637,14 @@ type subjectPhotoAdapter struct {
 	store *storage.Store
 }
 
+func (a *subjectPhotoAdapter) SignSubjectPhoto(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.subjectPhotoAdapter.SignSubjectPhoto: %w", err)
+	}
+	return url, nil
+}
+
 func (a *subjectPhotoAdapter) UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, string, error) {
 	ext := logoExtForContentType(contentType)
 	if ext == "" {
