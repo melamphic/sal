@@ -87,6 +87,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.createSubject)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "upload-patient-photo",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/patients/upload-photo",
+		Summary:     "Upload a patient avatar",
+		Description: "Uploads an image (PNG / JPEG / WEBP / HEIC, max 4 MiB) to object storage and returns the durable key plus a short-lived signed URL. Persist the URL into the next create-patient or update-patient body — this endpoint does not touch any subject row, so the same upload can be reused across multiple draft patients before commit.",
+		Tags:        []string{"Patients"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, managePatients},
+	}, h.uploadSubjectPhoto)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "list-patients",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/patients",
