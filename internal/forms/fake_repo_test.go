@@ -10,11 +10,11 @@ import (
 
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
 type fakeRepo struct {
-	mu       sync.RWMutex
-	groups   map[uuid.UUID]*GroupRecord
-	forms    map[uuid.UUID]*FormRecord
-	versions map[uuid.UUID]*FormVersionRecord
-	fields   map[uuid.UUID][]*FieldRecord // keyed by version ID
+	mu           sync.RWMutex
+	groups       map[uuid.UUID]*GroupRecord
+	forms        map[uuid.UUID]*FormRecord
+	versions     map[uuid.UUID]*FormVersionRecord
+	fields       map[uuid.UUID][]*FieldRecord             // keyed by version ID
 	policies     map[uuid.UUID][]uuid.UUID                // form_id → policy IDs
 	unlinkEvents map[uuid.UUID][]*PolicyUnlinkEventRecord // form_id → soft-unlink history
 	styles       []*StyleVersionRecord                    // ordered by version asc
@@ -81,6 +81,25 @@ func (f *fakeRepo) UpdateGroup(_ context.Context, p UpdateGroupParams) (*GroupRe
 	g.Description = p.Description
 	g.UpdatedAt = domain.TimeNow()
 	return cloneGroup(g), nil
+}
+
+func (f *fakeRepo) DeleteGroup(_ context.Context, id, clinicID uuid.UUID) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	g, ok := f.groups[id]
+	if !ok || g.ClinicID != clinicID {
+		return 0, domain.ErrNotFound
+	}
+	reparented := 0
+	for _, form := range f.forms {
+		if form.ClinicID == clinicID && form.GroupID != nil && *form.GroupID == id {
+			form.GroupID = nil
+			form.UpdatedAt = domain.TimeNow()
+			reparented++
+		}
+	}
+	delete(f.groups, id)
+	return reparented, nil
 }
 
 // ── Forms ─────────────────────────────────────────────────────────────────────

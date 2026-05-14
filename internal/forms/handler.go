@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -56,7 +57,7 @@ type fieldBodyInput struct {
 type createFormBodyInput struct {
 	Body struct {
 		GroupID       *string          `json:"group_id,omitempty"    doc:"UUID of the group to place this form in."`
-		Name          string           `json:"name"                  minLength:"1" doc:"Form name."`
+		Name          string           `json:"name"                  minLength:"1" maxLength:"120" doc:"Form name."`
 		Description   *string          `json:"description,omitempty" doc:"Optional form description."`
 		OverallPrompt *string          `json:"overall_prompt,omitempty" doc:"Context for the AI extraction model about this form's purpose."`
 		Tags          []string         `json:"tags,omitempty"        doc:"Free-form label strings."`
@@ -201,7 +202,7 @@ type updateDraftBodyInput struct {
 	FormID string `path:"form_id"`
 	Body   struct {
 		GroupID       *string                `json:"group_id,omitempty"`
-		Name          string                 `json:"name"          minLength:"1"`
+		Name          string                 `json:"name"          minLength:"1" maxLength:"120"`
 		Description   *string                `json:"description,omitempty"`
 		OverallPrompt *string                `json:"overall_prompt,omitempty"`
 		Tags          []string               `json:"tags,omitempty"`
@@ -462,7 +463,7 @@ func (h *Handler) getVersion(ctx context.Context, input *getVersionInput) (*vers
 
 type createGroupBodyInput struct {
 	Body struct {
-		Name        string  `json:"name"                  minLength:"1" doc:"Group name."`
+		Name        string  `json:"name"                  minLength:"1" maxLength:"80" doc:"Group name."`
 		Description *string `json:"description,omitempty" doc:"Optional group description."`
 	}
 }
@@ -478,9 +479,17 @@ type groupListHTTPResponse struct {
 type updateGroupBodyInput struct {
 	GroupID string `path:"group_id"`
 	Body    struct {
-		Name        string  `json:"name"                  minLength:"1"`
+		Name        string  `json:"name"                  minLength:"1" maxLength:"80"`
 		Description *string `json:"description,omitempty"`
 	}
+}
+
+type deleteGroupInput struct {
+	GroupID string `path:"group_id"`
+}
+
+type deleteGroupHTTPResponse struct {
+	Body *DeleteGroupResponse
 }
 
 // createGroup handles POST /api/v1/form-groups.
@@ -530,6 +539,25 @@ func (h *Handler) updateGroup(ctx context.Context, input *updateGroupBodyInput) 
 		return nil, mapFormError(err)
 	}
 	return &groupHTTPResponse{Body: resp}, nil
+}
+
+// deleteGroup handles DELETE /api/v1/form-groups/{group_id}.
+func (h *Handler) deleteGroup(ctx context.Context, input *deleteGroupInput) (*deleteGroupHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+
+	groupID, err := uuid.Parse(input.GroupID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid group_id")
+	}
+
+	resp, err := h.svc.DeleteGroup(ctx, DeleteGroupInput{
+		GroupID:  groupID,
+		ClinicID: clinicID,
+	})
+	if err != nil {
+		return nil, mapFormError(err)
+	}
+	return &deleteGroupHTTPResponse{Body: resp}, nil
 }
 
 // ── Policies ──────────────────────────────────────────────────────────────────
@@ -814,7 +842,7 @@ func mapFormError(err error) error {
 		return huma.Error404NotFound("resource not found")
 	case errors.Is(err, domain.ErrConflict):
 		slog.Warn("forms: conflict", "error", err.Error())
-		return huma.Error409Conflict("operation not allowed in current state")
+		return huma.Error409Conflict(humanConflictMessage(err))
 	case errors.Is(err, domain.ErrForbidden):
 		return huma.Error403Forbidden("insufficient permissions")
 	case errors.Is(err, domain.ErrValidation):
@@ -823,4 +851,22 @@ func mapFormError(err error) error {
 		slog.Error("forms: unmapped service error", "error", err.Error())
 		return huma.Error500InternalServerError("internal server error")
 	}
+}
+
+// humanConflictMessage extracts the user-facing portion from a wrapped
+// service error like `forms.service.CreateGroup: a folder named "X"
+// already exists: conflict` → `a folder named "X" already exists`.
+// Strips the trailing sentinel, then keeps only the last colon-delimited
+// clause (so the package/function prefix doesn't leak into the UI). Falls
+// back to a generic message when the chain is empty or unrecognisable.
+func humanConflictMessage(err error) string {
+	msg := strings.TrimSuffix(err.Error(), ": "+domain.ErrConflict.Error())
+	if i := strings.LastIndex(msg, ": "); i >= 0 {
+		msg = msg[i+2:]
+	}
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return "operation not allowed in current state"
+	}
+	return msg
 }

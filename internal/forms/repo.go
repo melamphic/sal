@@ -15,6 +15,11 @@ type repo interface {
 	GetGroupByID(ctx context.Context, id, clinicID uuid.UUID) (*GroupRecord, error)
 	ListGroups(ctx context.Context, clinicID uuid.UUID) ([]*GroupRecord, error)
 	UpdateGroup(ctx context.Context, p UpdateGroupParams) (*GroupRecord, error)
+	// DeleteGroup reparents forms in the group to no folder (group_id = NULL)
+	// and deletes the group row. Reparent + delete are atomic. Returns the
+	// number of forms reparented. Returns domain.ErrNotFound if the group
+	// does not exist in the given clinic.
+	DeleteGroup(ctx context.Context, id, clinicID uuid.UUID) (int, error)
 
 	// ── Forms ─────────────────────────────────────────────────────────────────
 

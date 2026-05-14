@@ -51,21 +51,21 @@ type FormRecord struct {
 	// installs a template into a fresh clinic. Mutually exclusive with the
 	// marketplace lineage above. When non-nil, the form participates in the
 	// "Made by Salvia v1" UX (badge, upgrade banner, library panel).
-	SalviaTemplateID       *string
-	SalviaTemplateVersion  *int
-	SalviaTemplateState    *string // "default" | "forked" | "deleted"
-	FrameworkCurrencyDate  *time.Time
+	SalviaTemplateID      *string
+	SalviaTemplateVersion *int
+	SalviaTemplateState   *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate *time.Time
 }
 
 // FormVersionRecord is the raw database representation of a form_versions row.
 type FormVersionRecord struct {
-	ID                uuid.UUID
-	FormID            uuid.UUID
-	Status            domain.FormVersionStatus
-	VersionMajor      *int
-	VersionMinor      *int
-	ChangeType        *domain.ChangeType
-	ChangeSummary     *string
+	ID            uuid.UUID
+	FormID        uuid.UUID
+	Status        domain.FormVersionStatus
+	VersionMajor  *int
+	VersionMinor  *int
+	ChangeType    *domain.ChangeType
+	ChangeSummary *string
 	// Changes is a JSONB array of typed ops ({op: "add_field", title: "...", ...})
 	// computed client-side by diffing draft vs previous published. Stored opaque
 	// so new op types can ship without a migration.
@@ -174,10 +174,10 @@ type CreateFormParams struct {
 	// Salvia-provided-content lineage — populated only when the materialiser
 	// installs a Salvia v1 template into a clinic at signup. Mutually
 	// exclusive with marketplace lineage.
-	SalviaTemplateID       *string
-	SalviaTemplateVersion  *int
-	SalviaTemplateState    *string // "default" | "forked" | "deleted"
-	FrameworkCurrencyDate  *time.Time
+	SalviaTemplateID      *string
+	SalviaTemplateVersion *int
+	SalviaTemplateState   *string // "default" | "forked" | "deleted"
+	FrameworkCurrencyDate *time.Time
 }
 
 // UpdateFormMetaParams holds values needed to update form metadata.
@@ -376,6 +376,45 @@ func (r *Repository) UpdateGroup(ctx context.Context, p UpdateGroupParams) (*Gro
 		return nil, fmt.Errorf("forms.repo.UpdateGroup: %w", err)
 	}
 	return rec, nil
+}
+
+// DeleteGroup deletes a form group after reparenting every form that lives
+// inside it (setting group_id = NULL so the form appears in the unsorted
+// "All forms" view). Reparent + delete run inside a single transaction so
+// either both succeed or neither does — never leave forms pointing at a
+// deleted folder. Returns the count of forms that were reparented; returns
+// pgx.ErrNoRows (wrapped as domain.ErrNotFound by the caller) if no such
+// group exists in this clinic.
+func (r *Repository) DeleteGroup(ctx context.Context, id, clinicID uuid.UUID) (int, error) {
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("forms.repo.DeleteGroup: begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	const reparentQ = `
+		UPDATE forms
+		SET group_id = NULL, updated_at = NOW()
+		WHERE group_id = $1 AND clinic_id = $2`
+	tag, err := tx.Exec(ctx, reparentQ, id, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("forms.repo.DeleteGroup: reparent: %w", err)
+	}
+	reparented := int(tag.RowsAffected())
+
+	const deleteQ = `DELETE FROM form_groups WHERE id = $1 AND clinic_id = $2`
+	delTag, err := tx.Exec(ctx, deleteQ, id, clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("forms.repo.DeleteGroup: delete: %w", err)
+	}
+	if delTag.RowsAffected() == 0 {
+		return 0, fmt.Errorf("forms.repo.DeleteGroup: %w", domain.ErrNotFound)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("forms.repo.DeleteGroup: commit: %w", err)
+	}
+	return reparented, nil
 }
 
 // ── Forms ─────────────────────────────────────────────────────────────────────
@@ -806,8 +845,13 @@ func (r *Repository) GetLatestPublishedVersion(ctx context.Context, formID uuid.
 	return rec, nil
 }
 
-
 // CreateDraftVersion inserts a new draft version for a form.
+//
+// The partial unique index `idx_form_versions_one_draft` enforces a single
+// draft per form. If two UpdateDraft calls race after a publish (no draft
+// exists, both decide to create one), the loser surfaces here. Map that to
+// domain.ErrConflict so the service layer can re-read the winner's draft
+// instead of bubbling a raw 23505 to the UI.
 func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersionParams) (*FormVersionRecord, error) {
 	q := fmt.Sprintf(`
 		INSERT INTO form_versions (id, form_id, status, rollback_of, created_by)
@@ -817,6 +861,9 @@ func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersio
 	row := r.db.QueryRow(ctx, q, p.ID, p.FormID, p.RollbackOf, p.CreatedBy)
 	rec, err := scanVersion(row)
 	if err != nil {
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("forms.repo.CreateDraftVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("forms.repo.CreateDraftVersion: %w", err)
 	}
 	return rec, nil
@@ -1267,6 +1314,13 @@ func (r *Repository) CreateStyleVersion(ctx context.Context, p CreateStyleVersio
 	)
 	rec, err := scanStyle(row)
 	if err != nil {
+		// (clinic_id, version) is unique — if two staff save styles in the
+		// same millisecond, both reads of the current version land on the
+		// same `nextVer` and one INSERT loses. Map that to ErrConflict so
+		// the service layer can recompute the next version and retry.
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("forms.repo.CreateStyleVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("forms.repo.CreateStyleVersion: %w", err)
 	}
 
