@@ -1336,7 +1336,7 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 func (r *Repository) ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url, s.photo_key,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
