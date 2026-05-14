@@ -414,6 +414,7 @@ func (h *Handler) createSubject(ctx context.Context, input *createSubjectInput) 
 		Vertical:    vertical,
 		DisplayName: input.Body.DisplayName,
 		PhotoURL:    input.Body.PhotoURL,
+		PhotoKey:    input.Body.PhotoKey,
 	}
 
 	if input.Body.ContactID != nil {
@@ -534,6 +535,7 @@ func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) 
 		DisplayName: input.Body.DisplayName,
 		Status:      input.Body.Status,
 		PhotoURL:    input.Body.PhotoURL,
+		PhotoKey:    input.Body.PhotoKey,
 	}
 
 	if input.Body.VetDetails != nil {
