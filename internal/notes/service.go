@@ -202,6 +202,17 @@ func (s *Service) SetPDFRenderer(r *PDFRenderer) {
 	s.pdf = r
 }
 
+// LookupFormNamesByNoteIDs batches a (note → form.name) fetch for the
+// given note ids. Used by cross-domain feeds (staff activity) that need
+// to decorate notes with a readable label instead of a raw UUID.
+func (s *Service) LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	out, err := s.repo.LookupFormNamesByNoteIDs(ctx, clinicID, noteIDs)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.LookupFormNamesByNoteIDs: %w", err)
+	}
+	return out, nil
+}
+
 // ── Response types ────────────────────────────────────────────────────────────
 
 // NoteFieldResponse is the API-safe representation of a single note field.
