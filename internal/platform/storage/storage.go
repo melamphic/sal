@@ -25,9 +25,10 @@ import (
 // Store is an S3-compatible object store client.
 // Use New to construct one from application config.
 type Store struct {
-	client  *s3.Client
-	presign *s3.PresignClient
-	bucket  string
+	client         *s3.Client
+	presign        *s3.PresignClient
+	bucket         string
+	publicEndpoint string // when non-empty, swap host on presigned URLs
 }
 
 // New builds a Store from application config.
