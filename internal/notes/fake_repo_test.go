@@ -10,9 +10,10 @@ import (
 
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
 type fakeRepo struct {
-	mu     sync.RWMutex
-	notes  map[uuid.UUID]*NoteRecord
-	fields map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
+	mu          sync.RWMutex
+	notes       map[uuid.UUID]*NoteRecord
+	fields      map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
+	attachments []*NoteAttachmentRecord
 }
 
 func newFakeRepo() *fakeRepo {
