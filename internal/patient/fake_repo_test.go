@@ -397,6 +397,20 @@ func (f *fakeRepo) ListSubjectsByContact(_ context.Context, contactID, clinicID 
 	return rows, nil
 }
 
+func (f *fakeRepo) LookupDisplayNames(_ context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	out := make(map[uuid.UUID]string, len(ids))
+	for _, id := range ids {
+		s, ok := f.subjects[id]
+		if !ok || s.ClinicID != clinicID || s.ArchivedAt != nil {
+			continue
+		}
+		out[id] = s.DisplayName
+	}
+	return out, nil
+}
+
 func (f *fakeRepo) CreateDentalDetails(_ context.Context, p CreateDentalDetailsParams) (*DentalDetailsRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
