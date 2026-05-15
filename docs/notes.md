@@ -340,3 +340,45 @@ render its own pending materialisations. The gate covers
   `ErrNotFound` when the note doesn't belong to the caller's clinic.
   All adapter interfaces receive `clinic_id` from the service so each
   domain can re-validate.
+
+## Attachments (photos & documents)
+
+Notes can carry an arbitrary number of `note_attachments` — photos
+(png / jpeg / webp / heic) and PDFs — that the staff uploads as
+evidence outside the structured form (wound progression, lab strips,
+signed consent captures, etc.).
+
+### Schema
+
+`note_attachments` (migration 00093) mirrors `drug_op_attachments` —
+same `id / clinic_id / note_id / kind / s3_key / content_type / bytes /
+extracted_payload / uploaded_by / uploaded_at / archived_at` shape, so
+FE widgets stay reusable. `note_id` is `NOT NULL` (notes have no pre-
+confirm pending state, unlike drug ops). `kind` is one of
+`photo | document | other` and is derived from content-type at insert.
+
+### Routes
+
+| Method | Path | Perm | Notes |
+|---|---|---|---|
+| POST   | `/api/v1/notes/{id}/upload-attachment` | `submitForms` | Multipart, single `file` field. Max 8 MiB. Returns the new attachment summary so the FE can append without re-fetching the whole note. |
+| GET    | `/api/v1/notes/{id}/attachments`       | `submitForms` | Re-poll the gallery (post-delete). Most callers read attachments via `GetNote` which embeds the same list. |
+| DELETE | `/api/v1/notes/{id}/attachments/{aid}` | `submitForms` + uploader-or-`manageStaff` | Soft-delete (`archived_at`). The row stays for audit retention. |
+
+The handler enforces the uploader-or-admin gate for delete; the service
+layer is pure storage / DB plumbing.
+
+### Storage
+
+`noteAttachmentAdapter` in `app.go` implements both `AttachmentUploader`
+and `AttachmentSigner`. Bytes live under
+`note-attachments/{clinic_id}/{uuid}{ext}` in S3 / MinIO. Download URLs
+are minted with a 1h TTL and **re-signed on every `GetNote`** so the
+client never holds a stale link — the same pattern used for patient
+photos.
+
+### Forward compat
+
+`extracted_payload JSONB` is reserved for future OCR / vision-AI work
+(clinical findings on a skin lesion photo, drug-label parsing on a
+vial shot). v1 leaves it `NULL`.
