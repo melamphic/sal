@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
@@ -75,6 +76,12 @@ type Service struct {
 	drugOpSum   DrugOpSummariser
 	incidentSum IncidentSummariser
 	painSum     PainSummariser
+	// Attachments (photos / documents). uploader stores bytes; signer
+	// mints short-lived download URLs on every GetNote so URLs never
+	// expire from the client's perspective. Both wired by app.go;
+	// either nil = that path is disabled.
+	attachUploader AttachmentUploader
+	attachSigner   AttachmentSigner
 }
 
 // NewService constructs a notes Service.
@@ -213,6 +220,159 @@ func (s *Service) LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UU
 	return out, nil
 }
 
+// AttachmentUploader stores note-attachment bytes in object storage and
+// returns the persisted key (durable id for re-signing) plus a short-
+// lived URL the frontend can render immediately. Mirrors the patient-
+// photo pattern. Implemented in app.go by a storage adapter; nil in
+// tests / local dev that skip the upload path.
+type AttachmentUploader interface {
+	UploadNoteAttachment(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (key, url string, err error)
+}
+
+// AttachmentSigner mints a short-lived signed download URL from a stored
+// attachment key. Called every time the service builds a NoteResponse
+// so attachment URLs never expire from the client's perspective.
+type AttachmentSigner interface {
+	SignNoteAttachment(ctx context.Context, key string) (string, error)
+}
+
+// SetAttachmentUploader wires the object-storage adapter that backs
+// `POST /api/v1/notes/{id}/upload-attachment`. Optional — without it,
+// the upload endpoint returns 503.
+func (s *Service) SetAttachmentUploader(u AttachmentUploader) {
+	s.attachUploader = u
+}
+
+// SetAttachmentSigner wires the read-side adapter that turns a stored
+// attachment key into a freshly signed URL on every note read.
+func (s *Service) SetAttachmentSigner(p AttachmentSigner) {
+	s.attachSigner = p
+}
+
+// resolveAttachmentURL returns the URL the client should render for an
+// attachment. Falls back to empty string when the signer is unwired
+// (test/local dev). Errors are swallowed so a transient signer failure
+// can't bring the whole note read down — the row still surfaces with
+// metadata, just without a renderable URL until the next read.
+func (s *Service) resolveAttachmentURL(ctx context.Context, key string) string {
+	if s.attachSigner == nil || key == "" {
+		return ""
+	}
+	url, err := s.attachSigner.SignNoteAttachment(ctx, key)
+	if err != nil {
+		return ""
+	}
+	return url
+}
+
+// UploadNoteAttachment streams [body] into object storage and inserts
+// the metadata row pointing at the persisted key. Returns the summary
+// shape the FE renders into the attachments gallery.
+//
+// The handler enforces content-type + size; this method does no
+// validation beyond storage / DB plumbing.
+func (s *Service) UploadNoteAttachment(
+	ctx context.Context,
+	noteID, clinicID, uploaderID uuid.UUID,
+	contentType string,
+	body io.Reader,
+	size int64,
+) (*NoteAttachmentSummary, error) {
+	if s.attachUploader == nil {
+		return nil, fmt.Errorf("notes.service.UploadNoteAttachment: storage not configured")
+	}
+	// Note must exist + belong to this clinic. GetNoteByID already
+	// scopes by clinic; a missing row yields ErrNotFound which the
+	// handler maps to 404.
+	if _, err := s.repo.GetNoteByID(ctx, noteID, clinicID); err != nil {
+		return nil, fmt.Errorf("notes.service.UploadNoteAttachment: lookup: %w", err)
+	}
+	key, _, err := s.attachUploader.UploadNoteAttachment(ctx, clinicID, contentType, body, size)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.UploadNoteAttachment: upload: %w", err)
+	}
+	rec, err := s.repo.InsertAttachment(ctx, CreateAttachmentParams{
+		ID:          uuid.Must(uuid.NewV7()),
+		ClinicID:    clinicID,
+		NoteID:      noteID,
+		Kind:        attachmentKindFor(contentType),
+		S3Key:       key,
+		ContentType: contentType,
+		Bytes:       size,
+		UploadedBy:  uploaderID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.UploadNoteAttachment: insert: %w", err)
+	}
+	return s.toAttachmentSummary(ctx, rec), nil
+}
+
+// ListNoteAttachments returns the gallery for a note. Each summary
+// carries a freshly signed URL.
+func (s *Service) ListNoteAttachments(ctx context.Context, noteID, clinicID uuid.UUID) ([]*NoteAttachmentSummary, error) {
+	if _, err := s.repo.GetNoteByID(ctx, noteID, clinicID); err != nil {
+		return nil, fmt.Errorf("notes.service.ListNoteAttachments: lookup: %w", err)
+	}
+	rows, err := s.repo.ListAttachmentsByNote(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.ListNoteAttachments: %w", err)
+	}
+	out := make([]*NoteAttachmentSummary, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, s.toAttachmentSummary(ctx, r))
+	}
+	return out, nil
+}
+
+// ArchiveNoteAttachment soft-deletes an attachment. Caller-permission
+// gate (uploader-pre-submit vs manageNotes-post-submit) is enforced at
+// the handler layer.
+func (s *Service) ArchiveNoteAttachment(ctx context.Context, attachmentID, clinicID uuid.UUID) error {
+	if err := s.repo.ArchiveAttachment(ctx, attachmentID, clinicID); err != nil {
+		return fmt.Errorf("notes.service.ArchiveNoteAttachment: %w", err)
+	}
+	return nil
+}
+
+// GetNoteAttachment fetches a single attachment for permission checks
+// before archive. Surfaces ErrNotFound when missing.
+func (s *Service) GetNoteAttachment(ctx context.Context, attachmentID, clinicID uuid.UUID) (*NoteAttachmentRecord, error) {
+	rec, err := s.repo.GetAttachment(ctx, attachmentID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.GetNoteAttachment: %w", err)
+	}
+	return rec, nil
+}
+
+// attachmentKindFor maps content-type to the kind enum stored in the
+// table. Conservative — anything not obviously a photo or document
+// falls into "other" so a typo can't violate the CHECK constraint.
+func attachmentKindFor(contentType string) string {
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return "photo"
+	case contentType == "application/pdf",
+		strings.HasPrefix(contentType, "application/vnd.openxmlformats"),
+		contentType == "application/msword",
+		contentType == "text/plain":
+		return "document"
+	default:
+		return "other"
+	}
+}
+
+func (s *Service) toAttachmentSummary(ctx context.Context, r *NoteAttachmentRecord) *NoteAttachmentSummary {
+	return &NoteAttachmentSummary{
+		ID:          r.ID.String(),
+		Kind:        r.Kind,
+		PhotoURL:    s.resolveAttachmentURL(ctx, r.S3Key),
+		ContentType: r.ContentType,
+		Bytes:       r.Bytes,
+		UploadedBy:  r.UploadedBy.String(),
+		UploadedAt:  r.UploadedAt.Format(time.RFC3339),
+	}
+}
+
 // ── Response types ────────────────────────────────────────────────────────────
 
 // NoteFieldResponse is the API-safe representation of a single note field.
@@ -244,6 +404,22 @@ type NoteFieldResponse struct {
 type NoteFieldSystemSummaryItem struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
+}
+
+// NoteAttachmentSummary is the API-safe representation of a single
+// note attachment. PhotoURL is freshly signed on every read so the
+// client never holds a stale URL. Kind drives the FE icon (photo vs
+// document) and the gallery layout (image grid vs file list).
+//
+//nolint:revive
+type NoteAttachmentSummary struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind" enum:"photo,document,other"`
+	PhotoURL    string `json:"photo_url"`
+	ContentType string `json:"content_type"`
+	Bytes       int64  `json:"bytes"`
+	UploadedBy  string `json:"uploaded_by"`
+	UploadedAt  string `json:"uploaded_at"`
 }
 
 // NoteResponse is the API-safe representation of a clinical note.
@@ -281,6 +457,10 @@ type NoteResponse struct {
 	CreatedAt              string               `json:"created_at"`
 	UpdatedAt              string               `json:"updated_at"`
 	Fields                 []*NoteFieldResponse `json:"fields,omitempty"`
+	// Attachments — populated only by GetNote (and submit/retry paths
+	// that re-emit the full response). ListNotes leaves it nil to keep
+	// the list payload small; the FE calls GetNote on detail open.
+	Attachments []*NoteAttachmentSummary `json:"attachments,omitempty"`
 }
 
 // NoteListResponse is a paginated list of notes.
@@ -445,6 +625,17 @@ func (s *Service) GetNote(ctx context.Context, id, clinicID uuid.UUID) (*NoteRes
 
 	resp := toNoteResponse(note, fields)
 	s.enrichSystemSummaries(ctx, clinicID, resp.Fields)
+
+	// Attach the photo / document gallery. Best-effort: a list failure
+	// shouldn't bring the whole read down — leaves attachments nil and
+	// the FE renders the note without the gallery section.
+	if rows, err := s.repo.ListAttachmentsByNote(ctx, id, clinicID); err == nil {
+		out := make([]*NoteAttachmentSummary, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, s.toAttachmentSummary(ctx, r))
+		}
+		resp.Attachments = out
+	}
 	return resp, nil
 }
 
