@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/url"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -24,11 +23,17 @@ import (
 
 // Store is an S3-compatible object store client.
 // Use New to construct one from application config.
+//
+// `client` talks to the storage endpoint the backend can reach
+// (`http://localhost:9000` in dev, or the R2/S3 endpoint in prod).
+// `presign` signs URLs against the public endpoint clients hit — same
+// host as `client` except in dev where physical devices on the LAN
+// can't reach `localhost`. SigV4 signs the Host header so the two
+// must use distinct clients; we can't post-process the URL.
 type Store struct {
-	client         *s3.Client
-	presign        *s3.PresignClient
-	bucket         string
-	publicEndpoint string // when non-empty, swap host on presigned URLs
+	client  *s3.Client
+	presign *s3.PresignClient
+	bucket  string
 }
 
 // New builds a Store from application config.
