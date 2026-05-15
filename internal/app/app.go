@@ -755,6 +755,10 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	staffSvc.RegisterActivitySource(&consentActivityAdapter{svc: consentSvc})
 	staffSvc.RegisterActivitySource(&painActivityAdapter{svc: painSvc})
 	staffSvc.RegisterActivitySource(&loginsActivityAdapter{auth: authSvc})
+	// Decorate activity rows with subject display names + form titles
+	// (one batch lookup per page, run post-merge) so the team-page chips
+	// show "Patient Bella" instead of "Patient c2f5ea50".
+	staffSvc.SetActivityNameResolvers(patientSvc, notesSvc)
 
 	// ── Marketplace module ───────────────────────────────────────────────────
 	marketplaceRepo := marketplace.NewRepository(db)
