@@ -556,6 +556,18 @@ func (s *Service) ListContacts(ctx context.Context, clinicID uuid.UUID, limit, o
 	return &ContactListResponse{Items: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
+// LookupSubjectNames batches a display-name fetch for the given subject
+// ids. Empty input returns an empty map. Missing/archived ids are simply
+// absent from the result. Intended for cross-domain feeds (e.g. staff
+// activity) that need to decorate subject IDs with human-readable names.
+func (s *Service) LookupSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out, err := s.repo.LookupDisplayNames(ctx, clinicID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.LookupSubjectNames: %w", err)
+	}
+	return out, nil
+}
+
 // ArchiveContact soft-deletes a contact. Fails with ErrConflict if the
 // contact is still linked to any active subject.
 func (s *Service) ArchiveContact(ctx context.Context, id, clinicID uuid.UUID) (*ContactResponse, error) {
