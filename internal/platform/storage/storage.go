@@ -64,10 +64,38 @@ func New(cfg *config.Config) (*Store, error) {
 	})
 
 	return &Store{
-		client:  client,
-		presign: s3.NewPresignClient(client),
-		bucket:  cfg.StorageBucket,
+		client:         client,
+		presign:        s3.NewPresignClient(client),
+		bucket:         cfg.StorageBucket,
+		publicEndpoint: cfg.StoragePublicEndpoint,
 	}, nil
+}
+
+// rewritePublic swaps the scheme+host of [signed] for the configured
+// public endpoint. The signature stays valid because S3 SigV4 signs the
+// path, query, and host header — and the AWS SDK signs against the
+// endpoint host. When publicEndpoint is empty (prod, or dev where the
+// backend and clients share a hostname) the URL is returned unchanged.
+//
+// MinIO's SigV4 implementation accepts a host swap when the bucket key
+// and query parameters are preserved; the only effect is that the
+// client now connects to a host it can actually reach (the dev LAN IP)
+// instead of `localhost`.
+func (s *Store) rewritePublic(signed string) string {
+	if s.publicEndpoint == "" {
+		return signed
+	}
+	u, err := url.Parse(signed)
+	if err != nil {
+		return signed
+	}
+	pub, err := url.Parse(s.publicEndpoint)
+	if err != nil {
+		return signed
+	}
+	u.Scheme = pub.Scheme
+	u.Host = pub.Host
+	return u.String()
 }
 
 // PresignUpload returns a pre-signed PUT URL for direct client upload.
