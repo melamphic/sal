@@ -101,16 +101,23 @@ type AISeatCapResolver interface {
 // Title is the short headline ("Administered Meloxicam"); Subtitle is
 // optional context ("7 ml SC · subject 8a3…"). NoteID / SubjectID /
 // EntityID let the FE link back to the source record.
+//
+// SubjectName / NoteTitle are decorated post-merge by the aggregator —
+// adapters don't populate them. The FE uses these to render human-
+// readable chips ("Patient Bella", "Note · Consult intake") instead of
+// truncated UUIDs.
 type ActivityEvent struct {
-	ID         string
-	Source     string // "notes" | "drugs" | "incidents" | "consent" | "pain" | "auth"
-	Kind       string // dotted slug ("drug.administer", "auth.login", …)
-	OccurredAt time.Time
-	Title      string
-	Subtitle   string
-	NoteID     *string
-	SubjectID  *string
-	EntityID   *string
+	ID          string
+	Source      string // "notes" | "drugs" | "incidents" | "consent" | "pain" | "auth"
+	Kind        string // dotted slug ("drug.administer", "auth.login", …)
+	OccurredAt  time.Time
+	Title       string
+	Subtitle    string
+	NoteID      *string
+	SubjectID   *string
+	EntityID    *string
+	SubjectName *string
+	NoteTitle   *string
 }
 
 // ActivitySource is implemented by adapters in app.go (one per domain).
@@ -121,6 +128,19 @@ type ActivityEvent struct {
 type ActivitySource interface {
 	Name() string
 	ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]ActivityEvent, error)
+}
+
+// SubjectNameResolver batch-fetches subject display names. Implemented in
+// app.go by patient.Service. nil = activity rows stay with raw IDs.
+type SubjectNameResolver interface {
+	LookupSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
+// NoteTitleResolver batch-fetches a human label for each note id — the
+// underlying form's name. Implemented in app.go by notes.Service. nil =
+// activity rows stay with raw IDs for the note chip.
+type NoteTitleResolver interface {
+	LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error)
 }
 
 // Service handles all staff business logic.
