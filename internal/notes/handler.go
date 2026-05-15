@@ -3,7 +3,9 @@ package notes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"mime/multipart"
 	"strings"
 	"time"
 
@@ -470,4 +472,156 @@ func looksLikeWrapPrefix(s string) bool {
 		return false
 	}
 	return strings.Contains(s, ".")
+}
+
+// ── Note attachment upload ────────────────────────────────────────────────────
+//
+// Mirrors POST /api/v1/patients/upload-photo: multipart/form-data,
+// single "file" field, 8 MiB cap (larger than patient photos since
+// clinical photos can be higher-resolution wound shots). Allowed types:
+// images + PDF. Returns the freshly-built summary so the FE can append
+// to its in-memory list without a follow-up GetNote.
+
+const maxNoteAttachmentBytes int64 = 8 << 20
+
+type uploadNoteAttachmentInput struct {
+	NoteID  string `path:"note_id" doc:"The note's UUID."`
+	RawBody multipart.Form
+}
+
+type uploadNoteAttachmentResponse struct {
+	Body *NoteAttachmentSummary
+}
+
+func isAllowedNoteAttachmentType(ct string) bool {
+	switch ct {
+	case "image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic",
+		"application/pdf":
+		return true
+	}
+	return false
+}
+
+// uploadNoteAttachment handles POST /api/v1/notes/{note_id}/upload-attachment.
+func (h *Handler) uploadNoteAttachment(ctx context.Context, input *uploadNoteAttachmentInput) (*uploadNoteAttachmentResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("missing form field \"file\"")
+	}
+	hdr := files[0]
+	if hdr.Size > maxNoteAttachmentBytes {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("attachment too large (max %d bytes)", maxNoteAttachmentBytes))
+	}
+
+	contentType := hdr.Header.Get("Content-Type")
+	if !isAllowedNoteAttachmentType(contentType) {
+		return nil, huma.Error415UnsupportedMediaType("attachment must be png, jpeg, webp, heic or pdf")
+	}
+
+	f, err := hdr.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("could not read uploaded file")
+	}
+	defer func() { _ = f.Close() }()
+
+	summary, err := h.svc.UploadNoteAttachment(ctx, noteID, clinicID, staffID, contentType, f, hdr.Size)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &uploadNoteAttachmentResponse{Body: summary}, nil
+}
+
+// ── Note attachment list + delete ────────────────────────────────────────────
+
+type listNoteAttachmentsResponse struct {
+	Body *struct {
+		Items []*NoteAttachmentSummary `json:"items"`
+	}
+}
+
+// listNoteAttachments handles GET /api/v1/notes/{note_id}/attachments.
+// Most callers read attachments via GetNote (which embeds them), but
+// the dedicated endpoint exists for re-polling without the rest of the
+// note payload (e.g. after a delete).
+func (h *Handler) listNoteAttachments(ctx context.Context, input *noteIDInput) (*listNoteAttachmentsResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+	items, err := h.svc.ListNoteAttachments(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	out := &listNoteAttachmentsResponse{}
+	out.Body = &struct {
+		Items []*NoteAttachmentSummary `json:"items"`
+	}{Items: items}
+	return out, nil
+}
+
+type deleteNoteAttachmentInput struct {
+	NoteID       string `path:"note_id"       doc:"The note's UUID."`
+	AttachmentID string `path:"attachment_id" doc:"The attachment's UUID."`
+}
+
+type deleteNoteAttachmentResponse struct {
+	Body *struct {
+		Archived bool `json:"archived"`
+	}
+}
+
+// deleteNoteAttachment handles DELETE /api/v1/notes/{note_id}/attachments/{attachment_id}.
+// Permission rule: pre-submit, the uploader can delete; post-submit
+// (or for any other uploader's row) the caller must hold manageNotes —
+// matched against the staff's permission set. Note that
+// SubmittedAt-presence is the gate, not Status alone, because a
+// note can transition into 'overriding' after submit and still has
+// SubmittedAt set.
+func (h *Handler) deleteNoteAttachment(ctx context.Context, input *deleteNoteAttachmentInput) (*deleteNoteAttachmentResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	staffID := mw.StaffIDFromContext(ctx)
+
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+	attachmentID, err := uuid.Parse(input.AttachmentID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid attachment_id")
+	}
+
+	// Permission gate. The handler does the check, not the service,
+	// because perms are HTTP-layer concerns (manageNotes vs uploader).
+	rec, err := h.svc.GetNoteAttachment(ctx, attachmentID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	if rec.NoteID != noteID {
+		// Don't leak existence across notes.
+		return nil, huma.Error404NotFound("attachment not found")
+	}
+
+	perms := mw.PermissionsFromContext(ctx)
+	if rec.UploadedBy != staffID && !perms.ManageStaff {
+		// Other people's attachments require admin perms.
+		return nil, huma.Error403Forbidden("only the uploader or an admin can delete this attachment")
+	}
+
+	if err := h.svc.ArchiveNoteAttachment(ctx, attachmentID, clinicID); err != nil {
+		return nil, mapNoteError(err)
+	}
+	out := &deleteNoteAttachmentResponse{}
+	out.Body = &struct {
+		Archived bool `json:"archived"`
+	}{Archived: true}
+	return out, nil
 }
