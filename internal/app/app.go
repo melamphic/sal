@@ -514,6 +514,12 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	notesSvc.SetNoteCapEnforcer(noteCapSvc)
 	notesSvc.SetPDFRenderer(pdfRenderer)
 	pdfRenderer.SetService(notesSvc)
+	// Note attachments (photos + PDFs): storage adapter mints + re-signs
+	// keys under note-attachments/{clinic_id}/. URLs re-signed on every
+	// GetNote so clients never hold stale links.
+	noteAttachAdapter := &noteAttachmentAdapter{store: store}
+	notesSvc.SetAttachmentUploader(noteAttachAdapter)
+	notesSvc.SetAttachmentSigner(noteAttachAdapter)
 	notesHandler := notes.NewHandler(notesSvc, store)
 
 	// ── Timeline module ───────────────────────────────────────────────────────
@@ -1666,6 +1672,44 @@ func (a *subjectPhotoAdapter) UploadSubjectPhoto(ctx context.Context, clinicID u
 	url, err := a.store.PresignDownload(ctx, key, time.Hour)
 	if err != nil {
 		return "", "", fmt.Errorf("app.subjectPhotoAdapter.UploadSubjectPhoto: presign: %w", err)
+	}
+	return key, url, nil
+}
+
+// noteAttachmentAdapter implements notes.AttachmentUploader and
+// notes.AttachmentSigner against platform/storage. Attachments live
+// under note-attachments/{clinic_id}/ so they stay distinct from every
+// other artifact bucket. Accepts images + PDF; extension picked from
+// content-type so the storage key carries the right suffix for tooling.
+type noteAttachmentAdapter struct {
+	store *storage.Store
+}
+
+func (a *noteAttachmentAdapter) SignNoteAttachment(ctx context.Context, key string) (string, error) {
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", fmt.Errorf("app.noteAttachmentAdapter.SignNoteAttachment: %w", err)
+	}
+	return url, nil
+}
+
+func (a *noteAttachmentAdapter) UploadNoteAttachment(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (string, string, error) {
+	ext := logoExtForContentType(contentType)
+	if ext == "" {
+		switch contentType {
+		case "image/heic":
+			ext = ".heic"
+		case "application/pdf":
+			ext = ".pdf"
+		}
+	}
+	key := fmt.Sprintf("note-attachments/%s/%s%s", clinicID, domain.NewID(), ext)
+	if err := a.store.Upload(ctx, key, contentType, body, size); err != nil {
+		return "", "", fmt.Errorf("app.noteAttachmentAdapter.UploadNoteAttachment: upload: %w", err)
+	}
+	url, err := a.store.PresignDownload(ctx, key, time.Hour)
+	if err != nil {
+		return "", "", fmt.Errorf("app.noteAttachmentAdapter.UploadNoteAttachment: presign: %w", err)
 	}
 	return key, url, nil
 }
