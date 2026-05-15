@@ -352,6 +352,10 @@ func (f *fakeRepo) WriteMaterialisedPointer(_ context.Context, _, _, _ uuid.UUID
 	return domain.ErrNotFound
 }
 
+func (f *fakeRepo) LookupFormNamesByNoteIDs(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]string, error) {
+	return map[uuid.UUID]string{}, nil
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 func cloneNote(n *NoteRecord) *NoteRecord {
