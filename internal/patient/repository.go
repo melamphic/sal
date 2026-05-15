@@ -1793,3 +1793,34 @@ func (r *Repository) ListSubjectContacts(
 	}
 	return out, nil
 }
+
+// LookupDisplayNames returns the `display_name` for each non-archived
+// subject id, scoped to the clinic. Missing or archived ids are simply
+// absent from the map — callers must tolerate a partial result.
+func (r *Repository) LookupDisplayNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id, display_name
+		FROM subjects
+		WHERE clinic_id = $1 AND id = ANY($2) AND archived_at IS NULL
+	`, clinicID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.LookupDisplayNames: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]string, len(ids))
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("patient.repo.LookupDisplayNames: scan: %w", err)
+		}
+		out[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("patient.repo.LookupDisplayNames: rows: %w", err)
+	}
+	return out, nil
+}
