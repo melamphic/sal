@@ -772,6 +772,41 @@ func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParam
 	return f, nil
 }
 
+// LookupFormNamesByNoteIDs returns, for each note id, the title of the
+// form it was authored against (`notes → form_versions → forms.name`).
+// Missing/archived ids are absent. Single round-trip — used by cross-
+// domain feeds (staff activity) to decorate notes with a human-readable
+// label instead of a raw UUID.
+func (r *Repository) LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(noteIDs) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT n.id, f.name
+		FROM notes n
+		JOIN form_versions fv ON fv.id = n.form_version_id
+		JOIN forms f          ON f.id  = fv.form_id
+		WHERE n.clinic_id = $1 AND n.id = ANY($2)
+	`, clinicID, noteIDs)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]string, len(noteIDs))
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: scan: %w", err)
+		}
+		out[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: rows: %w", err)
+	}
+	return out, nil
+}
+
 // ── Scan helpers ──────────────────────────────────────────────────────────────
 
 type scannable interface {
