@@ -149,11 +149,13 @@ type Service struct {
 	cipher          *crypto.Cipher
 	mailer          mailer.Mailer
 	appURL          string
-	invites         InviteCreator      // nil = invite tokens not created (test mode)
-	clinics         ClinicNameProvider // nil = clinic name omitted from emails (test mode)
-	tier            TierReconciler     // nil = tier auto-derivation off
-	seatCaps        AISeatCapResolver  // nil = AI-seat cap enforcement off
-	activitySources []ActivitySource   // registered cross-domain feeders
+	invites         InviteCreator       // nil = invite tokens not created (test mode)
+	clinics         ClinicNameProvider  // nil = clinic name omitted from emails (test mode)
+	tier            TierReconciler      // nil = tier auto-derivation off
+	seatCaps        AISeatCapResolver   // nil = AI-seat cap enforcement off
+	activitySources []ActivitySource    // registered cross-domain feeders
+	subjectNames    SubjectNameResolver // nil = activity rows return raw subject IDs
+	noteTitles      NoteTitleResolver   // nil = activity rows return raw note IDs
 }
 
 // NewService creates a new staff Service.
@@ -166,6 +168,14 @@ func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string
 // signature stable.
 func (s *Service) SetTierReconciler(t TierReconciler) {
 	s.tier = t
+}
+
+// SetActivityNameResolvers wires the post-merge decorators that turn
+// activity-row IDs into human-readable chips on the FE. Both are
+// optional — when absent the FE falls back to a truncated UUID.
+func (s *Service) SetActivityNameResolvers(subj SubjectNameResolver, note NoteTitleResolver) {
+	s.subjectNames = subj
+	s.noteTitles = note
 }
 
 // RegisterActivitySource adds a cross-domain feeder for the per-staff
