@@ -50,6 +50,9 @@ type NoteRecord struct {
 	PDFStorageKey          *string // S3 key; nil until PDF generated after submit
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	// FormVersionLabel is populated only by ListNotes (via JOIN). Nil for
+	// single-note fetches. e.g. "v1.2" for published, "Draft" for draft.
+	FormVersionLabel *string
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
@@ -204,39 +207,58 @@ func (r *Repository) GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*
 	return rec, nil
 }
 
+// noteListCols is the SELECT column list for ListNotes. It extends noteCols
+// with a LEFT JOIN on form_versions to derive a human-readable version label
+// ("v1.2" for published, "Draft" for drafts). All notes columns are qualified
+// with "n." to avoid ambiguity with the joined table's id/created_at columns.
+const noteListCols = `n.id, n.clinic_id, n.recording_id, n.form_version_id, n.subject_id, n.created_by,
+	n.status, n.error_message, n.reviewed_by, n.reviewed_at, n.submitted_at, n.submitted_by,
+	n.archived_at, n.form_version_context, n.policy_alignment_pct, n.policy_check_result::text,
+	n.override_reason, n.override_by, n.override_at,
+	n.override_unlocked_at, n.override_unlocked_by, n.override_unlocked_reason, n.override_count,
+	n.pdf_storage_key, n.created_at, n.updated_at,
+	CASE
+		WHEN fv.version_major IS NOT NULL AND fv.version_minor IS NOT NULL
+			THEN 'v' || fv.version_major::text || '.' || fv.version_minor::text
+		ELSE 'Draft'
+	END AS form_version_label`
+
 // ListNotes returns a paginated list of notes for a clinic.
 // Archived notes are excluded by default; set IncludeArchived to include them.
 func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error) {
 	args := []any{clinicID}
-	where := "clinic_id = $1"
+	where := "n.clinic_id = $1"
 
 	if !p.IncludeArchived {
-		where += " AND archived_at IS NULL"
+		where += " AND n.archived_at IS NULL"
 	}
 	if p.RecordingID != nil {
 		args = append(args, *p.RecordingID)
-		where += fmt.Sprintf(" AND recording_id = $%d", len(args))
+		where += fmt.Sprintf(" AND n.recording_id = $%d", len(args))
 	}
 	if p.SubjectID != nil {
 		args = append(args, *p.SubjectID)
-		where += fmt.Sprintf(" AND subject_id = $%d", len(args))
+		where += fmt.Sprintf(" AND n.subject_id = $%d", len(args))
 	}
 	if p.Status != nil {
 		args = append(args, string(*p.Status))
-		where += fmt.Sprintf(" AND status = $%d", len(args))
+		where += fmt.Sprintf(" AND n.status = $%d", len(args))
 	}
 
 	var total int
-	countQ := fmt.Sprintf("SELECT COUNT(*) FROM notes WHERE %s", where)
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM notes n WHERE %s", where)
 	if err := r.db.QueryRow(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("notes.repo.ListNotes: count: %w", err)
 	}
 
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
-		SELECT %s FROM notes WHERE %s
-		ORDER BY created_at DESC
-		LIMIT $%d OFFSET $%d`, noteCols, where, len(args)-1, len(args))
+		SELECT %s
+		FROM notes n
+		LEFT JOIN form_versions fv ON fv.id = n.form_version_id
+		WHERE %s
+		ORDER BY n.created_at DESC
+		LIMIT $%d OFFSET $%d`, noteListCols, where, len(args)-1, len(args))
 
 	rows, err := r.db.Query(ctx, listQ, args...)
 	if err != nil {
@@ -246,7 +268,7 @@ func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNo
 
 	var list []*NoteRecord
 	for rows.Next() {
-		n, err := scanNote(rows)
+		n, err := scanNoteWithLabel(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("notes.repo.ListNotes: %w", err)
 		}
