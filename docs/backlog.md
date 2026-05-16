@@ -4,6 +4,87 @@ Items deferred or planned for future phases. Ordered by dependency and complexit
 
 ---
 
+## Known Bugs
+
+Real bugs in the API contract that don't bite running clinics today but compound debt and will surface when the next caller (mobile, automation, compliance flows) lands.
+
+### COALESCE update deadlock — `internal/patient/repository.go`
+
+**The issue.** Every partial-update query in the patient module uses `COALESCE($1, column_name)` for nullable columns: `UpdateSubject`, `UpdateContact`, `UpdateVetDetails`, `UpdateDentalDetails`, `UpdateGeneralDetails`, `UpdateAgedCareDetails`. The pattern collapses two different intents — "leave alone" and "clear to NULL" — into the same wire shape (nil `*T`), so the column becomes immutable to NULL.
+
+**Affected columns (non-exhaustive).**
+
+- `subjects`: `photo_url`, `contact_id`
+- `contacts`: `phone`, `email`, `address`
+- `vet_subject_details`: `microchip`, `weight_kg`, `date_of_birth`, `desexed`, `sex`, `color`, `allergies` (encrypted), `chronic_conditions` (encrypted), `admission_warnings`, `insurance_provider_name`, `insurance_policy_number` (encrypted), `referring_vet_name`
+- `dental_subject_details`, `general_subject_details`, `aged_care_subject_details`: same shape, similar field lists.
+
+**Why it doesn't bite today.**
+
+- Web frontend writes `""` instead of `null` for string clears, so `COALESCE("", col)` writes empty string — visually cleared, even though the DB has `''` not `NULL`.
+- `_sameValue` in `subject_details_card.dart:407-413` treats empty/null as equal, so frontend never even sends `null` for typed-null fields (`weight_kg`, `date_of_birth`, …) — the diff is empty, no patch goes out.
+- UUID column `contact_id` has no frontend "unlink contact" path yet.
+
+**Where it will bite.**
+
+- Mobile app once it ships with explicit "Remove" buttons that send real `null`.
+- Bulk-import / migration scripts that send `{"weight_kg": null}` to reset.
+- GDPR right-to-erasure workflows that need `phone = NULL` distinct from `phone = ''` for audit-log purity.
+- Any future frontend feature with a real "clear" UI gesture.
+
+**Recommended fix.** `Patch[T]` tri-state pattern (option A from review):
+
+```go
+type Patch[T any] struct {
+    Defined bool   // = true if key was present in the request body
+    Value   *T     // nil + Defined=true = clear to NULL
+}
+```
+
+with a custom `UnmarshalJSON` so JSON `null` ↔ `Defined=true, Value=nil`, JSON value ↔ `Defined=true, Value=&v`, absent key ↔ `Defined=false`. Repo builds the SET clause dynamically from defined fields only — no more COALESCE.
+
+**Estimated effort.** 5-6 hours focused (half-day clean, full-day if encrypted-field branches turn out gnarlier than expected). Touches: `patch.go` (new), 6 update repo functions, 6 service mappers, 6 handler DTOs, ~8 new clear-path tests. Frontend cleanup (drop `_sameValue` fudge, send real nulls) is a separate ~1 hour follow-up.
+
+**Tripwire to do it.** First real product driver — mobile clear UX, compliance audit, automation import — wins ship date. Don't refactor speculatively.
+
+### Note field values land as literal string `"null"` — `internal/notes` extraction path
+
+**The issue.** Empty extracted fields sometimes get persisted as the JSON string `"null"` (4 chars) instead of JSON literal `null`. Surfaces as `"null · null · null"` in the patient page "Last note" excerpt when joined with `· `.
+
+**Where it's masked.** Frontend filter in `note_summary.dart:139` drops literal `"null"`/`"undefined"` strings from the excerpt — covers the visible symptom.
+
+**Root cause (not yet traced).** Likely the extraction adapter writes `fmt.Sprintf("%v", val)` or similar over a nil interface somewhere in the LLM-response → field-value mapping. Worth grepping the extraction provider implementations for unguarded `%v` or string-coerced JSON-null handling.
+
+**Effort.** ~1-2 hours to trace + fix. Frontend filter stays as belt-and-braces.
+
+### VetSpecies enum doesn't cover mixed / production-animal practice
+
+**The issue.** `domain.VetSpecies` (`internal/domain/types.go:79-84`) has `dog`, `cat`, `bird`, `rabbit`, `reptile`, `other`. Mixed-practice + production-animal categories — `equine`, `bovine`, `ovine`, `caprine`, `porcine` — fall through to `other` and lose species-specific affordances downstream (drug formulary lookups, age-of-onset defaults, regulator-specific reporting forms).
+
+**Why it's deferred.** Product-scope decision, not a code bug. Companion-animal-only is the canonical target — `other` is the catch-all for the rare horse. Becomes a real gap only when Salvia goes after mixed practice (rural NZ/AU/UK) or production-vet workflows.
+
+**Effort.** Tiny when triggered. Enum is stored as TEXT — no migration. Add the Go consts + extend the validation switch + extend any species-specific UI dropdown:
+
+```go
+VetSpeciesEquine  VetSpecies = "equine"
+VetSpeciesBovine  VetSpecies = "bovine"
+VetSpeciesOvine   VetSpecies = "ovine"
+VetSpeciesCaprine VetSpecies = "caprine"
+VetSpeciesPorcine VetSpecies = "porcine"
+```
+
+**Tripwire.** First mixed-practice or production-vet customer pilot.
+
+### Notes module lacks name resolution on `NoteResponse`
+
+**The issue.** `internal/notes/service.go` `NoteResponse` ships UUID strings for `SubjectID`, `FormVersionID`, `CreatedBy` but no resolved display names — unlike `forms` which resolves staff/form names server-side. Frontend's "Last note" card currently hardcodes `"By staff · tap to open"` (see `last_note_card.dart:134` TODO).
+
+**Recommended fix.** Add a `staff_name_resolver` adapter to `notes.Service` (mirror the policy-ownership-verifier pattern in `forms.Service`). Resolve `created_by → staff_display_name` server-side. For the "Last note" card we only need `created_by_name`; deeper resolution (form, subject) can wait.
+
+**Effort.** 1-2 hours backend + 15 min frontend.
+
+---
+
 ## Completed (previously deferred)
 
 These items were listed as backlog but are now implemented:
