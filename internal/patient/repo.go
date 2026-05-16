@@ -75,6 +75,12 @@ type repo interface {
 	// ListSubjectsByContact returns all active subjects for a given contact.
 	ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error)
 
+	// LookupDisplayNames batches a display_name fetch for the given subject
+	// ids in a single round-trip. Missing/archived ids are absent from the
+	// returned map — used by cross-domain feeds (e.g. staff activity) that
+	// need to decorate IDs with human-readable names.
+	LookupDisplayNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+
 	// ── Subject ↔ contact links (many-to-many with roles) ─────────────────────
 
 	// CreateSubjectContact adds a (subject, contact, role) binding.

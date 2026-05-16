@@ -23,6 +23,13 @@ import (
 
 // Store is an S3-compatible object store client.
 // Use New to construct one from application config.
+//
+// `client` talks to the storage endpoint the backend can reach
+// (`http://localhost:9000` in dev, or the R2/S3 endpoint in prod).
+// `presign` signs URLs against the public endpoint clients hit — same
+// host as `client` except in dev where physical devices on the LAN
+// can't reach `localhost`. SigV4 signs the Host header so the two
+// must use distinct clients; we can't post-process the URL.
 type Store struct {
 	client  *s3.Client
 	presign *s3.PresignClient
@@ -61,9 +68,21 @@ func New(cfg *config.Config) (*Store, error) {
 		}
 	})
 
+	// Separate signer when STORAGE_PUBLIC_ENDPOINT is set — SigV4
+	// signs the Host header, so presigned URLs must be minted against
+	// the host the client will actually connect to.
+	presignClient := s3.NewPresignClient(client)
+	if cfg.StoragePublicEndpoint != "" && cfg.StoragePublicEndpoint != cfg.StorageEndpoint {
+		publicS3 := s3.NewFromConfig(sdkCfg, func(o *s3.Options) {
+			o.UsePathStyle = cfg.StorageUsePathStyle
+			o.BaseEndpoint = aws.String(cfg.StoragePublicEndpoint)
+		})
+		presignClient = s3.NewPresignClient(publicS3)
+	}
+
 	return &Store{
 		client:  client,
-		presign: s3.NewPresignClient(client),
+		presign: presignClient,
 		bucket:  cfg.StorageBucket,
 	}, nil
 }

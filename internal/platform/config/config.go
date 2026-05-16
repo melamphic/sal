@@ -48,6 +48,14 @@ type Config struct {
 	StorageRegion       string `env:"STORAGE_REGION,default=ap-southeast-2"`
 	StorageUsePathStyle bool   `env:"STORAGE_USE_PATH_STYLE,default=true"`
 
+	// Optional: host clients should hit when fetching signed URLs. Falls
+	// back to StorageEndpoint when empty. Set in dev when the backend
+	// reaches MinIO on `http://localhost:9000` but a physical device on
+	// the LAN needs the dev machine's IP, e.g. `http://192.168.1.42:9000`.
+	// In prod (R2 / S3) this stays empty — the storage endpoint is
+	// already public.
+	StoragePublicEndpoint string `env:"STORAGE_PUBLIC_ENDPOINT"`
+
 	// Transcription provider — "deepgram" (production) or "gemini" (dev/staging, free tier).
 	// deepgram: uses Deepgram Nova-3 Medical; requires DEEPGRAM_API_KEY.
 	// gemini:   uses Gemini audio understanding; requires GEMINI_API_KEY; no word-level confidence.

@@ -10,9 +10,10 @@ import (
 
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
 type fakeRepo struct {
-	mu     sync.RWMutex
-	notes  map[uuid.UUID]*NoteRecord
-	fields map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
+	mu          sync.RWMutex
+	notes       map[uuid.UUID]*NoteRecord
+	fields      map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
+	attachments []*NoteAttachmentRecord
 }
 
 func newFakeRepo() *fakeRepo {
@@ -349,6 +350,58 @@ func (f *fakeRepo) ListSystemFieldStates(_ context.Context, _, _ uuid.UUID) ([]N
 }
 
 func (f *fakeRepo) WriteMaterialisedPointer(_ context.Context, _, _, _ uuid.UUID, _ string) error {
+	return domain.ErrNotFound
+}
+
+func (f *fakeRepo) LookupFormNamesByNoteIDs(_ context.Context, _ uuid.UUID, _ []uuid.UUID) (map[uuid.UUID]string, error) {
+	return map[uuid.UUID]string{}, nil
+}
+
+func (f *fakeRepo) InsertAttachment(_ context.Context, p CreateAttachmentParams) (*NoteAttachmentRecord, error) {
+	rec := &NoteAttachmentRecord{
+		ID: p.ID, ClinicID: p.ClinicID, NoteID: p.NoteID, Kind: p.Kind,
+		S3Key: p.S3Key, ContentType: p.ContentType, Bytes: p.Bytes,
+		UploadedBy: p.UploadedBy, UploadedAt: domain.TimeNow(),
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.attachments = append(f.attachments, rec)
+	return rec, nil
+}
+
+func (f *fakeRepo) ListAttachmentsByNote(_ context.Context, noteID, clinicID uuid.UUID) ([]*NoteAttachmentRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	out := make([]*NoteAttachmentRecord, 0)
+	for _, a := range f.attachments {
+		if a.NoteID == noteID && a.ClinicID == clinicID && a.ArchivedAt == nil {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeRepo) GetAttachment(_ context.Context, id, clinicID uuid.UUID) (*NoteAttachmentRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, a := range f.attachments {
+		if a.ID == id && a.ClinicID == clinicID && a.ArchivedAt == nil {
+			return a, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRepo) ArchiveAttachment(_ context.Context, id, clinicID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, a := range f.attachments {
+		if a.ID == id && a.ClinicID == clinicID && a.ArchivedAt == nil {
+			now := domain.TimeNow()
+			a.ArchivedAt = &now
+			return nil
+		}
+	}
 	return domain.ErrNotFound
 }
 

@@ -20,12 +20,21 @@ type PhotoUploader interface {
 	UploadSubjectPhoto(ctx context.Context, clinicID uuid.UUID, contentType string, body io.Reader, size int64) (key, url string, err error)
 }
 
+// PhotoSigner mints a short-lived signed download URL from a stored
+// photo key. Implemented in app.go via platform/storage; called every
+// time the service builds a SubjectResponse so photo URLs never expire
+// from the client's perspective.
+type PhotoSigner interface {
+	SignSubjectPhoto(ctx context.Context, key string) (string, error)
+}
+
 // Service handles all business logic for the patient module.
 // It has no knowledge of HTTP — inputs and outputs are plain Go types.
 type Service struct {
 	repo          repo
 	cipher        *crypto.Cipher
 	photoUploader PhotoUploader // nil = photo upload disabled
+	photoSigner   PhotoSigner   // nil = serve raw stored URL (legacy rows)
 }
 
 // NewService creates a new patient Service.
@@ -39,6 +48,32 @@ func NewService(r repo, cipher *crypto.Cipher) *Service {
 // URL field.
 func (s *Service) SetPhotoUploader(u PhotoUploader) {
 	s.photoUploader = u
+}
+
+// SetPhotoSigner wires the read-side adapter that turns a stored
+// photo_key into a freshly signed URL on every subject read. Optional
+// in tests; required in prod for new photos to display.
+func (s *Service) SetPhotoSigner(p PhotoSigner) {
+	s.photoSigner = p
+}
+
+// resolveSubjectPhotoURL returns the URL the client should render for
+// a subject. Prefers a freshly signed URL from photo_key (durable);
+// falls back to the legacy photo_url column for any row that predates
+// the photo_key migration.
+func (s *Service) resolveSubjectPhotoURL(ctx context.Context, key, legacyURL *string) *string {
+	if key != nil && *key != "" && s.photoSigner != nil {
+		signed, err := s.photoSigner.SignSubjectPhoto(ctx, *key)
+		if err == nil && signed != "" {
+			return &signed
+		}
+		// Signer error: fall through to legacy URL so the row still
+		// renders something instead of going blank.
+	}
+	if legacyURL != nil && *legacyURL != "" {
+		return legacyURL
+	}
+	return nil
 }
 
 // UploadSubjectPhoto streams [body] (already size-validated by the
@@ -216,12 +251,16 @@ type UpdateContactInput struct {
 
 // CreateSubjectInput holds validated input for creating a subject.
 // Each vertical requires its own details struct to be populated.
+// PhotoKey is preferred over PhotoURL — new clients upload via
+// `POST /patients/upload-photo`, get back a durable key, and send the
+// key here. The service signs a URL on every read.
 type CreateSubjectInput struct {
 	ClinicID        uuid.UUID
 	CallerID        uuid.UUID
 	Vertical        domain.Vertical
 	DisplayName     string
-	PhotoURL        *string
+	PhotoURL        *string // legacy fallback
+	PhotoKey        *string // preferred
 	ContactID       *uuid.UUID // optional — can be linked later
 	VetDetails      *VetDetailsInput
 	DentalDetails   *DentalDetailsInput
@@ -311,7 +350,8 @@ type AgedCareDetailsInput struct {
 type UpdateSubjectInput struct {
 	DisplayName     *string
 	Status          *domain.SubjectStatus
-	PhotoURL        *string
+	PhotoURL        *string // legacy fallback
+	PhotoKey        *string // preferred
 	VetDetails      *UpdateVetDetailsInput
 	DentalDetails   *UpdateDentalDetailsInput
 	GeneralDetails  *UpdateGeneralDetailsInput
@@ -483,7 +523,7 @@ func (s *Service) GetContactWithSubjects(ctx context.Context, id, clinicID uuid.
 
 	subjects := make([]*SubjectResponse, 0, len(rows))
 	for _, row := range rows {
-		dto, err := s.decryptSubject(row)
+		dto, err := s.decryptSubject(ctx, row)
 		if err != nil {
 			return nil, fmt.Errorf("patient.service.GetContactWithSubjects: %w", err)
 		}
@@ -514,6 +554,18 @@ func (s *Service) ListContacts(ctx context.Context, clinicID uuid.UUID, limit, o
 	}
 
 	return &ContactListResponse{Items: items, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// LookupSubjectNames batches a display-name fetch for the given subject
+// ids. Empty input returns an empty map. Missing/archived ids are simply
+// absent from the result. Intended for cross-domain feeds (e.g. staff
+// activity) that need to decorate subject IDs with human-readable names.
+func (s *Service) LookupSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	out, err := s.repo.LookupDisplayNames(ctx, clinicID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("patient.service.LookupSubjectNames: %w", err)
+	}
+	return out, nil
 }
 
 // ArchiveContact soft-deletes a contact. Fails with ErrConflict if the
@@ -596,6 +648,7 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		Status:      domain.SubjectStatusActive,
 		Vertical:    input.Vertical,
 		PhotoURL:    input.PhotoURL,
+		PhotoKey:    input.PhotoKey,
 		CreatedBy:   input.CallerID,
 	})
 	if err != nil {
@@ -794,7 +847,7 @@ func (s *Service) CreateSubject(ctx context.Context, input CreateSubjectInput) (
 		return nil, fmt.Errorf("patient.service.CreateSubject: %w", err)
 	}
 
-	return s.decryptSubject(&SubjectRow{
+	return s.decryptSubject(ctx, &SubjectRow{
 		Subject:         *subjectRec,
 		Contact:         contactRec,
 		VetDetails:      vetDetails,
@@ -821,7 +874,7 @@ func (s *Service) GetSubjectByID(ctx context.Context, id, clinicID, callerID uui
 		return nil, fmt.Errorf("patient.service.GetSubjectByID: %w", err)
 	}
 
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // GetSubjectForRender fetches and decrypts a subject for system-driven
@@ -834,7 +887,7 @@ func (s *Service) GetSubjectForRender(ctx context.Context, id, clinicID uuid.UUI
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
 	}
-	dto, err := s.decryptSubject(row)
+	dto, err := s.decryptSubject(ctx, row)
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.GetSubjectForRender: %w", err)
 	}
@@ -871,7 +924,7 @@ func (s *Service) ListSubjects(ctx context.Context, clinicID uuid.UUID, input Li
 
 	items := make([]*SubjectResponse, 0, len(rows))
 	for _, row := range rows {
-		dto, err := s.decryptSubject(row)
+		dto, err := s.decryptSubject(ctx, row)
 		if err != nil {
 			return nil, fmt.Errorf("patient.service.ListSubjects: %w", err)
 		}
@@ -892,6 +945,7 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 		DisplayName: input.DisplayName,
 		Status:      input.Status,
 		PhotoURL:    input.PhotoURL,
+		PhotoKey:    input.PhotoKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: %w", err)
@@ -1076,7 +1130,7 @@ func (s *Service) UpdateSubject(ctx context.Context, id, clinicID, callerID uuid
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.UpdateSubject: refetch: %w", err)
 	}
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // LinkContact links a contact to a subject that was created without one.
@@ -1098,7 +1152,7 @@ func (s *Service) LinkContact(ctx context.Context, subjectID, clinicID, contactI
 	if err != nil {
 		return nil, fmt.Errorf("patient.service.LinkContact: refetch: %w", err)
 	}
-	return s.decryptSubject(row)
+	return s.decryptSubject(ctx, row)
 }
 
 // ArchiveSubject soft-deletes a subject.
@@ -1110,7 +1164,7 @@ func (s *Service) ArchiveSubject(ctx context.Context, id, clinicID, callerID uui
 	if err := s.logAccess(ctx, id, clinicID, callerID, domain.SubjectAccessActionArchive, nil); err != nil {
 		return nil, fmt.Errorf("patient.service.ArchiveSubject: %w", err)
 	}
-	return s.decryptSubject(&SubjectRow{Subject: *rec})
+	return s.decryptSubject(ctx, &SubjectRow{Subject: *rec})
 }
 
 // ── Subject ↔ contact link methods ────────────────────────────────────────────
@@ -1244,14 +1298,18 @@ func (s *Service) decryptContact(rec *ContactRecord) (*ContactResponse, error) {
 	return dto, nil
 }
 
-func (s *Service) decryptSubject(row *SubjectRow) (*SubjectResponse, error) {
+func (s *Service) decryptSubject(ctx context.Context, row *SubjectRow) (*SubjectResponse, error) {
 	dto := &SubjectResponse{
 		ID:          row.Subject.ID.String(),
 		ClinicID:    row.Subject.ClinicID.String(),
 		DisplayName: row.Subject.DisplayName,
 		Status:      row.Subject.Status,
 		Vertical:    row.Subject.Vertical,
-		PhotoURL:    row.Subject.PhotoURL,
+		PhotoURL: s.resolveSubjectPhotoURL(
+			ctx,
+			row.Subject.PhotoKey,
+			row.Subject.PhotoURL,
+		),
 		CreatedBy:   row.Subject.CreatedBy.String(),
 		CreatedAt:   row.Subject.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:   row.Subject.UpdatedAt.Format(time.RFC3339),

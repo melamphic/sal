@@ -772,6 +772,41 @@ func (r *Repository) UpdateNoteField(ctx context.Context, p UpdateNoteFieldParam
 	return f, nil
 }
 
+// LookupFormNamesByNoteIDs returns, for each note id, the title of the
+// form it was authored against (`notes → form_versions → forms.name`).
+// Missing/archived ids are absent. Single round-trip — used by cross-
+// domain feeds (staff activity) to decorate notes with a human-readable
+// label instead of a raw UUID.
+func (r *Repository) LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(noteIDs) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT n.id, f.name
+		FROM notes n
+		JOIN form_versions fv ON fv.id = n.form_version_id
+		JOIN forms f          ON f.id  = fv.form_id
+		WHERE n.clinic_id = $1 AND n.id = ANY($2)
+	`, clinicID, noteIDs)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]string, len(noteIDs))
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: scan: %w", err)
+		}
+		out[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.LookupFormNamesByNoteIDs: rows: %w", err)
+	}
+	return out, nil
+}
+
 // ── Scan helpers ──────────────────────────────────────────────────────────────
 
 type scannable interface {
@@ -815,4 +850,125 @@ func scanField(row scannable) (*NoteFieldRecord, error) {
 		return nil, fmt.Errorf("scanField: %w", err)
 	}
 	return &f, nil
+}
+
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+// NoteAttachmentRecord is the raw database representation of a
+// note_attachments row.
+type NoteAttachmentRecord struct {
+	ID          uuid.UUID
+	ClinicID    uuid.UUID
+	NoteID      uuid.UUID
+	Kind        string
+	S3Key       string
+	ContentType string
+	Bytes       int64
+	UploadedBy  uuid.UUID
+	UploadedAt  time.Time
+	ArchivedAt  *time.Time
+}
+
+// CreateAttachmentParams is the payload for InsertAttachment.
+type CreateAttachmentParams struct {
+	ID          uuid.UUID
+	ClinicID    uuid.UUID
+	NoteID      uuid.UUID
+	Kind        string
+	S3Key       string
+	ContentType string
+	Bytes       int64
+	UploadedBy  uuid.UUID
+}
+
+const attachmentCols = `id, clinic_id, note_id, kind, s3_key, content_type, bytes, uploaded_by, uploaded_at, archived_at`
+
+// InsertAttachment writes a new note_attachments row.
+func (r *Repository) InsertAttachment(ctx context.Context, p CreateAttachmentParams) (*NoteAttachmentRecord, error) {
+	q := fmt.Sprintf(`
+		INSERT INTO note_attachments (id, clinic_id, note_id, kind, s3_key, content_type, bytes, uploaded_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING %s`, attachmentCols)
+	row := r.db.QueryRow(ctx, q,
+		p.ID, p.ClinicID, p.NoteID, p.Kind, p.S3Key, p.ContentType, p.Bytes, p.UploadedBy,
+	)
+	rec, err := scanAttachment(row)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.InsertAttachment: %w", err)
+	}
+	return rec, nil
+}
+
+// ListAttachmentsByNote returns all non-archived attachments for a note,
+// newest first.
+func (r *Repository) ListAttachmentsByNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*NoteAttachmentRecord, error) {
+	rows, err := r.db.Query(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM note_attachments
+		WHERE note_id = $1 AND clinic_id = $2 AND archived_at IS NULL
+		ORDER BY uploaded_at DESC
+	`, attachmentCols), noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ListAttachmentsByNote: query: %w", err)
+	}
+	defer rows.Close()
+	out := make([]*NoteAttachmentRecord, 0)
+	for rows.Next() {
+		rec, err := scanAttachment(rows)
+		if err != nil {
+			return nil, fmt.Errorf("notes.repo.ListAttachmentsByNote: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.ListAttachmentsByNote: rows: %w", err)
+	}
+	return out, nil
+}
+
+// GetAttachment fetches a single attachment for ownership / permission
+// checks before archiving. Returns domain.ErrNotFound when the row is
+// missing, archived, or belongs to another clinic.
+func (r *Repository) GetAttachment(ctx context.Context, id, clinicID uuid.UUID) (*NoteAttachmentRecord, error) {
+	row := r.db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM note_attachments
+		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
+	`, attachmentCols), id, clinicID)
+	rec, err := scanAttachment(row)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.GetAttachment: %w", err)
+	}
+	return rec, nil
+}
+
+// ArchiveAttachment soft-deletes by setting archived_at. Idempotent.
+func (r *Repository) ArchiveAttachment(ctx context.Context, id, clinicID uuid.UUID) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE note_attachments
+		SET archived_at = NOW()
+		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
+	`, id, clinicID)
+	if err != nil {
+		return fmt.Errorf("notes.repo.ArchiveAttachment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("notes.repo.ArchiveAttachment: %w", domain.ErrNotFound)
+	}
+	return nil
+}
+
+func scanAttachment(row scannable) (*NoteAttachmentRecord, error) {
+	var a NoteAttachmentRecord
+	err := row.Scan(
+		&a.ID, &a.ClinicID, &a.NoteID, &a.Kind, &a.S3Key,
+		&a.ContentType, &a.Bytes, &a.UploadedBy, &a.UploadedAt, &a.ArchivedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanAttachment: %w", err)
+	}
+	return &a, nil
 }

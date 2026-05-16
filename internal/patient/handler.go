@@ -156,7 +156,8 @@ type agedCareDetailsInput struct {
 type createSubjectInput struct {
 	Body struct {
 		DisplayName     string                `json:"display_name" minLength:"1" maxLength:"200" doc:"Human-readable label shown in the UI. E.g. 'Buddy' or 'Alice Smith'."`
-		PhotoURL        *string               `json:"photo_url,omitempty" maxLength:"500"        doc:"Optional avatar URL. Frontends fall back to initials when empty."`
+		PhotoURL        *string               `json:"photo_url,omitempty" maxLength:"500"        doc:"DEPRECATED — pass photo_key from POST /patients/upload-photo instead. Kept for legacy external URL fields."`
+		PhotoKey        *string               `json:"photo_key,omitempty" maxLength:"500"        doc:"Durable object-storage key returned by POST /patients/upload-photo. The server signs a fresh download URL on every read so it never expires."`
 		ContactID       *string               `json:"contact_id,omitempty"                       doc:"UUID of an existing contact to link. Can be omitted and linked later."`
 		VetDetails      *vetDetailsInput      `json:"vet_details,omitempty"                      doc:"Veterinary-specific details. Required for veterinary vertical."`
 		DentalDetails   *dentalDetailsInput   `json:"dental_details,omitempty"                   doc:"Dental-specific details. Required for dental vertical."`
@@ -236,7 +237,8 @@ type updateSubjectInput struct {
 	Body      struct {
 		DisplayName     *string                    `json:"display_name,omitempty" minLength:"1" maxLength:"200"               doc:"Updated display name."`
 		Status          *domain.SubjectStatus      `json:"status,omitempty"       enum:"active,deceased,transferred,archived" doc:"Updated lifecycle status."`
-		PhotoURL        *string                    `json:"photo_url,omitempty"    maxLength:"500"                             doc:"Updated avatar URL. Send empty string to clear."`
+		PhotoURL        *string                    `json:"photo_url,omitempty"    maxLength:"500"                             doc:"DEPRECATED — use photo_key. Kept for legacy external URL fields."`
+		PhotoKey        *string                    `json:"photo_key,omitempty"    maxLength:"500"                             doc:"Updated avatar storage key. Send empty string to clear."`
 		VetDetails      *updateVetDetailsBody      `json:"vet_details,omitempty"                                              doc:"Veterinary details to update. Only provided fields are changed."`
 		DentalDetails   *updateDentalDetailsBody   `json:"dental_details,omitempty"                                           doc:"Dental details to update. Only provided fields are changed."`
 		GeneralDetails  *updateGeneralDetailsBody  `json:"general_details,omitempty"                                          doc:"General-clinic details to update. Only provided fields are changed."`
@@ -412,6 +414,7 @@ func (h *Handler) createSubject(ctx context.Context, input *createSubjectInput) 
 		Vertical:    vertical,
 		DisplayName: input.Body.DisplayName,
 		PhotoURL:    input.Body.PhotoURL,
+		PhotoKey:    input.Body.PhotoKey,
 	}
 
 	if input.Body.ContactID != nil {
@@ -532,6 +535,7 @@ func (h *Handler) updateSubject(ctx context.Context, input *updateSubjectInput) 
 		DisplayName: input.Body.DisplayName,
 		Status:      input.Body.Status,
 		PhotoURL:    input.Body.PhotoURL,
+		PhotoKey:    input.Body.PhotoKey,
 	}
 
 	if input.Body.VetDetails != nil {

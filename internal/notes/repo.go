@@ -55,6 +55,19 @@ type repo interface {
 	// id-pointer JSON without touching overridden_by/at — this is a
 	// system action, not a staff override.
 	WriteMaterialisedPointer(ctx context.Context, noteID, fieldID, clinicID uuid.UUID, pointer string) error
+
+	// LookupFormNamesByNoteIDs batches a (note → form.name) fetch in a
+	// single round-trip. Missing/archived ids are absent. Used by cross-
+	// domain feeds (staff activity) to decorate notes with a readable label.
+	LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error)
+
+	// Attachments — photos and documents linked to a note. Storage of the
+	// underlying bytes lives in the AttachmentUploader injected at service
+	// level; the repo only persists metadata + s3_key pointers.
+	InsertAttachment(ctx context.Context, p CreateAttachmentParams) (*NoteAttachmentRecord, error)
+	ListAttachmentsByNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*NoteAttachmentRecord, error)
+	GetAttachment(ctx context.Context, id, clinicID uuid.UUID) (*NoteAttachmentRecord, error)
+	ArchiveAttachment(ctx context.Context, id, clinicID uuid.UUID) error
 }
 
 // NoteFieldWithType is a denormalised join — the row from note_fields +

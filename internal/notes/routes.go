@@ -137,6 +137,39 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 		Middlewares: huma.Middlewares{auth, submitForms},
 	}, h.archiveNote)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-note-attachment",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/notes/{note_id}/upload-attachment",
+		Summary:     "Upload a photo/document to a note",
+		Description: "Multipart upload of a single image (png/jpeg/webp/heic) or PDF, max 8 MiB. The attachment is persisted in storage with a re-signable key; the response carries a short-lived signed URL the FE can render immediately. Permission: submit_forms.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.uploadNoteAttachment)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-note-attachments",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/notes/{note_id}/attachments",
+		Summary:     "List a note's attachments",
+		Description: "Returns the active (non-archived) attachments for the note, newest-first. Each summary carries a freshly signed download URL. Most callers read attachments via GetNote which embeds the same list; this endpoint exists for re-polling after a delete without the rest of the note payload.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.listNoteAttachments)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-note-attachment",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/notes/{note_id}/attachments/{attachment_id}",
+		Summary:     "Archive a note attachment",
+		Description: "Soft-deletes a single attachment. Permission rule: the original uploader can always delete; any other staff must hold manage_staff. The row stays in the DB for audit retention but is hidden from subsequent list calls.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.deleteNoteAttachment)
+
 	// System widget materialisation: writes to the typed compliance
 	// ledgers (consent_records, drug_operations_log, incident_events,
 	// pain_scores) happen at note Submit, not when the user taps Confirm

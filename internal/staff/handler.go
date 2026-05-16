@@ -138,16 +138,23 @@ type revokeInviteHTTPResponse struct {
 // StaffActivityEventResponse is the wire shape for one row in the
 // merged per-staff activity feed. Source identifies which domain it
 // came from; Kind is a dotted slug the FE pattern-matches on.
+//
+// SubjectName / NoteTitle are resolved by the aggregator post-merge so
+// the FE can render readable chips ("Patient Bella") with the raw IDs
+// kept alongside as link targets. Field order mirrors ActivityEvent —
+// the handler uses a direct type conversion.
 type StaffActivityEventResponse struct {
-	ID         string    `json:"id"`
-	Source     string    `json:"source" enum:"notes,drugs,incidents,consent,pain,auth"`
-	Kind       string    `json:"kind"`
-	OccurredAt time.Time `json:"occurred_at"`
-	Title      string    `json:"title"`
-	Subtitle   string    `json:"subtitle,omitempty"`
-	NoteID     *string   `json:"note_id,omitempty"`
-	SubjectID  *string   `json:"subject_id,omitempty"`
-	EntityID   *string   `json:"entity_id,omitempty"`
+	ID          string    `json:"id"`
+	Source      string    `json:"source" enum:"notes,drugs,incidents,consent,pain,auth"`
+	Kind        string    `json:"kind"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	Title       string    `json:"title"`
+	Subtitle    string    `json:"subtitle,omitempty"`
+	NoteID      *string   `json:"note_id,omitempty"`
+	SubjectID   *string   `json:"subject_id,omitempty"`
+	EntityID    *string   `json:"entity_id,omitempty"`
+	SubjectName *string   `json:"subject_name,omitempty"`
+	NoteTitle   *string   `json:"note_title,omitempty"`
 }
 
 // StaffActivityListResponse is the paginated envelope.

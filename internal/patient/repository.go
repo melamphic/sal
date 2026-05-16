@@ -35,7 +35,8 @@ type SubjectRecord struct {
 	DisplayName string
 	Status      domain.SubjectStatus
 	Vertical    domain.Vertical
-	PhotoURL    *string
+	PhotoURL    *string // legacy column — new writes use PhotoKey
+	PhotoKey    *string // durable object-storage path; signed on serve
 	CreatedBy   uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -231,7 +232,8 @@ type CreateSubjectParams struct {
 	DisplayName string
 	Status      domain.SubjectStatus
 	Vertical    domain.Vertical
-	PhotoURL    *string
+	PhotoURL    *string // legacy — only set when persisting an unsigned external URL
+	PhotoKey    *string // durable storage path; signed on read
 	CreatedBy   uuid.UUID
 }
 
@@ -256,11 +258,15 @@ type CreateVetDetailsParams struct {
 }
 
 // UpdateSubjectParams holds fields for a partial subject update.
+// PhotoKey vs PhotoURL: callers writing a freshly-uploaded photo set
+// PhotoKey (the service signs the URL on read). Setting PhotoURL is
+// reserved for legacy external links and clears PhotoKey in lockstep.
 type UpdateSubjectParams struct {
 	DisplayName *string
 	Status      *domain.SubjectStatus
 	ContactID   *uuid.UUID
 	PhotoURL    *string
+	PhotoKey    *string
 }
 
 // UpdateVetDetailsParams holds fields for a partial vet details update.
@@ -535,12 +541,12 @@ func (r *Repository) UpdateContact(ctx context.Context, id, clinicID uuid.UUID, 
 func (r *Repository) CreateSubject(ctx context.Context, p CreateSubjectParams) (*SubjectRecord, error) {
 	s := &SubjectRecord{}
 	err := r.db.QueryRow(ctx, `
-		INSERT INTO subjects (id, clinic_id, contact_id, display_name, status, vertical, photo_url, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		INSERT INTO subjects (id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
-	`, p.ID, p.ClinicID, p.ContactID, p.DisplayName, p.Status, p.Vertical, p.PhotoURL, p.CreatedBy).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+	`, p.ID, p.ClinicID, p.ContactID, p.DisplayName, p.Status, p.Vertical, p.PhotoURL, p.PhotoKey, p.CreatedBy).Scan(
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -673,7 +679,7 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 
 	err := r.db.QueryRow(ctx, `
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url, s.photo_key,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -705,7 +711,7 @@ func (r *Repository) GetSubjectByID(ctx context.Context, id, clinicID uuid.UUID)
 		LEFT JOIN aged_care_subject_details ac ON ac.subject_id = s.id
 		WHERE s.id = $1 AND s.clinic_id = $2 AND s.archived_at IS NULL
 	`, id, clinicID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
 		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
@@ -881,7 +887,7 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 	args = append(args, p.Limit, p.Offset)
 	listQuery := fmt.Sprintf(`
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url, s.photo_key,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -946,12 +952,13 @@ func (r *Repository) UpdateSubject(ctx context.Context, id, clinicID uuid.UUID, 
 			status       = COALESCE($4, status),
 			contact_id   = COALESCE($5, contact_id),
 			photo_url    = COALESCE($6, photo_url),
+			photo_key    = COALESCE($7, photo_key),
 			updated_at   = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
-	`, id, clinicID, p.DisplayName, p.Status, p.ContactID, p.PhotoURL).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+	`, id, clinicID, p.DisplayName, p.Status, p.ContactID, p.PhotoURL, p.PhotoKey).Scan(
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -1288,10 +1295,10 @@ func (r *Repository) ArchiveSubject(ctx context.Context, id, clinicID uuid.UUID)
 		UPDATE subjects
 		SET status = 'archived', archived_at = NOW(), updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
 	`, id, clinicID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -1310,10 +1317,10 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 		UPDATE subjects
 		SET contact_id = $3, updated_at = NOW()
 		WHERE id = $1 AND clinic_id = $2 AND archived_at IS NULL
-		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url,
+		RETURNING id, clinic_id, contact_id, display_name, status, vertical, photo_url, photo_key,
 		          created_by, created_at, updated_at, archived_at
 	`, subjectID, clinicID, contactID).Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 	)
 	if err != nil {
@@ -1329,7 +1336,7 @@ func (r *Repository) LinkContact(ctx context.Context, subjectID, clinicID, conta
 func (r *Repository) ListSubjectsByContact(ctx context.Context, contactID, clinicID uuid.UUID) ([]*SubjectRow, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT
-			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url,
+			s.id, s.clinic_id, s.contact_id, s.display_name, s.status, s.vertical, s.photo_url, s.photo_key,
 			s.created_by, s.created_at, s.updated_at, s.archived_at,
 			c.id, c.clinic_id, c.full_name, c.phone, c.email, c.email_hash, c.address,
 			c.created_at, c.updated_at,
@@ -1491,7 +1498,7 @@ func scanSubjectRow(rows pgxScanner) (*SubjectRow, error) {
 	)
 
 	if err := rows.Scan(
-		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL,
+		&s.ID, &s.ClinicID, &s.ContactID, &s.DisplayName, &s.Status, &s.Vertical, &s.PhotoURL, &s.PhotoKey,
 		&s.CreatedBy, &s.CreatedAt, &s.UpdatedAt, &s.ArchivedAt,
 		&cID, &cClinicID, &cFullName, &cPhone, &cEmail, &cEmailHash, &cAddress, &cCreatedAt, &cUpdatedAt,
 		&dSubjectID, &dSpecies, &dBreed, &dSex, &dDesexed, &dDOB, &dColor, &dMicrochip, &dWeightKg,
@@ -1783,6 +1790,37 @@ func (r *Repository) ListSubjectContacts(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("patient.repo.ListSubjectContacts: rows: %w", err)
+	}
+	return out, nil
+}
+
+// LookupDisplayNames returns the `display_name` for each non-archived
+// subject id, scoped to the clinic. Missing or archived ids are simply
+// absent from the map — callers must tolerate a partial result.
+func (r *Repository) LookupDisplayNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		SELECT id, display_name
+		FROM subjects
+		WHERE clinic_id = $1 AND id = ANY($2) AND archived_at IS NULL
+	`, clinicID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("patient.repo.LookupDisplayNames: query: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[uuid.UUID]string, len(ids))
+	for rows.Next() {
+		var id uuid.UUID
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("patient.repo.LookupDisplayNames: scan: %w", err)
+		}
+		out[id] = name
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("patient.repo.LookupDisplayNames: rows: %w", err)
 	}
 	return out, nil
 }

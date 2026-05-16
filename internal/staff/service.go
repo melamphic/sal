@@ -101,16 +101,23 @@ type AISeatCapResolver interface {
 // Title is the short headline ("Administered Meloxicam"); Subtitle is
 // optional context ("7 ml SC · subject 8a3…"). NoteID / SubjectID /
 // EntityID let the FE link back to the source record.
+//
+// SubjectName / NoteTitle are decorated post-merge by the aggregator —
+// adapters don't populate them. The FE uses these to render human-
+// readable chips ("Patient Bella", "Note · Consult intake") instead of
+// truncated UUIDs.
 type ActivityEvent struct {
-	ID         string
-	Source     string // "notes" | "drugs" | "incidents" | "consent" | "pain" | "auth"
-	Kind       string // dotted slug ("drug.administer", "auth.login", …)
-	OccurredAt time.Time
-	Title      string
-	Subtitle   string
-	NoteID     *string
-	SubjectID  *string
-	EntityID   *string
+	ID          string
+	Source      string // "notes" | "drugs" | "incidents" | "consent" | "pain" | "auth"
+	Kind        string // dotted slug ("drug.administer", "auth.login", …)
+	OccurredAt  time.Time
+	Title       string
+	Subtitle    string
+	NoteID      *string
+	SubjectID   *string
+	EntityID    *string
+	SubjectName *string
+	NoteTitle   *string
 }
 
 // ActivitySource is implemented by adapters in app.go (one per domain).
@@ -123,17 +130,32 @@ type ActivitySource interface {
 	ListActivityFor(ctx context.Context, staffID, clinicID uuid.UUID, limit int) ([]ActivityEvent, error)
 }
 
+// SubjectNameResolver batch-fetches subject display names. Implemented in
+// app.go by patient.Service. nil = activity rows stay with raw IDs.
+type SubjectNameResolver interface {
+	LookupSubjectNames(ctx context.Context, clinicID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
+// NoteTitleResolver batch-fetches a human label for each note id — the
+// underlying form's name. Implemented in app.go by notes.Service. nil =
+// activity rows stay with raw IDs for the note chip.
+type NoteTitleResolver interface {
+	LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error)
+}
+
 // Service handles all staff business logic.
 type Service struct {
 	repo            repo // interface — see repo.go
 	cipher          *crypto.Cipher
 	mailer          mailer.Mailer
 	appURL          string
-	invites         InviteCreator      // nil = invite tokens not created (test mode)
-	clinics         ClinicNameProvider // nil = clinic name omitted from emails (test mode)
-	tier            TierReconciler     // nil = tier auto-derivation off
-	seatCaps        AISeatCapResolver  // nil = AI-seat cap enforcement off
-	activitySources []ActivitySource   // registered cross-domain feeders
+	invites         InviteCreator       // nil = invite tokens not created (test mode)
+	clinics         ClinicNameProvider  // nil = clinic name omitted from emails (test mode)
+	tier            TierReconciler      // nil = tier auto-derivation off
+	seatCaps        AISeatCapResolver   // nil = AI-seat cap enforcement off
+	activitySources []ActivitySource    // registered cross-domain feeders
+	subjectNames    SubjectNameResolver // nil = activity rows return raw subject IDs
+	noteTitles      NoteTitleResolver   // nil = activity rows return raw note IDs
 }
 
 // NewService creates a new staff Service.
@@ -146,6 +168,14 @@ func NewService(repo repo, cipher *crypto.Cipher, m mailer.Mailer, appURL string
 // signature stable.
 func (s *Service) SetTierReconciler(t TierReconciler) {
 	s.tier = t
+}
+
+// SetActivityNameResolvers wires the post-merge decorators that turn
+// activity-row IDs into human-readable chips on the FE. Both are
+// optional — when absent the FE falls back to a truncated UUID.
+func (s *Service) SetActivityNameResolvers(subj SubjectNameResolver, note NoteTitleResolver) {
+	s.subjectNames = subj
+	s.noteTitles = note
 }
 
 // RegisterActivitySource adds a cross-domain feeder for the per-staff
@@ -560,7 +590,70 @@ func (s *Service) GetActivity(ctx context.Context, staffID, clinicID uuid.UUID, 
 	if end > len(merged) {
 		end = len(merged)
 	}
-	return merged[offset:end], nil
+	page := merged[offset:end]
+	s.decorateActivityNames(ctx, clinicID, page)
+	return page, nil
+}
+
+// decorateActivityNames batches a name lookup for every subject id and
+// note id on the page and stamps SubjectName / NoteTitle onto each row.
+// Best-effort: resolver errors are swallowed so the feed still renders
+// with raw IDs as the fallback label.
+func (s *Service) decorateActivityNames(ctx context.Context, clinicID uuid.UUID, events []ActivityEvent) {
+	if len(events) == 0 {
+		return
+	}
+	var subjIDs, noteIDs []uuid.UUID
+	subjSeen := map[uuid.UUID]struct{}{}
+	noteSeen := map[uuid.UUID]struct{}{}
+	for _, e := range events {
+		if e.SubjectID != nil {
+			if id, err := uuid.Parse(*e.SubjectID); err == nil {
+				if _, ok := subjSeen[id]; !ok {
+					subjSeen[id] = struct{}{}
+					subjIDs = append(subjIDs, id)
+				}
+			}
+		}
+		if e.NoteID != nil {
+			if id, err := uuid.Parse(*e.NoteID); err == nil {
+				if _, ok := noteSeen[id]; !ok {
+					noteSeen[id] = struct{}{}
+					noteIDs = append(noteIDs, id)
+				}
+			}
+		}
+	}
+	var subjMap map[uuid.UUID]string
+	if s.subjectNames != nil && len(subjIDs) > 0 {
+		m, err := s.subjectNames.LookupSubjectNames(ctx, clinicID, subjIDs)
+		if err == nil {
+			subjMap = m
+		}
+	}
+	var noteMap map[uuid.UUID]string
+	if s.noteTitles != nil && len(noteIDs) > 0 {
+		m, err := s.noteTitles.LookupFormNamesByNoteIDs(ctx, clinicID, noteIDs)
+		if err == nil {
+			noteMap = m
+		}
+	}
+	for i := range events {
+		if events[i].SubjectID != nil {
+			if id, err := uuid.Parse(*events[i].SubjectID); err == nil {
+				if name, ok := subjMap[id]; ok {
+					events[i].SubjectName = &name
+				}
+			}
+		}
+		if events[i].NoteID != nil {
+			if id, err := uuid.Parse(*events[i].NoteID); err == nil {
+				if title, ok := noteMap[id]; ok {
+					events[i].NoteTitle = &title
+				}
+			}
+		}
+	}
 }
 
 // ListInvites returns pending + expired invites for the team page.
