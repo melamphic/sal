@@ -702,6 +702,24 @@ func (r *Repository) RetireForm(ctx context.Context, p RetireFormParams) (*FormR
 	return rec, nil
 }
 
+// MarkFormForked flips salvia_template_state from "default" to "forked".
+// Idempotent and a no-op for non-Salvia forms or forms already forked /
+// deleted. Called by content-mutating service methods (UpdateDraft,
+// UpsertFields, PublishForm) so that overlayTemplateFields stops painting
+// YAML fields over content the clinic has authored. See policy.repo's
+// MarkPolicyForked for the same pattern.
+func (r *Repository) MarkFormForked(ctx context.Context, formID, clinicID uuid.UUID) error {
+	const q = `
+		UPDATE forms
+		SET salvia_template_state = 'forked'
+		WHERE id = $1 AND clinic_id = $2 AND salvia_template_state = 'default'`
+
+	if _, err := r.db.Exec(ctx, q, formID, clinicID); err != nil {
+		return fmt.Errorf("forms.repo.MarkFormForked: %w", err)
+	}
+	return nil
+}
+
 // ListByMarketplaceListing returns every form in this clinic that descended
 // from the given marketplace listing — across all imported versions. Powers
 // the upgrade UX: when a buyer imports a newer version, we surface their

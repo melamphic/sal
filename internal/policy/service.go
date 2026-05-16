@@ -377,18 +377,41 @@ func (s *Service) GetPolicy(ctx context.Context, policyID, clinicID uuid.UUID) (
 }
 
 // computeClauseCount picks the right source for the policy card's "N clauses"
-// pill:
+// pill. DB is authoritative whenever a version row exists: the count comes
+// from policy_clauses on the latest published version (falling back to the
+// draft when nothing has been published yet).
 //
-//   - Salvia default-state rows have no DB clauses yet — count the YAML
-//     overlay so the card matches what the preview drawer will render.
-//   - Every other row counts DB clauses on the latest published version,
-//     falling back to the draft when nothing has been published.
+// The YAML overlay only fills in when BOTH conditions hold:
+//   - the DB count is zero (no version, or version with no clauses), AND
+//   - the policy is still in Salvia "default" state (clinic hasn't edited).
+//
+// Falling back unconditionally on "default" state was the old behaviour
+// and it lied after any clause edit: state never transitions, so the count
+// kept reading from YAML even when the clinic had real DB clauses. Mirrors
+// the rule used in ListPolicies so detail-card and list-card agree.
 //
 // Errors from the count query are swallowed: a card-level pill isn't worth
 // failing the whole GET for, and the FE already treats absent counts as zero.
 func (s *Service) computeClauseCount(ctx context.Context, pol *PolicyRecord, latest, draft *PolicyVersionRecord) int {
 	if pol == nil {
 		return 0
+	}
+	dbCount := 0
+	var versionID uuid.UUID
+	switch {
+	case latest != nil:
+		versionID = latest.ID
+	case draft != nil:
+		versionID = draft.ID
+	}
+	if versionID != uuid.Nil {
+		counts, err := s.repo.CountClausesByVersion(ctx, []uuid.UUID{versionID})
+		if err == nil {
+			dbCount = counts[versionID]
+		}
+	}
+	if dbCount > 0 {
+		return dbCount
 	}
 	if s.templates != nil &&
 		pol.SalviaTemplateID != nil && *pol.SalviaTemplateID != "" &&
@@ -397,20 +420,7 @@ func (s *Service) computeClauseCount(ctx context.Context, pol *PolicyRecord, lat
 			return len(tcs)
 		}
 	}
-	var versionID uuid.UUID
-	switch {
-	case latest != nil:
-		versionID = latest.ID
-	case draft != nil:
-		versionID = draft.ID
-	default:
-		return 0
-	}
-	counts, err := s.repo.CountClausesByVersion(ctx, []uuid.UUID{versionID})
-	if err != nil {
-		return 0
-	}
-	return counts[versionID]
+	return dbCount
 }
 
 // ListPolicies returns a paginated list of policies for a clinic.
@@ -508,7 +518,12 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*Pol
 		content = json.RawMessage(`[]`)
 	}
 
-	// Ensure a draft exists.
+	// Ensure a draft exists. After a publish, no draft is in the table,
+	// so the first save creates one. Two concurrent saves can both observe
+	// NotFound and both try to INSERT — the partial unique index "one
+	// draft per policy" keeps only the first; the loser comes back as
+	// ErrConflict and we re-read the winner's draft, then write the
+	// content onto it instead of bubbling a 409 to the UI.
 	draft, err := s.repo.GetDraftVersion(ctx, input.PolicyID)
 	if errors.Is(err, domain.ErrNotFound) {
 		draft, err = s.repo.CreateDraftVersion(ctx, CreateDraftVersionParams{
@@ -517,6 +532,14 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*Pol
 			Content:   content,
 			CreatedBy: input.StaffID,
 		})
+		if errors.Is(err, domain.ErrConflict) {
+			// Another save just created the draft; pick it up and
+			// apply our content over it so this caller's intent wins.
+			draft, err = s.repo.UpdateDraftContent(ctx, UpdateDraftContentParams{
+				PolicyID: input.PolicyID,
+				Content:  content,
+			})
+		}
 	} else if err == nil {
 		draft, err = s.repo.UpdateDraftContent(ctx, UpdateDraftContentParams{
 			PolicyID: input.PolicyID,
@@ -527,9 +550,28 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*Pol
 		return nil, fmt.Errorf("policy.service.UpdateDraft: draft: %w", err)
 	}
 
+	// First save against a Salvia-installed default-state row flips the
+	// fork flag so downstream readers (computeClauseCount,
+	// overlayTemplateClauses) stop painting YAML over the clinic's content.
+	// Best-effort — a failure here is logged via the wrapping but never
+	// fails the save itself; the worst case is a stale flag that we'll
+	// flip on the next mutation.
+	if pol.SalviaTemplateID != nil {
+		_ = s.repo.MarkPolicyForked(ctx, input.PolicyID, input.ClinicID)
+		pol.SalviaTemplateState = forkedState()
+	}
+
 	resp := toPolicyResponse(pol)
 	resp.Draft = toVersionResponse(draft)
 	return resp, nil
+}
+
+// forkedState returns a pointer to the literal "forked" so service methods
+// can mirror the state change locally on the in-memory PolicyRecord after
+// calling MarkPolicyForked, without re-reading from the DB.
+func forkedState() *string {
+	s := "forked"
+	return &s
 }
 
 // DiscardDraft deletes the current draft of a policy.
@@ -576,6 +618,14 @@ func (s *Service) DiscardDraft(ctx context.Context, policyID, clinicID uuid.UUID
 }
 
 // PublishPolicy freezes the current draft and assigns a semver number.
+//
+// Concurrency: the published_semver_uniq partial index on
+// (policy_id, version_major, version_minor) WHERE status='published'
+// will reject a colliding insert if two staff publish at the same
+// instant. The 2-attempt loop recomputes the next semver from a fresh
+// GetLatestPublishedVersion read and retries, so the second publisher
+// lands on the next-next version (e.g. v1.2) instead of bubbling a
+// 23505 to the UI. Mirrors the pattern in forms.Service.PublishForm.
 func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (*PolicyVersionResponse, error) {
 	pol, err := s.repo.GetPolicyByID(ctx, input.PolicyID, input.ClinicID)
 	if err != nil {
@@ -592,30 +642,44 @@ func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (
 		return nil, fmt.Errorf("policy.service.PublishPolicy: %w", err)
 	}
 
-	// Compute next semver.
-	major, minor := 1, 0
-	prev, err := s.repo.GetLatestPublishedVersion(ctx, input.PolicyID)
-	if err != nil && !errors.Is(err, domain.ErrNotFound) {
-		return nil, fmt.Errorf("policy.service.PublishPolicy: prev version: %w", err)
-	}
-	if prev != nil {
-		major, minor = nextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
-	}
+	for attempt := 0; attempt < 2; attempt++ {
+		// Compute next semver from a fresh read each attempt so the
+		// retry lands on the version slot AFTER the racer's commit.
+		major, minor := 1, 0
+		prev, err := s.repo.GetLatestPublishedVersion(ctx, input.PolicyID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("policy.service.PublishPolicy: prev version: %w", err)
+		}
+		if prev != nil {
+			major, minor = nextVersion(input.ChangeType, prev.VersionMajor, prev.VersionMinor)
+		}
 
-	published, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
-		PolicyID:      input.PolicyID,
-		VersionMajor:  major,
-		VersionMinor:  minor,
-		ChangeType:    input.ChangeType,
-		ChangeSummary: input.ChangeSummary,
-		Changes:       input.Changes,
-		PublishedBy:   input.StaffID,
-		PublishedAt:   domain.TimeNow(),
-	})
-	if err != nil {
+		published, err := s.repo.PublishDraftVersion(ctx, PublishDraftVersionParams{
+			PolicyID:      input.PolicyID,
+			VersionMajor:  major,
+			VersionMinor:  minor,
+			ChangeType:    input.ChangeType,
+			ChangeSummary: input.ChangeSummary,
+			Changes:       input.Changes,
+			PublishedBy:   input.StaffID,
+			PublishedAt:   domain.TimeNow(),
+		})
+		if err == nil {
+			// Publishing a Salvia default-state row commits the clinic to
+			// whatever shape the draft has — including an intentionally
+			// empty publish. Flip the flag so the overlay doesn't paint
+			// YAML over a published-empty version on the next read.
+			if pol.SalviaTemplateID != nil {
+				_ = s.repo.MarkPolicyForked(ctx, input.PolicyID, input.ClinicID)
+			}
+			return toVersionResponse(published), nil
+		}
+		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
+			continue
+		}
 		return nil, fmt.Errorf("policy.service.PublishPolicy: %w", err)
 	}
-	return toVersionResponse(published), nil
+	return nil, fmt.Errorf("policy.service.PublishPolicy: could not assign version number: %w", domain.ErrConflict)
 }
 
 // RollbackPolicy creates a new draft copied from a prior published version.
@@ -719,7 +783,8 @@ func (s *Service) GetVersion(ctx context.Context, policyID, clinicID, versionID 
 // UpsertClauses replaces all clauses on a policy version.
 // The version must belong to the given policy and clinic.
 func (s *Service) UpsertClauses(ctx context.Context, input UpsertClausesInput) (*PolicyClauseListResponse, error) {
-	if _, err := s.repo.GetPolicyByID(ctx, input.PolicyID, input.ClinicID); err != nil {
+	pol, err := s.repo.GetPolicyByID(ctx, input.PolicyID, input.ClinicID)
+	if err != nil {
 		return nil, fmt.Errorf("policy.service.UpsertClauses: %w", err)
 	}
 	ver, err := s.repo.GetVersionByID(ctx, input.VersionID)
@@ -739,6 +804,14 @@ func (s *Service) UpsertClauses(ctx context.Context, input UpsertClausesInput) (
 	if err != nil {
 		return nil, fmt.Errorf("policy.service.UpsertClauses: %w", err)
 	}
+
+	// Writing clauses to a Salvia default-state row counts as a fork, even
+	// when the clinic is clearing them — the deliberate-empty case needs
+	// the flag flipped so the overlay stops repainting deleted clauses.
+	if pol.SalviaTemplateID != nil {
+		_ = s.repo.MarkPolicyForked(ctx, input.PolicyID, input.ClinicID)
+	}
+
 	return toClauseListResponse(recs), nil
 }
 

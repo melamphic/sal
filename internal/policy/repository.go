@@ -456,6 +456,28 @@ func (r *Repository) RetirePolicy(ctx context.Context, p RetirePolicyParams) (*P
 	return rec, nil
 }
 
+// MarkPolicyForked flips salvia_template_state from "default" to "forked".
+// Idempotent and a no-op for:
+//   - non-Salvia rows (salvia_template_state IS NULL),
+//   - rows already in "forked" or "deleted" state.
+//
+// Called by content-mutating service methods (UpdateDraft, UpsertClauses,
+// PublishPolicy) so that overlay readers downstream stop painting YAML over
+// content the clinic has actually authored. Without this flip the flag stays
+// "default" forever, the YAML overlay keeps firing, and clause counts /
+// preview drawers / cleared-clause edits all silently disagree with reality.
+func (r *Repository) MarkPolicyForked(ctx context.Context, policyID, clinicID uuid.UUID) error {
+	const q = `
+		UPDATE policies
+		SET salvia_template_state = 'forked'
+		WHERE id = $1 AND clinic_id = $2 AND salvia_template_state = 'default'`
+
+	if _, err := r.db.Exec(ctx, q, policyID, clinicID); err != nil {
+		return fmt.Errorf("policy.repo.MarkPolicyForked: %w", err)
+	}
+	return nil
+}
+
 // ── Versions ──────────────────────────────────────────────────────────────────
 
 const versionCols = `
@@ -609,6 +631,13 @@ func (r *Repository) CreateDraftVersion(ctx context.Context, p CreateDraftVersio
 	row := r.db.QueryRow(ctx, q, p.ID, p.PolicyID, content, p.RollbackOf, p.CreatedBy)
 	rec, err := scanVersion(row)
 	if err != nil {
+		// Partial unique index "one draft per policy" rejects a second
+		// concurrent draft. Service uses ErrConflict to surface either
+		// "discard existing draft before rollback" (rollback path) or
+		// to drive a re-read retry (update path).
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("policy.repo.CreateDraftVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("policy.repo.CreateDraftVersion: %w", err)
 	}
 	return rec, nil
@@ -715,6 +744,15 @@ func (r *Repository) PublishDraftVersion(ctx context.Context, p PublishDraftVers
 	)
 	rec, err := scanVersion(row)
 	if err != nil {
+		// The published_semver_uniq partial index on
+		// (policy_id, version_major, version_minor) WHERE status='published'
+		// catches two staff publishing the draft at the same instant —
+		// both compute the same next semver, both try to write it, one
+		// loses. Map that to ErrConflict so the service layer can
+		// recompute and retry instead of bubbling a 23505 to the UI.
+		if domain.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("policy.repo.PublishDraftVersion: %w", domain.ErrConflict)
+		}
 		return nil, fmt.Errorf("policy.repo.PublishDraftVersion: %w", err)
 	}
 	return rec, nil
