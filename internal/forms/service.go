@@ -773,6 +773,14 @@ func (s *Service) UpdateDraft(ctx context.Context, input UpdateDraftInput) (*For
 		}
 	}
 
+	// First mutation against a Salvia-installed default-state row flips the
+	// fork flag so overlayTemplateFields stops painting YAML over the
+	// clinic's content. Best-effort: a failure here doesn't fail the save;
+	// the next mutation will retry the flip.
+	if form.SalviaTemplateID != nil {
+		_ = s.repo.MarkFormForked(ctx, input.FormID, input.ClinicID)
+	}
+
 	resp := toFormResponse(form)
 	resp.Draft = toVersionResponse(draft, fields)
 	return resp, nil
@@ -883,6 +891,12 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 			PublishedAt:   domain.TimeNow(),
 		})
 		if err == nil {
+			// Publishing a Salvia default-state row commits the clinic
+			// to whatever shape the draft has. Flip the fork flag so
+			// the YAML overlay stops firing on subsequent reads.
+			if form.SalviaTemplateID != nil {
+				_ = s.repo.MarkFormForked(ctx, input.FormID, input.ClinicID)
+			}
 			return s.GetForm(ctx, input.FormID, input.ClinicID)
 		}
 		if errors.Is(err, domain.ErrConflict) && attempt == 0 {
