@@ -269,6 +269,21 @@ func (f *fakeRepo) RetireForm(_ context.Context, p RetireFormParams) (*FormRecor
 	return cloneForm(form), nil
 }
 
+func (f *fakeRepo) MarkFormForked(_ context.Context, formID, clinicID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	form, ok := f.forms[formID]
+	if !ok || form.ClinicID != clinicID {
+		return nil
+	}
+	if form.SalviaTemplateState == nil || *form.SalviaTemplateState != "default" {
+		return nil
+	}
+	forked := "forked"
+	form.SalviaTemplateState = &forked
+	return nil
+}
+
 // ── Versions ──────────────────────────────────────────────────────────────────
 
 func (f *fakeRepo) GetDraftVersion(_ context.Context, formID uuid.UUID) (*FormVersionRecord, error) {
