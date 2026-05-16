@@ -498,6 +498,34 @@ func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID, clinic
 	return nil
 }
 
+// InsertPolicyCheck appends a policy check run to the note_policy_checks table.
+func (r *Repository) InsertPolicyCheck(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
+	const q = `INSERT INTO note_policy_checks (note_id, clinic_id, result) VALUES ($1, $2, $3::jsonb)`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, resultJSON); err != nil {
+		return fmt.Errorf("notes.repo.InsertPolicyCheck: %w", err)
+	}
+	return nil
+}
+
+// ListPolicyChecks returns all policy check runs for a note, newest first.
+func (r *Repository) ListPolicyChecks(ctx context.Context, noteID, clinicID uuid.UUID) ([]PolicyCheckRecord, error) {
+	const q = `SELECT id, note_id, clinic_id, result::text, checked_at FROM note_policy_checks WHERE note_id = $1 AND clinic_id = $2 ORDER BY checked_at DESC`
+	rows, err := r.db.Query(ctx, q, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ListPolicyChecks: %w", err)
+	}
+	defer rows.Close()
+	var out []PolicyCheckRecord
+	for rows.Next() {
+		var rec PolicyCheckRecord
+		if err := rows.Scan(&rec.ID, &rec.NoteID, &rec.ClinicID, &rec.Result, &rec.CheckedAt); err != nil {
+			return nil, fmt.Errorf("notes.repo.ListPolicyChecks: scan: %w", err)
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
 // ── Note fields ───────────────────────────────────────────────────────────────
 
 const fieldCols = `id, note_id, field_id, value, confidence, source_quote,
