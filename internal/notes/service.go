@@ -1202,6 +1202,11 @@ func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (
 		return nil, fmt.Errorf("notes.service.CheckPolicy: store: %w", err)
 	}
 
+	// Append to history — non-fatal; a history write failure must not block the check response.
+	if err := s.repo.InsertPolicyCheck(ctx, noteID, clinicID, string(resultJSON)); err != nil {
+		_ = err
+	}
+
 	// Build response.
 	resp := &NotePolicyCheckResponse{
 		NoteID:  noteID.String(),
