@@ -523,7 +523,10 @@ func (r *Repository) ListPolicyChecks(ctx context.Context, noteID, clinicID uuid
 		}
 		out = append(out, rec)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.ListPolicyChecks: rows: %w", err)
+	}
+	return out, nil
 }
 
 // ── Note fields ───────────────────────────────────────────────────────────────
