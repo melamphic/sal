@@ -366,14 +366,21 @@ func DefaultPermissions(role StaffRole) Permissions {
 			MarketplaceDownload: true,
 		}
 	case StaffRoleVet:
+		// Clinical staff need to see every chart on the clinic's daily
+		// roster, not just patients they personally created. In a real
+		// clinic the receptionist onboards the patient and the vet
+		// treats them — strict view_own_patients here creates a hard
+		// deadlock where the vet can't open the chart they're about to
+		// work on. ViewOwnPatients stays available as an opt-in (admins
+		// can downgrade a specialist or locum) but isn't the default.
 		return Permissions{
-			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
 			ManagePatients: true, Dispense: true,
 			MarketplaceDownload: true,
 		}
 	case StaffRoleVetNurse:
 		return Permissions{
-			RecordAudio: true, SubmitForms: true, ViewOwnPatients: true,
+			RecordAudio: true, SubmitForms: true, ViewAllPatients: true,
 			ManagePatients: true, Dispense: true,
 			MarketplaceDownload: true,
 		}
