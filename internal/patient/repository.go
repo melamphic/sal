@@ -503,6 +503,11 @@ func (r *Repository) ListContacts(ctx context.Context, clinicID uuid.UUID, p Lis
 }
 
 // UpdateContact applies a partial update to a contact row.
+//
+// TODO: COALESCE pattern below can't clear columns to NULL — nil `*T` is
+// indistinguishable from "leave alone" and "set to NULL" at this layer.
+// Refactor to the Patch[T] tri-state pattern when mobile / compliance
+// forces it; see docs/backlog.md "COALESCE update deadlock".
 func (r *Repository) UpdateContact(ctx context.Context, id, clinicID uuid.UUID, p UpdateContactParams) (*ContactRecord, error) {
 	c := &ContactRecord{}
 	err := r.db.QueryRow(ctx, `
@@ -938,6 +943,9 @@ func (r *Repository) ListSubjects(ctx context.Context, clinicID uuid.UUID, p Lis
 }
 
 // UpdateSubject applies a partial update to a subject row.
+//
+// TODO: COALESCE can't clear photo_url / contact_id to NULL — see
+// docs/backlog.md "COALESCE update deadlock". Refactor when needed.
 func (r *Repository) UpdateSubject(ctx context.Context, id, clinicID uuid.UUID, p UpdateSubjectParams) (*SubjectRecord, error) {
 	s := &SubjectRecord{}
 	err := r.db.QueryRow(ctx, `
@@ -964,6 +972,10 @@ func (r *Repository) UpdateSubject(ctx context.Context, id, clinicID uuid.UUID, 
 }
 
 // UpdateVetDetails applies a partial update to a vet_subject_details row.
+//
+// TODO: COALESCE can't clear microchip / weight_kg / date_of_birth / etc.
+// to NULL — see docs/backlog.md "COALESCE update deadlock". Refactor
+// when the first real driver lands (mobile, compliance, bulk import).
 func (r *Repository) UpdateVetDetails(ctx context.Context, subjectID uuid.UUID, p UpdateVetDetailsParams) (*VetDetailsRecord, error) {
 	d := &VetDetailsRecord{}
 	err := r.db.QueryRow(ctx, `
