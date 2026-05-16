@@ -1227,6 +1227,52 @@ func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (
 	return resp, nil
 }
 
+// PolicyCheckRun is one historical policy check run returned to the API.
+type PolicyCheckRun struct {
+	ID        string                    `json:"id"`
+	Results   []NoteClauseCheckResponse `json:"results"`
+	Blocked   bool                      `json:"blocked"`
+	CheckedAt time.Time                 `json:"checked_at"`
+}
+
+// ListPolicyChecks returns all historical policy check runs for a note, newest first.
+func (s *Service) ListPolicyChecks(ctx context.Context, noteID, clinicID uuid.UUID) ([]PolicyCheckRun, error) {
+	if _, err := s.repo.GetNoteByID(ctx, noteID, clinicID); err != nil {
+		return nil, fmt.Errorf("notes.service.ListPolicyChecks: get note: %w", err)
+	}
+	records, err := s.repo.ListPolicyChecks(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.service.ListPolicyChecks: list: %w", err)
+	}
+	runs := make([]PolicyCheckRun, 0, len(records))
+	for _, rec := range records {
+		var clauseResults []extraction.ClauseCheckResult
+		if err := json.Unmarshal([]byte(rec.Result), &clauseResults); err != nil {
+			continue // skip malformed rows
+		}
+		blocked := false
+		apiResults := make([]NoteClauseCheckResponse, len(clauseResults))
+		for i, r := range clauseResults {
+			apiResults[i] = NoteClauseCheckResponse{
+				BlockID:   r.BlockID,
+				Status:    r.Status,
+				Parity:    r.Parity,
+				Reasoning: r.Reasoning,
+			}
+			if r.Parity == "high" && r.Status == "violated" {
+				blocked = true
+			}
+		}
+		runs = append(runs, PolicyCheckRun{
+			ID:        rec.ID.String(),
+			Results:   apiResults,
+			Blocked:   blocked,
+			CheckedAt: rec.CheckedAt,
+		})
+	}
+	return runs, nil
+}
+
 // buildNoteContent creates a plain-text summary of note field values for policy checking.
 func buildNoteContent(fields []*NoteFieldRecord) string {
 	var sb strings.Builder
