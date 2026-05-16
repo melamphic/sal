@@ -94,6 +94,17 @@ func (h *Handler) Mount(r chi.Router, api huma.API, jwtSecret []byte) {
 	}, h.checkPolicy)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "list-note-policy-checks",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/notes/{note_id}/policy-checks",
+		Summary:     "List policy check history",
+		Description: "Returns all policy check runs for a note, newest first.",
+		Tags:        []string{"Notes"},
+		Security:    security,
+		Middlewares: huma.Middlewares{auth, submitForms},
+	}, h.listPolicyChecks)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "get-note-pdf",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/notes/{note_id}/pdf",
