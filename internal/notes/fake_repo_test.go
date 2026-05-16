@@ -410,7 +410,7 @@ func (f *fakeRepo) InsertPolicyCheck(_ context.Context, noteID, clinicID uuid.UU
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.policyChecks = append(f.policyChecks, PolicyCheckRecord{
-		ID:        uuid.Must(uuid.NewV7()),
+		ID:        domain.NewID(),
 		NoteID:    noteID,
 		ClinicID:  clinicID,
 		Result:    resultJSON,
