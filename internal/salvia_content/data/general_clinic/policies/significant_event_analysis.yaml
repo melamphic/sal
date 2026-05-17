@@ -83,6 +83,7 @@ clauses:
 
   - id: action_register
     title: "Action register and follow-up"
+    parity: medium
     body: |
       Each SEA produces an action register — owner, action, due date,
       review date — held centrally. Actions are reviewed at every monthly
@@ -93,6 +94,7 @@ clauses:
 
   - id: learning_capture
     title: "Learning capture and dissemination"
+    parity: medium
     body: |
       The de-identified summary of every SEA is shared at the next
       practice clinical-governance meeting and at the monthly all-staff
@@ -145,6 +147,7 @@ clauses:
 
   - id: training
     title: "Training"
+    parity: medium
     body: |
       All clinical and senior administrative staff complete SEA / RCA
       training at induction (RCGP SEA module, NZ CMA online learning,
@@ -153,5 +156,6 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months. Currency date at the top of this policy.

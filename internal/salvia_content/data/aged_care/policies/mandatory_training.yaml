@@ -127,6 +127,7 @@ clauses:
 
   - id: leadership_training
     title: Leadership and clinical leadership training
+    parity: medium
     body: |
       Senior clinical staff (DON, Care Manager, Clinical Lead) complete
       additional training in clinical governance, investigation,
@@ -135,6 +136,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and on any change to
       regulator training mandates. Operational responsibility: Service
