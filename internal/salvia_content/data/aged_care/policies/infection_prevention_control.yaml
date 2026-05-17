@@ -87,6 +87,7 @@ clauses:
 
   - id: environment_cleaning
     title: Environment and cleaning
+    parity: medium
     body: |
       Cleaning schedule with documented frequency for high-touch surfaces,
       shared equipment, communal bathrooms and dining. Outbreak-grade
@@ -104,6 +105,7 @@ clauses:
 
   - id: antimicrobial_stewardship
     title: Antimicrobial stewardship
+    parity: medium
     body: |
       Antibiotic prescribing follows national guidelines (NZ HQSC AMS;
       AU Therapeutic Guidelines: Antibiotic; UK NICE NG15 + UKHSA AMS;
