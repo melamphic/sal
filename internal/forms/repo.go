@@ -29,6 +29,9 @@ type repo interface {
 	UpdateFormMeta(ctx context.Context, p UpdateFormMetaParams) (*FormRecord, error)
 	// RetireForm sets archived_at and retire_reason. It does not delete any rows.
 	RetireForm(ctx context.Context, p RetireFormParams) (*FormRecord, error)
+	// GetByTemplateID fetches the form row whose salvia_template_id matches,
+	// scoped to the given clinic. Returns domain.ErrNotFound if no row exists.
+	GetByTemplateID(ctx context.Context, templateID string, clinicID uuid.UUID) (*FormRecord, error)
 	// MarkFormForked flips salvia_template_state from "default" to "forked" on
 	// Salvia-installed rows; no-op for non-Salvia or already-forked forms.
 	MarkFormForked(ctx context.Context, formID, clinicID uuid.UUID) error
