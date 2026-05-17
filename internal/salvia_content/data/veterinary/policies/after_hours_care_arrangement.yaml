@@ -176,6 +176,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.controlled_drugs_sop;
       salvia.veterinary.veterinary_medicines_cascade_sop;

@@ -196,6 +196,7 @@ clauses:
 
   - id: review
     title: "Plan review"
+    parity: low
     body: |
       This plan is reviewed annually by the RSO/RPS in consultation with the
       RPA (UK) / Radiation Safety Adviser (NZ) / state regulator (AU/US)
@@ -203,6 +204,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.infection_prevention_control;
       salvia.shared.health_safety_policy;

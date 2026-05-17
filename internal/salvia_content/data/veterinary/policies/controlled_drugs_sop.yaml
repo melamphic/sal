@@ -280,6 +280,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       This SOP is linked to: the Controlled Drug Register Entry form
       (salvia.veterinary.cd_register_entry), the Veterinary Written

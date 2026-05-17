@@ -207,6 +207,7 @@ clauses:
 
   - id: review
     title: "SOP review"
+    parity: low
     body: |
       This SOP is reviewed annually by the practice clinical lead, and after
       any regulator-published change, formulary change, or significant
@@ -214,6 +215,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.veterinary_prescription;
       salvia.veterinary.controlled_drugs_sop; salvia.veterinary.cd_register_entry;

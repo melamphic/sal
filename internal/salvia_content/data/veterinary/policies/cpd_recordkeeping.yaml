@@ -144,6 +144,7 @@ clauses:
 
   - id: confidentiality
     title: "Confidentiality of CPD records"
+    parity: medium
     body: |
       CPD records are personal data of the registrant. They are stored in
       the practice's HR system; access is restricted to the registrant,
@@ -153,6 +154,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       This policy is reviewed annually and on any change to the
       regulator's CPD requirements (e.g. RCVS 1CPD guidance update;
@@ -161,6 +163,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.controlled_drugs_sop;
       salvia.veterinary.radiation_management_plan;
