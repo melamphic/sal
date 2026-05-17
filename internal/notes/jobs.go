@@ -52,9 +52,13 @@ type PolicyClause struct {
 }
 
 // PolicyClauseProvider returns the enforceable policy clauses for a note's form version.
+// noteCreatedAt is the note's creation timestamp; the implementation uses it to
+// resolve which policies were linked and which policy clause versions were in
+// effect at that point in time, so old notes are checked against the rules
+// that applied when they were recorded — not today's rules.
 // Implemented by an adapter in app.go that bridges to forms + policy repos.
 type PolicyClauseProvider interface {
-	GetClausesForNote(ctx context.Context, formVersionID uuid.UUID) ([]PolicyClause, error)
+	GetClausesForNote(ctx context.Context, formVersionID uuid.UUID, noteCreatedAt time.Time) ([]PolicyClause, error)
 }
 
 // FormFieldMeta is the subset of form_fields data needed by the extraction job.
