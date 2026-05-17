@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to every resident from the day of admission and
       to all areas of the service including resident rooms, communal
@@ -52,6 +53,7 @@ clauses:
 
   - id: environment
     title: Environmental safety
+    parity: medium
     body: |
       Environmental factors are audited at admission and after any fall:
       lighting (incl. nightlight), bed height, call bell within reach,
@@ -61,6 +63,7 @@ clauses:
 
   - id: medication_review
     title: Medication review
+    parity: medium
     body: |
       The pharmacist or treating GP reviews falls-risk-increasing drugs at
       admission and after any fall. Categories scanned: psychotropics,
@@ -124,6 +127,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All care staff complete induction training in falls awareness, safe
       transfer technique, hoisting, post-fall first response, and the
@@ -132,6 +136,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years and after any
       sentinel event. Operational responsibility: Director of Nursing /
