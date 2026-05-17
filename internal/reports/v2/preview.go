@@ -201,25 +201,24 @@ func (s staticTheme) GetActiveDocTheme(_ context.Context, _ string) (*pdf.DocThe
 }
 
 // previewSignedNote builds the signed-note input from sample data and
-// runs the supplied HTMLRenderer. Theme is forwarded so the same
-// PDFInput.Theme path drives chrome. logoURL (when non-empty) is
-// passed through to the notes renderer's clinic-logo field so the
-// signed-note preview also reflects the in-progress logo upload.
-func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, logoURL string, notesR *notes.HTMLRenderer) ([]byte, error) {
+// runs the supplied HTMLRenderer. clinic carries the already-resolved
+// branding (real name + address + logo from ResolveClinicFromTheme +
+// stampLogoURL). Theme is forwarded so PDFInput.Theme drives chrome.
+func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, clinic pdf.ClinicInfo, notesR *notes.HTMLRenderer) ([]byte, error) {
 	if notesR == nil {
 		return nil, fmt.Errorf("v2.previewSignedNote: notes renderer not wired")
 	}
-	formName, formVersion, noteID, submittedBy, clinicName, clinicAddr, clinicPhone,
+	formName, formVersion, noteID, submittedBy, _, _, clinicPhone,
 		submittedAt, visit,
 		subjectName, species, breed, microchip, weight :=
 		SampleSignedNoteFields()
 
-	addr := clinicAddr
+	addr := clinic.AddressLine1
 	phone := clinicPhone
 	visitT := visit
 	in := notes.PDFInput{
 		Theme:         theme,
-		ClinicName:    clinicName,
+		ClinicName:    clinic.Name,
 		ClinicAddress: &addr,
 		ClinicPhone:   &phone,
 		FormName:      formName,
@@ -247,7 +246,7 @@ func previewSignedNote(ctx context.Context, theme *pdf.DocTheme, logoURL string,
 			},
 		},
 	}
-	if logoURL != "" {
+	if logoURL := string(clinic.LogoURL); logoURL != "" {
 		in.ClinicLogoURL = &logoURL
 	}
 
