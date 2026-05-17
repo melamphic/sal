@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to every decision about whether
       cardiopulmonary resuscitation (CPR) will be attempted in the event
@@ -113,6 +114,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       Clinical staff are trained in: how to find a resident's DNACPR
       decision quickly; the legal and ethical framework; the response
@@ -121,6 +123,7 @@ clauses:
 
   - id: governance
     title: Governance
+    parity: medium
     body: |
       DNACPR decisions are reviewed in a sample at clinical governance
       to ensure consultation occurred and is documented, the form is
@@ -128,6 +131,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing.
