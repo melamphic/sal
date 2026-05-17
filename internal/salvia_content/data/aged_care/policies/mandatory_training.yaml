@@ -26,6 +26,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to all staff (including agency, contracted,
       and volunteer where appropriate to role). Training is role-
@@ -109,6 +110,7 @@ clauses:
 
   - id: training_records
     title: Training records
+    parity: medium
     body: |
       A training record is maintained for every staff member. Records
       include topic, date, hours, mode (face-to-face, e-learning, observed
@@ -117,6 +119,7 @@ clauses:
 
   - id: training_needs_analysis
     title: Training needs analysis
+    parity: medium
     body: |
       An annual training-needs analysis identifies gaps based on
       incidents, complaints, audit findings, regulator updates, and
