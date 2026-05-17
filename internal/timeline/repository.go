@@ -25,6 +25,9 @@ type EventRecord struct {
 	ActorRole  string
 	Reason     *string
 	OccurredAt time.Time
+	// FormVersionLabel is populated only by list queries (via JOIN on
+	// notes → form_versions → forms). e.g. "SOAP Notes v1.2" or "Intake Draft".
+	FormVersionLabel *string
 }
 
 // InsertEventParams holds values for inserting a note_events row.
@@ -78,17 +81,17 @@ func (r *Repository) InsertNoteEvent(ctx context.Context, p InsertEventParams) e
 
 // ListNoteTimeline returns paginated events for a single note, oldest first.
 func (r *Repository) ListNoteTimeline(ctx context.Context, noteID, clinicID uuid.UUID, p ListParams) ([]*EventRecord, int, error) {
-	return r.listEvents(ctx, "note_id = $1 AND clinic_id = $2", []any{noteID, clinicID}, p)
+	return r.listEvents(ctx, "ne.note_id = $1 AND ne.clinic_id = $2", []any{noteID, clinicID}, p)
 }
 
 // ListSubjectTimeline returns paginated events for all notes belonging to a subject.
 func (r *Repository) ListSubjectTimeline(ctx context.Context, subjectID, clinicID uuid.UUID, p ListParams) ([]*EventRecord, int, error) {
-	return r.listEvents(ctx, "subject_id = $1 AND clinic_id = $2", []any{subjectID, clinicID}, p)
+	return r.listEvents(ctx, "ne.subject_id = $1 AND ne.clinic_id = $2", []any{subjectID, clinicID}, p)
 }
 
 // ListClinicAuditLog returns paginated events across the whole clinic (admin use).
 func (r *Repository) ListClinicAuditLog(ctx context.Context, clinicID uuid.UUID, p ListParams) ([]*EventRecord, int, error) {
-	return r.listEvents(ctx, "clinic_id = $1", []any{clinicID}, p)
+	return r.listEvents(ctx, "ne.clinic_id = $1", []any{clinicID}, p)
 }
 
 // ListByActor returns paginated events authored by a specific staff
@@ -105,10 +108,11 @@ func (r *Repository) ListByActor(ctx context.Context, actorID, clinicID uuid.UUI
 		return nil, 0, fmt.Errorf("timeline.repo.ListByActor: count: %w", err)
 	}
 	q := fmt.Sprintf(`
-		SELECT %s FROM note_events
-		WHERE actor_id = $1 AND clinic_id = $2
-		ORDER BY occurred_at DESC
-		LIMIT $3 OFFSET $4`, eventCols)
+		SELECT %s
+		FROM %s
+		WHERE ne.actor_id = $1 AND ne.clinic_id = $2
+		ORDER BY ne.occurred_at DESC
+		LIMIT $3 OFFSET $4`, eventListCols, eventListJoin)
 	rows, err := r.db.Query(ctx, q, actorID, clinicID, p.Limit, p.Offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("timeline.repo.ListByActor: %w", err)
@@ -116,7 +120,7 @@ func (r *Repository) ListByActor(ctx context.Context, actorID, clinicID uuid.UUI
 	defer rows.Close()
 	var list []*EventRecord
 	for rows.Next() {
-		e, sErr := scanEvent(rows)
+		e, sErr := scanEventWithLabel(rows)
 		if sErr != nil {
 			return nil, 0, fmt.Errorf("timeline.repo.ListByActor: %w", sErr)
 		}
@@ -128,22 +132,45 @@ func (r *Repository) ListByActor(ctx context.Context, actorID, clinicID uuid.UUI
 	return list, total, nil
 }
 
+// eventCols is the base column list for INSERT RETURNING and single-event scans.
 const eventCols = `id, note_id, subject_id, clinic_id, event_type, field_id,
 	old_value::text, new_value::text, actor_id, actor_role, reason, occurred_at`
+
+// eventListCols extends eventCols with a JOIN on notes → form_versions → forms
+// to produce a full "Form Name v1.2" label on every event row. All note_events
+// columns are qualified with "ne." to avoid ambiguity with the joined tables.
+const eventListCols = `ne.id, ne.note_id, ne.subject_id, ne.clinic_id, ne.event_type, ne.field_id,
+	ne.old_value::text, ne.new_value::text, ne.actor_id, ne.actor_role, ne.reason, ne.occurred_at,
+	CONCAT(
+		COALESCE(fo.name, ''),
+		' ',
+		CASE
+			WHEN fv.version_major IS NOT NULL AND fv.version_minor IS NOT NULL
+				THEN 'v' || fv.version_major::text || '.' || fv.version_minor::text
+			ELSE 'Draft'
+		END
+	) AS form_version_label`
+
+const eventListJoin = `note_events ne
+	LEFT JOIN notes n ON n.id = ne.note_id
+	LEFT JOIN form_versions fv ON fv.id = n.form_version_id
+	LEFT JOIN forms fo ON fo.id = fv.form_id`
 
 func (r *Repository) listEvents(ctx context.Context, where string, args []any, p ListParams) ([]*EventRecord, int, error) {
 	var total int
 	if err := r.db.QueryRow(ctx,
-		fmt.Sprintf("SELECT COUNT(*) FROM note_events WHERE %s", where), args...,
+		fmt.Sprintf("SELECT COUNT(*) FROM note_events ne WHERE %s", where), args...,
 	).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("timeline.repo.listEvents: count: %w", err)
 	}
 
 	args = append(args, p.Limit, p.Offset)
 	q := fmt.Sprintf(`
-		SELECT %s FROM note_events WHERE %s
-		ORDER BY occurred_at ASC
-		LIMIT $%d OFFSET $%d`, eventCols, where, len(args)-1, len(args))
+		SELECT %s
+		FROM %s
+		WHERE %s
+		ORDER BY ne.occurred_at ASC
+		LIMIT $%d OFFSET $%d`, eventListCols, eventListJoin, where, len(args)-1, len(args))
 
 	rows, err := r.db.Query(ctx, q, args...)
 	if err != nil {
@@ -153,7 +180,7 @@ func (r *Repository) listEvents(ctx context.Context, where string, args []any, p
 
 	var list []*EventRecord
 	for rows.Next() {
-		e, err := scanEvent(rows)
+		e, err := scanEventWithLabel(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("timeline.repo.listEvents: %w", err)
 		}
@@ -180,6 +207,23 @@ func scanEvent(row scannable) (*EventRecord, error) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("scanEvent: %w", err)
+	}
+	return &e, nil
+}
+
+// scanEventWithLabel scans eventListCols — the base columns plus form_version_label.
+func scanEventWithLabel(row scannable) (*EventRecord, error) {
+	var e EventRecord
+	err := row.Scan(
+		&e.ID, &e.NoteID, &e.SubjectID, &e.ClinicID, &e.EventType, &e.FieldID,
+		&e.OldValue, &e.NewValue, &e.ActorID, &e.ActorRole, &e.Reason, &e.OccurredAt,
+		&e.FormVersionLabel,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanEventWithLabel: %w", err)
 	}
 	return &e, nil
 }
