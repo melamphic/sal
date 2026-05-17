@@ -29,6 +29,12 @@ overall_prompt: |
   Use clinician's voice. Quote direct patient statements with quotation
   marks. Do not infer beyond what was stated. Flag uncertainty in the
   extraction-confidence channel rather than guessing.
+  AI may extract: encounter_datetime (when the encounter occurred), location,
+  presenting_complaint, history, examination, assessment, plan,
+  medications_today, communication, red_flags_safety_netting, follow_up.
+  AI must NOT extract: clinician name or signature (system author record),
+  documentation submission time (Salvia auto-stamps), patient identity (from
+  patient record). Do not populate the subject_ref or clinician system fields.
 
 tags: [intake, encounter, core]
 

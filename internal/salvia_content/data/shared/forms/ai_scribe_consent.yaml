@@ -28,6 +28,14 @@ linked_policy_defaults:
 
 tags: [consent, ai, audio, intake]
 
+overall_prompt: |
+  This form captures AI scribe consent — it is not a clinical encounter note and
+  contains no AI-extractable clinical fields. Do NOT extract any information from
+  audio into this form. Patient/animal identity comes from the patient record, not
+  from audio. Clinician name, role, and digital signature are provided by the
+  system author record. Salvia auto-stamps the submission time; do not extract or
+  infer a documentation date from audio.
+
 fields:
   - key: subject_ref
     label: Patient

@@ -22,6 +22,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Applies to every medication issued without an in-person consultation
       ("repeat" / "refill" / "continuation"). It does NOT apply to:
@@ -32,6 +33,7 @@ clauses:
 
   - id: eligible_medications
     title: "Eligible medications and exclusions"
+    parity: high
     body: |
       Medicines eligible for repeat: stable chronic medications where (a)
       the patient is established (≥3 months on the medication), (b) no
@@ -45,6 +47,7 @@ clauses:
 
   - id: max_quantity_and_duration
     title: "Maximum quantity and duration"
+    parity: medium
     body_per_country:
       NZ: |
         Standard repeat: up to 3 months' supply per dispensing,
@@ -74,6 +77,7 @@ clauses:
 
   - id: authorisation_workflow
     title: "Authorisation workflow"
+    parity: high
     body: |
       Patient request received via portal / phone / fax / pharmacy
       request. Reception triage: patient identity verified (name + DOB
@@ -87,6 +91,7 @@ clauses:
 
   - id: review_cadence
     title: "Review cadence and prompts"
+    parity: medium
     body: |
       Each repeat medication has a review date set in the record. The
       patient's medication-review prompt fires at the next-due review.
@@ -100,6 +105,7 @@ clauses:
 
   - id: switch_prescriber
     title: "Switch of prescriber and locum issuing"
+    parity: medium
     body: |
       A new prescriber issuing for the first time MUST review the
       record before signing. Locums and trainees do NOT sign repeats
@@ -110,6 +116,7 @@ clauses:
 
   - id: escalation_and_decline
     title: "Escalation and refusal to repeat"
+    parity: medium
     body: |
       The authorising clinician declines a repeat where: monitoring is
       overdue; new red-flag symptoms reported; safer alternative is
@@ -121,6 +128,7 @@ clauses:
 
   - id: high_risk_register
     title: "High-risk medicines register"
+    parity: medium
     body: |
       The practice maintains a register of patients on high-risk
       medicines (warfarin, lithium, methotrexate, DMARDs, isotretinoin,
@@ -131,6 +139,7 @@ clauses:
 
   - id: documentation_and_audit
     title: "Documentation and audit"
+    parity: medium
     body: |
       Every repeat issuing produces a record entry: date, prescribing
       clinician, medications issued, monitoring confirmed, review
@@ -142,6 +151,7 @@ clauses:
 
   - id: training
     title: "Training"
+    parity: medium
     body: |
       Reception staff complete annual training on the repeat workflow:
       identity check, exclusion criteria, escalation, urgent flags
@@ -151,6 +161,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months. Currency date at the top of this
       policy reflects the last review.
