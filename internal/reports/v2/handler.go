@@ -121,7 +121,18 @@ func (h *Handler) preview(ctx context.Context, in *previewBodyInput) (*previewHT
 		logoURL = ""
 	}
 
-	out, err := h.renderer.RenderPreview(ctx, docType, theme, logoURL, h.notes)
+	var baseClinic pdf.ClinicInfo
+	clinicID := mw.ClinicIDFromContext(ctx)
+	if h.clinicInfo != nil && clinicID != uuid.Nil {
+		if ci, lookupErr := h.clinicInfo.GetPreviewClinicInfo(ctx, clinicID); lookupErr == nil {
+			baseClinic = ci
+		} else {
+			slog.WarnContext(ctx, "v2.preview: clinic info lookup failed, using empty base",
+				slog.String("error", lookupErr.Error()))
+		}
+	}
+
+	out, err := h.renderer.RenderPreview(ctx, docType, theme, logoURL, baseClinic, h.notes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("preview render failed: " + err.Error())
 	}
