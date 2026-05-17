@@ -115,6 +115,7 @@ clauses:
 
   - id: training
     title: Training
+    parity: medium
     body: |
       All staff complete IPC induction and annual refresher. Hand
       hygiene technique and PPE technique observed and signed off.
@@ -128,6 +129,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and after any outbreak.
       Operational responsibility: IPC Lead.
