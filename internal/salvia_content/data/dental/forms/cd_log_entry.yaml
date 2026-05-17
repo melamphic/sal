@@ -1,225 +1,138 @@
 id: salvia.dental.cd_log_entry
-name: "Controlled Drug Administration / Dispensing Log Entry"
-version: 1
+name: "Controlled Drug Register Entry"
+version: 2
 currency_date: 2026-05-08
 vertical: dental
 countries: [NZ, AU, UK, US]
+badge: "Made by Salvia v1"
+disclaimer: standard
+maintainer: "Salvia"
 
 description: >
-  Per-event entry for controlled drug administration, dispensing, receipt,
-  transfer, or discard from the dental practice CD register. Witness rules
-  and retention vary by country; the form ships country-aware.
+  Per-event entry for the dental practice controlled-drug register: administration,
+  dispensing, receipt, transfer, or discard. The system.drug_op widget records the
+  drug, strength, form, batch, quantity, operation type, witness confirmation, and
+  running balance in the CD ledger. Fields here capture the clinical context
+  (indication, prescription reference, discrepancy notes) that the ledger row alone
+  does not carry.
 
 purpose_per_regulator:
-  NZ: "Misuse of Drugs Act 1975 + Misuse of Drugs Regulations 1977 reg 41–46; Medsafe CD Reg requirements; 2-year retention minimum (3 yrs HDIP best practice)."
-  AU: "State / territory Drugs and Poisons / Medicines and Poisons Acts (e.g. NSW PHA 1966, Vic DPCS 1981, Qld MPA 2019); SUSMP Schedule 8; 2-yr retention typical, biannual physical inventory NSW."
-  UK: "Misuse of Drugs Regulations 2001; Misuse of Drugs (Safe Custody) Regulations 1973; CD Schedule 2/3 register bound book OR electronic equivalent (CD Regs 2006); 2-yr retention from last entry."
-  US: "Controlled Substances Act 21 USC §801; 21 CFR §1304 records; biennial DEA inventory; state laws (e.g. CA EPCS, NY I-STOP); MATE Act 8-hr training."
+  NZ: "Misuse of Drugs Act 1975 + Misuse of Drugs Regulations 1977 reg 41–46; Medsafe CD requirements; 2-year minimum retention (3 yrs HDIP best practice)."
+  AU: "State Drugs and Poisons / Medicines and Poisons Acts (e.g. NSW PHA 1966, Vic DPCS 1981, Qld MPA 2019); SUSMP Schedule 8; 2-yr retention, biannual physical inventory (NSW)."
+  UK: "Misuse of Drugs Regulations 2001; CD Schedule 2/3 bound register or compliant electronic system (CD Regs 2006); 2-yr retention from last entry."
+  US: "Controlled Substances Act 21 USC §801; 21 CFR §1304; biennial DEA inventory; state laws (CA EPCS, NY I-STOP); MATE Act 8-hr training."
 
 linked_policy_defaults:
   - salvia.dental.controlled_drugs_opioid_prescribing
 
-tags: [controlled_drugs, register]
+tags: [controlled_drugs, register, ledger]
 
 overall_prompt: |
-  Extract drug name, schedule, quantity, operation type, witness, and
-  patient (if administer/dispense). Quantity must reconcile with running
-  balance — flag discrepancy for clinician review.
+  This form writes a controlled-drug ledger row via the system.drug_op widget.
+  The widget captures drug, strength, form, batch, expiry, quantity, operation
+  type, witness, and running balance — do NOT re-extract those from audio.
+  AI may populate: clinical indication, prescription reference, source/destination,
+  and clinician notes. Patient identity is from the patient record.
 
 fields:
   - key: subject_ref
     label: Patient (if applicable)
     type: system_field
     source: patient_record
-    help_text: "Required for administer / dispense; not required for receive / discard / transfer."
-
-  - key: subject_dob
-    label: Patient DOB
-    type: system_field
-    source: patient_record.date_of_birth
+    help_text: "Required for administer / dispense. Leave blank for receive / discard / transfer."
 
   - key: subject_weight
     label: Patient weight (kg)
     type: system_field
     source: patient_record.weight_kg
+    help_text: "Used for dose verification by the drug_op widget."
 
-  - key: entry_datetime
-    label: Date and time of entry
-    type: text
+  - key: drug_op
+    label: Controlled drug operation
+    type: system.drug_op
     required: true
-    ai_extract: true
-    help_text: "Use clinic local time. Backdating prohibited — record the moment of operation."
-
-  - key: operation_type
-    label: Operation type
-    type: select
-    required: true
-    ai_extract: true
+    ai_extract: false
     config:
-      options:
-        - {label: "Administer to patient", value: "administer"}
-        - {label: "Dispense to patient", value: "dispense"}
-        - {label: "Receive into stock", value: "receive"}
-        - {label: "Transfer between locations", value: "transfer"}
-        - {label: "Discard / destroy / waste", value: "discard"}
-        - {label: "Stock-take adjustment", value: "adjust"}
-
-  - key: drug_name
-    label: Drug name
-    type: text
-    required: true
-    ai_extract: true
-    help_text: "Generic name preferred; brand in brackets if relevant."
-
-  - key: drug_strength
-    label: Strength (e.g. 5 mg/ml, 100 mcg)
-    type: text
-    required: true
-    ai_extract: true
-
-  - key: form
-    label: Form (ampoule / tablet / syrup / patch)
-    type: text
-    ai_extract: true
+      controlled_only: true
+      confirm_required: true
+    help_text: |
+      Captures: operation type (administer / dispense / receive / transfer / discard / adjust),
+      drug, strength, form, batch, expiry, quantity in/out, witness confirmation, and
+      the updated running balance. Witness confirmation is required for administer,
+      dispense, and discard per country rules.
 
   - key: schedule_classification
     label: Controlled drug schedule
     type: select
     required: true
     ai_extract: true
-    help_text: "NZ: B/C; AU: S8/S4D; UK: CD Sch 2/3/4(1)/4(2)/5; US: DEA II/III/IV/V."
+    help_text: "NZ: Class B/C; AU: S8/S4D; UK: CD Sch 2/3/4/5; US: DEA II–V."
     config:
       options:
         - {label: "NZ Class B", value: "nz_b"}
         - {label: "NZ Class C", value: "nz_c"}
         - {label: "AU S8", value: "au_s8"}
         - {label: "AU S4D / S4 restricted", value: "au_s4d"}
-        - {label: "UK CD Sch 2", value: "uk_sch2"}
-        - {label: "UK CD Sch 3", value: "uk_sch3"}
-        - {label: "UK CD Sch 4 part 1", value: "uk_sch4_1"}
-        - {label: "UK CD Sch 4 part 2", value: "uk_sch4_2"}
-        - {label: "UK CD Sch 5", value: "uk_sch5"}
-        - {label: "US DEA Sch II", value: "us_2"}
-        - {label: "US DEA Sch III", value: "us_3"}
-        - {label: "US DEA Sch IV", value: "us_4"}
-        - {label: "US DEA Sch V", value: "us_5"}
-
-  - key: quantity
-    label: Quantity (count or mg / ml)
-    type: text
-    required: true
-    ai_extract: true
-
-  - key: unit
-    label: Unit
-    type: select
-    required: true
-    config:
-      options:
-        - {label: "tablets", value: "tablet"}
-        - {label: "capsules", value: "capsule"}
-        - {label: "ml", value: "ml"}
-        - {label: "mg", value: "mg"}
-        - {label: "ampoules", value: "ampoule"}
-        - {label: "patches", value: "patch"}
-        - {label: "lozenges", value: "lozenge"}
-        - {label: "other", value: "other"}
-
-  - key: batch_number
-    label: Batch / lot number
-    type: text
-    ai_extract: true
-
-  - key: expiry_date
-    label: Expiry date
-    type: date
-    ai_extract: true
+        - {label: "UK CD Schedule 2", value: "uk_sch2"}
+        - {label: "UK CD Schedule 3", value: "uk_sch3"}
+        - {label: "UK CD Schedule 4 part 1", value: "uk_sch4_1"}
+        - {label: "UK CD Schedule 4 part 2", value: "uk_sch4_2"}
+        - {label: "UK CD Schedule 5", value: "uk_sch5"}
+        - {label: "US DEA Schedule II", value: "us_2"}
+        - {label: "US DEA Schedule III", value: "us_3"}
+        - {label: "US DEA Schedule IV", value: "us_4"}
+        - {label: "US DEA Schedule V", value: "us_5"}
 
   - key: indication
     label: Clinical indication
     type: text
     ai_extract: true
+    help_text: "Brief reason for administration / dispensing. Link to the relevant encounter note for full context."
 
   - key: prescription_reference
-    label: Prescription reference (if dispense)
+    label: Prescription reference (dispense operations)
     type: text
     ai_extract: true
+    help_text: "Script number or NZePS / EPCS token where a prescription authorises the dispense."
 
   - key: source_or_destination
-    label: Supplier (if receive) / patient or destination (if transfer/discard)
+    label: Supplier (receive) / destination (transfer / discard)
     type: text
     ai_extract: true
-
-  - key: running_balance_before
-    label: Running balance before entry
-    type: text
-    ai_extract: true
-
-  - key: running_balance_after
-    label: Running balance after entry
-    type: text
-    required: true
-    ai_extract: true
-
-  - key: witness_name
-    label: Witness name
-    type: text
-    required: true
-    ai_extract: true
-    pii: true
-
-  - key: witness_role
-    label: Witness role
-    type: text
-    required: true
-    ai_extract: true
-    help_text: |
-      NZ: registered health practitioner witness for CD destruction
-      (MoDR 1977 reg 28). UK: senior person authorised under CD SOP for
-      register entries; destruction witness must be authorised destruction
-      witness (CD Regs 2006). US DEA: two witnesses for destruction (DEA
-      Form 41); biennial inventory countersigned. AU varies by state — NSW
-      requires registered nurse/dentist/pharmacist witness for S8.
+    help_text: "Pharmacy name and invoice for receipts; receiving location for transfers; destruction method for discards."
 
   - key: discrepancy_flag
     label: Discrepancy flagged
     type: button_group
     config:
       options:
-        - {label: "No", value: "no"}
+        - {label: "No discrepancy", value: "no"}
         - {label: "Yes — incident report raised", value: "yes"}
+    help_text: "If yes, raise a CD discrepancy incident report. UK: notify Accountable Officer. US: DEA Form 106. NZ/AU: notify Medicines Control / state Drugs & Poisons unit."
 
   - key: nz_specific_notes
-    label: NZ-specific notes
+    label: NZ notes
     type: text
     countries: [NZ]
-    help_text: "Maintain register at premises; quarterly stock-take recommended."
+    help_text: "Quarterly stock-take recommended; register retained at premises."
 
   - key: au_specific_notes
-    label: AU state-specific notes
+    label: AU state notes
     type: text
     countries: [AU]
-    help_text: "Refer to state Drugs and Poisons authority requirements; e.g. NSW biannual physical inventory; Vic SafeScript for opioids dispensed."
+    help_text: "NSW: biannual physical inventory (March / September). Vic SafeScript check for opioids dispensed."
 
   - key: uk_specific_notes
     label: UK CD register reference
     type: text
     countries: [UK]
-    help_text: "If using bound book, quote book ID + page. If electronic, system audit ID. CD Regs 2006 Sch 4 specifies format; 2-yr retention from date of last entry."
+    help_text: "Quote the Salvia audit-record ID for the digital register. CD Regs 2006 Sch 4 format; 2-yr retention from date of last entry."
 
   - key: us_specific_notes
     label: US DEA / state notes
     type: text
     countries: [US]
-    help_text: "21 CFR §1304.04: 2-yr retention. Sch II separate from III–V. Loss/theft: DEA Form 106 within 1 business day. CA EPCS for CII Rx; FL 7-day acute opioid limit."
-
-  - key: drug_op
-    label: Controlled drug operation record
-    type: system.drug_op
-    required: true
-    config:
-      controlled_only: true
-      confirm_required: true
+    help_text: "21 CFR §1304.04: 2-yr retention. Schedule II separate from III–V. Loss/theft: DEA Form 106 within 1 business day."
 
   - key: clinician_notes
     label: Clinician notes
