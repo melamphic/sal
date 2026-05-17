@@ -1,6 +1,6 @@
 id: salvia.dental.cd_log_entry
 name: "Controlled Drug Register Entry"
-version: 2
+version: 1
 currency_date: 2026-05-08
 vertical: dental
 countries: [NZ, AU, UK, US]
