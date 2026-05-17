@@ -124,6 +124,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and after every
       outbreak. Operational responsibility: IPC Lead.
