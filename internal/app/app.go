@@ -42,6 +42,7 @@ import (
 	"github.com/melamphic/sal/internal/domain"
 	"github.com/melamphic/sal/internal/extraction"
 	"github.com/melamphic/sal/internal/forms"
+	"github.com/melamphic/sal/internal/library"
 	"github.com/melamphic/sal/internal/marketplace"
 	"github.com/melamphic/sal/internal/notecap"
 	"github.com/melamphic/sal/internal/notes"
@@ -555,6 +556,18 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	formsSvc.SetTemplateOverlaySource(salviaOverlay)
 	policySvc.SetTemplateOverlaySource(salviaOverlay)
 
+	// ── Salvia Library ────────────────────────────────────────────────────────
+	// Browse + import endpoint. Reads from the embedded YAML (no extra tables).
+	librarySvc := library.NewService(
+		salviaContentMat,
+		&drugsClinicLookupAdapter{clinicSvc: clinicSvc},
+		&libraryFormStatusAdapter{svc: formsSvc},
+		&libraryPolicyStatusAdapter{svc: policySvc},
+		formsSvc,
+		policySvc,
+	)
+	libraryHandler := library.NewHandler(librarySvc)
+
 	// ── Drugs module ──────────────────────────────────────────────────────────
 	// System catalog ships as embedded JSON files (one per vertical × country).
 	// On startup we parse + validate every file; a malformed catalog fails
@@ -864,6 +877,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	aiDraftsHandler.Mount(r, api, jwtSecret)
 	reportsHandler.Mount(r, api, jwtSecret)
 	marketplaceHandler.Mount(r, api, jwtSecret)
+	libraryHandler.Mount(r, api, jwtSecret)
 	if billingHandler != nil {
 		billingHandler.Mount(r, api, jwtSecret)
 	}
@@ -3670,6 +3684,24 @@ func (a *salviaTemplateOverlayAdapter) ClausesForTemplate(ctx context.Context, t
 		})
 	}
 	return out, true
+}
+
+// libraryFormStatusAdapter satisfies library.FormStatusLookup.
+type libraryFormStatusAdapter struct {
+	svc *forms.Service
+}
+
+func (a *libraryFormStatusAdapter) GetFormIDForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) (*uuid.UUID, string, error) {
+	return a.svc.GetFormIDForTemplate(ctx, templateID, clinicID)
+}
+
+// libraryPolicyStatusAdapter satisfies library.PolicyStatusLookup.
+type libraryPolicyStatusAdapter struct {
+	svc *policy.Service
+}
+
+func (a *libraryPolicyStatusAdapter) GetPolicyIDForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) (*uuid.UUID, string, error) {
+	return a.svc.GetPolicyIDForTemplate(ctx, templateID, clinicID)
 }
 
 // policyFormLinkerAdapter implements policy.FormLinker.
