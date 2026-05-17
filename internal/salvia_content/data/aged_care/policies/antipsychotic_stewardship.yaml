@@ -57,6 +57,7 @@ clauses:
 
   - id: consent_rules
     title: Consent rules
+    parity: high
     body_per_country:
       NZ: |
         Resident with capacity consents. Welfare Guardian (PPPR Act 1988)
@@ -80,6 +81,7 @@ clauses:
 
   - id: monitoring
     title: Monitoring
+    parity: high
     body: |
       Vital signs, falls risk, sedation, EPS (extrapyramidal symptoms),
       QTc (in cardiac risk), metabolic (weight, lipids, glucose) per
