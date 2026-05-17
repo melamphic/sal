@@ -194,6 +194,17 @@ func (f *fakeRepo) ListByMarketplaceListing(_ context.Context, clinicID, listing
 	return out, nil
 }
 
+func (f *fakeRepo) GetByTemplateID(_ context.Context, templateID string, clinicID uuid.UUID) (*FormRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	for _, form := range f.forms {
+		if form.ClinicID == clinicID && form.SalviaTemplateID != nil && *form.SalviaTemplateID == templateID {
+			return cloneForm(form), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (f *fakeRepo) GetFormByID(_ context.Context, id, clinicID uuid.UUID) (*FormRecord, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
