@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Applies to every employee, contractor, locum, trainee, and
       volunteer at the practice. The training matrix is held by the
@@ -32,6 +33,7 @@ clauses:
 
   - id: matrix_topics_clinical
     title: "Required topics — clinical staff"
+    parity: high
     body: |
       Clinical staff (GPs, nurses, nurse practitioners, healthcare
       assistants, pharmacists, paramedics):
@@ -58,6 +60,7 @@ clauses:
 
   - id: matrix_topics_admin
     title: "Required topics — administrative / reception staff"
+    parity: high
     body: |
       Administrative and reception staff:
         • Basic Life Support / CPR + AED awareness — annual.
@@ -73,6 +76,7 @@ clauses:
 
   - id: country_specific
     title: "Country-specific topics"
+    parity: high
     body_per_country:
       NZ: |
         Te Tiriti o Waitangi + cultural safety (MCNZ Statement on cultural
@@ -102,6 +106,7 @@ clauses:
 
   - id: induction
     title: "Induction"
+    parity: high
     body: |
       Every new starter completes the practice induction within the
       first 5 working days, including: tour of the premises, fire
@@ -114,6 +119,7 @@ clauses:
 
   - id: evidence_and_records
     title: "Evidence and records"
+    parity: medium
     body: |
       The training matrix records, for each staff member: training
       topic, date completed, source (provider, course title), expiry,
@@ -125,6 +131,7 @@ clauses:
 
   - id: cpd_revalidation_link
     title: "Link to CPD / revalidation / appraisal"
+    parity: medium
     body: |
       Mandatory training counts toward each clinician's CPD /
       revalidation / appraisal requirement (UK GMC + NMC; NZ MCNZ + NCNZ;
@@ -134,6 +141,7 @@ clauses:
 
   - id: funding_and_time
     title: "Funding and time allocation"
+    parity: medium
     body: |
       The practice funds mandatory training and provides paid time to
       complete it. Staff may not be charged for required topics. Online
@@ -143,6 +151,7 @@ clauses:
 
   - id: monitoring
     title: "Monitoring and audit"
+    parity: medium
     body: |
       The Practice Manager presents a quarterly training-matrix
       compliance report to the practice partnership / clinical board.
@@ -152,6 +161,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months. New mandatory topics added when a
       regulator publishes them (e.g. UK Oliver McGowan added 2024,

@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Applies to every vaccine, biological, and temperature-sensitive medicine
       stored at this practice (e.g. immunoglobulins, insulin in clinical
@@ -32,6 +33,7 @@ clauses:
 
   - id: fridge_specification
     title: "Fridge specification and placement"
+    parity: high
     body: |
       The vaccine fridge is purpose-built (pharmacy-grade) with: forced-air
       circulation, ≥1.7 °C uniformity across the chamber, a min/max
@@ -44,6 +46,7 @@ clauses:
 
   - id: monitoring_and_logging
     title: "Daily monitoring and logging"
+    parity: high
     body: |
       Twice each working day a designated cold-chain coordinator records:
       current temperature, minimum-since-last-read, maximum-since-last-read.
@@ -54,6 +57,7 @@ clauses:
 
   - id: stock_rotation
     title: "Stock rotation, receipt, and segregation"
+    parity: high
     body: |
       Vaccines are placed in the fridge within 5 minutes of delivery and
       checked for cold-chain integrity (validated thermal indicator on the
@@ -65,6 +69,7 @@ clauses:
 
   - id: breach_procedure
     title: "Cold-chain breach procedure"
+    parity: high
     body_per_country:
       NZ: |
         On any reading <2 °C or >8 °C: (1) quarantine ALL vaccines in the
@@ -103,6 +108,7 @@ clauses:
 
   - id: transport
     title: "Off-site transport"
+    parity: high
     body: |
       For outreach clinics, vaccines travel in a validated transport
       container with two ice-pack rows (top and bottom), one calibrated
@@ -114,6 +120,7 @@ clauses:
 
   - id: alarms_and_power
     title: "Alarms and power-failure response"
+    parity: high
     body: |
       The fridge alarm activates audibly and via SMS / email to a named
       after-hours staffer for any breach >5 minutes. In a power-failure:
@@ -124,6 +131,7 @@ clauses:
 
   - id: annual_audit
     title: "Annual audit / self-audit"
+    parity: medium
     body: |
       The cold-chain coordinator completes the annual audit return (NZ
       CCMP; AU annual self-audit to state PHU; UK as part of QOF /
@@ -134,6 +142,7 @@ clauses:
 
   - id: training
     title: "Training and roles"
+    parity: medium
     body: |
       A named cold-chain coordinator (registered nurse or senior healthcare
       assistant) and a deputy are appointed and named in this policy. Both
@@ -144,6 +153,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on the publication of new national
       guidance (Te Whatu Ora; Strive for 5 ed change; Green Book

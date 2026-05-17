@@ -28,6 +28,19 @@ linked_policy_defaults:
 
 tags: [telehealth, encounter, remote]
 
+overall_prompt: |
+  AI may extract from voice: consultation modality, identity verification
+  method used, patient location, clinician location, third parties present,
+  audio/video quality issues, technology failure plan agreed, limits of remote
+  care discussed, telehealth consent status, subjective (presenting complaint
+  and history), objective findings, assessment/impression, plan, prescriptions
+  issued, safety-netting advice, follow-up arrangement, and whether emergency
+  escalation was used.
+  AI must NOT extract: clinician name, registration number, signature, or the
+  date/time of consultation. Patient identity (name, DOB) comes from the
+  patient record. Salvia auto-stamps submission time, digital signature, and
+  author identity.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -162,12 +175,3 @@ fields:
         - {label: "Yes — patient advised to attend ED / call 111 / 000 / 911 / 999", value: "ed"}
         - {label: "Yes — clinician contacted ambulance directly", value: "ambulance"}
 
-  - key: signature_clinician
-    label: "Clinician name and registration"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Date and time of consultation"
-    type: date
-    required: true
