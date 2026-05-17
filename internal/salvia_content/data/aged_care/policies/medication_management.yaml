@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to every medication held or administered by the
       service. Controlled drugs are also governed by the separate
@@ -112,6 +113,7 @@ clauses:
 
   - id: prn_governance
     title: PRN governance
+    parity: medium
     body: |
       Each PRN medication has a documented indication, maximum frequency,
       maximum 24-hour dose, and duration before review. Effectiveness is
@@ -121,6 +123,7 @@ clauses:
 
   - id: self_administration
     title: Self-administration
+    parity: medium
     body: |
       Residents may self-administer where assessed as safe. Assessment
       includes: cognition, dexterity, ability to read labels, ability to
