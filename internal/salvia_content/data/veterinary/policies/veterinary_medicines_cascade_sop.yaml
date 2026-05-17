@@ -18,6 +18,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This SOP covers every prescription, administration, dispensing and
       supply of a veterinary medicine in the practice. It applies to
@@ -122,6 +123,7 @@ clauses:
 
   - id: written_client_consent
     title: "Written client consent for off-label / cascade / extra-label"
+    parity: medium
     body: |
       Where the cascade, off-label, or extra-label pathway is invoked, the
       veterinarian explains the reason, the alternatives considered, the

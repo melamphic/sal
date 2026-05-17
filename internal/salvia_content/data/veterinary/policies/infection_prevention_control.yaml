@@ -19,6 +19,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This policy applies at every practice premises and to every member of
       staff, contractor, work-experience attendee, owner and visitor while

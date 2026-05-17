@@ -53,6 +53,7 @@ clauses:
 
   - id: provider_arrangement
     title: "Named after-hours provider arrangement"
+    parity: medium
     body: |
       Where after-hours care is delegated, the practice has a written
       arrangement with the named provider that addresses:

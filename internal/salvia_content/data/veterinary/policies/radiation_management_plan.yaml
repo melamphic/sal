@@ -19,6 +19,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This plan applies to all use of ionising radiation at the practice:
       x-ray (general radiography, dental, fluoroscopy), CT, and any source-
@@ -57,6 +58,7 @@ clauses:
 
   - id: training
     title: "Training and competency"
+    parity: medium
     body: |
       Every staff member who operates radiographic equipment or holds an
       animal during exposure receives training before first exposure and at

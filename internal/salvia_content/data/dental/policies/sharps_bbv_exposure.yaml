@@ -21,6 +21,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       Applies to every staff member, contractor, locum, student, and
       visitor who may be exposed to sharps or potentially infectious

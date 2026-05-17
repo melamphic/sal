@@ -18,6 +18,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This policy applies to every member of registered clinical staff
       (veterinarians, veterinary nurses where regulated, veterinary
@@ -58,6 +59,7 @@ clauses:
 
   - id: practice_records
     title: "Practice CPD register"
+    parity: medium
     body: |
       The practice maintains a register of CPD attended by each registrant
       while supported by the practice (paid CPD, study leave, in-house

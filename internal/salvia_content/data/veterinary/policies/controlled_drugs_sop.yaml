@@ -18,6 +18,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This SOP applies to all controlled drugs (CDs) handled at any practice
       premises: ordering, receipt, storage, administration to patients,
