@@ -3658,10 +3658,15 @@ func (a *salviaTemplateOverlayAdapter) ClausesForTemplate(ctx context.Context, t
 	}
 	out := make([]policy.TemplateClause, 0, len(t.Clauses))
 	for _, c := range t.Clauses {
+		parity := c.Parity
+		if parity == "" {
+			parity = "high"
+		}
 		out = append(out, policy.TemplateClause{
-			ID:    c.ID,
-			Title: c.Title,
-			Body:  c.BodyFor(country),
+			ID:     c.ID,
+			Title:  c.Title,
+			Body:   c.BodyFor(country),
+			Parity: parity,
 		})
 	}
 	return out, true
