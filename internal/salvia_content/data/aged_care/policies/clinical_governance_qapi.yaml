@@ -26,6 +26,7 @@ purpose_per_regulator:
 clauses:
   - id: leadership_accountability
     title: Leadership and accountability
+    parity: high
     body: |
       The Registered Manager / Director of Nursing / Administrator is
       accountable for clinical quality and safety. The Board / governing
@@ -35,6 +36,7 @@ clauses:
 
   - id: framework
     title: Quality framework
+    parity: high
     body: |
       The framework follows the country structure:
       - NZ: Ngā Paerewa Section 2 — leadership, workforce, adverse
@@ -51,6 +53,7 @@ clauses:
 
   - id: meeting_cadence
     title: Meeting cadence
+    parity: high
     body: |
       A clinical governance meeting is held at least monthly. A QAA /
       QAPI committee meeting (or local equivalent) at least quarterly
