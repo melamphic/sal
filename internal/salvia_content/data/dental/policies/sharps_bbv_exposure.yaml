@@ -29,6 +29,7 @@ clauses:
 
   - id: hierarchy_of_controls
     title: "Hierarchy of controls"
+    parity: medium
     body: |
       Controls are applied in priority order:
       1. Elimination — remove unnecessary sharps from the workflow.

@@ -73,6 +73,7 @@ clauses:
 
   - id: client_communication
     title: "Client communication"
+    parity: medium
     body: |
       Every client is told at registration, and reminded annually, of the
       practice's after-hours arrangement: which phone number to call,
@@ -87,6 +88,7 @@ clauses:
 
   - id: handoff_communication
     title: "Hand-off and case continuity"
+    parity: medium
     body: |
       For any patient seen out of hours by the delegated provider, the
       provider sends to the home practice within 24 hours:
@@ -105,6 +107,7 @@ clauses:
 
   - id: emergency_drug_kit
     title: "Emergency drug kit and equipment readiness"
+    parity: medium
     body: |
       Where the practice provides any out-of-hours service (including
       duty-vet phone triage from the practice premises), the emergency

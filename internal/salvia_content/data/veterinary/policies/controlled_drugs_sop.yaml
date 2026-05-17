@@ -269,6 +269,7 @@ clauses:
 
   - id: training_and_review
     title: "Training and SOP review"
+    parity: medium
     body: |
       Every member of staff with CD access is trained on this SOP at
       induction and at every annual review, with sign-off retained on the

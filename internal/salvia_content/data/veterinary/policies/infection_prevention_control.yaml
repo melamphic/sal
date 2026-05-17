@@ -62,6 +62,7 @@ clauses:
 
   - id: isolation_biosecurity
     title: "Isolation and biosecurity"
+    parity: medium
     body: |
       The practice has a designated isolation area or pathway used for any
       patient with suspected or confirmed transmissible infectious disease

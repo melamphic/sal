@@ -140,6 +140,7 @@ clauses:
 
   - id: antimicrobial_stewardship
     title: "Antimicrobial stewardship"
+    parity: medium
     body: |
       Every antimicrobial prescription documents the indication, the choice
       of agent against current resistance patterns, the dose, the duration,
@@ -181,6 +182,7 @@ clauses:
 
   - id: medicine_storage
     title: "Storage and stock control"
+    parity: medium
     body: |
       Veterinary medicines are stored per the manufacturer's labelled
       conditions (temperature, light, humidity). Refrigerated lines are

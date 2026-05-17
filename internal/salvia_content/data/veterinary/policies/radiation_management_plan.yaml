@@ -119,6 +119,7 @@ clauses:
 
   - id: lead_ppe_testing
     title: "Lead PPE: aprons, thyroid shields, gloves, glasses"
+    parity: medium
     body: |
       Every lead apron, thyroid shield, lead glove, and lead glasses is
       identified on the lead-PPE register, with a unique ID, year of
@@ -171,6 +172,7 @@ clauses:
 
   - id: holding_animals
     title: "Holding animals during exposure"
+    parity: medium
     body: |
       Patients are restrained mechanically (sandbags, troughs, ties, V-shaped
       cradles) and / or chemically (sedation, anaesthesia) wherever

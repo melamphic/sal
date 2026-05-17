@@ -73,6 +73,7 @@ clauses:
 
   - id: mandatory_training
     title: "Practice-mandatory training topics"
+    parity: medium
     body: |
       In addition to professional CPD, every staff member completes the
       practice's mandatory training programme at induction and on the
