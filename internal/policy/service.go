@@ -316,6 +316,36 @@ func (s *Service) ListFolders(ctx context.Context, clinicID uuid.UUID) (*PolicyF
 	return &PolicyFolderListResponse{Items: items}, nil
 }
 
+// GetPolicyIDForTemplate returns the policy ID and salvia_template_state for a
+// given salvia_template_id + clinic. Returns (nil, "", nil) when no row exists.
+func (s *Service) GetPolicyIDForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) (*uuid.UUID, string, error) {
+	rec, err := s.repo.GetByTemplateID(ctx, templateID, clinicID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("policy.service.GetPolicyIDForTemplate: %w", err)
+	}
+	state := ""
+	if rec.SalviaTemplateState != nil {
+		state = *rec.SalviaTemplateState
+	}
+	return &rec.ID, state, nil
+}
+
+// GetDraftVersionID returns the ID of the current draft for a policy, or
+// ErrNotFound if the policy has no draft (e.g. after publish without re-edit).
+func (s *Service) GetDraftVersionID(ctx context.Context, policyID, clinicID uuid.UUID) (uuid.UUID, error) {
+	if _, err := s.repo.GetPolicyByID(ctx, policyID, clinicID); err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.GetDraftVersionID: %w", err)
+	}
+	draft, err := s.repo.GetDraftVersion(ctx, policyID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("policy.service.GetDraftVersionID: %w", err)
+	}
+	return draft.ID, nil
+}
+
 // CreatePolicy creates a new policy and an empty draft version atomically
 // in a single transaction so a partial failure can never leave the policy
 // in a "no draft, no published" zombie state.
