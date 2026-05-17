@@ -440,6 +440,10 @@ type NoteResponse struct {
 	SubmittedBy        *string              `json:"submitted_by,omitempty"`
 	ArchivedAt         *string              `json:"archived_at,omitempty"`
 	FormVersionContext *string              `json:"form_version_context,omitempty"`
+	// FormVersionLabel is the human-readable semver of the form version this
+	// note was filed against, e.g. "v1.2" or "Draft". Populated on list
+	// responses; nil on single-note GET (formVersionId is already present).
+	FormVersionLabel *string `json:"form_version_label,omitempty"`
 	PolicyAlignmentPct *float64             `json:"policy_alignment_pct,omitempty"`
 	// OverrideReason/By/At are populated when the submitter overrode a
 	// high-parity policy violation at submit time.
@@ -1400,6 +1404,7 @@ func toNoteResponse(n *NoteRecord, fields []*NoteFieldRecord) *NoteResponse {
 		r.ArchivedAt = &s
 	}
 	r.FormVersionContext = n.FormVersionContext
+	r.FormVersionLabel = n.FormVersionLabel
 	r.PolicyAlignmentPct = n.PolicyAlignmentPct
 	r.OverrideReason = n.OverrideReason
 	if n.OverrideBy != nil {
