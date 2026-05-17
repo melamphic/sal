@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: Scope and principles
+    parity: high
     body: |
       Every resident is offered advance care planning conversations as a
       routine part of person-centred care. Conversations are
@@ -34,6 +35,7 @@ clauses:
 
   - id: cadence
     title: Cadence — when to offer
+    parity: high
     body: |
       ACP conversations are offered: (a) within the first 30 days of
       admission as part of orientation; (b) annually as part of the
@@ -44,6 +46,7 @@ clauses:
 
   - id: who_leads_conversation
     title: Who leads the conversation
+    parity: medium
     body: |
       A trained clinician (typically the resident's keyworker RN, the
       treating GP, or a dedicated ACP-trained clinician) leads the
@@ -53,6 +56,7 @@ clauses:
 
   - id: cultural_safety
     title: Cultural and spiritual safety
+    parity: high
     body_per_country:
       NZ: |
         Tikanga around dying, talking about death, and substitute
@@ -72,6 +76,7 @@ clauses:
 
   - id: storage_access
     title: Storage and access at point of care
+    parity: high
     body: |
       The completed ACP and any country-specific statutory instrument
       (POLST/MOLST, ReSPECT, ADRT, EPOA, ACD) are stored in the
@@ -82,6 +87,7 @@ clauses:
 
   - id: document_types
     title: Document types recognised
+    parity: high
     body_per_country:
       NZ: |
         HQSC Advance Care Plan template; activated EPOA (Personal Care
@@ -106,6 +112,7 @@ clauses:
 
   - id: dnacpr_link
     title: Link to DNACPR / AND
+    parity: high
     body: |
       Where the conversation reaches a DNACPR / Allow Natural Death
       decision, the separate DNACPR Policy and the relevant country
@@ -114,6 +121,7 @@ clauses:
 
   - id: review
     title: Review
+    parity: high
     body: |
       The ACP is reviewed at any significant change of condition, on
       return from hospital, and at the annual care plan review. The
@@ -122,6 +130,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       Clinicians leading ACP conversations have completed structured
       ACP training (e.g. HQSC ACP foundation course NZ; Advance Care
