@@ -21,6 +21,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Applies to every reusable medical device used in patient care:
       handpieces, burs (where reprocessable), scalers, cassettes, mirrors,
@@ -29,6 +30,7 @@ clauses:
 
   - id: ldu_layout
     title: "Local Decontamination Unit (LDU) layout"
+    parity: high
     body_per_country:
       NZ: |
         Dirty-to-clean unidirectional workflow per DCNZ IPC Std 2024 §5.
@@ -53,6 +55,7 @@ clauses:
 
   - id: cleaning
     title: "Cleaning"
+    parity: high
     body: |
       Pre-cleaning: keep instruments moist (cover or pre-soak) until
       processed; do not allow bioburden to dry. Cleaning by validated
@@ -67,6 +70,7 @@ clauses:
 
   - id: packaging_inspection
     title: "Inspection and packaging"
+    parity: high
     body: |
       Functional inspection (joints, sharpness, integrity). Damaged or
       worn instruments removed from service. Packaging selected per cycle
@@ -78,6 +82,7 @@ clauses:
 
   - id: cycle_parameters
     title: "Sterilisation cycle parameters"
+    parity: high
     body: |
       Standard cycles:
       - 134°C ± 3°C for ≥3 minutes hold (porous load wrapped, Type B/S).
@@ -89,6 +94,7 @@ clauses:
 
   - id: testing_cadence
     title: "Daily and periodic tests"
+    parity: high
     body_per_country:
       NZ: |
         DCNZ IPC Std 2024 §5: daily steam-penetration test (Bowie & Dick
@@ -113,6 +119,7 @@ clauses:
 
   - id: failure_management
     title: "Failed-cycle / positive BI management"
+    parity: high
     body: |
       On any failure (cycle parameters fail, chemical integrator fail,
       Bowie & Dick fail, Helix fail, BI positive):
@@ -126,6 +133,7 @@ clauses:
 
   - id: traceability
     title: "Instrument traceability"
+    parity: medium
     body: |
       Each pack carries a load identifier linking back to the cycle log,
       operator, and (best practice) the patient encounter at which it was
@@ -134,6 +142,7 @@ clauses:
 
   - id: storage
     title: "Storage of sterilised stock"
+    parity: high
     body: |
       Sterilised packs stored clean, dry, dust-free, and away from
       direct sunlight; at least 250 mm above the floor; use-by date
@@ -142,6 +151,7 @@ clauses:
 
   - id: validation_revalidation
     title: "Validation and revalidation"
+    parity: high
     body: |
       Steriliser commissioned per manufacturer IFU + national standard
       (HTM 01-05 IPS / AS/NZS 4187 / AAMI ST79). Annual revalidation by
@@ -151,6 +161,7 @@ clauses:
 
   - id: handpieces
     title: "Handpiece and ultrasonic device reprocessing"
+    parity: high
     body: |
       Handpieces are reprocessed between every patient by autoclave
       sterilisation per manufacturer IFU (no handpiece is "wipe-only").
