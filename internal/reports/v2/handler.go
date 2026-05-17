@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
 	"github.com/melamphic/sal/internal/notes"
 	"github.com/melamphic/sal/internal/platform/pdf"
+	mw "github.com/melamphic/sal/internal/platform/middleware"
 )
 
 // LogoSigner resolves a doc-theme storage key (header.logo_key) to a
@@ -20,6 +22,13 @@ import (
 // alias so v2 doesn't import the forms package.
 type LogoSigner interface {
 	SignStyleLogoURL(ctx context.Context, key string) (string, error)
+}
+
+// ClinicInfoProvider fetches real clinic branding for the preview so
+// sample fixtures show the caller's own name and address instead of
+// hardcoded placeholder data.
+type ClinicInfoProvider interface {
+	GetPreviewClinicInfo(ctx context.Context, clinicID uuid.UUID) (pdf.ClinicInfo, error)
 }
 
 // Handler exposes the doc-theme preview endpoint. Lives in v2 so the
@@ -32,10 +41,16 @@ type LogoSigner interface {
 // into the sample fixtures so the user's uploaded logo renders in the
 // preview pane. When nil, the brand mark falls back to derived
 // initials.
+//
+// clinicInfo is optional — when present the preview path fetches the
+// real clinic name + address from the DB so the sample fixtures render
+// with the caller's own branding instead of the vetSampleClinic
+// placeholder. When nil, the placeholder is used as the base.
 type Handler struct {
 	renderer   *Renderer
 	notes      *notes.HTMLRenderer
 	logoSigner LogoSigner
+	clinicInfo ClinicInfoProvider
 }
 
 // NewHandler builds a Handler. notesR is the notes-package HTML
@@ -43,9 +58,10 @@ type Handler struct {
 // as production); pass nil to disable signed_note previews (the
 // endpoint will return 503 for that doc-type). logoSigner resolves
 // uploaded doc-theme logos to signed URLs for the live preview; pass
-// nil to fall back to initials.
-func NewHandler(r *Renderer, notesR *notes.HTMLRenderer, logoSigner LogoSigner) *Handler {
-	return &Handler{renderer: r, notes: notesR, logoSigner: logoSigner}
+// nil to fall back to initials. clinicInfo supplies real clinic
+// branding for the preview; pass nil to fall back to placeholder data.
+func NewHandler(r *Renderer, notesR *notes.HTMLRenderer, logoSigner LogoSigner, clinicInfo ClinicInfoProvider) *Handler {
+	return &Handler{renderer: r, notes: notesR, logoSigner: logoSigner, clinicInfo: clinicInfo}
 }
 
 // previewBodyInput is the request body for POST .../preview-pdf.
