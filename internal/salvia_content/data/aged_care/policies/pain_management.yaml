@@ -71,6 +71,7 @@ clauses:
 
   - id: non_pharm
     title: Non-pharmacological strategies
+    parity: medium
     body: |
       Pain management is multimodal. Examples: scheduled repositioning,
       heat / cold, gentle massage, music, validation therapy in dementia,
@@ -112,6 +113,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All clinical staff are trained in pain assessment including PainAD,
       multimodal management, opioid pharmacology / safety, and
@@ -120,6 +122,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing / Pain Lead.
