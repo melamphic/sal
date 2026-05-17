@@ -399,7 +399,7 @@ func Build(ctx context.Context, cfg *config.Config) (*App, error) {
 	// logo in the preview pane immediately after upload.
 	docThemeLogos := &docThemeLogoAdapter{store: store}
 	reportsV2Renderer := reportsv2.New(platformPDF, &v2DocThemeAdapter{repo: formsRepo})
-	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos)
+	reportsV2Handler := reportsv2.NewHandler(reportsV2Renderer, notesHTMLRenderer, docThemeLogos, &reportsV2ClinicInfoAdapter{svc: clinicSvc})
 	// Resolve the lazy v2 wrapper now that the renderer exists —
 	// the compliance-PDF worker (declared above before this line)
 	// reads through the lazy on every job run.
@@ -4112,6 +4112,25 @@ func (a *v2DocThemeAdapter) GetActiveDocTheme(ctx context.Context, clinicID stri
 		return nil, fmt.Errorf("app.v2DocThemeAdapter: %w", err)
 	}
 	return theme, nil
+}
+
+// reportsV2ClinicInfoAdapter implements reportsv2.ClinicInfoProvider.
+// Fetches the real clinic name + address so the doc-theme preview
+// renders the caller's own branding instead of hardcoded placeholder data.
+type reportsV2ClinicInfoAdapter struct {
+	svc *clinic.Service
+}
+
+func (a *reportsV2ClinicInfoAdapter) GetPreviewClinicInfo(ctx context.Context, clinicID uuid.UUID) (pdf.ClinicInfo, error) {
+	c, err := a.svc.GetByID(ctx, clinicID)
+	if err != nil {
+		return pdf.ClinicInfo{}, fmt.Errorf("app.reportsV2ClinicInfoAdapter: %w", err)
+	}
+	info := pdf.ClinicInfo{Name: c.Name}
+	if c.Address != nil {
+		info.AddressLine1 = *c.Address
+	}
+	return info, nil
 }
 
 // GetPerDocOverride implements reportsv2.PerDocThemeProvider — looks

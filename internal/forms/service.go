@@ -515,6 +515,24 @@ type UpdateStyleInput struct {
 
 // ── Service methods ───────────────────────────────────────────────────────────
 
+// GetFormIDForTemplate returns the form ID and salvia_template_state for a
+// given salvia_template_id + clinic. Returns (nil, "", nil) when no row
+// exists for this clinic — meaning the template has not yet been imported.
+func (s *Service) GetFormIDForTemplate(ctx context.Context, templateID string, clinicID uuid.UUID) (*uuid.UUID, string, error) {
+	rec, err := s.repo.GetByTemplateID(ctx, templateID, clinicID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("forms.service.GetFormIDForTemplate: %w", err)
+	}
+	state := ""
+	if rec.SalviaTemplateState != nil {
+		state = *rec.SalviaTemplateState
+	}
+	return &rec.ID, state, nil
+}
+
 // CreateForm creates a new form and an empty draft version.
 // Returns the created form with the draft attached.
 func (s *Service) CreateForm(ctx context.Context, input CreateFormInput) (*FormResponse, error) {
