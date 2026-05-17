@@ -102,6 +102,7 @@ clauses:
 
   - id: deprescribing_pathway
     title: Deprescribing pathway
+    parity: medium
     body: |
       Where a psychotropic is no longer indicated, deprescribing follows
       a stepped-down regimen agreed with the prescriber and pharmacist.
@@ -110,6 +111,7 @@ clauses:
 
   - id: indicators
     title: Indicators
+    parity: high
     body_per_country:
       NZ: |
         HQSC Atlas indicator for antipsychotic in dementia. Reviewed at
