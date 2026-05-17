@@ -2190,13 +2190,16 @@ type policyClauseProviderAdapter struct {
 	policy *policy.Repository
 }
 
-func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, formVersionID uuid.UUID) ([]notes.PolicyClause, error) {
+func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, formVersionID uuid.UUID, noteCreatedAt time.Time) ([]notes.PolicyClause, error) {
 	version, err := a.forms.GetVersionByID(ctx, formVersionID)
 	if err != nil {
 		return nil, fmt.Errorf("app.policyClauseProviderAdapter: get version: %w", err)
 	}
 
-	policyIDs, err := a.forms.ListLinkedPolicies(ctx, version.FormID)
+	// Use point-in-time lookups so that notes filed against an old form version
+	// are checked against the policies and clause text that were in effect when
+	// the note was recorded — not whatever is linked or published today.
+	policyIDs, err := a.forms.ListLinkedPoliciesAt(ctx, version.FormID, noteCreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("app.policyClauseProviderAdapter: list policies: %w", err)
 	}
@@ -2204,7 +2207,7 @@ func (a *policyClauseProviderAdapter) GetClausesForNote(ctx context.Context, for
 		return nil, nil
 	}
 
-	clauses, err := a.policy.GetLatestClausesForPolicies(ctx, policyIDs)
+	clauses, err := a.policy.GetClausesForPoliciesAt(ctx, policyIDs, noteCreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("app.policyClauseProviderAdapter: get clauses: %w", err)
 	}
