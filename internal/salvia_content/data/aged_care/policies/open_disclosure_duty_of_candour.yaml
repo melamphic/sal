@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: principles
     title: Principles
+    parity: low
     body: |
       When something goes wrong, the resident and their nominated family
       / NoK are told promptly, honestly and respectfully. An apology is
@@ -53,6 +54,7 @@ clauses:
 
   - id: who_leads
     title: Who leads the conversation
+    parity: medium
     body: |
       A senior clinical staff member (typically the Care Manager,
       Director of Nursing, or treating GP) leads the conversation, with
