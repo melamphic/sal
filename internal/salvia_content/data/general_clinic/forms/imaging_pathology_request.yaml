@@ -172,12 +172,3 @@ fields:
     required: true
     help_text: "Named receiver for the result, plus designated cover. Drives results safety-netting."
 
-  - key: signature_clinician
-    label: "Requesting clinician (name and registration)"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Request date"
-    type: date
-    required: true
