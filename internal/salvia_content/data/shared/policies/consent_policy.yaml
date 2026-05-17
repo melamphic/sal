@@ -22,6 +22,7 @@ purpose_per_regulator:
 clauses:
   - id: principle
     title: "Principle"
+    parity: high
     body: |
       Every patient (or their authorised representative) has the right to
       make an informed choice about their care. Consent must be given
@@ -31,6 +32,7 @@ clauses:
 
   - id: information_to_provide
     title: "Information to provide"
+    parity: high
     body: |
       The clinician explains, in language the patient understands:
       what is proposed; why; the expected benefits; the material risks
@@ -43,6 +45,7 @@ clauses:
 
   - id: capacity
     title: "Capacity to consent"
+    parity: high
     body_per_country:
       NZ: |
         Adults are presumed capable. Where capacity is in doubt, assess in
@@ -69,6 +72,7 @@ clauses:
 
   - id: minors
     title: "Children and young people"
+    parity: high
     body_per_country:
       NZ: "Children under 16 — Care of Children Act 2004. Mature/Gillick-competent minors may consent. Right of refusal more limited than right of consent."
       AU: "Mature minor / Gillick-competent minor doctrine. State variations on age thresholds for specific procedures."
@@ -77,6 +81,7 @@ clauses:
 
   - id: written_vs_verbal
     title: "Written vs verbal consent"
+    parity: high
     body: |
       Verbal consent (recorded in the clinical note) is sufficient for
       most low-risk routine care. Written, signed consent is obtained for:
@@ -88,6 +93,7 @@ clauses:
 
   - id: voluntariness
     title: "Voluntariness"
+    parity: high
     body: |
       Consent must be free of coercion, undue influence, or pressure.
       Particular care for: vulnerable adults; people from cultures where
@@ -98,6 +104,7 @@ clauses:
 
   - id: withdrawal
     title: "Withdrawal of consent"
+    parity: high
     body: |
       A patient may withdraw consent at any time before or during a
       procedure. The clinician stops at the point safely possible and
@@ -105,6 +112,7 @@ clauses:
 
   - id: emergency
     title: "Emergency"
+    parity: high
     body: |
       Where consent cannot be obtained and treatment is necessary to
       preserve life or prevent serious harm, treatment proceeds in the
@@ -114,6 +122,7 @@ clauses:
 
   - id: language_and_disability
     title: "Language and accessibility"
+    parity: high
     body: |
       Where the patient does not speak the clinician's language fluently,
       a qualified interpreter is used (not a family member where avoidable).
@@ -123,6 +132,7 @@ clauses:
 
   - id: cultural_safety
     title: "Cultural safety in consent"
+    parity: medium
     body_per_country:
       NZ: "Te Tiriti / cultural safety obligations apply: Māori patients may wish to involve whānau; the clinician facilitates this where the patient consents. MCNZ Statement on cultural safety."
       AU: "Aboriginal and Torres Strait Islander cultural safety; CALD patient considerations. AHPRA Cultural Safety Strategy 2020-25."
@@ -131,6 +141,7 @@ clauses:
 
   - id: documentation
     title: "Documentation"
+    parity: high
     body: |
       Consent is documented in the clinical record (verbal) or on a
       signed form (written). The record captures: what was proposed;
@@ -142,6 +153,7 @@ clauses:
 
   - id: ai_recording_consent
     title: "AI scribe and recording consent"
+    parity: high
     body: |
       Where audio is recorded for AI-assisted documentation, separate
       consent is captured on the AI scribe consent form
@@ -150,4 +162,5 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: medium
     body: "Reviewed every two years and on any material change in case-law or regulator guidance."

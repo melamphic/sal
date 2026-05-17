@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       This policy covers any AI tool used by the clinic for clinical or
       operational purposes — including but not limited to: ambient
@@ -34,6 +35,7 @@ clauses:
 
   - id: tool_inventory
     title: "Inventory and approval"
+    parity: high
     body: |
       The clinic maintains a register of AI tools in use: name, vendor,
       purpose, model class (where disclosed), training-data class
@@ -44,6 +46,7 @@ clauses:
 
   - id: validation
     title: "Validation before deployment"
+    parity: medium
     body: |
       Before deployment the clinic verifies, proportional to the tool's
       risk: published validation evidence relevant to the clinic's
@@ -54,6 +57,7 @@ clauses:
 
   - id: clinician_in_loop
     title: "Clinician in the loop"
+    parity: high
     body: |
       AI-generated output is a draft. The attending clinician reviews,
       edits, and signs every clinical record before it enters the
@@ -65,6 +69,7 @@ clauses:
 
   - id: disclosure_to_patient
     title: "Disclosure to patient"
+    parity: high
     body: |
       Patients are informed when AI is used in their care. For ambient
       scribe / audio recording, separate consent is captured on the AI
@@ -79,6 +84,7 @@ clauses:
 
   - id: data_processor_agreements
     title: "Data processor and BAA agreements"
+    parity: high
     body: |
       AI vendors handling clinic data sign appropriate agreements before
       deployment.
@@ -90,6 +96,7 @@ clauses:
 
   - id: bias_safety_monitoring
     title: "Bias, safety, and performance monitoring"
+    parity: medium
     body: |
       The clinic monitors AI outputs for systematic errors and
       patient-population bias. Where an AI tool's performance degrades
@@ -100,6 +107,7 @@ clauses:
 
   - id: explainability
     title: "Explainability"
+    parity: low
     body: |
       Where an AI tool's output materially influences a clinical
       decision, the clinician records the reason for accepting or
@@ -108,6 +116,7 @@ clauses:
 
   - id: incidents_and_failures
     title: "AI incidents"
+    parity: high
     body: |
       Incidents involving AI — wrong extraction, missed finding,
       suggestion that would have caused harm if followed — are logged.
@@ -118,6 +127,7 @@ clauses:
 
   - id: training
     title: "Training"
+    parity: medium
     body: |
       Staff are trained on every AI tool before use: what it does,
       what it does not do, how to override, how to report problems.
@@ -125,6 +135,7 @@ clauses:
 
   - id: documentation_authorship
     title: "Documentation authorship"
+    parity: high
     body: |
       The clinical record states the clinician as the author. AI's
       contribution to the draft is acknowledged at the system level
@@ -134,6 +145,7 @@ clauses:
 
   - id: data_retention_audio
     title: "Audio data retention"
+    parity: high
     body: |
       Audio captured for the AI scribe loop is retained only as long as
       necessary for the clinical record (typically deleted on note
@@ -142,6 +154,7 @@ clauses:
 
   - id: vendor_change
     title: "Change of AI vendor or model"
+    parity: medium
     body: |
       A change of vendor or material model upgrade by an existing
       vendor is treated as a new deployment and re-validated per this
@@ -150,6 +163,7 @@ clauses:
 
   - id: opt_out
     title: "Opt-out"
+    parity: high
     body: |
       Patients may decline AI use without affecting their care. The
       clinic falls back to manual documentation. This is reflected in
@@ -157,6 +171,7 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: medium
     body: |
       Reviewed at least annually, and immediately on any new AI
       deployment, vendor change, regulator publication, or AI-related

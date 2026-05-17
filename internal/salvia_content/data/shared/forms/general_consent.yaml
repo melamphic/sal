@@ -27,6 +27,19 @@ linked_policy_defaults:
 
 tags: [consent, intake, core]
 
+overall_prompt: |
+  Extract from the clinician–patient consent discussion: nature of intervention,
+  alternatives discussed, material risks discussed, any questions the patient
+  raised and answers given, capacity status, substitute decision-maker name and
+  authority (if applicable), and best-interests rationale (if applicable).
+  AI may extract: nature_of_intervention, alternatives_discussed,
+  material_risks_discussed, questions_addressed, sdm_name_authority,
+  best_interests_rationale.
+  AI must NOT extract: patient identity (from patient record), clinician name or
+  signature (system author record), submission date/time (Salvia auto-stamps).
+  Do not populate the consent widget itself — the system.consent widget records
+  the consenter identity, capacity, and signature at the point of signing.
+
 fields:
   - key: subject_ref
     label: Patient
