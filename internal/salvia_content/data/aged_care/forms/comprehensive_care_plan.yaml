@@ -35,10 +35,13 @@ tags: [care_plan, mdt, person_centred]
 
 overall_prompt: |
   Capture the multidisciplinary care planning meeting. Resident and family voice
-  are central — record verbatim where stated. Demographics and current
-  medications come from the resident record. The external assessment ID
-  (interRAI / MDS / AN-ACC) must be referenced, not duplicated. Goals must be
-  measurable. Interventions must name a responsible role.
+  are central — record verbatim where stated. Patient identity, demographics,
+  and current medications come from the resident record — do not extract from
+  voice. Salvia auto-stamps the submission date/time and locks in the author
+  identity and digital signature — do not extract clinician name, signature, or
+  documentation datetime from audio. The external assessment ID (interRAI / MDS /
+  AN-ACC) must be referenced, not duplicated. Goals must be measurable.
+  Interventions must name a responsible role.
 
 fields:
   - key: subject_ref

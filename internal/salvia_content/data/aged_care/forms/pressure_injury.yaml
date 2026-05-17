@@ -34,12 +34,15 @@ linked_policy_defaults:
 tags: [skin, wound, pressure_injury, ledger]
 
 overall_prompt: |
-  Capture the wound assessment as recorded by the assessing nurse. Voice
-  extraction can populate site, stage description, dimensions, exudate, pain,
-  and dressing. The Acquired Status field (POA vs facility-acquired) and the
-  staging confirmation must be set explicitly by the clinician — these drive
-  regulator counts. Photograph reference recorded against the resident's
-  photography consent on file.
+  Capture the wound assessment as recorded by the assessing nurse. Patient
+  identity and weight come from the resident record — do not extract from voice.
+  Salvia auto-stamps the submission date/time and locks in the author identity
+  and digital signature — do not extract clinician name, signature, or
+  documentation datetime from audio. Voice extraction can populate site, stage
+  description, dimensions, exudate, pain, and dressing. The Acquired Status
+  field (POA vs facility-acquired) and the staging confirmation must be set
+  explicitly by the clinician — these drive regulator counts. Photograph
+  reference recorded against the resident's photography consent on file.
 
 fields:
   - key: subject_ref
