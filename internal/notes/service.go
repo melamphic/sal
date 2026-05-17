@@ -1152,7 +1152,7 @@ func (s *Service) CheckPolicy(ctx context.Context, noteID, clinicID uuid.UUID) (
 	}
 
 	// Get policy clauses for this form version.
-	clauses, err := s.policyClauses.GetClausesForNote(ctx, note.FormVersionID)
+	clauses, err := s.policyClauses.GetClausesForNote(ctx, note.FormVersionID, note.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("notes.service.CheckPolicy: get clauses: %w", err)
 	}
