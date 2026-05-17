@@ -887,6 +887,30 @@ func scanNote(row scannable) (*NoteRecord, error) {
 	return &n, nil
 }
 
+// scanNoteWithLabel scans the noteCols columns PLUS the trailing
+// form_version_label column produced by the ListNotes JOIN query.
+func scanNoteWithLabel(row scannable) (*NoteRecord, error) {
+	var n NoteRecord
+	err := row.Scan(
+		&n.ID, &n.ClinicID, &n.RecordingID, &n.FormVersionID, &n.SubjectID,
+		&n.CreatedBy, &n.Status, &n.ErrorMessage,
+		&n.ReviewedBy, &n.ReviewedAt,
+		&n.SubmittedAt, &n.SubmittedBy,
+		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct, &n.PolicyCheckResult,
+		&n.OverrideReason, &n.OverrideBy, &n.OverrideAt,
+		&n.OverrideUnlockedAt, &n.OverrideUnlockedBy, &n.OverrideUnlockedReason, &n.OverrideCount,
+		&n.PDFStorageKey, &n.CreatedAt, &n.UpdatedAt,
+		&n.FormVersionLabel,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanNoteWithLabel: %w", err)
+	}
+	return &n, nil
+}
+
 func scanField(row scannable) (*NoteFieldRecord, error) {
 	var f NoteFieldRecord
 	err := row.Scan(
