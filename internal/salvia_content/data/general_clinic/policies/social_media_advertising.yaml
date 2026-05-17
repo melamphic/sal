@@ -36,6 +36,7 @@ clauses:
 
   - id: principles
     title: "Principles"
+    parity: medium
     body: |
       Communications must be: truthful and accurate; capable of
       substantiation; in the public interest; respectful of patient
@@ -93,6 +94,7 @@ clauses:
 
   - id: clinical_claims
     title: "Clinical claims and evidence"
+    parity: medium
     body: |
       Any clinical claim — about a treatment, service, or outcome — is
       supported by current evidence and capable of substantiation
@@ -130,6 +132,7 @@ clauses:
 
   - id: staff_personal_accounts
     title: "Staff personal social-media accounts"
+    parity: medium
     body: |
       Staff are expected to maintain professional standards on personal
       accounts where they identify as a clinician or as employed at
@@ -144,6 +147,7 @@ clauses:
 
   - id: staff_endorsement_disclosure
     title: "Endorsement, sponsorship, and conflict disclosure"
+    parity: medium
     body: |
       Any commercial relationship between the practice or a staff
       member and a product / service / pharmaceutical / device must be
@@ -156,6 +160,7 @@ clauses:
 
   - id: response_to_negative_review
     title: "Response to negative reviews and complaints online"
+    parity: medium
     body: |
       Negative reviews are responded to within 5 working days with a
       neutral, non-identifying, professional message inviting the
