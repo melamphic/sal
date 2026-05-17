@@ -203,10 +203,14 @@ func (f FieldSpec) IsRequiredFor(c Country) bool {
 // Body and BodyPerCountry are mutually exclusive at use-time: BodyFor()
 // prefers per-country, falling back to Body.
 type ClauseSpec struct {
-	ID              string             `yaml:"id"`
-	Title           string             `yaml:"title"`
-	Body            string             `yaml:"body,omitempty"`
-	BodyPerCountry  map[Country]string `yaml:"body_per_country,omitempty"`
+	ID             string             `yaml:"id"`
+	Title          string             `yaml:"title"`
+	Body           string             `yaml:"body,omitempty"`
+	BodyPerCountry map[Country]string `yaml:"body_per_country,omitempty"`
+	// Parity drives policy-check scoring and the overlay parity badge.
+	// Accepted values: "high" (must-comply), "medium" (should), "low" (guidance).
+	// Omit to default to "high".
+	Parity string `yaml:"parity,omitempty"`
 }
 
 // BodyFor returns the country-specific body if present, falling back to
