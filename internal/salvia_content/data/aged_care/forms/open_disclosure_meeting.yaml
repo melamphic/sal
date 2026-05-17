@@ -31,12 +31,15 @@ linked_policy_defaults:
 tags: [open_disclosure, duty_of_candour, communication]
 
 overall_prompt: |
-  Capture the meeting verbatim where possible. The apology / expression of
-  regret should be recorded with the actual words used (UK Reg 20 requires
-  an apology; many US states protect apology language from legal admission;
-  AU framework requires "expression of regret"). What is BEING DONE matters
-  more than what was DONE — leadership response, safety changes, support
-  offered. Avoid blame language.
+  Capture the meeting verbatim where possible. Patient identity comes from the
+  resident record — do not extract from voice. Salvia auto-stamps the submission
+  date/time and locks in the author identity and digital signature — do not
+  extract clinician name, signature, or documentation datetime from audio.
+  The apology / expression of regret should be recorded with the actual words
+  used (UK Reg 20 requires an apology; many US states protect apology language
+  from legal admission; AU framework requires "expression of regret"). What is
+  BEING DONE matters more than what was DONE — leadership response, safety
+  changes, support offered. Avoid blame language.
 
 fields:
   - key: subject_ref
