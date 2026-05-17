@@ -74,6 +74,7 @@ clauses:
 
   - id: equipment
     title: "Equipment standard"
+    parity: high
     body: |
       Required at every sedation:
       - Continuous SpO₂ pulse oximetry.
@@ -90,6 +91,7 @@ clauses:
 
   - id: monitoring
     title: "Intra-procedural monitoring"
+    parity: high
     body: |
       A second appropriately-trained person continuously monitors the
       patient. Vitals recorded at minimum every 5 minutes onto the
@@ -99,6 +101,7 @@ clauses:
 
   - id: fasting
     title: "Fasting requirements"
+    parity: high
     body: |
       Per ASA / RCoA fasting guidance: 6 hours solids + non-clear fluids,
       2 hours clear fluids. Non-compliance: cancel and reschedule unless
@@ -108,6 +111,7 @@ clauses:
 
   - id: recovery_discharge
     title: "Recovery and discharge"
+    parity: high
     body_per_country:
       NZ: |
         Patient remains on monitored recovery until DCNZ recovery criteria
@@ -128,6 +132,7 @@ clauses:
 
   - id: agent_register
     title: "Sedation agent register"
+    parity: high
     body: |
       Sedation drugs (most are controlled — midazolam, fentanyl, propofol,
       ketamine, methoxyflurane in AU/NZ) are recorded per dose in the CD
@@ -138,6 +143,7 @@ clauses:
 
   - id: drill_schedule
     title: "Sedation drills"
+    parity: medium
     body: |
       In addition to the general medical-emergency drill, a sedation-
       specific scenario drill is conducted at least annually: airway
@@ -146,6 +152,7 @@ clauses:
 
   - id: cpd
     title: "CPD and competency review"
+    parity: medium
     body: |
       Sedation CPD logged separately from general dental CPD per country
       requirement (IACSD 12 hrs/yr UK; ADA AU sedation hours per CSE
@@ -155,6 +162,7 @@ clauses:
 
   - id: incident_review
     title: "Sedation incident review"
+    parity: medium
     body: |
       Any sedation-related adverse event (oversedation, hypoxia <90%
       >30 sec, paradoxical reaction, prolonged recovery, unplanned

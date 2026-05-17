@@ -114,6 +114,7 @@ clauses:
 
   - id: continuous_improvement
     title: Continuous improvement projects
+    parity: medium
     body: |
       At least one major performance-improvement project running at
       any time, sponsored by senior leadership. Projects use a
@@ -122,6 +123,7 @@ clauses:
 
   - id: learning_culture
     title: Learning culture
+    parity: medium
     body: |
       The service operates a just culture: blame-free incident
       reporting, system-thinking on contributing factors, recognition
@@ -130,6 +132,7 @@ clauses:
 
   - id: workforce_clinical_governance
     title: Workforce clinical governance
+    parity: high
     body: |
       Clinical staff supervision, competency assessment, professional
       development, and registration verification are reviewed at
@@ -139,6 +142,7 @@ clauses:
 
   - id: external_engagement
     title: External engagement
+    parity: low
     body: |
       The service engages with regulator inspections constructively,
       shares learning across the sector where appropriate, and
@@ -146,6 +150,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Director of Nursing / Quality Lead.

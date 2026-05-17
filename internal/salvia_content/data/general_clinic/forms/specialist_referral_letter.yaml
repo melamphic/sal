@@ -29,6 +29,19 @@ linked_policy_defaults:
 
 tags: [referral, communication]
 
+overall_prompt: |
+  AI may extract from voice: specialist/service name and address, referral
+  urgency, reason for referral, history of presenting problem, relevant past
+  medical history, examination findings, investigations to date, current
+  medications, allergies, social history, language/interpreter needs,
+  accessibility needs, patient awareness of referral, attachments list,
+  safety-netting advice given, and follow-up responsibility.
+  AI must NOT extract: referring clinician name, registration number, signature,
+  or the letter date. Patient identity (name, DOB, health identifier, address,
+  phone) comes from the patient record. Salvia auto-stamps submission time,
+  digital signature, and author identity — the referral letter is authored
+  by the authenticated clinician.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -166,12 +179,3 @@ fields:
     required: true
     help_text: "Named clinician at this practice. CQC GP Mythbuster 57 (failure-safe results / appointment chasing)."
 
-  - key: signature_referrer
-    label: "Referrer name and registration"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Letter date"
-    type: date
-    required: true

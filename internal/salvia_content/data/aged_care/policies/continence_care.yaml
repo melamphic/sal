@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: Scope and principles
+    parity: high
     body: |
       Continence is a fundamental aspect of dignity. Every resident is
       assumed continent unless assessed otherwise. Pads and briefs are not
