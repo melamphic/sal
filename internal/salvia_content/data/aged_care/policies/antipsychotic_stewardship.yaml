@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: high
     body: |
       This policy applies to all antipsychotic, benzodiazepine, hypnotic,
       antidepressant, and mood-stabiliser prescriptions for residents,
@@ -33,6 +34,7 @@ clauses:
 
   - id: indication_test
     title: Indication test
+    parity: high
     body: |
       Antipsychotics in dementia are reserved for severe distress causing
       risk of harm to self or others, after non-pharmacological
@@ -43,6 +45,7 @@ clauses:
 
   - id: non_pharm_first
     title: Non-pharmacological strategies first
+    parity: high
     body: |
       Before any antipsychotic is initiated, the multidisciplinary team
       identifies and addresses contributing factors: pain, infection,
