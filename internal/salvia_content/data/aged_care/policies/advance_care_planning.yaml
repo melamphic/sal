@@ -139,6 +139,7 @@ clauses:
 
   - id: family_communication
     title: Family communication
+    parity: medium
     body: |
       Where the resident wishes (with capacity) to share the ACP with
       family, copies are provided. Where the resident wishes the ACP
@@ -146,6 +147,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing / ACP Lead.
