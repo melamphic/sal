@@ -30,6 +30,16 @@ overall_prompt: |
   arrangement, and ASA fitness. Risks dictated should be captured in
   risks_discussed verbatim. Do NOT auto-classify ASA — leave for clinician.
 
+  AI must NOT extract or infer: clinician name, sedationist identity,
+  digital signature, or documentation date/time — Salvia auto-stamps submit
+  time and locks the author identity. Patient name, date of birth, and weight
+  come from the patient record, not from audio. The system.consent widget
+  handles the sedation consent record including witness — do not duplicate
+  those fields in free text. The system.drug_op widget handles the agent
+  administration ledger. assessment_date may be extracted if the clinician
+  states the date of the pre-sedation assessment, which may differ from the
+  procedure date.
+
 fields:
   - key: subject_ref
     label: Patient

@@ -128,6 +128,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       Clinical staff are trained in BPSD non-pharmacological approaches,
       psychotropic side effects and risks, capacity assessment, and the
@@ -135,6 +136,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Director of Nursing / Pharmacy Lead.
