@@ -208,20 +208,24 @@ func (r *Repository) GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*
 }
 
 // noteListCols is the SELECT column list for ListNotes. It extends noteCols
-// with a LEFT JOIN on form_versions to derive a human-readable version label
-// ("v1.2" for published, "Draft" for drafts). All notes columns are qualified
-// with "n." to avoid ambiguity with the joined table's id/created_at columns.
+// with LEFT JOINs on form_versions + forms to produce a full human-readable
+// "Form Name v1.2" label. All notes columns are qualified with "n." to avoid
+// ambiguity with the joined tables' id/created_at/name columns.
 const noteListCols = `n.id, n.clinic_id, n.recording_id, n.form_version_id, n.subject_id, n.created_by,
 	n.status, n.error_message, n.reviewed_by, n.reviewed_at, n.submitted_at, n.submitted_by,
 	n.archived_at, n.form_version_context, n.policy_alignment_pct, n.policy_check_result::text,
 	n.override_reason, n.override_by, n.override_at,
 	n.override_unlocked_at, n.override_unlocked_by, n.override_unlocked_reason, n.override_count,
 	n.pdf_storage_key, n.created_at, n.updated_at,
-	CASE
-		WHEN fv.version_major IS NOT NULL AND fv.version_minor IS NOT NULL
-			THEN 'v' || fv.version_major::text || '.' || fv.version_minor::text
-		ELSE 'Draft'
-	END AS form_version_label`
+	CONCAT(
+		COALESCE(fo.name, ''),
+		' ',
+		CASE
+			WHEN fv.version_major IS NOT NULL AND fv.version_minor IS NOT NULL
+				THEN 'v' || fv.version_major::text || '.' || fv.version_minor::text
+			ELSE 'Draft'
+		END
+	) AS form_version_label`
 
 // ListNotes returns a paginated list of notes for a clinic.
 // Archived notes are excluded by default; set IncludeArchived to include them.
@@ -256,6 +260,7 @@ func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNo
 		SELECT %s
 		FROM notes n
 		LEFT JOIN form_versions fv ON fv.id = n.form_version_id
+		LEFT JOIN forms fo ON fo.id = fv.form_id
 		WHERE %s
 		ORDER BY n.created_at DESC
 		LIMIT $%d OFFSET $%d`, noteListCols, where, len(args)-1, len(args))
