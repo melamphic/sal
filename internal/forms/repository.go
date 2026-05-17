@@ -1217,6 +1217,38 @@ func (r *Repository) ListLinkedPolicies(ctx context.Context, formID uuid.UUID) (
 	return ids, nil
 }
 
+// ListLinkedPoliciesAt returns the policy IDs that were actively linked to a
+// form at the given point in time — i.e. linked before asOf and not yet
+// unlinked by asOf. Used by policy checks on notes to ensure we evaluate
+// against the policies that were in effect when the note was recorded.
+func (r *Repository) ListLinkedPoliciesAt(ctx context.Context, formID uuid.UUID, asOf time.Time) ([]uuid.UUID, error) {
+	const q = `
+		SELECT policy_id FROM form_policies
+		WHERE form_id = $1
+		  AND linked_at <= $2
+		  AND (unlinked_at IS NULL OR unlinked_at > $2)
+		ORDER BY linked_at`
+
+	rows, err := r.db.Query(ctx, q, formID, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.ListLinkedPoliciesAt: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("forms.repo.ListLinkedPoliciesAt: scan: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("forms.repo.ListLinkedPoliciesAt: rows: %w", err)
+	}
+	return ids, nil
+}
+
 // PolicyUnlinkEventRecord is a soft-unlinked form_policies row, used to
 // inject synthetic "Policy X unlinked" entries into a form's version trail.
 type PolicyUnlinkEventRecord struct {

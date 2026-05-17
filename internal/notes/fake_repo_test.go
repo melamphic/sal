@@ -10,10 +10,11 @@ import (
 
 // fakeRepo is an in-memory implementation of the repo interface used in unit tests.
 type fakeRepo struct {
-	mu          sync.RWMutex
-	notes       map[uuid.UUID]*NoteRecord
-	fields      map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
-	attachments []*NoteAttachmentRecord
+	mu             sync.RWMutex
+	notes          map[uuid.UUID]*NoteRecord
+	fields         map[uuid.UUID][]*NoteFieldRecord // keyed by note ID
+	attachments    []*NoteAttachmentRecord
+	policyChecks   []PolicyCheckRecord
 }
 
 func newFakeRepo() *fakeRepo {
@@ -403,6 +404,32 @@ func (f *fakeRepo) ArchiveAttachment(_ context.Context, id, clinicID uuid.UUID) 
 		}
 	}
 	return domain.ErrNotFound
+}
+
+func (f *fakeRepo) InsertPolicyCheck(_ context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.policyChecks = append(f.policyChecks, PolicyCheckRecord{
+		ID:        domain.NewID(),
+		NoteID:    noteID,
+		ClinicID:  clinicID,
+		Result:    resultJSON,
+		CheckedAt: domain.TimeNow(),
+	})
+	return nil
+}
+
+func (f *fakeRepo) ListPolicyChecks(_ context.Context, noteID, clinicID uuid.UUID) ([]PolicyCheckRecord, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var out []PolicyCheckRecord
+	for i := len(f.policyChecks) - 1; i >= 0; i-- {
+		r := f.policyChecks[i]
+		if r.NoteID == noteID && r.ClinicID == clinicID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

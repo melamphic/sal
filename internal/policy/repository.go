@@ -859,6 +859,49 @@ func (r *Repository) GetLatestClausesForPolicies(ctx context.Context, policyIDs 
 	return list, nil
 }
 
+// GetClausesForPoliciesAt returns clauses from the most recently published
+// version of each policy that was published at or before asOf. This gives a
+// point-in-time view so that policy checks on old notes evaluate against the
+// clauses that were in effect when the note was recorded, not today's clauses.
+func (r *Repository) GetClausesForPoliciesAt(ctx context.Context, policyIDs []uuid.UUID, asOf time.Time) ([]*ClauseWithPolicyID, error) {
+	if len(policyIDs) == 0 {
+		return nil, nil
+	}
+
+	const q = `
+		WITH latest AS (
+			SELECT DISTINCT ON (policy_id) id AS version_id, policy_id
+			FROM policy_versions
+			WHERE policy_id = ANY($1)
+			  AND status = 'published'
+			  AND published_at <= $2
+			ORDER BY policy_id, published_at DESC
+		)
+		SELECT l.policy_id, pc.id, pc.policy_version_id, pc.block_id, pc.title, pc.body, pc.parity, pc.source_citation, pc.created_at
+		FROM latest l
+		JOIN policy_clauses pc ON pc.policy_version_id = l.version_id
+		ORDER BY l.policy_id, pc.created_at`
+
+	rows, err := r.db.Query(ctx, q, policyIDs, asOf)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetClausesForPoliciesAt: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*ClauseWithPolicyID
+	for rows.Next() {
+		var c ClauseWithPolicyID
+		if err := rows.Scan(&c.PolicyID, &c.ID, &c.PolicyVersionID, &c.BlockID, &c.Title, &c.Body, &c.Parity, &c.SourceCitation, &c.CreatedAt); err != nil {
+			return nil, fmt.Errorf("policy.repo.GetClausesForPoliciesAt: scan: %w", err)
+		}
+		list = append(list, &c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("policy.repo.GetClausesForPoliciesAt: rows: %w", err)
+	}
+	return list, nil
+}
+
 // CountClausesByVersion returns the clause count per supplied version ID
 // in a single round-trip. Used by ListPolicies to surface a card-level
 // "N clauses" pill without shipping the full clause text for every row.

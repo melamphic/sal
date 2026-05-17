@@ -50,6 +50,9 @@ type NoteRecord struct {
 	PDFStorageKey          *string // S3 key; nil until PDF generated after submit
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+	// FormVersionLabel is populated only by ListNotes (via JOIN). Nil for
+	// single-note fetches. e.g. "v1.2" for published, "Draft" for draft.
+	FormVersionLabel *string
 }
 
 // NoteFieldRecord is the raw database representation of a note_fields row.
@@ -204,39 +207,63 @@ func (r *Repository) GetNoteByID(ctx context.Context, id, clinicID uuid.UUID) (*
 	return rec, nil
 }
 
+// noteListCols is the SELECT column list for ListNotes. It extends noteCols
+// with LEFT JOINs on form_versions + forms to produce a full human-readable
+// "Form Name v1.2" label. All notes columns are qualified with "n." to avoid
+// ambiguity with the joined tables' id/created_at/name columns.
+const noteListCols = `n.id, n.clinic_id, n.recording_id, n.form_version_id, n.subject_id, n.created_by,
+	n.status, n.error_message, n.reviewed_by, n.reviewed_at, n.submitted_at, n.submitted_by,
+	n.archived_at, n.form_version_context, n.policy_alignment_pct, n.policy_check_result::text,
+	n.override_reason, n.override_by, n.override_at,
+	n.override_unlocked_at, n.override_unlocked_by, n.override_unlocked_reason, n.override_count,
+	n.pdf_storage_key, n.created_at, n.updated_at,
+	CONCAT(
+		COALESCE(fo.name, ''),
+		' ',
+		CASE
+			WHEN fv.version_major IS NOT NULL AND fv.version_minor IS NOT NULL
+				THEN 'v' || fv.version_major::text || '.' || fv.version_minor::text
+			ELSE 'Draft'
+		END
+	) AS form_version_label`
+
 // ListNotes returns a paginated list of notes for a clinic.
 // Archived notes are excluded by default; set IncludeArchived to include them.
 func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNotesParams) ([]*NoteRecord, int, error) {
 	args := []any{clinicID}
-	where := "clinic_id = $1"
+	where := "n.clinic_id = $1"
 
 	if !p.IncludeArchived {
-		where += " AND archived_at IS NULL"
+		where += " AND n.archived_at IS NULL"
 	}
 	if p.RecordingID != nil {
 		args = append(args, *p.RecordingID)
-		where += fmt.Sprintf(" AND recording_id = $%d", len(args))
+		where += fmt.Sprintf(" AND n.recording_id = $%d", len(args))
 	}
 	if p.SubjectID != nil {
 		args = append(args, *p.SubjectID)
-		where += fmt.Sprintf(" AND subject_id = $%d", len(args))
+		where += fmt.Sprintf(" AND n.subject_id = $%d", len(args))
 	}
 	if p.Status != nil {
 		args = append(args, string(*p.Status))
-		where += fmt.Sprintf(" AND status = $%d", len(args))
+		where += fmt.Sprintf(" AND n.status = $%d", len(args))
 	}
 
 	var total int
-	countQ := fmt.Sprintf("SELECT COUNT(*) FROM notes WHERE %s", where)
+	countQ := fmt.Sprintf("SELECT COUNT(*) FROM notes n WHERE %s", where)
 	if err := r.db.QueryRow(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("notes.repo.ListNotes: count: %w", err)
 	}
 
 	args = append(args, p.Limit, p.Offset)
 	listQ := fmt.Sprintf(`
-		SELECT %s FROM notes WHERE %s
-		ORDER BY created_at DESC
-		LIMIT $%d OFFSET $%d`, noteCols, where, len(args)-1, len(args))
+		SELECT %s
+		FROM notes n
+		LEFT JOIN form_versions fv ON fv.id = n.form_version_id
+		LEFT JOIN forms fo ON fo.id = fv.form_id
+		WHERE %s
+		ORDER BY n.created_at DESC
+		LIMIT $%d OFFSET $%d`, noteListCols, where, len(args)-1, len(args))
 
 	rows, err := r.db.Query(ctx, listQ, args...)
 	if err != nil {
@@ -246,7 +273,7 @@ func (r *Repository) ListNotes(ctx context.Context, clinicID uuid.UUID, p ListNo
 
 	var list []*NoteRecord
 	for rows.Next() {
-		n, err := scanNote(rows)
+		n, err := scanNoteWithLabel(rows)
 		if err != nil {
 			return nil, 0, fmt.Errorf("notes.repo.ListNotes: %w", err)
 		}
@@ -496,6 +523,37 @@ func (r *Repository) UpdatePolicyCheckResult(ctx context.Context, noteID, clinic
 		return fmt.Errorf("notes.repo.UpdatePolicyCheckResult: %w", err)
 	}
 	return nil
+}
+
+// InsertPolicyCheck appends a policy check run to the note_policy_checks table.
+func (r *Repository) InsertPolicyCheck(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error {
+	const q = `INSERT INTO note_policy_checks (note_id, clinic_id, result) VALUES ($1, $2, $3::jsonb)`
+	if _, err := r.db.Exec(ctx, q, noteID, clinicID, resultJSON); err != nil {
+		return fmt.Errorf("notes.repo.InsertPolicyCheck: %w", err)
+	}
+	return nil
+}
+
+// ListPolicyChecks returns all policy check runs for a note, newest first.
+func (r *Repository) ListPolicyChecks(ctx context.Context, noteID, clinicID uuid.UUID) ([]PolicyCheckRecord, error) {
+	const q = `SELECT id, note_id, clinic_id, result::text, checked_at FROM note_policy_checks WHERE note_id = $1 AND clinic_id = $2 ORDER BY checked_at DESC`
+	rows, err := r.db.Query(ctx, q, noteID, clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("notes.repo.ListPolicyChecks: %w", err)
+	}
+	defer rows.Close()
+	var out []PolicyCheckRecord
+	for rows.Next() {
+		var rec PolicyCheckRecord
+		if err := rows.Scan(&rec.ID, &rec.NoteID, &rec.ClinicID, &rec.Result, &rec.CheckedAt); err != nil {
+			return nil, fmt.Errorf("notes.repo.ListPolicyChecks: scan: %w", err)
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("notes.repo.ListPolicyChecks: rows: %w", err)
+	}
+	return out, nil
 }
 
 // ── Note fields ───────────────────────────────────────────────────────────────
@@ -830,6 +888,30 @@ func scanNote(row scannable) (*NoteRecord, error) {
 			return nil, domain.ErrNotFound
 		}
 		return nil, fmt.Errorf("scanNote: %w", err)
+	}
+	return &n, nil
+}
+
+// scanNoteWithLabel scans the noteCols columns PLUS the trailing
+// form_version_label column produced by the ListNotes JOIN query.
+func scanNoteWithLabel(row scannable) (*NoteRecord, error) {
+	var n NoteRecord
+	err := row.Scan(
+		&n.ID, &n.ClinicID, &n.RecordingID, &n.FormVersionID, &n.SubjectID,
+		&n.CreatedBy, &n.Status, &n.ErrorMessage,
+		&n.ReviewedBy, &n.ReviewedAt,
+		&n.SubmittedAt, &n.SubmittedBy,
+		&n.ArchivedAt, &n.FormVersionContext, &n.PolicyAlignmentPct, &n.PolicyCheckResult,
+		&n.OverrideReason, &n.OverrideBy, &n.OverrideAt,
+		&n.OverrideUnlockedAt, &n.OverrideUnlockedBy, &n.OverrideUnlockedReason, &n.OverrideCount,
+		&n.PDFStorageKey, &n.CreatedAt, &n.UpdatedAt,
+		&n.FormVersionLabel,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("scanNoteWithLabel: %w", err)
 	}
 	return &n, nil
 }

@@ -2,6 +2,7 @@ package notes
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/melamphic/sal/internal/domain"
@@ -61,6 +62,11 @@ type repo interface {
 	// domain feeds (staff activity) to decorate notes with a readable label.
 	LookupFormNamesByNoteIDs(ctx context.Context, clinicID uuid.UUID, noteIDs []uuid.UUID) (map[uuid.UUID]string, error)
 
+	// InsertPolicyCheck appends a policy check run to the note_policy_checks table.
+	InsertPolicyCheck(ctx context.Context, noteID, clinicID uuid.UUID, resultJSON string) error
+	// ListPolicyChecks returns all policy check runs for a note, newest first.
+	ListPolicyChecks(ctx context.Context, noteID, clinicID uuid.UUID) ([]PolicyCheckRecord, error)
+
 	// Attachments — photos and documents linked to a note. Storage of the
 	// underlying bytes lives in the AttachmentUploader injected at service
 	// level; the repo only persists metadata + s3_key pointers.
@@ -68,6 +74,15 @@ type repo interface {
 	ListAttachmentsByNote(ctx context.Context, noteID, clinicID uuid.UUID) ([]*NoteAttachmentRecord, error)
 	GetAttachment(ctx context.Context, id, clinicID uuid.UUID) (*NoteAttachmentRecord, error)
 	ArchiveAttachment(ctx context.Context, id, clinicID uuid.UUID) error
+}
+
+// PolicyCheckRecord is one row from note_policy_checks.
+type PolicyCheckRecord struct {
+	ID        uuid.UUID
+	NoteID    uuid.UUID
+	ClinicID  uuid.UUID
+	Result    string    // raw JSONB
+	CheckedAt time.Time
 }
 
 // NoteFieldWithType is a denormalised join — the row from note_fields +

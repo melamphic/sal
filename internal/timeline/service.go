@@ -34,8 +34,11 @@ type TimelineEventResponse struct {
 	NewValue   *string `json:"new_value,omitempty"`
 	ActorID    string  `json:"actor_id"`
 	ActorRole  string  `json:"actor_role"`
-	Reason     *string `json:"reason,omitempty"`
-	OccurredAt string  `json:"occurred_at"`
+	Reason           *string `json:"reason,omitempty"`
+	OccurredAt       string  `json:"occurred_at"`
+	// FormVersionLabel is the human-readable label of the form version the
+	// note was filed against, e.g. "SOAP Notes v1.2" or "Intake Draft".
+	FormVersionLabel *string `json:"form_version_label,omitempty"`
 }
 
 // TimelineResponse is a paginated list of timeline events.
@@ -137,5 +140,6 @@ func toEventResponse(e *EventRecord) *TimelineEventResponse {
 		s := e.FieldID.String()
 		r.FieldID = &s
 	}
+	r.FormVersionLabel = e.FormVersionLabel
 	return r
 }

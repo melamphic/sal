@@ -297,6 +297,30 @@ func (h *Handler) checkPolicy(ctx context.Context, input *noteIDInput) (*policyC
 	return &policyCheckHTTPResponse{Body: resp}, nil
 }
 
+// ── Policy check history ──────────────────────────────────────────────────────
+
+type policyChecksHTTPResponse struct {
+	Body *policyChecksBody
+}
+
+type policyChecksBody struct {
+	Runs []PolicyCheckRun `json:"runs"`
+}
+
+// listPolicyChecks handles GET /api/v1/notes/{note_id}/policy-checks.
+func (h *Handler) listPolicyChecks(ctx context.Context, input *noteIDInput) (*policyChecksHTTPResponse, error) {
+	clinicID := mw.ClinicIDFromContext(ctx)
+	noteID, err := uuid.Parse(input.NoteID)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid note_id")
+	}
+	runs, err := h.svc.ListPolicyChecks(ctx, noteID, clinicID)
+	if err != nil {
+		return nil, mapNoteError(err)
+	}
+	return &policyChecksHTTPResponse{Body: &policyChecksBody{Runs: runs}}, nil
+}
+
 // ── Archive ───────────────────────────────────────────────────────────────────
 
 // archiveNote handles POST /api/v1/notes/{note_id}/archive.
