@@ -26,6 +26,19 @@ linked_policy_defaults:
 
 tags: [pharmacovigilance, adverse_event, incident]
 
+overall_prompt: |
+  AI may extract from voice: suspect drug name, indication, dose/route/frequency,
+  batch/lot number, drug start/stop dates, concomitant medications, relevant
+  history, reaction description, reaction onset, severity, seriousness criteria,
+  outcome, dechallenge/rechallenge observations, causality assessment, submission
+  target, and submission reference number.
+  AI must NOT extract: clinician name, signature, registration number, or the
+  documentation date/time. The submission_date field captures when the report
+  was submitted to the regulator (not when this form was completed) — only
+  populate if explicitly stated. Patient identity (name, DOB, sex, weight,
+  health identifier) comes from the patient record, not from audio. Salvia
+  auto-stamps form submission time, digital signature, and author identity.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -203,11 +216,7 @@ fields:
     type: text
 
   - key: submission_date
-    label: "Date submitted"
+    label: "Date submitted to regulator"
     type: date
     required: true
-
-  - key: signature_reporter
-    label: "Reporting clinician (name, registration, contact)"
-    type: text
-    required: true
+    help_text: "The date the report was submitted to the regulatory body (NZ CARM / AU TGA / UK MHRA / US FDA). This is the event date — distinct from the form's auto-stamped documentation time."

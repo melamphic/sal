@@ -20,6 +20,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and Emergency Lead"
+    parity: high
     body: |
       This policy applies to all clinical and non-clinical staff. The
       Practice Principal is the named Emergency Lead unless a written
@@ -28,6 +29,7 @@ clauses:
 
   - id: drug_kit
     title: "Emergency drug kit"
+    parity: high
     body: |
       Minimum stock list:
       - Adrenaline (epinephrine) 1:1000, 1 mg/ml (≥2 ampoules; auto-
@@ -47,6 +49,7 @@ clauses:
 
   - id: aed
     title: "AED requirement"
+    parity: high
     body_per_country:
       NZ: |
         DCNZ Sedation Practice Standard March 2026: AED mandatory on
@@ -68,6 +71,7 @@ clauses:
 
   - id: bls_competency
     title: "BLS / ALS competence by role"
+    parity: high
     body_per_country:
       NZ: |
         DCNZ Sedation Standard March 2026: NZRC CORE Immediate certificate
@@ -91,6 +95,7 @@ clauses:
 
   - id: drill_schedule
     title: "Emergency drill schedule"
+    parity: medium
     body: |
       Whole-team simulation drill at least annually. Each drill covers:
       - Rapid recognition.
@@ -105,6 +110,7 @@ clauses:
 
   - id: response_algorithm
     title: "General response algorithm"
+    parity: high
     body: |
       1. Recognise — patient appears unwell or unresponsive.
       2. Call for help — designated team member dials emergency number;
@@ -120,6 +126,7 @@ clauses:
 
   - id: anaphylaxis_pathway
     title: "Anaphylaxis"
+    parity: high
     body: |
       Adrenaline IM 1:1000:
       - Adult / child >12: 0.5 mg (0.5 ml).
@@ -132,6 +139,7 @@ clauses:
 
   - id: cardiac_arrest_pathway
     title: "Cardiac arrest"
+    parity: high
     body: |
       Confirm unresponsive + not breathing normally. Call emergency
       services. Begin chest compressions (30:2 with rescue breaths if
@@ -142,6 +150,7 @@ clauses:
 
   - id: post_event_review
     title: "Post-event review"
+    parity: medium
     body: |
       Every emergency event is recorded in the Medical Emergency Form
       (`salvia.dental.medical_emergency_form`) and reviewed within 7 days
@@ -155,6 +164,7 @@ clauses:
 
   - id: kit_check
     title: "Drug kit and AED check"
+    parity: high
     body: |
       Monthly drug-kit check by Emergency Lead or named delegate:
       contents present, none expired, oxygen ≥1/4 full, BVM clean and
@@ -164,6 +174,7 @@ clauses:
 
   - id: paediatric_special
     title: "Paediatric considerations"
+    parity: medium
     body: |
       Weight-based drug dosing using Broselow tape or country-equivalent
       (UK: WETFLAG; AU/NZ: APLS); paediatric BVM and oxygen mask

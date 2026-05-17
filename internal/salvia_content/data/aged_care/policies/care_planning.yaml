@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: high
     body: |
       This policy applies to all residents from the day of admission. It
       covers (a) the comprehensive nursing assessment within 24 hours of
@@ -36,6 +37,7 @@ clauses:
 
   - id: principles
     title: Principles
+    parity: high
     body: |
       Care planning is person-centred and informed by the resident's voice,
       goals, history, culture, and family relationships. Goals are
@@ -47,6 +49,7 @@ clauses:
 
   - id: timeframes
     title: Timeframes
+    parity: high
     body_per_country:
       NZ: |
         Initial nursing assessment within 24 hours of admission. interRAI
