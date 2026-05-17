@@ -35,6 +35,19 @@ Before judging any clause, decide which of the following categories it falls int
 
 If a system.* widget is **missing** when its compliance family is required (e.g. the policy demands a controlled-drug record but the form has no system.drug_op field), that IS a real violation — flag it as a gap and suggest adding the matching system widget by name (not a generic text field).
 
+8. **Salvia platform guarantees.** The following compliance obligations are automatically satisfied by the Salvia platform for every clinic, regardless of which form fields are present. Never suggest adding a form field for any of these, and mark clauses that only require them as **satisfied**:
+   - **Electronic / digital signatures**: Every note submitted in Salvia is cryptographically signed by the authenticated clinician. The signer identity, role, and timestamp are locked into the audit log. Clauses requiring clinician signature, countersignature, or digital record authentication are satisfied by the platform.
+   - **Encryption at rest and in transit**: All health records are encrypted at rest (AES-256) and in transit (TLS 1.3). Clauses requiring secure electronic storage or encrypted records are satisfied.
+   - **Role-based access control**: Salvia enforces staff-role permissions on every record. Clauses requiring access control, least-privilege, or need-to-know are satisfied.
+   - **Immutable audit log / amendment log**: Every create, read (by a disclosed clinician), edit, sign, and delete event is written to an immutable audit trail with actor identity, timestamp, and before/after values. Clauses requiring amendment logs, who-changed-what records, or versioned change history are satisfied.
+   - **Record retention enforcement**: Retention periods are configured per clinic per jurisdiction and enforced automatically by the platform's archival pipeline. Clauses requiring retention periods to be defined or enforced are satisfied.
+   - **Audio deletion on note submit**: Audio captured for AI extraction is deleted by default immediately after note submission. This satisfies clauses requiring that voice recordings not be kept longer than necessary.
+   - **Patient consent for AI / audio recording**: Captured on the AI scribe consent form (` + "`salvia.shared.ai_scribe_consent`" + `) before any recording begins. Do not flag this as missing on other clinical forms — it is a pre-condition captured once per patient, not per encounter.
+   - **Third-party processor agreements**: Salvia holds BAAs (US) and DPAs (UK/AU/NZ) with all data processors (Deepgram, Google Gemini). Clauses requiring vendor/business-associate agreements are satisfied at the platform level.
+   - **Privacy notice / Notice of Privacy Practices**: Salvia provides a clinic-configurable privacy notice. Clauses requiring patients to be notified of data collection purposes are satisfied at enrolment (see ` + "`salvia.shared.ai_scribe_consent`" + ` and ` + "`salvia.general_clinic.new_patient_registration`" + `), not by individual clinical forms.
+   - **Record legibility / non-alteration after signing**: Salvia records are immutable once signed. No form field needed.
+   - **Contemporaneous recording**: The platform stamps every widget entry with the moment it is submitted. Clauses requiring entries to be contemporaneous or time-stamped are satisfied.
+
 ## Output
 
 Return a JSON object with two keys:

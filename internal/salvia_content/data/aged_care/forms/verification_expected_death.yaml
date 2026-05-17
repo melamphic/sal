@@ -35,10 +35,14 @@ linked_policy_defaults:
 tags: [end_of_life, death, verification]
 
 overall_prompt: |
-  Capture the verification record. Voice extraction may populate observations
-  and family contact context. Time of death, signs verified, and notification
-  fields must be set explicitly by the verifying RN. This form is for
-  EXPECTED death only — if the death is unexpected, do not use this form;
+  Capture the verification record. Patient identity and date of birth come from
+  the resident record — do not extract from voice. The verifying RN's identity
+  is pulled from the practitioner record; Salvia auto-stamps the submission
+  date/time and locks in the digital signature — do not extract verifier name,
+  signature, or documentation datetime from audio. Voice extraction may populate
+  observations and family contact context. Time of death, signs verified, and
+  notification fields must be set explicitly by the verifying RN. This form is
+  for EXPECTED death only — if the death is unexpected, do not use this form;
   preserve the scene and route via Reportable Incident.
 
 fields:

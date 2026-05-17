@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: high
     body: |
       This policy applies to all antipsychotic, benzodiazepine, hypnotic,
       antidepressant, and mood-stabiliser prescriptions for residents,
@@ -33,6 +34,7 @@ clauses:
 
   - id: indication_test
     title: Indication test
+    parity: high
     body: |
       Antipsychotics in dementia are reserved for severe distress causing
       risk of harm to self or others, after non-pharmacological
@@ -43,6 +45,7 @@ clauses:
 
   - id: non_pharm_first
     title: Non-pharmacological strategies first
+    parity: high
     body: |
       Before any antipsychotic is initiated, the multidisciplinary team
       identifies and addresses contributing factors: pain, infection,
@@ -54,6 +57,7 @@ clauses:
 
   - id: consent_rules
     title: Consent rules
+    parity: high
     body_per_country:
       NZ: |
         Resident with capacity consents. Welfare Guardian (PPPR Act 1988)
@@ -77,6 +81,7 @@ clauses:
 
   - id: monitoring
     title: Monitoring
+    parity: high
     body: |
       Vital signs, falls risk, sedation, EPS (extrapyramidal symptoms),
       QTc (in cardiac risk), metabolic (weight, lipids, glucose) per
@@ -85,6 +90,7 @@ clauses:
 
   - id: gradual_dose_reduction
     title: Gradual dose reduction (GDR)
+    parity: high
     body: |
       For every psychotropic prescribed for behaviour, a GDR plan is in
       place from initiation. Review at minimum 3 months for
@@ -96,6 +102,7 @@ clauses:
 
   - id: deprescribing_pathway
     title: Deprescribing pathway
+    parity: medium
     body: |
       Where a psychotropic is no longer indicated, deprescribing follows
       a stepped-down regimen agreed with the prescriber and pharmacist.
@@ -104,6 +111,7 @@ clauses:
 
   - id: indicators
     title: Indicators
+    parity: high
     body_per_country:
       NZ: |
         HQSC Atlas indicator for antipsychotic in dementia. Reviewed at
@@ -120,6 +128,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       Clinical staff are trained in BPSD non-pharmacological approaches,
       psychotropic side effects and risks, capacity assessment, and the
@@ -127,6 +136,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Director of Nursing / Pharmacy Lead.

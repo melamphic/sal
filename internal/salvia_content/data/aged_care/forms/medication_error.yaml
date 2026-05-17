@@ -34,10 +34,16 @@ linked_policy_defaults:
 tags: [incident, medication, ledger]
 
 overall_prompt: |
-  Capture the error or near-miss. Voice extraction can populate the
-  description, discovery, immediate action and preliminary contributing
-  factors. The harm classification, regulator-notification trigger and
-  systems response must be set explicitly by the clinician/manager.
+  Capture the medication error or near-miss. Voice extraction can populate
+  description, discovery method, immediate action, and preliminary contributing
+  factors. The harm classification and regulator-notification trigger must be
+  set explicitly by the clinician/manager — do NOT extract those from audio.
+  The incident_datetime field is the time the error OCCURRED or was DISCOVERED,
+  which may differ from the documentation time — extract it from the clinician's
+  account. Do NOT extract: clinician name, signature, or documentation date/time
+  — those are captured automatically by Salvia (system author identity, digital
+  signature, and submit timestamp). The system.incident widget writes the ledger
+  row on Submit.
 
 fields:
   - key: subject_ref

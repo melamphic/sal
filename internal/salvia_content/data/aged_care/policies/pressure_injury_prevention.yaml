@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to every resident from the day of admission. It
       governs (a) pressure injury risk screening, (b) head-to-toe skin
@@ -65,6 +66,7 @@ clauses:
 
   - id: device_related
     title: Medical device-related pressure injuries
+    parity: medium
     body: |
       Medical devices (NG tubes, oxygen tubing, catheters, splints, casts,
       dentures) are inspected daily for pressure marks. Any device-related
@@ -126,6 +128,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All care staff complete induction training in pressure injury
       prevention, repositioning technique, surface selection, and skin
@@ -135,6 +138,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years and after any
       sentinel event. Operational responsibility: Director of Nursing /

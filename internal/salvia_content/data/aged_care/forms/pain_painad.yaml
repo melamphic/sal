@@ -33,10 +33,13 @@ tags: [pain, painad, ledger, dementia]
 
 overall_prompt: |
   Capture the PainAD assessment as the clinician observes. Voice extraction
-  may populate behavioural descriptors (the resident's vocalisations, facial
-  expression, posture). The five subscale scores must be set explicitly by
-  the clinician, not inferred from narrative. Reassessment time is required
-  when any analgesic action is taken.
+  may populate behavioural descriptors (vocalisations, facial expression,
+  posture, suspected pain source, action taken). The five subscale scores
+  must be set explicitly by the clinician — do NOT infer scores from narrative.
+  Reassessment time is required when any analgesic action is taken.
+  Do NOT extract: clinician name, signature, or assessment date/time — Salvia
+  automatically stamps the submit time (which is the assessment time for this
+  contemporaneous form) and locks the author identity.
 
 fields:
   - key: subject_ref
@@ -44,12 +47,6 @@ fields:
     type: system_field
     source: patient_record
     required: true
-
-  - key: assessment_datetime
-    label: Date and time of assessment
-    type: text
-    required: true
-    ai_extract: true
 
   - key: activity_at_observation
     label: Activity at observation

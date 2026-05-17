@@ -20,6 +20,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and named roles"
+    parity: high
     body_per_country:
       NZ: |
         Per ORS C-4 Dec 2024:
@@ -49,6 +50,7 @@ clauses:
 
   - id: justification
     title: "Justification of every exposure"
+    parity: high
     body: |
       No radiograph is taken without clinical justification recorded in
       the patient record. Selection follows:
@@ -62,6 +64,7 @@ clauses:
 
   - id: optimisation
     title: "Optimisation (ALARP / ALARA)"
+    parity: high
     body: |
       Doses kept As Low As Reasonably Practicable (UK) / Achievable (US)
       / consistent with diagnostic intent (NZ/AU). Specific measures:
@@ -77,6 +80,7 @@ clauses:
 
   - id: drls
     title: "Diagnostic Reference Levels and dose audit"
+    parity: medium
     body_per_country:
       NZ: |
         ORS C-4 §6 audit cadence: annual dose audit against NZ DRLs
@@ -95,6 +99,7 @@ clauses:
 
   - id: equipment_qa
     title: "Equipment quality assurance"
+    parity: high
     body: |
       Equipment maintained per manufacturer schedule and country
       regulator. Annual independent dose / image-quality QA by an MPE
@@ -103,6 +108,7 @@ clauses:
 
   - id: cbct
     title: "CBCT-specific provisions"
+    parity: high
     body: |
       Used only where 2D imaging is insufficient and the clinical
       benefit justifies the higher dose. CBCT operator/practitioner
@@ -115,6 +121,7 @@ clauses:
 
   - id: pregnancy
     title: "Pregnancy declaration"
+    parity: high
     body: |
       Patients of childbearing potential are asked about pregnancy
       before any imaging. If pregnant or possibly pregnant, the
@@ -124,6 +131,7 @@ clauses:
 
   - id: controlled_areas
     title: "Controlled areas and operator position"
+    parity: high
     body: |
       Treatment rooms with X-ray equipment are designated controlled
       areas. Operator stands ≥2 m from the tube head and at 90–135°
@@ -134,6 +142,7 @@ clauses:
 
   - id: training
     title: "Training and CPD"
+    parity: medium
     body_per_country:
       NZ: |
         Operator radiation training current per DCNZ recertification
@@ -151,6 +160,7 @@ clauses:
 
   - id: incidents
     title: "Radiation incident reporting"
+    parity: high
     body_per_country:
       NZ: |
         Notify ORS of any unintended exposure / lost-source / equipment
@@ -170,6 +180,7 @@ clauses:
 
   - id: records_retention
     title: "Records and retention"
+    parity: high
     body: |
       Radiograph and exposure records form part of the patient record
       and follow the practice's overall records retention policy. Dose

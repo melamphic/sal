@@ -30,6 +30,13 @@ overall_prompt: |
   Map any failure (B&D fail, Helix fail, BI positive) to a load
   quarantine flag. Don't infer pass when results not stated.
 
+  AI must NOT extract or infer: operator name, clinician identity, digital
+  signature, or documentation date/time — Salvia auto-stamps submit time and
+  locks the author identity as the operator on record. cycle_date and
+  cycle_time capture when the cycle ran (which may differ from documentation
+  time) and should be extracted from audio. Patient identity is not captured
+  on this form.
+
 fields:
   - key: cycle_date
     label: Cycle date
@@ -183,12 +190,6 @@ fields:
     type: text
     ai_extract: true
     help_text: "Pack barcodes / kit IDs for traceability — supports instrument-to-patient lookup."
-
-  - key: operator_name
-    label: Operator name
-    type: text
-    required: true
-    ai_extract: true
 
   - key: operator_signature_method
     label: Operator sign-off

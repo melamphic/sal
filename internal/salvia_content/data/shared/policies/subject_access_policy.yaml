@@ -33,6 +33,7 @@ clauses:
 
   - id: how_to_request
     title: "How to request"
+    parity: medium
     body: |
       Requests may be made in writing, by email, in person, or via the
       patient portal. The clinic does not require a specific form but does
@@ -41,6 +42,7 @@ clauses:
 
   - id: identity_verification
     title: "Identity verification"
+    parity: medium
     body: |
       The clinic verifies the requester is who they claim to be using
       government photo ID where not already established, and where a third
@@ -112,6 +114,7 @@ clauses:
 
   - id: log
     title: "Log of requests"
+    parity: medium
     body: |
       Every access request is logged: date received, requester, scope,
       response date, format, charge, outcome (granted / partial / refused),
@@ -119,4 +122,5 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: low
     body: "Reviewed every two years."

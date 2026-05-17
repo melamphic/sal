@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and purpose"
+    parity: high
     body: |
       This policy applies to every clinical and non-clinical staff member at
       this practice. It defines our preparedness for in-clinic medical
@@ -37,6 +38,7 @@ clauses:
 
   - id: roles_and_responsibilities
     title: "Roles and responsibilities"
+    parity: high
     body: |
       The Practice Manager is accountable for emergency preparedness overall,
       including kit checks, drill scheduling, and competency record-keeping.
@@ -50,6 +52,7 @@ clauses:
 
   - id: emergency_drug_kit
     title: "Emergency drug kit composition"
+    parity: high
     body_per_country:
       NZ: |
         Drug kit aligned to RNZCGP Foundation Standard 2024 + IMAC anaphylaxis
@@ -143,6 +146,7 @@ clauses:
 
   - id: anaphylaxis_response
     title: "Anaphylaxis recognition and response"
+    parity: high
     body: |
       Recognition: sudden onset of skin / mucosal change PLUS respiratory
       compromise OR cardiovascular compromise, after a likely allergen.
@@ -156,6 +160,7 @@ clauses:
 
   - id: aed_and_cpr
     title: "AED placement, BLS, and emergency-call protocol"
+    parity: high
     body: |
       The AED is sited in a clearly signed, unlocked location accessible
       within 60 seconds from any treatment room. Pads (adult + paediatric)

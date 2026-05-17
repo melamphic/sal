@@ -37,9 +37,13 @@ overall_prompt: |
   RN performing the post-fall huddle / assessment. Extract circumstances,
   observed condition, vitals, neuro obs, family/GP notification status, and
   the corrective actions identified. Demographics from resident record.
-  This form writes a row to the Incidents ledger on Submit; the AI must NOT
-  classify severity — that is for the clinician (and supervisor for major
-  injury / F689).
+  This form writes a row to the Incidents ledger on Submit via the system.incident
+  widget — the AI must NOT classify severity; that is for the clinician.
+  Do NOT attempt to extract: clinician name, clinician role, signature, or
+  date/time of documentation — these are captured automatically by Salvia
+  (system author identity, digital signature, and submit timestamp). The
+  fall_datetime field is the time the fall OCCURRED, which may differ from the
+  documentation time and must be extracted from the clinician's account.
 
 fields:
   - key: subject_ref

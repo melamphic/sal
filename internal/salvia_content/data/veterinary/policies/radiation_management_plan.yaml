@@ -19,6 +19,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This plan applies to all use of ionising radiation at the practice:
       x-ray (general radiography, dental, fluoroscopy), CT, and any source-
@@ -57,6 +58,7 @@ clauses:
 
   - id: training
     title: "Training and competency"
+    parity: medium
     body: |
       Every staff member who operates radiographic equipment or holds an
       animal during exposure receives training before first exposure and at
@@ -117,6 +119,7 @@ clauses:
 
   - id: lead_ppe_testing
     title: "Lead PPE: aprons, thyroid shields, gloves, glasses"
+    parity: medium
     body: |
       Every lead apron, thyroid shield, lead glove, and lead glasses is
       identified on the lead-PPE register, with a unique ID, year of
@@ -169,6 +172,7 @@ clauses:
 
   - id: holding_animals
     title: "Holding animals during exposure"
+    parity: medium
     body: |
       Patients are restrained mechanically (sandbags, troughs, ties, V-shaped
       cradles) and / or chemically (sedation, anaesthesia) wherever
@@ -180,6 +184,7 @@ clauses:
 
   - id: contingency
     title: "Contingency and incidents"
+    parity: medium
     body: |
       Foreseeable incidents (e.g. door opened during exposure, machine
       malfunction with continuous output, accidental high-dose to a worker)
@@ -191,6 +196,7 @@ clauses:
 
   - id: review
     title: "Plan review"
+    parity: low
     body: |
       This plan is reviewed annually by the RSO/RPS in consultation with the
       RPA (UK) / Radiation Safety Adviser (NZ) / state regulator (AU/US)
@@ -198,6 +204,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.infection_prevention_control;
       salvia.shared.health_safety_policy;

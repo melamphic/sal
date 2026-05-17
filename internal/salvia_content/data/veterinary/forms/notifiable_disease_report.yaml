@@ -36,12 +36,6 @@ fields:
       min_severity: medium
     help_text: "Captures the incident in the practice's incident ledger, with severity, status, and notification timestamp. The widget links the incident to follow-up actions (sample submission, regulator confirmation, premises restriction)."
 
-  - key: report_datetime
-    label: Date & time of report
-    type: date
-    required: true
-    ai_extract: true
-
   - key: notifying_vet
     label: Notifying veterinarian
     type: system_field

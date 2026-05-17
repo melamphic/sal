@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy covers acute respiratory illness (incl. COVID-19,
       influenza, RSV), gastroenteritis (norovirus, C. difficile),
@@ -107,6 +108,7 @@ clauses:
 
   - id: stand_down
     title: Stand-down criteria
+    parity: medium
     body: |
       Outbreak declared over when: no new cases for two incubation
       periods of the organism; final environmental clean completed;
@@ -114,6 +116,7 @@ clauses:
 
   - id: debrief_learning
     title: Debrief and learning
+    parity: medium
     body: |
       Outbreak debrief within 14 days of stand-down: timeline, what
       worked, gaps, system improvements, training needs. Findings
@@ -121,6 +124,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and after every
       outbreak. Operational responsibility: IPC Lead.

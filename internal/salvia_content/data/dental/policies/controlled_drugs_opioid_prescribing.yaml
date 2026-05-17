@@ -20,6 +20,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and Accountable Person"
+    parity: high
     body: |
       Applies to every controlled drug held, administered, dispensed,
       transferred, or destroyed at the practice. The Practice Principal is
@@ -29,6 +30,7 @@ clauses:
 
   - id: storage
     title: "Storage and security"
+    parity: high
     body_per_country:
       NZ: |
         CDs stored in a secure cabinet meeting Misuse of Drugs Regs 1977
@@ -54,6 +56,7 @@ clauses:
 
   - id: register
     title: "Register"
+    parity: high
     body_per_country:
       NZ: |
         CD register kept per MoDR 1977 reg 41 — bound book or compliant
@@ -80,6 +83,7 @@ clauses:
 
   - id: every_entry
     title: "Required register entry fields"
+    parity: high
     body: |
       Every register entry must record: date, time, drug name, strength,
       form, batch/lot, expiry, quantity in/out, running balance, patient
@@ -89,6 +93,7 @@ clauses:
 
   - id: opioid_stewardship
     title: "Opioid stewardship principle"
+    parity: medium
     body: |
       Opioids are not first-line for dental pain. NSAIDs ± paracetamol
       provide superior or equivalent analgesia for most acute dental
@@ -99,6 +104,7 @@ clauses:
 
   - id: prescribing_limits
     title: "Country-specific prescribing limits"
+    parity: high
     body_per_country:
       NZ: |
         Per Misuse of Drugs Regs 1977: Class B controlled drugs limited
@@ -139,6 +145,7 @@ clauses:
 
   - id: pdmp_rtpm
     title: "PDMP / RTPM checks"
+    parity: high
     body_per_country:
       NZ: |
         No formal national PDMP. Prescribers consult NZePS history and
@@ -157,6 +164,7 @@ clauses:
 
   - id: destruction
     title: "Destruction and unwanted-stock disposal"
+    parity: high
     body_per_country:
       NZ: |
         CD destruction per MoDR 1977 reg 28 — witnessed by an authorised
@@ -177,6 +185,7 @@ clauses:
 
   - id: discrepancy_reporting
     title: "Discrepancy and loss reporting"
+    parity: high
     body_per_country:
       NZ: |
         Any discrepancy investigated immediately. Loss/theft reported
@@ -194,6 +203,7 @@ clauses:
 
   - id: prescribing_audit
     title: "Prescribing audit"
+    parity: medium
     body: |
       Annual audit of CD prescribing patterns reviews:
       - Volume by drug, by prescriber.
@@ -206,6 +216,7 @@ clauses:
 
   - id: training
     title: "Training and competence"
+    parity: medium
     body: |
       All prescribers complete CD prescribing CPD per country requirement
       (NZ: DCNZ recertification; AU: AHPRA + RACGP/RACDS prescribing

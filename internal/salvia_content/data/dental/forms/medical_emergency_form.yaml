@@ -29,6 +29,14 @@ overall_prompt: |
   outcome. Do NOT auto-classify severity — set min_severity high so the
   incident floor is at least high, and let clinician adjust.
 
+  AI must NOT extract or infer: clinician name, recognising clinician
+  identity beyond what is explicitly stated for the event_recognised_by
+  field, digital signature, or documentation date/time — Salvia auto-stamps
+  submit time and locks the author identity. Patient identity (name, DOB,
+  weight) comes from the patient record, not from audio. The system.incident
+  and system.drug_op widgets handle the incident ledger and drug
+  administration record — do not duplicate their fields in free text.
+
 fields:
   - key: subject_ref
     label: Patient

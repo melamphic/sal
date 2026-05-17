@@ -29,6 +29,13 @@ overall_prompt: |
   caries, restoration, missing, mobile, etc.), and material if a restoration
   is named. Do NOT infer pathology from absence of mention.
 
+  AI must NOT extract or infer: clinician name, examining clinician identity,
+  digital signature, or documentation date/time — these are supplied by
+  Salvia's author identity and auto-timestamp on submit. Patient name and
+  date of birth come from the patient record, not from audio. The
+  examination_date field (when the exam occurred) may be extracted from audio
+  where the clinician states it explicitly.
+
 fields:
   - key: subject_ref
     label: Patient
@@ -46,11 +53,6 @@ fields:
     type: date
     required: true
     ai_extract: true
-
-  - key: examining_clinician
-    label: Examining clinician
-    type: text
-    required: true
 
   - key: numbering_system
     label: Tooth numbering system used

@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: Scope and principles
+    parity: low
     body: |
       End-of-life care is core business for residential aged care. Care
       goals shift from curative to comfort. The resident's voice and
@@ -62,6 +63,7 @@ clauses:
 
   - id: family_support
     title: Family / whānau support
+    parity: medium
     body: |
       Family are welcomed 24/7 in the dying phase. A private space
       offered. Refreshments offered. Spiritual / faith leader contacted
@@ -111,6 +113,7 @@ clauses:
 
   - id: place_of_death
     title: Place of death
+    parity: medium
     body: |
       The resident's preferred place of death is documented. Where the
       preference is to die at the service ('home for them now'), every
@@ -128,6 +131,7 @@ clauses:
 
   - id: after_death_care
     title: After-death care
+    parity: medium
     body: |
       Body care performed with dignity, respecting cultural and family
       preferences. Personal effects inventoried and given to family per
@@ -135,6 +139,7 @@ clauses:
 
   - id: staff_support_bereavement
     title: Staff support and bereavement
+    parity: low
     body: |
       Staff are supported through end-of-life situations. Debrief
       offered after each death, with EAP access for those affected.
@@ -142,6 +147,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All clinical staff complete induction training on the palliative
       approach, common symptoms in dying, anticipatory prescribing,
@@ -150,6 +156,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing / Palliative Care Lead.

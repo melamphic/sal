@@ -30,6 +30,13 @@ overall_prompt: |
   or immunosuppressant by name, record it under current_medications and flag
   the relevant risk field. Do NOT infer ASA class — leave for clinician.
 
+  AI must NOT extract or infer: clinician name, reviewing clinician identity,
+  digital signature, or documentation date/time — Salvia auto-stamps submit
+  time and locks the author identity. Patient name, date of birth, sex, and
+  weight come from the patient record, not from audio. The system.consent
+  widget handles the patient consent record — do not duplicate consent or
+  witness fields in free text.
+
 fields:
   - key: subject_ref
     label: Patient
@@ -63,11 +70,6 @@ fields:
     required: true
     ai_extract: true
     help_text: "Today's date if completed in clinic; otherwise the date the patient signed the form."
-
-  - key: reviewed_by
-    label: Reviewed by (clinician)
-    type: text
-    required: true
 
   - key: chief_complaint
     label: Reason for today's visit
@@ -316,6 +318,13 @@ fields:
         - {label: "Yes — paper", value: "paper"}
         - {label: "Yes — electronic", value: "electronic"}
         - {label: "No — to follow", value: "no"}
+
+  - key: history_consent
+    label: Patient consent to medical history collection
+    type: system.consent
+    required: true
+    config:
+      consent_type: medical_history
 
   - key: clinician_notes
     label: Clinician's free-text notes / red flags

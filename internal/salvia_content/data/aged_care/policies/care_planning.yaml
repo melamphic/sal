@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: high
     body: |
       This policy applies to all residents from the day of admission. It
       covers (a) the comprehensive nursing assessment within 24 hours of
@@ -36,6 +37,7 @@ clauses:
 
   - id: principles
     title: Principles
+    parity: high
     body: |
       Care planning is person-centred and informed by the resident's voice,
       goals, history, culture, and family relationships. Goals are
@@ -47,6 +49,7 @@ clauses:
 
   - id: timeframes
     title: Timeframes
+    parity: high
     body_per_country:
       NZ: |
         Initial nursing assessment within 24 hours of admission. interRAI
@@ -80,6 +83,7 @@ clauses:
 
   - id: mdt_involvement
     title: Multidisciplinary team
+    parity: high
     body: |
       The comprehensive care plan is developed by an interdisciplinary
       team including, at minimum: the resident's keyworker / primary
@@ -93,6 +97,7 @@ clauses:
 
   - id: resident_voice
     title: Resident voice and supported decision-making
+    parity: high
     body: |
       Every plan records the resident's voice in their own words wherever
       possible. Where the resident has capacity, they are the primary
@@ -105,6 +110,7 @@ clauses:
 
   - id: cultural_safety
     title: Cultural and spiritual safety
+    parity: high
     body_per_country:
       NZ: |
         Care planning gives effect to Te Tiriti o Waitangi. For Māori
@@ -132,6 +138,7 @@ clauses:
 
   - id: review_triggers
     title: Review triggers
+    parity: high
     body: |
       A care plan review is triggered by: any unplanned hospital admission;
       return from hospital; any fall with injury or any second fall in 90
@@ -143,6 +150,7 @@ clauses:
 
   - id: documentation
     title: Documentation and access
+    parity: medium
     body: |
       Care plans are stored in the resident's clinical record and are
       accessible to all staff providing care. A copy is offered to the
@@ -154,6 +162,7 @@ clauses:
 
   - id: handover_transfer
     title: Handover and transfer
+    parity: medium
     body: |
       On transfer to hospital, the resident's care plan summary, advance
       care plan, current medication list, allergies, and behaviour-support
@@ -163,6 +172,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years or when the
       regulatory framework changes materially. Operational

@@ -865,6 +865,49 @@ func (s *Service) PublishForm(ctx context.Context, input PublishFormInput) (*For
 	if err != nil {
 		return nil, fmt.Errorf("forms.service.PublishForm: draft fields: %w", err)
 	}
+
+	// Salvia default-state forms are light rows: the materialiser never writes
+	// fields to DB. Materialise from the YAML template now so the published
+	// version carries the full field list, then proceed normally.
+	if len(fields) == 0 &&
+		form.SalviaTemplateID != nil &&
+		(form.SalviaTemplateState == nil || *form.SalviaTemplateState == "default") &&
+		s.templates != nil {
+		tfs, ok := s.templates.FieldsForTemplate(ctx, *form.SalviaTemplateID, form.ClinicID)
+		if ok && len(tfs) > 0 {
+			fieldParams := make([]CreateFieldParams, len(tfs))
+			for i, tf := range tfs {
+				cfg := json.RawMessage(`{}`)
+				if len(tf.Config) > 0 {
+					if buf, merr := json.Marshal(tf.Config); merr == nil {
+						cfg = buf
+					}
+				}
+				var prompt *string
+				if tf.HelpText != "" {
+					h := tf.HelpText
+					prompt = &h
+				}
+				fieldParams[i] = CreateFieldParams{
+					ID:             domain.NewID(),
+					FormVersionID:  draft.ID,
+					Position:       i,
+					Title:          tf.Label,
+					Type:           tf.Type,
+					Config:         cfg,
+					AIPrompt:       prompt,
+					Required:       tf.Required,
+					AllowInference: tf.AIExtract,
+				}
+			}
+			materialised, merr := s.repo.ReplaceFields(ctx, draft.ID, fieldParams)
+			if merr != nil {
+				return nil, fmt.Errorf("forms.service.PublishForm: materialise template fields: %w", merr)
+			}
+			fields = materialised
+		}
+	}
+
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("forms.service.PublishForm: draft has no fields: %w", domain.ErrConflict)
 	}

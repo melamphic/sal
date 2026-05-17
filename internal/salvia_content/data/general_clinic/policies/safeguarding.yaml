@@ -26,6 +26,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       Applies to every patient, every staff member, and every visitor at
       this practice. It covers: child abuse and neglect; family / intimate-
@@ -38,6 +39,7 @@ clauses:
 
   - id: principles
     title: "Principles"
+    parity: medium
     body: |
       We act on the principle that safeguarding is everyone's business.
       The patient's safety is paramount; for children, the welfare of
@@ -106,6 +108,7 @@ clauses:
 
   - id: response_to_disclosure
     title: "Response to disclosure"
+    parity: medium
     body: |
       When a patient discloses abuse or violence: (1) believe and
       validate; (2) ensure immediate safety — is the abuser in the
@@ -166,6 +169,7 @@ clauses:
 
   - id: documentation
     title: "Documentation"
+    parity: medium
     body: |
       Use exact words spoken by the patient where possible. Record:
       who, what, when, where, who else present, observations, action
@@ -177,6 +181,7 @@ clauses:
 
   - id: dna_and_disengagement
     title: "Did-not-attend (DNA) and disengagement of vulnerable patients"
+    parity: medium
     body: |
       A child's DNA is recorded as "was-not-brought" and reviewed for
       safeguarding implications at the weekly safeguarding huddle
@@ -187,6 +192,7 @@ clauses:
 
   - id: training_and_supervision
     title: "Training and safeguarding supervision"
+    parity: medium
     body: |
       All clinical staff complete safeguarding-children Level 3 training
       (UK; equivalent NZ + AU + US) at induction and triennially. All
@@ -209,6 +215,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on regulator refresh — Working
       Together (UK) refresh, NZ Children's Act amendments, state

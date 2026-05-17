@@ -22,6 +22,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This policy covers clinical records, audio recordings, AI-extracted
       drafts, prescriptions, controlled-drug registers, financial records,
@@ -59,6 +60,7 @@ clauses:
 
   - id: audio_recordings
     title: "Audio recordings (Salvia recordings)"
+    parity: medium
     body: |
       Encounter audio captured for AI extraction is retained until the note
       is submitted, then deleted by default. Audio is retained longer only
@@ -71,6 +73,7 @@ clauses:
 
   - id: ai_drafts
     title: "AI-extracted drafts"
+    parity: medium
     body: |
       The AI-extracted draft (pre-clinician review) is retained for as long
       as the audio is retained. Once audio is deleted, the draft is also
@@ -93,6 +96,7 @@ clauses:
 
   - id: consent_forms
     title: "Consent forms"
+    parity: medium
     body: |
       Consent forms are part of the clinical record and follow the same
       retention period as the clinical record. AI-scribe consent records are
@@ -101,6 +105,7 @@ clauses:
 
   - id: destruction
     title: "Secure destruction"
+    parity: medium
     body: |
       Records due for destruction are destroyed securely:
       paper records — shredded with a cross-cut shredder (DIN 66399 P-4 or
@@ -120,6 +125,7 @@ clauses:
 
   - id: practice_closure
     title: "Practice closure / change of ownership"
+    parity: medium
     body: |
       On closure or sale, records are transferred to a successor practice
       where consent allows, or to a regulator-approved repository, or
@@ -128,6 +134,7 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: low
     body: |
       Reviewed at least every two years, and immediately on any change to
       retention statute or the clinic's vertical regulator's records

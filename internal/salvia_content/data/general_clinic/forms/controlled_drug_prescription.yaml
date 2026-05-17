@@ -30,10 +30,16 @@ linked_policy_defaults:
 tags: [prescription, controlled_drug, opioid]
 
 overall_prompt: |
-  This form crosses the drug ledger. The system.drug_op widget records the
-  dispense / administer event; the form captures prescribing context. Patient
-  identity is from record. Refuse to populate quantity/strength/duration unless
-  the clinician explicitly stated them.
+  AI may extract from voice: PDMP/RTPM query result, clinical indication,
+  prior treatments tried, drug name and form, strength, total quantity,
+  directions (sig), duration in days, morphine equivalent dose, prescription
+  format, validity period, instalment dispensing details, and linked
+  treatment plan reference.
+  AI must NOT extract: prescriber name, registration number, DEA/VMD/EPCS
+  number, or the prescription date. Patient identity (name, DOB, address,
+  health identifier) comes from the patient record. Salvia auto-stamps
+  submission time, digital signature, and author identity. Do NOT populate
+  quantity, strength, or duration unless the clinician explicitly stated them.
 
 fields:
   - key: subject_ref
@@ -175,12 +181,3 @@ fields:
       controlled_only: true
       confirm_required: true
 
-  - key: signature_prescriber
-    label: "Prescriber name, registration number, DEA / VMD / EPCS / state"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Prescription date (appropriate date)"
-    type: date
-    required: true

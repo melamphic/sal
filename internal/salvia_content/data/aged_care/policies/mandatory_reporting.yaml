@@ -115,6 +115,7 @@ clauses:
 
   - id: learning
     title: Learning and improvement
+    parity: medium
     body: |
       Reportable events are reviewed at clinical governance / QAPI /
       Std 2 / Reg 17 / Section 2 with follow-through on system change.
@@ -130,6 +131,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and on any change to
       regulator reporting rules. Operational responsibility:

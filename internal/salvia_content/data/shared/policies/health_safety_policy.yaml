@@ -21,6 +21,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and policy statement"
+    parity: high
     body: |
       The clinic is committed to providing and maintaining a safe and
       healthy environment for staff, patients, contractors, and visitors.
@@ -30,6 +31,7 @@ clauses:
 
   - id: roles
     title: "Roles and responsibilities"
+    parity: high
     body: |
       The clinic principal or designated H&S Officer is accountable for:
       maintaining the hazard register; chairing H&S meetings; investigating
@@ -39,6 +41,7 @@ clauses:
 
   - id: hazard_register
     title: "Hazard register"
+    parity: high
     body: |
       A hazard register is maintained covering at minimum: biological
       (BBV, zoonosis, infection); chemical (disinfectants, anaesthetic
@@ -50,6 +53,7 @@ clauses:
 
   - id: risk_assessment
     title: "Risk assessment"
+    parity: high
     body: |
       Each hazard is risk-rated (likelihood × consequence) and controlled
       using the hierarchy of control: eliminate → substitute → engineer →
@@ -58,6 +62,7 @@ clauses:
 
   - id: incident_reporting
     title: "Incident and near-miss reporting"
+    parity: high
     body: |
       All work-related incidents and near-misses are reported via the
       clinic's incident channel. Notifiable incidents are escalated to the
@@ -70,6 +75,7 @@ clauses:
 
   - id: training
     title: "Training and competency"
+    parity: high
     body: |
       All staff receive H&S induction at hire. Topic-specific training
       (BLS/CPR, manual handling, sharps, infection control, emergency
@@ -79,6 +85,7 @@ clauses:
 
   - id: emergency_preparedness
     title: "Emergency preparedness"
+    parity: high
     body: |
       The clinic maintains evacuation plans, fire-extinguisher servicing,
       first-aid kits, AED (where appropriate), spill kits, and emergency
@@ -87,6 +94,7 @@ clauses:
 
   - id: workplace_violence
     title: "Workplace violence and aggression"
+    parity: medium
     body: |
       The clinic recognises that healthcare workers are at elevated risk
       of patient/client aggression. Risk assessment covers triggers, lone
@@ -95,6 +103,7 @@ clauses:
 
   - id: lone_working
     title: "Lone working / after hours"
+    parity: medium
     body: |
       Staff working alone or after hours have a check-in protocol, an
       easily-reached panic / emergency contact, and a documented
@@ -103,6 +112,7 @@ clauses:
 
   - id: vaccinations
     title: "Staff vaccinations"
+    parity: medium
     body: |
       The clinic offers (or facilitates) vaccinations relevant to the
       vertical: hepatitis B (BBV-exposed staff), seasonal influenza,
@@ -112,6 +122,7 @@ clauses:
 
   - id: ppe
     title: "Personal protective equipment"
+    parity: high
     body: |
       The clinic provides PPE appropriate to each task, free to staff,
       and trains in correct selection, fit, and disposal. Re-usable PPE
@@ -119,6 +130,7 @@ clauses:
 
   - id: equipment_maintenance
     title: "Equipment maintenance"
+    parity: medium
     body: |
       Clinical and safety equipment (autoclaves, suction, AED, oxygen,
       lift hoists, lighting, ventilation, anaesthetic machines, x-ray
@@ -127,6 +139,7 @@ clauses:
 
   - id: hazardous_substances
     title: "Hazardous substances and waste"
+    parity: high
     body: |
       All hazardous substances inventoried with safety data sheets (SDS).
       Spill response trained and equipped. Waste disposed via licensed
@@ -135,6 +148,7 @@ clauses:
 
   - id: review
     title: "Review and consultation"
+    parity: medium
     body: |
       This policy is reviewed annually with worker consultation
       (HSWA NZ s 60; WHS AU s 47–49; UK HSE Code; US OSHA general duty)

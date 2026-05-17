@@ -31,9 +31,13 @@ tags: [continence, dignity, ledger]
 
 overall_prompt: |
   Capture the continence assessment as recorded by the registered nurse or
-  continence-trained staff member. Voice extraction can populate pattern
-  description, contributing factors mentioned, products in use, and the plan.
-  Do not infer continence status from absence of mention.
+  continence-trained staff member. Patient identity and medication list come from
+  the resident record — do not extract from voice. Salvia auto-stamps the
+  submission date/time and locks in the author identity and digital signature —
+  do not extract clinician name, signature, or documentation datetime from audio.
+  Voice extraction can populate pattern description, contributing factors
+  mentioned, products in use, and the plan. Do not infer continence status from
+  absence of mention.
 
 fields:
   - key: subject_ref
@@ -52,6 +56,7 @@ fields:
     type: date
     required: true
     ai_extract: true
+    help_text: "Date the assessment was performed. May differ from the documentation submission time. Salvia auto-stamps the submission time separately."
 
   - key: bladder_pattern
     label: Bladder pattern

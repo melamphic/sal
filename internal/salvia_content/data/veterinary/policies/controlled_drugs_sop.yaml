@@ -18,6 +18,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This SOP applies to all controlled drugs (CDs) handled at any practice
       premises: ordering, receipt, storage, administration to patients,
@@ -268,6 +269,7 @@ clauses:
 
   - id: training_and_review
     title: "Training and SOP review"
+    parity: medium
     body: |
       Every member of staff with CD access is trained on this SOP at
       induction and at every annual review, with sign-off retained on the
@@ -278,6 +280,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       This SOP is linked to: the Controlled Drug Register Entry form
       (salvia.veterinary.cd_register_entry), the Veterinary Written

@@ -37,9 +37,13 @@ tags: [restraint, restrictive_practice, consent, behaviour_support]
 overall_prompt: |
   Capture the clinical rationale, the alternatives tried, the practice
   authorised, who consented and on what authority, and the monitoring plan.
-  This is a high-stakes authorisation — the AI should NOT infer consent or
-  authorisation. Voice extraction can populate the rationale and alternatives;
-  consent and clinician sign-off must be explicit fields.
+  Patient identity comes from the resident record — do not extract from voice.
+  Salvia auto-stamps the submission date/time and locks in the author identity
+  and digital signature — do not extract the documenting clinician's name,
+  signature, or documentation datetime from audio. This is a high-stakes
+  authorisation — the AI should NOT infer consent or authorisation. Voice
+  extraction can populate the rationale and alternatives; consent and authorising
+  clinician sign-off must be explicit fields.
 
 fields:
   - key: subject_ref

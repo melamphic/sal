@@ -19,6 +19,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This policy applies at every practice premises and to every member of
       staff, contractor, work-experience attendee, owner and visitor while
@@ -61,6 +62,7 @@ clauses:
 
   - id: isolation_biosecurity
     title: "Isolation and biosecurity"
+    parity: medium
     body: |
       The practice has a designated isolation area or pathway used for any
       patient with suspected or confirmed transmissible infectious disease
@@ -111,6 +113,7 @@ clauses:
 
   - id: amr_stewardship
     title: "Antimicrobial resistance stewardship"
+    parity: medium
     body: |
       Antimicrobial use is documented and reviewed. Staff follow the
       practice's antimicrobial decision aid (per the Veterinary Medicines &
@@ -122,6 +125,7 @@ clauses:
 
   - id: equipment_cleaning
     title: "Equipment cleaning, decontamination, and sterilisation"
+    parity: medium
     body: |
       Reusable instruments are cleaned, disinfected and sterilised between
       every use per the manufacturer's instructions for use (IFU). The
@@ -136,6 +140,7 @@ clauses:
 
   - id: environmental_cleaning
     title: "Environmental cleaning and laundry"
+    parity: medium
     body: |
       Cleaning standards and frequencies are defined for: consult rooms
       (between every patient — minimum surface wipe with disinfectant);
@@ -152,6 +157,7 @@ clauses:
 
   - id: vaccination_immunisation
     title: "Staff vaccination and immunisation"
+    parity: medium
     body: |
       Staff are recommended to be up to date with immunisations relevant
       to veterinary work: tetanus (every 10 years); rabies pre-exposure
@@ -164,6 +170,7 @@ clauses:
 
   - id: visitor_owner_management
     title: "Owners and visitors"
+    parity: medium
     body: |
       Owners and visitors are screened at reception for self-reported
       illness in their animal that may be transmissible. Owners with
@@ -176,6 +183,7 @@ clauses:
 
   - id: review
     title: "Programme review"
+    parity: low
     body: |
       This policy is reviewed at least annually by the practice IPC lead,
       and after any IPC incident, regulator publication, or local outbreak.
@@ -184,6 +192,7 @@ clauses:
 
   - id: linked_records
     title: "Linked policies and forms"
+    parity: low
     body: |
       Linked to: salvia.veterinary.notifiable_disease_report;
       salvia.veterinary.veterinary_medicines_cascade_sop;

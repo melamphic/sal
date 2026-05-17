@@ -22,6 +22,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Any expression of dissatisfaction with the clinic's services — clinical
       care, administrative process, billing, communication, conduct of staff,
@@ -31,6 +32,7 @@ clauses:
 
   - id: how_to_complain
     title: "How to complain"
+    parity: high
     body: |
       Complaints may be made in person, by phone, by email, in writing, or
       via the patient portal. The clinic does not require a specific form.
@@ -39,6 +41,7 @@ clauses:
 
   - id: acknowledgement
     title: "Acknowledgement"
+    parity: high
     body: |
       The clinic acknowledges every complaint promptly.
     body_per_country:
@@ -49,6 +52,7 @@ clauses:
 
   - id: investigation
     title: "Investigation"
+    parity: high
     body: |
       A named investigator (the clinic owner, manager, or a senior clinician
       independent of the matter) reviews the records, interviews relevant
@@ -58,6 +62,7 @@ clauses:
 
   - id: response
     title: "Response and resolution"
+    parity: high
     body: |
       The clinic provides a written response covering: what happened, what
       went well, what did not, what the clinic will change, and any
@@ -72,6 +77,7 @@ clauses:
 
   - id: apology_no_admission
     title: "Apology"
+    parity: medium
     body: |
       The clinic offers an apology where appropriate. Apology legislation
       (NZ Sentencing Act / common law; AU state-by-state apology laws; UK
@@ -81,6 +87,7 @@ clauses:
 
   - id: open_disclosure
     title: "Link to open disclosure / duty of candour"
+    parity: high
     body: |
       Where the complaint relates to a patient-safety event (or surfaces
       one), open disclosure / duty-of-candour processes apply in addition
@@ -89,6 +96,7 @@ clauses:
 
   - id: external_escalation
     title: "External escalation route"
+    parity: high
     body: |
       The complainant is informed in every response of their right to
       escalate to:
@@ -100,6 +108,7 @@ clauses:
 
   - id: anti_retaliation
     title: "No retaliation"
+    parity: high
     body: |
       No patient, family member, advocate, or staff member is disadvantaged
       for raising a complaint. The clinic does not delay or refuse care to
@@ -108,6 +117,7 @@ clauses:
 
   - id: confidentiality
     title: "Confidentiality"
+    parity: high
     body: |
       Complaint information is kept confidential and shared only with those
       who need to know to investigate and resolve the complaint. Records of
@@ -116,6 +126,7 @@ clauses:
 
   - id: register
     title: "Complaints register"
+    parity: high
     body: |
       The clinic maintains a complaints register: date, complainant (or
       anonymous flag), summary, investigator, outcome, learning, action
@@ -125,6 +136,7 @@ clauses:
 
   - id: learning_qi
     title: "Learning and quality improvement"
+    parity: medium
     body: |
       Themes from complaints are tabled at the clinic's quality-improvement
       meeting (or significant-event analysis meeting) at least quarterly.
@@ -133,4 +145,5 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: medium
     body: "Reviewed every two years; immediately on regulator-process change."

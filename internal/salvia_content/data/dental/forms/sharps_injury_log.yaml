@@ -29,6 +29,16 @@ overall_prompt: |
   identity is PII — mask in lists, route reveals through unmask. Severity
   floor at high — even minor sharps with BBV-positive source escalate.
 
+  AI must NOT extract or infer: the submitting clinician's name or identity,
+  digital signature, or documentation date/time — Salvia auto-stamps submit
+  time and locks the author identity. injured_person_name and
+  injured_person_role describe the person who was injured (which may differ
+  from the documenting clinician) and should be extracted from audio.
+  injury_datetime captures when the injury event occurred and must be
+  extracted; it is distinct from the documentation submit time. Source
+  patient identity fields are PII — extract only what is explicitly stated.
+  The system.incident widget handles the incident ledger.
+
 fields:
   - key: injured_person_role
     label: Injured person — role

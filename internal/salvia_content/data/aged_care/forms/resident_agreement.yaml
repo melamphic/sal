@@ -32,12 +32,15 @@ linked_policy_defaults:
 tags: [admission, agreement, contract]
 
 overall_prompt: |
-  This is a contract record. Demographic and identifier fields come from the
-  resident record and are NOT extracted from voice. Capture only the
-  conversational decisions from the admission meeting: room number, service
-  level, fee option chosen, any extra services agreed, special wishes, and
-  the named substitute decision-maker / next of kin. Do not infer financial
-  amounts the clinician did not state.
+  This is a contract record. Patient identity fields (name, DOB, health
+  identifiers), provider details, and registration numbers come from the
+  resident and clinic records — do not extract from voice. Salvia auto-stamps
+  the submission date/time and locks in the author identity and digital
+  signature — do not extract clinician name, signature, or documentation
+  datetime from audio. Capture only the conversational decisions from the
+  admission meeting: room number, service level, fee option chosen, any extra
+  services agreed, special wishes, and the named substitute decision-maker /
+  next of kin. Do not infer financial amounts the clinician did not state.
 
 fields:
   - key: subject_ref

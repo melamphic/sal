@@ -21,6 +21,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       This policy applies to all personal and health information held by the
       clinic in any form (paper, electronic, audio, image), about any
@@ -30,6 +31,7 @@ clauses:
 
   - id: lawful_basis
     title: "Lawful basis for collection"
+    parity: high
     body_per_country:
       NZ: |
         Information is collected under HIPC 2020 Rule 1: directly relevant
@@ -61,6 +63,7 @@ clauses:
 
   - id: information_held
     title: "Information held"
+    parity: high
     body: |
       The clinic holds: clinical records (history, examination, diagnosis,
       treatment, prescriptions, notes, imaging, lab results); demographic and
@@ -71,6 +74,7 @@ clauses:
 
   - id: storage_security
     title: "Storage and security"
+    parity: high
     body_per_country:
       NZ: |
         Information held under HIPC Rule 5: reasonable security safeguards
@@ -95,6 +99,7 @@ clauses:
 
   - id: use_disclosure
     title: "Use and disclosure"
+    parity: high
     body: |
       Information is used and disclosed only for the purposes for which it
       was collected, except where: the patient consents; use is directly
@@ -120,6 +125,7 @@ clauses:
 
   - id: patient_rights
     title: "Patient rights"
+    parity: high
     body: |
       Patients have the right to access their information, request correction
       of inaccuracies, and (subject to legal exceptions) request deletion or
@@ -133,6 +139,7 @@ clauses:
 
   - id: retention
     title: "Retention"
+    parity: high
     body: |
       The clinic retains records for the period required by law or
       professional standards, then destroys them securely. Specific periods
@@ -141,6 +148,7 @@ clauses:
 
   - id: breach_response
     title: "Breach response and notification"
+    parity: high
     body: |
       Suspected privacy breaches are reported immediately to the Privacy
       Officer / Caldicott Guardian / equivalent role-holder and triaged
@@ -165,6 +173,7 @@ clauses:
 
   - id: third_parties
     title: "Third-party processors and contracts"
+    parity: high
     body: |
       Vendors that handle clinic data (AI scribe, IT, billing, transcription,
       lab integrations, EMR) are bound by written contracts that mirror the
@@ -177,6 +186,7 @@ clauses:
 
   - id: training
     title: "Training and accountability"
+    parity: high
     body: |
       All staff complete privacy training at induction and annually. The
       Privacy Officer / Caldicott Guardian / Privacy Lead is named and
@@ -184,6 +194,7 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: medium
     body: |
       This policy is reviewed at least every two years, and immediately on
       any material legislative change in the clinic's jurisdiction.

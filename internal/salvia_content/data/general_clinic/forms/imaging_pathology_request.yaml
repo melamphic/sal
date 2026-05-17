@@ -27,6 +27,16 @@ linked_policy_defaults:
 
 tags: [imaging, pathology, request]
 
+overall_prompt: |
+  Capture the imaging or pathology request. AI may populate tests ordered,
+  clinical question, relevant history, anticoagulation status, allergies,
+  and priority/repeat check from voice. Urgency and funding route require
+  explicit clinician selection.
+  Do NOT extract: requesting clinician name, registration number, request date,
+  or signature — Salvia captures these automatically (system author identity,
+  digital signature, and submit timestamp). Patient identity is from the
+  patient record header, not voice audio.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -162,12 +172,3 @@ fields:
     required: true
     help_text: "Named receiver for the result, plus designated cover. Drives results safety-netting."
 
-  - key: signature_clinician
-    label: "Requesting clinician (name and registration)"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Request date"
-    type: date
-    required: true

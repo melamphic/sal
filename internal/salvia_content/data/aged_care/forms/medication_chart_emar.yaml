@@ -35,11 +35,14 @@ tags: [medication, administration, ledger]
 overall_prompt: |
   This form records ONE administration event per submission (or, where
   configured, a batched round). Resident identity, drug list, dose schedule
-  and indication come from the medication record; the form does not
-  duplicate them. Voice extraction is permitted only for non-clinical context
-  (e.g. resident response, observed effect for PRN). The administration
-  itself is an explicit clinician action with electronic sign-off; AI must
-  NOT mark a dose as given.
+  and indication come from the medication record — do not extract from voice.
+  Salvia auto-stamps the submission date/time and locks in the author identity
+  and digital signature of the administering clinician — do not extract clinician
+  name, signature, or documentation datetime from audio. Controlled-drug witness
+  identity is captured by the system.drug_op widget — do not extract from voice.
+  Voice extraction is permitted only for non-clinical context (e.g. resident
+  response, observed effect for PRN). The administration itself is an explicit
+  clinician action with electronic sign-off; AI must NOT mark a dose as given.
 
 fields:
   - key: subject_ref
@@ -145,12 +148,6 @@ fields:
     type: long_text
     ai_extract: true
     help_text: "30–60 min post-PO, 15–30 min post-injectable. Pain score change, behaviour change, breathing change, etc."
-
-  - key: controlled_drug_witness
-    label: Controlled drug — second checker / witness
-    type: text
-    ai_extract: false
-    help_text: "Required for any CD per country: NZ Class B/C, AU S8, UK Schedule 2 (and many practices Schedule 3), US Schedule II–V. Use the CD Register form for the ledger entry; this field captures the witness on the chart."
 
   - key: drug_op_link
     label: Controlled drug operation (linked CD register entry)

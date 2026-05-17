@@ -92,7 +92,14 @@ func (e *GeminiExtractor) Extract(ctx context.Context, vertical, transcript, ove
 	}
 
 	raw := resp.Candidates[0].Content.Parts[0].Text
-	return parseExtractionResponse(raw, fields)
+	results, err := parseExtractionResponse(raw, fields)
+	if err != nil {
+		return nil, err
+	}
+	if verr := ValidateExtractionResponse(fields, results); verr != nil {
+		return nil, fmt.Errorf("extraction.gemini.Extract: %w", verr)
+	}
+	return results, nil
 }
 
 // ── Prompt building ───────────────────────────────────────────────────────────
@@ -403,6 +410,9 @@ Respond with ONLY the JSON array. No markdown fences.
 		}
 	}
 
+	if verr := ValidatePolicyCheckResponse(clauses, results); verr != nil {
+		return nil, fmt.Errorf("extraction.gemini.CheckPolicyClauses: %w", verr)
+	}
 	return results, nil
 }
 

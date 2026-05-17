@@ -29,6 +29,12 @@ overall_prompt: |
   total separately. The system.consent widget covers the overall plan
   consent; do not duplicate procedure-level consent here.
 
+  AI must NOT extract or infer: clinician name, planning clinician identity,
+  digital signature, or documentation date/time — Salvia auto-stamps submit
+  time and locks the author identity. Patient name comes from the patient
+  record, not from audio. plan_date may be extracted if the clinician states
+  a date the plan was discussed that differs from today's documentation date.
+
 fields:
   - key: subject_ref
     label: Patient
@@ -46,11 +52,6 @@ fields:
     type: date
     required: true
     ai_extract: true
-
-  - key: planning_clinician
-    label: Planning clinician
-    type: text
-    required: true
 
   - key: presenting_problems
     label: Presenting concerns and diagnostic findings

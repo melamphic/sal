@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: principles
     title: Principles
+    parity: low
     body: |
       When something goes wrong, the resident and their nominated family
       / NoK are told promptly, honestly and respectfully. An apology is
@@ -53,6 +54,7 @@ clauses:
 
   - id: who_leads
     title: Who leads the conversation
+    parity: medium
     body: |
       A senior clinical staff member (typically the Care Manager,
       Director of Nursing, or treating GP) leads the conversation, with
@@ -97,6 +99,7 @@ clauses:
 
   - id: cultural_consideration
     title: Cultural and accessibility considerations
+    parity: medium
     body: |
       Conversations are held in the resident's / family's preferred
       language with qualified interpreter where needed. Tikanga Māori,
@@ -115,6 +118,7 @@ clauses:
 
   - id: support_for_staff
     title: Support for staff involved
+    parity: low
     body: |
       Staff involved in an adverse event are supported through the
       conversation — managerial support, peer support, EAP access. A
@@ -123,6 +127,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All clinical leaders complete Open Disclosure / Duty of Candour
       training at induction and refresher every two years. Training
@@ -131,6 +136,7 @@ clauses:
 
   - id: governance
     title: Governance
+    parity: medium
     body: |
       Open Disclosure events are tracked at clinical governance.
       Patterns reviewed under QAPI / Standard 2 / Reg 17 / Section 2.
@@ -139,6 +145,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing / Quality Lead.

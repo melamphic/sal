@@ -27,6 +27,20 @@ linked_policy_defaults:
 
 tags: [certificate, fit_note, work_capacity]
 
+overall_prompt: |
+  AI may extract from voice: assessment method, assessment date, period from/to,
+  condition summary (with patient consent), body/country-specific certificate
+  fields, NZ certificate type and capacity status and selected duties, AU
+  diagnosis consent, UK fit-for-work status and adjustments and reassessment,
+  UK issuer profession, US certificate type and essential functions affected and
+  estimated frequency.
+  AI must NOT extract: issuing clinician name, registration number, signature,
+  or issue date as a documentation timestamp. The assessment_date and
+  certificate_period fields capture clinically meaningful event dates, not
+  the documentation time. Patient identity (name, DOB, address) comes from
+  the patient record. Salvia auto-stamps submission time, digital signature,
+  and author identity.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -208,12 +222,3 @@ fields:
     countries: [US]
     help_text: "Required on WH-380 for intermittent FMLA leave."
 
-  - key: signature_clinician
-    label: "Issuing clinician name and registration"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Issue date"
-    type: date
-    required: true

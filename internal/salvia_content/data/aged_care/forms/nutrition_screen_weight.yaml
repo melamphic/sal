@@ -33,11 +33,15 @@ linked_policy_defaults:
 tags: [nutrition, weight, ledger]
 
 overall_prompt: |
-  Capture the screening and weight entry. Voice extraction may populate
-  intake pattern, swallowing observations, food preferences, and dietary
-  modifications. Weight, height, BMI must be entered explicitly — do not
-  infer. Weight-loss flag is computed from prior weights on the chart (the
-  loader compares against the resident's weight history).
+  Capture the screening and weight entry. Patient identity, age, date of birth,
+  and height come from the resident record — do not extract from voice. Salvia
+  auto-stamps the submission date/time and locks in the author identity and
+  digital signature — do not extract clinician name, signature, or documentation
+  datetime from audio. Voice extraction may populate intake pattern, swallowing
+  observations, food preferences, and dietary modifications. Weight, height, BMI
+  must be entered explicitly — do not infer. Weight-loss flag is computed from
+  prior weights on the chart (the loader compares against the resident's weight
+  history).
 
 fields:
   - key: subject_ref

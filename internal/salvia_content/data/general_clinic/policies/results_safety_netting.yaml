@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: high
     body: |
       Applies to every clinical result that arrives at this practice:
       pathology, imaging, ECG, spirometry, biopsy histology, screening
@@ -33,6 +34,7 @@ clauses:
 
   - id: receipt_and_inbox
     title: "Receipt and inbox management"
+    parity: high
     body: |
       All results arrive in a single inbox queue per clinician PLUS a
       whole-practice unallocated queue. Each result is allocated within
@@ -45,6 +47,7 @@ clauses:
 
   - id: review_priority
     title: "Review priority and turnaround"
+    parity: high
     body: |
       Critical results (life-threatening — e.g. K+ >6.5, troponin
       positive, INR >5, biopsy showing cancer, acute imaging finding):
@@ -57,6 +60,7 @@ clauses:
 
   - id: clinician_actions
     title: "Reviewing clinician's actions"
+    parity: high
     body: |
       The reviewing clinician annotates every result with: (a) a category
       (normal / borderline / abnormal-needs-action / critical); (b) the
@@ -68,6 +72,7 @@ clauses:
 
   - id: patient_communication
     title: "Patient communication"
+    parity: high
     body: |
       Patients are informed of their results via the channel agreed at
       request time. Critical results are communicated by direct phone
@@ -81,6 +86,7 @@ clauses:
 
   - id: patient_not_contactable
     title: "Patient-not-contactable escalation"
+    parity: high
     body: |
       If reasonable attempts to contact a patient with an abnormal
       result fail (≥3 attempts on different days using all channels on
@@ -96,6 +102,7 @@ clauses:
 
   - id: failure_to_receive
     title: "Failure-to-receive policy"
+    parity: high
     body: |
       Where a result is expected but does not arrive within the
       provider's stated turnaround (e.g. histology >2 weeks; imaging
@@ -108,6 +115,7 @@ clauses:
 
   - id: incidental_findings
     title: "Incidental findings"
+    parity: medium
     body: |
       Incidental findings (e.g. lung nodule on rib X-ray) are reviewed
       against current guideline (Fleischner Society for lung; AAA / renal
@@ -118,6 +126,7 @@ clauses:
 
   - id: covering_arrangements
     title: "Covering arrangements"
+    parity: medium
     body: |
       Every clinician names a default and back-up covering clinician.
       When the clinician is on leave / sick / part-time off, results
@@ -127,6 +136,7 @@ clauses:
 
   - id: audit
     title: "Audit and clinical governance"
+    parity: medium
     body: |
       The practice audits results-handling quarterly: (a) average days
       from receipt to review; (b) number of results overdue beyond
@@ -138,6 +148,7 @@ clauses:
 
   - id: training
     title: "Training"
+    parity: medium
     body: |
       All clinical and reception staff complete annual training on
       results-handling, including: critical-result thresholds, identity-
@@ -147,6 +158,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on regulator-guidance refresh
       (CQC GP Mythbuster updates, RACGP standards refresh, RNZCGP

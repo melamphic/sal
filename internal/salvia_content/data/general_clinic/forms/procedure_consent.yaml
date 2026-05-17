@@ -31,9 +31,15 @@ linked_policy_defaults:
 tags: [consent, procedure, minor_surgery]
 
 overall_prompt: |
-  Capture risks discussed and patient questions verbatim where possible. The
-  consent ledger row is written on Submit, not on dictation. Patient identity
-  is from the record; never re-extract.
+  AI may extract from voice: procedure type, procedure details (site, side,
+  technique, anaesthesia), clinical indication, alternatives discussed, material
+  risks discussed, serious/rare risks, patient questions and responses,
+  information leaflets provided, cooling-off period, capacity assessment, substitute
+  decision-maker details, and chaperone offered/name.
+  AI must NOT extract: clinician name, signature, registration number, or the
+  date/time of consent. The system.consent widget captures the consent event;
+  Salvia auto-stamps submission time, digital signature, and author identity.
+  Patient identity comes from the patient record; never re-extract.
 
 fields:
   - key: subject_ref
@@ -161,12 +167,3 @@ fields:
       require_witness: false
     help_text: "Writes to consent ledger on Submit. Includes scope of procedure, risks acknowledged, alternatives considered, decision (proceed / decline / defer), patient signature, clinician signature."
 
-  - key: signature_clinician
-    label: "Clinician name and signature"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Date and time of consent"
-    type: date
-    required: true

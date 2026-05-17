@@ -35,12 +35,15 @@ tags: [admission, assessment, baseline]
 
 overall_prompt: |
   Capture the registered nurse's baseline assessment within 24 hours of admission.
-  Demographics and medication list pulled from the resident record. The voice
-  capture should focus on what the RN observed and the resident reported:
-  vital signs, mobility status, cognition (orientation), continence pattern,
-  skin condition, pain, and immediate concerns. interRAI (NZ) and MDS 3.0 (US)
-  are external instruments — do not recreate; record the assessment ID
-  reference where used.
+  Patient identity (name, DOB, sex, weight, height, allergies, medications) comes
+  from the resident record — do not extract from voice. Salvia auto-stamps the
+  submission date/time and locks in the author identity and digital signature of
+  the logged-in RN — do not extract clinician name, signature, or documentation
+  datetime from audio. The voice capture should focus on what the RN observed
+  and the resident reported: vital signs, mobility status, cognition (orientation),
+  continence pattern, skin condition, pain, and immediate concerns. interRAI (NZ)
+  and MDS 3.0 (US) are external instruments — do not recreate; record the
+  assessment ID reference where used.
 
 fields:
   - key: subject_ref
@@ -85,6 +88,7 @@ fields:
     type: date
     required: true
     ai_extract: true
+    help_text: "Date and time the assessment was performed. May differ from the documentation submission time (e.g. assessments completed retrospectively after a night shift). Salvia auto-stamps the submission time separately."
 
   - key: assessing_rn
     label: Assessing registered nurse

@@ -27,6 +27,14 @@ overall_prompt: |
   risks discussed. Pull risks verbatim where possible. Do NOT auto-suggest
   risks not mentioned by the clinician.
 
+  AI must NOT extract or infer: clinician name, clinician obtaining consent,
+  digital signature, or documentation date/time — Salvia auto-stamps submit
+  time and locks the author identity. Patient name and date of birth come
+  from the patient record, not from audio. The system.consent widget handles
+  the consent record including consent giver, witness, and scope — do not
+  duplicate those fields in free text. consent_date may be extracted if the
+  clinician states a date of paper consent that differs from today.
+
 fields:
   - key: subject_ref
     label: Patient
@@ -44,11 +52,6 @@ fields:
     type: date
     required: true
     ai_extract: true
-
-  - key: clinician_obtaining_consent
-    label: Clinician obtaining consent
-    type: text
-    required: true
 
   - key: procedure_type
     label: Procedure type

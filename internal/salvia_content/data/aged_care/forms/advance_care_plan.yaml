@@ -35,7 +35,11 @@ linked_policy_defaults:
 tags: [advance_care_planning, end_of_life, consent]
 
 overall_prompt: |
-  Capture the advance care planning conversation. The resident's words are
+  Capture the advance care planning conversation. Patient identity and date of
+  birth come from the resident record — do not extract from voice. Salvia
+  auto-stamps the submission date/time and locks in the author identity and
+  digital signature of the documenting clinician — do not extract clinician name,
+  signature, or documentation datetime from audio. The resident's words are
   central — record verbatim where possible. Distinguish wishes (preferences)
   from refusals (legally binding under MCA s.24 UK, POLST orders US, etc.).
   Where the resident lacks capacity, the conversation is with the substitute

@@ -1,4 +1,4 @@
-.PHONY: dev restart build test test-integration lint migrate migrate-down migrate-status docs docs-api docs-install tidy smoke-billing
+.PHONY: dev restart build test test-integration lint migrate migrate-down migrate-status docs docs-api docs-install tidy smoke-billing validate-content
 SHELL := /bin/bash
 # ── Local dev ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,12 @@ test:
 # All tests including integration tests — requires Docker.
 test-integration:
 	go test -count=1 -race -tags=integration ./...
+
+# ── Content validation ─────────────────────────────────────────────────────────
+
+# Validate all embedded form and policy YAML files for structural correctness.
+validate-content:
+	go run ./cmd/validate-content
 
 # ── Code quality ───────────────────────────────────────────────────────────────
 

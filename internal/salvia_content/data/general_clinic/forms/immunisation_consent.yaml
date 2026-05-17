@@ -29,6 +29,19 @@ linked_policy_defaults:
 
 tags: [consent, vaccination, immunisation]
 
+overall_prompt: |
+  Capture the vaccination consent and administration record. AI may populate
+  pre-screen contraindications, previous reactions, and post-vaccination
+  observation notes from voice.
+  The system.consent widget records consent — do NOT extract consent type or
+  patient signature from audio. The system.drug_op widget (drug_op_record)
+  writes the vaccine administration ledger row — do NOT re-extract drug name,
+  batch, or dose from audio; those are captured by the widget.
+  Do NOT extract: clinician name, registration, date of administration, or
+  signature — Salvia captures these automatically (system author identity,
+  digital signature, and submit timestamp). Patient identity is from the
+  patient record header.
+
 fields:
   - key: subject_ref
     label: "Patient"
@@ -175,12 +188,3 @@ fields:
         - {label: "Submitted to state IIS (US)", value: "us_iis"}
         - {label: "Pending", value: "pending"}
 
-  - key: signature_clinician
-    label: "Vaccinating clinician (name and registration)"
-    type: text
-    required: true
-
-  - key: signature_date
-    label: "Date of administration"
-    type: date
-    required: true

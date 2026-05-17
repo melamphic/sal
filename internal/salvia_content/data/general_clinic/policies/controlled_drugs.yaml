@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and definitions"
+    parity: high
     body: |
       This policy applies to every controlled drug held, ordered, prescribed,
       administered, dispensed, or destroyed at this practice. Country
@@ -35,6 +36,7 @@ clauses:
 
   - id: register
     title: "Register"
+    parity: high
     body_per_country:
       NZ: |
         A controlled-drug register is held for every CD on stock. Register
@@ -70,6 +72,7 @@ clauses:
 
   - id: storage
     title: "Storage and access"
+    parity: high
     body: |
       Controlled drugs are stored in a fixed cabinet meeting the country
       standard (UK: Misuse of Drugs (Safe Custody) Regulations 1973 — bolted
@@ -83,6 +86,7 @@ clauses:
 
   - id: ordering_and_receipt
     title: "Ordering and receipt"
+    parity: high
     body: |
       Orders placed only by an authorised prescriber / pharmacist. On
       receipt the cabinet keyholder counts the stock, matches to the order
@@ -93,6 +97,7 @@ clauses:
 
   - id: prescribing_and_administration
     title: "Prescribing, administration, and dispensing"
+    parity: high
     body: |
       Every CD prescription is written via the practice's controlled-drug
       prescription form, with mandatory fields completed (see related
@@ -106,6 +111,7 @@ clauses:
 
   - id: opioid_prescribing
     title: "Opioid prescribing limits and review"
+    parity: medium
     body: |
       First-line management of pain follows non-opioid / non-pharmacological
       options (CDC 2022; FPM ANZCA Position Statement; FPM RCoA). When
@@ -122,6 +128,7 @@ clauses:
 
   - id: discrepancy_and_loss
     title: "Discrepancy, theft, loss, and waste"
+    parity: high
     body: |
       Any discrepancy between physical stock and register is investigated
       same shift by two clinicians. If unresolved within 24 hours:
@@ -135,6 +142,7 @@ clauses:
 
   - id: destruction
     title: "Destruction of expired stock"
+    parity: high
     body_per_country:
       NZ: |
         Expired CDs destroyed by an Authorised Person (pharmacist) in
@@ -163,6 +171,7 @@ clauses:
 
   - id: pdmp_rtpm_integration
     title: "PDMP / RTPM integration"
+    parity: high
     body_per_country:
       NZ: |
         PDMP-equivalent: review patient's prescription history via
@@ -190,6 +199,7 @@ clauses:
 
   - id: training_and_governance
     title: "Training and governance"
+    parity: medium
     body: |
       All clinicians complete CD-handling training at induction and
       annually. The Accountable Officer / clinical lead audits CD records
@@ -200,6 +210,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on the publication of new national
       guidance (CDC Opioid Prescribing revision; UKHSA / RCGP CD

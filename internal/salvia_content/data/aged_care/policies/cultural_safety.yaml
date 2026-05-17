@@ -26,6 +26,7 @@ purpose_per_regulator:
 clauses:
   - id: principles
     title: Principles
+    parity: low
     body: |
       Culturally safe care is care delivered in a way that respects the
       resident's identity, language, beliefs, practices and family /
@@ -109,6 +110,7 @@ clauses:
 
   - id: spiritual_faith
     title: Spiritual and faith care
+    parity: medium
     body: |
       Residents may practice their faith. Faith leader contacts
       maintained. Prayer space made available where requested.
@@ -127,6 +129,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All staff complete cultural safety training at induction and
       annually:
@@ -142,6 +145,7 @@ clauses:
 
   - id: representation_governance
     title: Representation in governance
+    parity: medium
     body: |
       Where the service population includes significant cultural groups,
       representatives are involved in governance. NZ: iwi / Māori
@@ -151,6 +155,7 @@ clauses:
 
   - id: complaints_culture
     title: Complaints with cultural lens
+    parity: medium
     body: |
       Cultural concerns are escalated alongside the standard complaints
       pathway. Cultural advocates and external bodies (NZ Te Aka
@@ -160,6 +165,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years and after any
       cultural-related complaint or incident. Operational

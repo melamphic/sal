@@ -619,10 +619,28 @@ func (r *Repository) GetFormByID(ctx context.Context, id, clinicID uuid.UUID) (*
 	return rec, nil
 }
 
+// GetByTemplateID fetches the form row for a given salvia_template_id + clinic.
+// Returns ErrNotFound if no row exists for this clinic (the template has not
+// been imported yet, or was never materialised).
+func (r *Repository) GetByTemplateID(ctx context.Context, templateID string, clinicID uuid.UUID) (*FormRecord, error) {
+	q := `SELECT ` + formCols + `
+		FROM forms
+		WHERE salvia_template_id = $1 AND clinic_id = $2
+		LIMIT 1`
+	row := r.db.QueryRow(ctx, q, templateID, clinicID)
+	rec, err := scanForm(row)
+	if err != nil {
+		return nil, fmt.Errorf("forms.repo.GetByTemplateID: %w", err)
+	}
+	return rec, nil
+}
+
 // ListForms returns a paginated list of forms for a clinic.
+// Rows still in "default" salvia_template_state are hidden from the list —
+// they live in the Library until the clinic explicitly imports them.
 func (r *Repository) ListForms(ctx context.Context, clinicID uuid.UUID, p ListFormsParams) ([]*FormRecord, int, error) {
 	args := []any{clinicID}
-	where := "clinic_id = $1"
+	where := "clinic_id = $1 AND (salvia_template_state IS NULL OR salvia_template_state != 'default')"
 
 	if !p.IncludeArchived {
 		where += " AND archived_at IS NULL"

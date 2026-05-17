@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: Scope and principles
+    parity: low
     body: |
       Continence is a fundamental aspect of dignity. Every resident is
       assumed continent unless assessed otherwise. Pads and briefs are not
@@ -43,6 +44,7 @@ clauses:
 
   - id: medication_review
     title: Medication review
+    parity: medium
     body: |
       The pharmacist or treating GP reviews medications that worsen
       continence — diuretics (timing), anticholinergics, opioids,
@@ -51,6 +53,7 @@ clauses:
 
   - id: uti_screening
     title: Asymptomatic bacteriuria and UTI
+    parity: medium
     body: |
       Asymptomatic bacteriuria is not treated routinely (per IDSA / NICE
       NG109). UTI is investigated when symptomatic — dysuria, frequency,
@@ -69,6 +72,7 @@ clauses:
 
   - id: skin_link
     title: Link to skin and pressure injury
+    parity: medium
     body: |
       Incontinence-associated dermatitis (IAD) is differentiated from
       pressure injury and managed as a moisture-associated skin condition.
@@ -88,6 +92,7 @@ clauses:
 
   - id: products
     title: Continence products
+    parity: medium
     body: |
       Products are matched to the individual's pattern, not 'one size'.
       Frequent changes are preferred over high-absorbency overnight pads
@@ -96,6 +101,7 @@ clauses:
 
   - id: communication
     title: Communication and review
+    parity: medium
     body: |
       The resident and family are involved in the plan. Plan reviewed at
       every comprehensive care plan review, after any UTI, after any new
@@ -103,6 +109,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All care staff complete induction training on continence assessment,
       dignity in toileting, peri-care, IAD prevention, and product
@@ -128,6 +135,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least every two years. Operational
       responsibility: Director of Nursing / Continence Lead.

@@ -40,6 +40,12 @@ type Materialiser struct {
 	logger   *slog.Logger
 }
 
+// AllTemplates returns every loaded template in stable path order.
+// Used by the library service to iterate the full catalogue.
+func (m *Materialiser) AllTemplates() []Template {
+	return m.loaded
+}
+
 // TemplateByID returns the loaded template with the given ID. The second
 // return value reports whether a match was found.
 //
