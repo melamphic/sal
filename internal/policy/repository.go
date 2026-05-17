@@ -371,10 +371,30 @@ func (r *Repository) GetPolicyByID(ctx context.Context, id, clinicID uuid.UUID) 
 	return rec, nil
 }
 
+// GetByTemplateID fetches the policy row for a given salvia_template_id + clinic.
+// Returns ErrNotFound if no row exists (template not yet imported).
+func (r *Repository) GetByTemplateID(ctx context.Context, templateID string, clinicID uuid.UUID) (*PolicyRecord, error) {
+	const q = `
+		SELECT id, clinic_id, folder_id, name, description,
+		       created_by, created_at, updated_at, archived_at, retire_reason,
+		       salvia_template_id, salvia_template_version, salvia_template_state, framework_currency_date
+		FROM policies
+		WHERE salvia_template_id = $1 AND clinic_id = $2
+		LIMIT 1`
+	row := r.db.QueryRow(ctx, q, templateID, clinicID)
+	rec, err := scanPolicy(row)
+	if err != nil {
+		return nil, fmt.Errorf("policy.repo.GetByTemplateID: %w", err)
+	}
+	return rec, nil
+}
+
 // ListPolicies returns a paginated list of policies for a clinic.
+// Rows still in "default" salvia_template_state are hidden from the list —
+// they live in the Library until the clinic explicitly imports them.
 func (r *Repository) ListPolicies(ctx context.Context, clinicID uuid.UUID, p ListPoliciesParams) ([]*PolicyRecord, int, error) {
 	args := []any{clinicID}
-	where := "clinic_id = $1"
+	where := "clinic_id = $1 AND (salvia_template_state IS NULL OR salvia_template_state != 'default')"
 
 	if !p.IncludeArchived {
 		where += " AND archived_at IS NULL"
