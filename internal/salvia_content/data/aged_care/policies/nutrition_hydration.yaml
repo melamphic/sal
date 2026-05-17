@@ -23,6 +23,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: Scope and principles
+    parity: low
     body: |
       Food is a clinical issue and a quality-of-life issue. The service
       provides nutritionally adequate, culturally familiar, varied,
@@ -61,6 +62,7 @@ clauses:
 
   - id: hydration
     title: Hydration
+    parity: medium
     body: |
       Default fluid target ≥1500 mL/day, individualised. Drinks offered
       at every interaction; water available in resident's room; hydration
@@ -93,6 +95,7 @@ clauses:
 
   - id: assistance_at_meals
     title: Assistance at meals
+    parity: medium
     body: |
       Residents needing assistance with eating are supported one-to-one
       where possible. Staff sit at the resident's level. Attention is
@@ -102,6 +105,7 @@ clauses:
 
   - id: end_of_life_eating
     title: Eating at end of life
+    parity: medium
     body: |
       In the terminal phase, the goal shifts from nutritional adequacy to
       comfort and pleasure. Reduced intake is normal. Comfort feeding is
