@@ -215,6 +215,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on regulator refresh — Working
       Together (UK) refresh, NZ Children's Act amendments, state

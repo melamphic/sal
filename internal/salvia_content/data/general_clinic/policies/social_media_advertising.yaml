@@ -172,6 +172,7 @@ clauses:
 
   - id: monitoring_and_governance
     title: "Monitoring and governance"
+    parity: medium
     body: |
       A named partner / director is the social-media accountable
       officer. Posts are scheduled and reviewed against this policy
@@ -181,6 +182,7 @@ clauses:
 
   - id: review
     title: "Policy review"
+    parity: low
     body: |
       Reviewed every 12 months and on regulator-guidance refresh
       (AHPRA Advertising Guidelines updates 2024; UK GMC GMP refresh;

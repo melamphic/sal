@@ -134,6 +134,7 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: low
     body: |
       Reviewed at least every two years, and immediately on any change to
       retention statute or the clinic's vertical regulator's records
