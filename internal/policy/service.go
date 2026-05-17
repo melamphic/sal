@@ -39,9 +39,10 @@ type TemplateOverlaySource interface {
 // Mirrors the YAML ClauseSpec but lives in this package so the policy
 // service has no compile-time dependency on salvia_content.
 type TemplateClause struct {
-	ID    string
-	Title string
-	Body  string
+	ID     string
+	Title  string
+	Body   string
+	Parity string // "high" | "medium" | "low" — empty defaults to "high"
 }
 
 // Service handles business logic for the policy module.
@@ -574,6 +575,18 @@ func forkedState() *string {
 	return &s
 }
 
+// clauseParity returns p when it is one of the three valid parity values,
+// defaulting to "high" for the empty string (YAML omitempty) and for any
+// unrecognised value.
+func clauseParity(p string) string {
+	switch p {
+	case "high", "medium", "low":
+		return p
+	default:
+		return "high"
+	}
+}
+
 // DiscardDraft deletes the current draft of a policy.
 //
 // Two semantics, branched on whether the policy has ever been published:
@@ -657,6 +670,7 @@ func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (
 					BlockID: tc.ID,
 					Title:   tc.Title,
 					Body:    tc.Body,
+					Parity:  clauseParity(tc.Parity),
 				}
 			}
 			if _, merr := s.repo.ReplaceClauses(ctx, draft.ID, inputs); merr != nil {
@@ -1052,7 +1066,7 @@ func (s *Service) overlayTemplateClauses(ctx context.Context, pol *PolicyRecord,
 			BlockID: tc.ID,
 			Title:   tc.Title,
 			Body:    tc.Body,
-			Parity:  "high",
+			Parity:  clauseParity(tc.Parity),
 		})
 	}
 	resp.Items = items
