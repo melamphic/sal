@@ -493,7 +493,7 @@ func (w *ComputePolicyAlignmentWorker) Work(ctx context.Context, job *river.Job[
 		return fmt.Errorf("compute_policy_alignment: get note: %w", err)
 	}
 
-	clauses, err := w.clauses.GetClausesForNote(ctx, note.FormVersionID)
+	clauses, err := w.clauses.GetClausesForNote(ctx, note.FormVersionID, note.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("compute_policy_alignment: get clauses: %w", err)
 	}
