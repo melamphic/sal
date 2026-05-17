@@ -90,6 +90,7 @@ clauses:
 
   - id: gradual_dose_reduction
     title: Gradual dose reduction (GDR)
+    parity: high
     body: |
       For every psychotropic prescribed for behaviour, a GDR plan is in
       place from initiation. Review at minimum 3 months for
