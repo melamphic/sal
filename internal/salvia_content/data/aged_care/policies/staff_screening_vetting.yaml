@@ -25,6 +25,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope
+    parity: low
     body: |
       This policy applies to every person engaged by the service in any
       role that brings them into contact with residents — employees,
@@ -108,6 +109,7 @@ clauses:
 
   - id: induction_competency
     title: Induction and competency
+    parity: medium
     body: |
       Newly hired staff complete induction before independent practice,
       including: this policy, the Restraint Minimisation policy, the
@@ -116,6 +118,7 @@ clauses:
 
   - id: ongoing_monitoring
     title: Ongoing monitoring
+    parity: medium
     body: |
       Performance, complaints, supervision and clinical outcomes are
       monitored. Concerns are escalated to HR / Service Manager. Where
@@ -139,6 +142,7 @@ clauses:
 
   - id: records
     title: Records
+    parity: medium
     body: |
       A staff personnel file holds: identity, right-to-work, criminal
       record check, registration, references, training records, and
@@ -147,6 +151,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually and on any change to
       regulator screening rules. Operational responsibility: HR /

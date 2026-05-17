@@ -36,6 +36,7 @@ clauses:
 
   - id: definitions
     title: Definitions
+    parity: low
     body: |
       - Chemical restraint: a medication used primarily to control
         behaviour rather than to treat a diagnosed mental or physical
@@ -159,6 +160,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All clinical staff complete training on dementia care, person-centred
       approaches to behaviours of concern, de-escalation, and the legal
@@ -168,6 +170,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational responsibility:
       Director of Nursing / Care Manager.

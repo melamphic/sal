@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: Scope and definitions
+    parity: low
     body: |
       'Adult at risk' is any resident who has needs for care and
       support and is, or is at risk of, abuse, neglect or
@@ -111,6 +112,7 @@ clauses:
 
   - id: support
     title: Support for the resident and others
+    parity: medium
     body: |
       The resident is offered psychological / counselling support,
       family / NoK liaison (with the resident's consent), and advocacy.
@@ -137,6 +139,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Service Manager / Safeguarding Lead.
