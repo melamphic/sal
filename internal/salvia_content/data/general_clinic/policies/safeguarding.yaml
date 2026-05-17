@@ -26,6 +26,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       Applies to every patient, every staff member, and every visitor at
       this practice. It covers: child abuse and neglect; family / intimate-

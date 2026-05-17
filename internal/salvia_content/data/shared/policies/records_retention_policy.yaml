@@ -22,6 +22,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       This policy covers clinical records, audio recordings, AI-extracted
       drafts, prescriptions, controlled-drug registers, financial records,

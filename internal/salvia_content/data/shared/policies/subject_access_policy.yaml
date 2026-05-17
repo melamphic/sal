@@ -33,6 +33,7 @@ clauses:
 
   - id: how_to_request
     title: "How to request"
+    parity: medium
     body: |
       Requests may be made in writing, by email, in person, or via the
       patient portal. The clinic does not require a specific form but does

@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope"
+    parity: low
     body: |
       Applies to all communications by the practice and by staff in
       their professional capacity, on every channel: practice website,
