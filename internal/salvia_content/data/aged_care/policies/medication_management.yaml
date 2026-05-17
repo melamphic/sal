@@ -141,6 +141,7 @@ clauses:
 
   - id: training_competency
     title: Staff training and competency
+    parity: medium
     body: |
       Medication-administering staff complete induction training and an
       observed competency assessment before independent administration.
@@ -150,6 +151,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Director of Nursing.
