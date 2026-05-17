@@ -338,18 +338,17 @@ fields:
         - {label: "Limited (specify)", value: "limited"}
     help_text: "NZ: GP2GP, Health Connect; AU: My Health Record opt-out / specialist letter; UK: NHS Summary Care Record, GP Connect; US: HIE participation."
 
-  - key: signature_patient
-    label: "Patient / authorised representative signature"
-    type: text
+  - key: registration_consent
+    label: "Patient / authorised representative consent to register"
+    type: system.consent
     required: true
-    pii: true
-
-  - key: signature_date
-    label: "Date signed"
-    type: date
-    required: true
+    config:
+      consent_type: registration
+      require_witness: false
+    help_text: "Captures patient consent to enrol, to data collection, and to electronic communications. Writes to consent ledger on Submit. Replaces any free-text signature field."
 
   - key: registering_clinician
     label: "Registering clinician / receptionist"
-    type: text
+    type: system_field
+    source: staff_record.full_name
     required: true

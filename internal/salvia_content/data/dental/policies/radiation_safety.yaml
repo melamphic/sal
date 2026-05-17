@@ -20,6 +20,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope and named roles"
+    parity: high
     body_per_country:
       NZ: |
         Per ORS C-4 Dec 2024:
@@ -49,6 +50,7 @@ clauses:
 
   - id: justification
     title: "Justification of every exposure"
+    parity: high
     body: |
       No radiograph is taken without clinical justification recorded in
       the patient record. Selection follows:
@@ -62,6 +64,7 @@ clauses:
 
   - id: optimisation
     title: "Optimisation (ALARP / ALARA)"
+    parity: high
     body: |
       Doses kept As Low As Reasonably Practicable (UK) / Achievable (US)
       / consistent with diagnostic intent (NZ/AU). Specific measures:

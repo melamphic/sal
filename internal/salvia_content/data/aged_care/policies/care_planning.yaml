@@ -83,6 +83,7 @@ clauses:
 
   - id: mdt_involvement
     title: Multidisciplinary team
+    parity: high
     body: |
       The comprehensive care plan is developed by an interdisciplinary
       team including, at minimum: the resident's keyworker / primary
@@ -96,6 +97,7 @@ clauses:
 
   - id: resident_voice
     title: Resident voice and supported decision-making
+    parity: high
     body: |
       Every plan records the resident's voice in their own words wherever
       possible. Where the resident has capacity, they are the primary
