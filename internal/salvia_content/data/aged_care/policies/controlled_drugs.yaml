@@ -24,6 +24,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_definitions
     title: Scope and definitions
+    parity: low
     body: |
       'Controlled drug' means a drug subject to country scheduling rules:
       NZ Class A/B/C; AU Schedule 4 (where state schedule recordable) and
@@ -155,6 +156,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All staff handling CDs complete induction training plus annual
       refresher on the CD framework, the safe and the register. Witness
@@ -162,6 +164,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: CD Lead / Director of Nursing.
