@@ -33,10 +33,13 @@ tags: [falls, risk_assessment]
 overall_prompt: |
   Capture the multifactorial falls assessment. Vitals (postural BP) and any
   observed gait/balance findings should come from the assessing clinician.
-  Demographics and current medications come from the resident record. The AI
-  may extract risk factors mentioned in the conversation (vision change,
-  recent dizziness, fear of falling, sleep) but must NOT score the assessment;
-  the clinician scores against the chosen tool.
+  Patient identity and current medications come from the resident record — do not
+  extract from voice. Salvia auto-stamps the submission date/time and locks in
+  the author identity and digital signature — do not extract clinician name,
+  signature, or documentation datetime from audio. The AI may extract risk
+  factors mentioned in the conversation (vision change, recent dizziness, fear
+  of falling, sleep) but must NOT score the assessment; the clinician scores
+  against the chosen tool.
 
 fields:
   - key: subject_ref
