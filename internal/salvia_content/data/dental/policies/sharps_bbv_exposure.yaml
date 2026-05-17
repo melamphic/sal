@@ -89,6 +89,7 @@ clauses:
 
   - id: immediate_first_aid
     title: "Immediate first aid following exposure"
+    parity: medium
     body: |
       Step 1 — Encourage gentle bleeding. Do NOT suck the wound.
       Step 2 — Wash with soap and running water for at least 1 minute;
@@ -153,6 +154,7 @@ clauses:
 
   - id: follow_up_serology
     title: "Follow-up serology"
+    parity: medium
     body: |
       Baseline; 6 weeks; 12 weeks; 6 months. CDC USPHS 2018 allows 4-month
       cessation if the injured person used 4th-gen HIV Ag-Ab assay and

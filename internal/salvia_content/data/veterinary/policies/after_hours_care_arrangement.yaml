@@ -145,6 +145,7 @@ clauses:
 
   - id: cd_continuity
     title: "Controlled-drug continuity across hand-off"
+    parity: medium
     body: |
       Where a patient receives a controlled drug at the home practice and is
       transferred to the after-hours provider for continued treatment, the
@@ -157,6 +158,7 @@ clauses:
 
   - id: complaints_and_governance
     title: "Complaints and clinical governance"
+    parity: medium
     body: |
       Complaints arising from after-hours care are managed under the
       practice's complaints policy, with the after-hours provider involved
@@ -166,6 +168,7 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: low
     body: |
       This arrangement is reviewed at least annually, and on any change to
       the named provider, the species covered, the geographic catchment,

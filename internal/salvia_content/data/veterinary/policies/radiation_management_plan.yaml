@@ -184,6 +184,7 @@ clauses:
 
   - id: contingency
     title: "Contingency and incidents"
+    parity: medium
     body: |
       Foreseeable incidents (e.g. door opened during exposure, machine
       malfunction with continuous output, accidental high-dose to a worker)

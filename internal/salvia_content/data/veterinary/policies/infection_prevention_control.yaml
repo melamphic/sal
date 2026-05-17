@@ -113,6 +113,7 @@ clauses:
 
   - id: amr_stewardship
     title: "Antimicrobial resistance stewardship"
+    parity: medium
     body: |
       Antimicrobial use is documented and reviewed. Staff follow the
       practice's antimicrobial decision aid (per the Veterinary Medicines &
@@ -124,6 +125,7 @@ clauses:
 
   - id: equipment_cleaning
     title: "Equipment cleaning, decontamination, and sterilisation"
+    parity: medium
     body: |
       Reusable instruments are cleaned, disinfected and sterilised between
       every use per the manufacturer's instructions for use (IFU). The

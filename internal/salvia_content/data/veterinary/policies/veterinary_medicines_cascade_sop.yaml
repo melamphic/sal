@@ -195,6 +195,7 @@ clauses:
 
   - id: cold_chain
     title: "Cold chain for refrigerated products"
+    parity: medium
     body: |
       Refrigerated medicines (vaccines, insulin, biologicals) are stored at
       2–8 °C. Refrigerator temperature is monitored at start and end of each
