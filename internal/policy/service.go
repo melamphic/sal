@@ -635,11 +635,34 @@ func (s *Service) PublishPolicy(ctx context.Context, input PublishPolicyInput) (
 		return nil, fmt.Errorf("policy.service.PublishPolicy: %w", domain.ErrConflict)
 	}
 
-	if _, err := s.repo.GetDraftVersion(ctx, input.PolicyID); err != nil {
+	draft, err := s.repo.GetDraftVersion(ctx, input.PolicyID)
+	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return nil, fmt.Errorf("policy.service.PublishPolicy: no draft to publish — edit the policy first: %w", domain.ErrConflict)
 		}
 		return nil, fmt.Errorf("policy.service.PublishPolicy: %w", err)
+	}
+
+	// Salvia default-state policies are light rows: the materialiser never writes
+	// clauses to DB. Materialise from the YAML template now so the published
+	// version carries the full clause list, then proceed normally.
+	if pol.SalviaTemplateID != nil &&
+		(pol.SalviaTemplateState == nil || *pol.SalviaTemplateState == "default") &&
+		s.templates != nil {
+		tcs, ok := s.templates.ClausesForTemplate(ctx, *pol.SalviaTemplateID, pol.ClinicID)
+		if ok && len(tcs) > 0 {
+			inputs := make([]ClauseInput, len(tcs))
+			for i, tc := range tcs {
+				inputs[i] = ClauseInput{
+					BlockID: tc.ID,
+					Title:   tc.Title,
+					Body:    tc.Body,
+				}
+			}
+			if _, merr := s.repo.ReplaceClauses(ctx, draft.ID, inputs); merr != nil {
+				return nil, fmt.Errorf("policy.service.PublishPolicy: materialise template clauses: %w", merr)
+			}
+		}
 	}
 
 	for attempt := 0; attempt < 2; attempt++ {
