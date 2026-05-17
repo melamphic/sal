@@ -165,6 +165,7 @@ clauses:
 
   - id: training
     title: Staff training
+    parity: medium
     body: |
       All staff complete training on capacity, consent, supported
       decision-making, and country-specific substitute frameworks.
@@ -174,6 +175,7 @@ clauses:
 
   - id: review_of_policy
     title: Review of this policy
+    parity: low
     body: |
       This policy is reviewed at least annually. Operational
       responsibility: Director of Nursing / Care Manager.
