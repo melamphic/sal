@@ -21,6 +21,7 @@ purpose_per_regulator:
 clauses:
   - id: scope_principles
     title: "Scope and principles"
+    parity: high
     body: |
       This policy applies to every system, device, and person handling clinic
       data. The clinic adopts the principles of least privilege, defence in
@@ -29,6 +30,7 @@ clauses:
 
   - id: access_control
     title: "Access control"
+    parity: high
     body: |
       Access is role-based and granted on the principle of least privilege.
       Each user has a unique account; account sharing is prohibited. New
@@ -39,6 +41,7 @@ clauses:
 
   - id: authentication
     title: "Authentication"
+    parity: high
     body: |
       Multi-factor authentication required for all clinical-system logins
       from outside the clinic network and for any administrator-tier
@@ -49,6 +52,7 @@ clauses:
 
   - id: encryption
     title: "Encryption"
+    parity: high
     body: |
       Data at rest encrypted with AES-256 or equivalent. Data in transit
       protected by TLS 1.2+ (TLS 1.3 preferred). Database backups encrypted.
@@ -56,6 +60,7 @@ clauses:
 
   - id: device_security
     title: "Device security"
+    parity: high
     body: |
       Workstations, laptops, tablets, and phones used to access clinic
       systems are managed (MDM/EMM where reasonable), patched within 30
@@ -66,6 +71,7 @@ clauses:
 
   - id: network
     title: "Network"
+    parity: high
     body: |
       Clinic Wi-Fi separates staff from guest networks. Remote access via
       VPN or zero-trust gateway. Public/guest Wi-Fi never used to access
@@ -73,6 +79,7 @@ clauses:
 
   - id: backups
     title: "Backups and recovery"
+    parity: high
     body: |
       Daily incremental and weekly full backups of clinical systems, with
       at least one off-site copy. Recovery tested at least quarterly. RPO
@@ -81,6 +88,7 @@ clauses:
 
   - id: audit_logging
     title: "Audit logging"
+    parity: high
     body: |
       All access to PHI is logged: user, timestamp, record, action.
       Logs reviewed weekly for unusual patterns; investigated promptly.
@@ -88,6 +96,7 @@ clauses:
 
   - id: third_party
     title: "Third-party / vendor security"
+    parity: high
     body: |
       Vendors handling PHI sign data-processing agreements (UK GDPR Art 28),
       Business Associate Agreements (HIPAA §164.504(e)), or equivalents
@@ -96,6 +105,7 @@ clauses:
 
   - id: incident_response
     title: "Incident response"
+    parity: high
     body: |
       Suspected security incidents reported immediately to the Security
       Officer / IT Lead via the clinic's incident channel. Triage within
@@ -107,6 +117,7 @@ clauses:
 
   - id: physical_security
     title: "Physical security"
+    parity: high
     body: |
       Servers and on-premises storage in locked rooms with controlled
       access; visitor log; CCTV where used. Paper records in locked
@@ -115,6 +126,7 @@ clauses:
 
   - id: training
     title: "Training and awareness"
+    parity: high
     body: |
       All staff complete information-security training at induction and
       annually. Phishing-simulation campaigns run at least biannually.
@@ -122,6 +134,7 @@ clauses:
 
   - id: byod
     title: "Personal device use (BYOD)"
+    parity: high
     body: |
       Personal devices used to access clinic systems must comply with the
       device-security clause. Personal email, personal cloud storage, and
@@ -129,6 +142,7 @@ clauses:
 
   - id: ai_audio_data
     title: "AI scribe and audio data"
+    parity: high
     body: |
       Audio captured for the AI scribe loop is encrypted in transit and
       at rest, processed by the named processors disclosed in the AI
@@ -138,6 +152,7 @@ clauses:
 
   - id: country_specifics
     title: "Country-specific obligations"
+    parity: high
     body_per_country:
       NZ: "HIPC Rule 5 + HISO 10029 (HISF). The clinic submits security incidents to OPC where the Notifiable Privacy Breach threshold is met."
       AU: "APP 11. Notifiable Data Breach to OAIC."
@@ -146,4 +161,5 @@ clauses:
 
   - id: review
     title: "Review"
+    parity: medium
     body: "Reviewed annually and after every significant security incident."

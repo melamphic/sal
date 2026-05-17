@@ -35,12 +35,6 @@ fields:
       min_severity: low
     help_text: "Captures the incident in the practice's incident ledger. Severity should reflect the clinical outcome (low = transient mild signs; medium = required additional treatment; high = hospitalisation; critical = death or permanent injury)."
 
-  - key: report_datetime
-    label: Date & time of report
-    type: date
-    required: true
-    ai_extract: true
-
   - key: reporting_vet
     label: Reporting veterinarian
     type: system_field
