@@ -64,6 +64,7 @@ clauses:
 
   - id: kpis_indicators
     title: KPIs and indicators
+    parity: high
     body: |
       Indicators tracked at every clinical governance meeting:
       - Falls and major-injury falls.
@@ -84,6 +85,7 @@ clauses:
 
   - id: incident_review
     title: Incident review
+    parity: high
     body: |
       All Incidents-ledger rows are triaged for severity and
       preventability. Severe / sentinel incidents undergo
@@ -93,6 +95,7 @@ clauses:
 
   - id: complaint_review
     title: Complaint review
+    parity: medium
     body: |
       Complaints are reviewed at the clinical governance meeting:
       themes, root causes, response time, satisfaction with response.
@@ -100,6 +103,7 @@ clauses:
 
   - id: audit_programme
     title: Audit programme
+    parity: medium
     body: |
       Annual audit programme covering: medication management;
       controlled drugs reconciliation; care planning; consent

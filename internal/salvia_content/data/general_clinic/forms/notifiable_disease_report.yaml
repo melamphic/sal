@@ -30,8 +30,14 @@ tags: [public_health, notifiable, incident]
 
 overall_prompt: |
   This is a statutory disclosure. Patient identifiers are required by law for
-  contact tracing — the privacy minimisation rules do not apply. Capture the
-  disease, exposure, samples, and contact-tracing facts cleanly.
+  contact tracing — the privacy minimisation rules do not apply. AI may
+  extract from voice: occupation/setting, disease selection, case status,
+  symptom onset date, clinical features, exposure history, specimens taken,
+  vaccination history, contact-tracing details, notification target, notification
+  method, and the date/time the notification was sent to authorities.
+  AI must NOT extract: notifying clinician name, registration number, or
+  signature. Salvia auto-stamps submission time, digital signature, and author
+  identity. Patient identity fields come from the patient record.
 
 fields:
   - key: subject_ref
@@ -313,8 +319,3 @@ fields:
     config:
       incident_type: notifiable_disease
       min_severity: medium
-
-  - key: signature_clinician
-    label: "Notifying clinician (name and registration)"
-    type: text
-    required: true

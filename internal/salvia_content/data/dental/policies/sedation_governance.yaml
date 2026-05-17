@@ -20,6 +20,7 @@ purpose_per_regulator:
 clauses:
   - id: scope
     title: "Scope of practice"
+    parity: high
     body: |
       This policy applies to every clinician, dental assistant, hygienist,
       and administrative staff member involved in pre-sedation assessment,
@@ -29,6 +30,7 @@ clauses:
 
   - id: training_requirements
     title: "Training and authorisation"
+    parity: high
     body_per_country:
       NZ: |
         Per DCNZ Sedation Practice Standard March 2026:
@@ -60,6 +62,7 @@ clauses:
 
   - id: pre_sedation_assessment
     title: "Pre-sedation assessment"
+    parity: high
     body: |
       Documented per the Sedation Consent form
       (`salvia.dental.sedation_consent`). Includes: medical history,
