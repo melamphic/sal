@@ -33,13 +33,20 @@ linked_policy_defaults:
 tags: [reportable, regulator, ledger]
 
 overall_prompt: |
-  Capture the regulator-facing notification. The incident itself should
-  already exist as a row in the Incidents ledger (created by Falls / PI /
-  Medication Error / Open Disclosure / etc.). This form classifies the
-  incident against the country routing rules, captures the submission
-  reference, and tracks closure. AI extraction is permitted for the
-  narrative description; classification and submission references must be
-  explicit.
+  Capture the regulator-facing notification. The incident should already
+  exist as a row in the Incidents ledger (created by Falls / PI /
+  Medication Error / Open Disclosure forms). This form classifies the
+  incident against country routing rules, records the submission reference,
+  and tracks closure. AI extraction is permitted only for incident_summary
+  and incident_datetime (the time the incident OCCURRED, not the documentation
+  time). All classification fields and submission references must be set
+  explicitly by the clinician/manager.
+  Do NOT extract: note-author name, documentation date/time, or signature —
+  Salvia captures these automatically (system author identity, digital
+  signature, submit timestamp, immutable audit log).
+  The submission_datetime and submitter_name fields record the external
+  regulator submission — these are filled in after reporting, not at the
+  time of documentation.
 
 fields:
   - key: subject_ref
